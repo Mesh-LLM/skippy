@@ -5241,6 +5241,7 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "skippy-protocol",
  "windows-sys 0.61.2",
 ]

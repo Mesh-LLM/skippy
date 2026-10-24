@@ -1,0 +1,57 @@
+From 4b0194979fd99770f577d20e0468012d67826370 Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Sat, 28 Nov 2026 05:24:02 +1100
+Subject: [PATCH] test: verify F32 anchor-delta CacheGen on Metal
+
+---
+ tests/test-skippy-cachegen-metal.cpp | 37 ++++++++++++++++++++++++++++
+ 1 file changed, 37 insertions(+)
+
+diff --git a/tests/test-skippy-cachegen-metal.cpp b/tests/test-skippy-cachegen-metal.cpp
+index b15b5e53a..3cd046bef 100644
+--- a/tests/test-skippy-cachegen-metal.cpp
++++ b/tests/test-skippy-cachegen-metal.cpp
+@@ -339,6 +339,43 @@ int main() {
+             }
+         }
+     }
++    // A partial second group exercises anchor reset and both destination
++    // strides. The endpoint symbols reduce to exactly representable values.
++    constexpr uint32_t symbol_bytes = rows * channels * sizeof(uint16_t);
++    std::vector<uint8_t> anchor_delta = {
++        'C', 'G', 'P', '1', rows, 0, channels, 0,
++        uint8_t(symbol_bytes), uint8_t(symbol_bytes >> 8), 0, 0, 10, 16, 0, 0,
++    };
++    anchor_delta.resize(16 + rows * sizeof(float));
++    for (uint32_t row = 0; row < rows; ++row) {
++        const bool anchor = row % 10 == 0;
++        const float maximum = anchor ? 1.0f : 0.5f;
++        std::memcpy(anchor_delta.data() + 16 + row * sizeof(float), &maximum, sizeof(maximum));
++        for (uint32_t channel = 0; channel < channels; ++channel) {
++            const uint16_t symbol = anchor && channel % 2 != 0 ? 0 : 65534;
++            anchor_delta.push_back(uint8_t(symbol));
++            anchor_delta.push_back(uint8_t(symbol >> 8));
++        }
++    }
++    const ggml_backend_cachegen_tile anchor_tile = { anchor_delta.data(), anchor_delta.size(), 0, rows };
++    const ggml_backend_cachegen_job anchor_jobs[] = {
++        { row_major32, &anchor_tile, 1, cells.data(), cells.size(), channels, channels * 4, 4 },
++        { transposed32, &anchor_tile, 1, cells.data(), cells.size(), channels, 4, capacity * 4 },
++    };
++    if (!decode(anchor_jobs, 2, error, sizeof(error))) {
++        return finish(15);
++    }
++    ggml_backend_tensor_get(row_major32, row32.data(), 0, ggml_nbytes(row_major32));
++    ggml_backend_tensor_get(transposed32, transposed32_values.data(), 0, ggml_nbytes(transposed32));
++    for (uint32_t row = 0; row < rows; ++row) {
++        for (uint32_t channel = 0; channel < channels; ++channel) {
++            const float expected = (channel % 2 == 0 ? 1.0f : -1.0f) + (row % 10 == 0 ? 0.0f : 0.5f);
++            if (row32[static_cast<size_t>(cells[row]) * channels + channel] != expected ||
++                    transposed32_values[cells[row] + static_cast<size_t>(channel) * capacity] != expected) {
++                return finish(16);
++            }
++        }
++    }
+     std::vector<uint8_t> multi_bytes(ggml_nbytes(multi_tile));
+     ggml_backend_tensor_get(multi_tile, multi_bytes.data(), 0, multi_bytes.size());
+     const uint8_t * expected_tiles[] = { expected16, expected32 };

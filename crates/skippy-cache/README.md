@@ -39,6 +39,12 @@ reconstruct, or hash the attention payload on each cache record. Configured
 persistent L3 receives cold eviction offloads and can fill resident misses
 after a restart; payload integrity verification stays at that storage boundary.
 
+F32 CacheGen uses a 16-bit anchor and delta adaptation for the serving archive.
+The `cachegen::paper` module separately implements 8-bit anchors, layer-dependent
+original-anchor deltas, and profiled arithmetic streams as a CPU oracle. Its
+byte-level fixtures come from the Jianyang Python reference. Only the anchor
+and delta adaptation has a direct GPU importer.
+
 Activation frames are cached separately so a split stage can reuse the boundary
 activation associated with its exact prefix. Cache data structures remain
 backend neutral; native memory ownership and import/export belong to runtime
