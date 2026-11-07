@@ -76,6 +76,11 @@ public:
     [[nodiscard]] std::expected<std::uint32_t, StagedFailure>
     embed(std::span<const llama_token> tokens, std::span<float> output);
 
+    /// Clears recorded tokens and KV state so the session can be re-fed from
+    /// position zero. Reads advance positions like any iteration, so callers
+    /// that re-read a fixed window need this between reads.
+    [[nodiscard]] std::expected<void, StagedFailure> reset();
+
     [[nodiscard]] skippy_session* native() const noexcept { return session_; }
 
 private:
@@ -85,8 +90,11 @@ private:
     skippy_session* session_ = nullptr;
 };
 
-/// Converts a planned loader config into an owning spec.
-[[nodiscard]] StageSpec own(const StageLoadConfig& config);
+/// Converts a planned loader config into an owning spec. The verify-rollback
+/// policy is a required caller input: it is a parameter so that omitting it
+/// at a spec birth site (tools, benchmarks, bridge lanes) is a compile error,
+/// not an open-time refusal.
+[[nodiscard]] StageSpec own(const StageLoadConfig& config, VerifyRollback verify_rollback);
 
 } // namespace skippy::llama
 
