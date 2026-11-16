@@ -131,6 +131,10 @@ reach the server.
 compatible target and native runtime. Use `draft_model_path` and
 `dflash_max_tokens` to select and tune an explicit DFlash drafter.
 
+On macOS 15 or newer, use `--draft-device ANE` with a compatible DFlash pair
+and a single-stage local target GGUF. Model loading fails if conversion or
+Apple Neural Engine placement fails.
+
 For unsplit local serving with automatic speculation, Skippy checks the model's
 package policy and its release-pinned draft catalog against the target metadata
 and the selected backend. It reuses a compatible cached draft or fetches and

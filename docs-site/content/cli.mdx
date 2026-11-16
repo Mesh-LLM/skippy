@@ -77,6 +77,7 @@ run its full path, such as `skippy models download --help`.
 | --- | --- |
 | `skippy serve --model MODEL` | Serve a catalog ID, Hugging Face GGUF or layer-package reference, or local GGUF path. |
 | `skippy serve --model-path PATH` | Open a local GGUF file. For a multipart model, pass the first shard. |
+| `skippy serve --model-path TARGET --draft-model-path DRAFT --speculative-strategy dflash --draft-device ANE` | Convert a compatible single-stage DFlash pair at load time and require Apple Neural Engine placement on macOS 15 or newer. |
 | `skippy serve --config FILE` | Serve a prepared JSON stage configuration. For a pipeline, add `--stage-transport binary`, and add `--worker-only` on downstream stages. |
 | `--settings FILE` | Load TOML for one model or a list of models. Each `[[models]]` entry can use a `model` reference or an explicit `model_path`. |
 | `--print-effective-config` | Report resolved settings and where they came from, then exit. |

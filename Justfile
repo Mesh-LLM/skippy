@@ -60,6 +60,12 @@ skippy-cli-build:
 skippy-cli-release-build:
     @cargo build --release --locked -p skippy-cli --features dynamic-native-runtime
 
+[positional-arguments]
+dflash-ane-convert draft target out embeddings *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    exec cargo run --locked -p skippy-ane --bin skippy-ane-convert -- --draft "$1" --target "$2" --out "$3" --embeddings-out "$4" "${@:5}"
+
 [unix]
 release-runtime-build backend="" target="":
     #!/usr/bin/env bash
