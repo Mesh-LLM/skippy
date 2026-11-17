@@ -64,7 +64,7 @@ jobs:
     needs: preflight
     runs-on:
       group: jy-rnr_vfnz8k5p4yrh334
-      labels: [self-hosted, jy-linux-docker, Linux, X64]
+      labels: [self-hosted, jy-linux-docker, Linux]
     env:
       SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
     timeout-minutes: 180

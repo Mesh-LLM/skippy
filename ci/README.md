@@ -9,7 +9,7 @@ The only source override is the immutable bundle produced by the protected-main
 llama upgrade workflow.
 
 The hosted preflight projects `targets.json` with `jq`; it does not compile the
-Rust automation binary. A single Linux x86_64 CPU quality gate owns Rust lint and
+Rust automation binary. A single Linux CPU quality gate owns Rust lint and
 tests, the core/API CTest suite, binding and documentation drift, generated-patch
 replay, and the native graph contracts. Runtime matrix jobs explicitly disable
 those graph suites. They compile one release runtime, compose it with its exact
@@ -60,7 +60,7 @@ machines are insufficient. The large family battery additionally requests
 model and concurrent baseline contexts, not merely the GGUF file size.
 
 Quality and upstream candidate generation are the toolchain-specific exceptions
-to ordinary hosted CPU work. They request an ephemeral Linux x86_64
+to ordinary hosted CPU work. They request any available ephemeral Linux
 builder from the repository-scoped `jy-rnr_vfnz8k5p4yrh334` runner group with
 the container-only `jy-linux-docker` label and the `MeshLLM (latest) · CPU`
 environment,
