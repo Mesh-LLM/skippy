@@ -89,7 +89,12 @@ pub fn runtime(id: &str) -> DynResult<()> {
 }
 
 fn runtime_environment(row: &Runtime) -> Vec<(&'static str, String)> {
-    let mut environment = vec![("LLAMA_STAGE_BACKEND", row.backend.clone())];
+    let mut environment = vec![
+        ("LLAMA_STAGE_BACKEND", row.backend.clone()),
+        ("LLAMA_STAGE_BUILD_TESTS", "OFF".into()),
+        ("LLAMA_STAGE_FULL_REPLAY", "OFF".into()),
+        ("LLAMA_STAGE_UPSTREAM_TESTS", "OFF".into()),
+    ];
     if !row.toolkit.is_empty() {
         environment.push(("SKIPPY_CUDA_VERSION", row.toolkit.clone()));
         environment.push((

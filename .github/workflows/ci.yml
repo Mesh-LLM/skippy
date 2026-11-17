@@ -27,9 +27,9 @@ env:
   CARGO_PROFILE_BENCH_DEBUG: '0'
   SKIPPY_ARTIFACT_SCOPE: ${{ inputs.artifact_scope || 'ci' }}
 jobs:
-  plan:
+  preflight:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 5
     outputs:
       hosts: ${{ steps.plan.outputs.hosts }}
       runtimes: ${{ steps.plan.outputs.runtimes }}
@@ -45,11 +45,13 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup
       - id: plan
-        run: just ci-plan
+        name: Validate and project the release matrix
+        run: scripts/ci-plan.sh
+
   quality:
-    needs: plan
+    name: Linux CPU quality gate
+    needs: preflight
     runs-on:
       group: jy-rnr_vfnz8k5p4yrh334
       labels: [self-hosted, jy-linux-docker, Linux, X64]
@@ -66,12 +68,16 @@ jobs:
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
-      - run: just ci-contracts
-      - run: just lint
-      - run: just test
-      - run: just llama-check
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        if: always()
+      - name: Lint both Rust workspaces
+        run: just lint
+      - name: Validate standalone repository contracts
+        run: just ci-contracts
+      - name: Run Rust and core API tests once
+        run: just test
+      - name: Build Linux CPU llama and run graph contracts once
+        run: just llama-check
+      - uses: actions/upload-artifact@b7c566a772e6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: failure()
         with:
           name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-quality-evidence
           path: |
@@ -85,11 +91,12 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
+
   host:
-    needs: [plan, quality]
+    needs: [preflight, quality]
     strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.hosts) }}
+      fail-fast: true
+      matrix: ${{ fromJSON(needs.preflight.outputs.hosts) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
     steps:
@@ -107,61 +114,20 @@ jobs:
         env:
           HOST_ID: ${{ matrix.id }}
         run: just ci-host "$HOST_ID"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@b7c566a772e6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-host-${{ matrix.id }}
           path: dist/hosts/${{ matrix.id }}
           if-no-files-found: error
           retention-days: 7
+
   runtime:
-    needs: [plan, quality]
+    needs: [preflight, quality, host]
     strategy:
-      fail-fast: false
-      max-parallel: 4
-      matrix: ${{ fromJSON(needs.plan.outputs.runtimes) }}
+      fail-fast: true
+      matrix: ${{ fromJSON(needs.preflight.outputs.runtimes) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 240
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-        if: runner.environment == 'github-hosted'
-      - uses: ./.github/actions/source
-        with:
-          artifact: ${{ inputs.candidate_artifact }}
-          sha: ${{ inputs.candidate_sha }}
-      - name: Build native runtime
-        shell: bash
-        env:
-          RUNTIME_ID: ${{ matrix.id }}
-        run: just ci-runtime "$RUNTIME_ID"
-      - name: Retain native failure diagnostics
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        if: failure()
-        with:
-          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-runtime-${{ matrix.id }}-diagnostics
-          path: |
-            .deps/llama-build/**/CMakeCache.txt
-            .deps/llama-build/**/CMakeFiles/CMakeConfigureLog.yaml
-            .deps/llama-build/**/Testing/**
-          include-hidden-files: true
-          if-no-files-found: ignore
-          retention-days: 14
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-runtime-${{ matrix.id }}
-          path: dist/runtimes/${{ matrix.id }}
-          if-no-files-found: error
-          retention-days: 7
-  product:
-    needs: [plan, host, runtime]
-    strategy:
-      fail-fast: false
-      max-parallel: 4
-      matrix: ${{ fromJSON(needs.plan.outputs.runtimes) }}
-    runs-on: ${{ matrix.host_runner }}
-    timeout-minutes: 30
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -176,43 +142,16 @@ jobs:
         with:
           name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-host-${{ matrix.host }}
           path: inputs/host
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-runtime-${{ matrix.id }}
-          path: inputs/runtime
-      - name: Compose exact producers and verify startup on a hosted machine
+      - name: Build native runtime without graph suites
         shell: bash
         env:
           RUNTIME_ID: ${{ matrix.id }}
-        run: just ci-package "$RUNTIME_ID" inputs/host inputs/runtime
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-package-${{ matrix.id }}
-          path: dist/products/${{ matrix.id }}
-          if-no-files-found: error
-          retention-days: 7
-  smoke:
-    needs: [plan, product]
-    strategy:
-      fail-fast: false
-      max-parallel: 4
-      matrix: ${{ fromJSON(needs.plan.outputs.runtimes) }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-        if: runner.environment == 'github-hosted'
-      - uses: ./.github/actions/source
-        with:
-          artifact: ${{ inputs.candidate_artifact }}
-          sha: ${{ inputs.candidate_sha }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-package-${{ matrix.id }}
-          path: dist/products/${{ matrix.id }}
+        run: just ci-runtime "$RUNTIME_ID"
+      - name: Compose exact host and runtime producers
+        shell: bash
+        env:
+          RUNTIME_ID: ${{ matrix.id }}
+        run: just ci-package "$RUNTIME_ID" inputs/host "dist/runtimes/$RUNTIME_ID"
       - name: Admit pinned Qwen3 fixture
         run: just automation-run ci model-fetch
         shell: bash
@@ -221,24 +160,40 @@ jobs:
         env:
           RUNTIME_ID: ${{ matrix.id }}
         run: just ci-smoke "$RUNTIME_ID" "dist/products/$RUNTIME_ID"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        if: always()
+      - name: Retain bounded failure diagnostics
+        uses: actions/upload-artifact@b7c566a772e6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: failure()
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-runtime-${{ matrix.id }}-diagnostics
+          path: |
+            .deps/llama-build/**/CMakeCache.txt
+            .deps/llama-build/**/CMakeFiles/CMakeConfigureLog.yaml
+            .deps/llama-build/**/Testing/**
+            dist/products/${{ matrix.id }}/evidence/**
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14
+      - uses: actions/upload-artifact@b7c566a772e6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: success()
         with:
           name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-product-${{ matrix.id }}
           path: dist/products/${{ matrix.id }}
           if-no-files-found: error
           retention-days: 7
+
   summary:
     name: CI
-    needs: [plan, quality, host, runtime, product, smoke]
+    needs: [preflight, quality, host, runtime]
     if: always()
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-      - run: just ci-summary
+      - name: Require every CI phase
+        shell: bash
         env:
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -e '
+            length == 4
+            and all(.preflight, .quality, .host, .runtime; .result == "success")
+          ' <<< "$SKIPPY_CI_NEEDS" >/dev/null

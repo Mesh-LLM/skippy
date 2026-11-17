@@ -5,6 +5,13 @@ reusable invocation. `CI` is the required summary. There is no path planner or
 lighter PR profile. The only source override is the immutable bundle produced by
 the protected-main llama upgrade workflow.
 
+The hosted preflight projects `targets.json` with `jq`; it does not compile the
+Rust automation binary. A single Linux x86_64 CPU quality gate owns Rust lint and
+tests, the core/API CTest suite, binding and documentation drift, generated-patch
+replay, and the native graph contracts. Runtime matrix jobs explicitly disable
+those graph suites. They compile one release runtime, compose it with its exact
+host producer, and run packaged inference on the required device.
+
 Ad hoc CI is a full run, not a reduced diagnostic profile. Launch it from the
 Actions UI or with `gh workflow run ci.yml --ref main`. The workflow rejects a
 manual source other than protected `main` before it requests any self-hosted
@@ -72,18 +79,20 @@ row fails rather than passing as a skip.
 
 ## Artifact flow
 
-1. `ci host` builds each CLI once, verifies its imports, records its source and
+1. Preflight validates and projects the four hosts and eleven runtimes without
+   compiling repository automation.
+2. The Linux CPU quality gate runs common semantic coverage once. Core/API tests
+   configure with `SKIPPY_BUILD_LLAMA=OFF`; graph-shape contracts run only on the
+   canonical patched Linux CPU tree.
+3. `ci host` builds each CLI once, verifies its imports, records its source and
    checksums, and archives executable permissions.
-2. `ci runtime` builds the selected native variant and verifies its manifest and
-   dependency closure. The artifact is bound to the source, target and variant.
-3. `ci package` verifies and composes those producer archives without compiling,
-   then runs the bundled CLI on the target's hosted CPU machine. CUDA bundle
-   startup is therefore checked without depending on a hardware runner's driver.
-4. `ci smoke` receives that exact archive, admits the pinned model and runs the
-   packaged server on its required CPU/Metal/CUDA device.
-5. `ci summary` accepts only successful plan, quality, host, runtime and product
-   and smoke jobs. Failed, cancelled, absent and skipped required jobs all fail
-   the summary.
+4. Each runtime lane builds the selected native variant with graph tests disabled,
+   verifies its manifest and dependency closure, downloads the matching host,
+   composes the exact product, and runs Qwen3 on the required CPU/Metal/CUDA
+   device. Compilation never substitutes for inference evidence.
+5. The stable `CI` summary accepts only successful preflight, quality, host and
+   complete runtime-lane results. Failed, cancelled, absent and skipped required
+   phases all fail the summary.
 
 Native runtime manifests retain the upstream pin, patch digest, ABI and backend
 metadata. Product provenance hashes the complete file roster. Actions artifacts
