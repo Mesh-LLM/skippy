@@ -33,6 +33,8 @@ jobs:
     outputs:
       hosts: ${{ steps.plan.outputs.hosts }}
       runtimes: ${{ steps.plan.outputs.runtimes }}
+      graph_required: ${{ steps.graph.outputs.graph_required }}
+      graph_reason: ${{ steps.graph.outputs.graph_reason }}
     steps:
       - name: Admit manual source
         if: github.event_name == 'workflow_dispatch'
@@ -44,10 +46,18 @@ jobs:
           fi
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          fetch-depth: 0
           persist-credentials: false
       - id: plan
         name: Validate and project the release matrix
         run: scripts/ci-plan.sh
+      - id: graph
+        name: Classify native graph impact
+        env:
+          SKIPPY_CI_EVENT: ${{ github.event_name }}
+          SKIPPY_CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SKIPPY_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/ci-graph-impact.sh
 
   quality:
     name: Linux CPU quality gate
@@ -75,6 +85,7 @@ jobs:
       - name: Run Rust and core API tests once
         run: just test
       - name: Build Linux CPU llama and run graph contracts once
+        if: needs.preflight.outputs.graph_required == 'true'
         run: just llama-check
       - uses: actions/upload-artifact@b7c566a772e6bfb58ed0dc250532a479d7789f # v6.0.0
         if: failure()

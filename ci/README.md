@@ -1,9 +1,12 @@
 # Skippy continuous integration
 
-`ci.yml` runs the same commands for every pull request, main push, manual run and
-reusable invocation. `CI` is the required summary. There is no path planner or
-lighter PR profile. The only source override is the immutable bundle produced by
-the protected-main llama upgrade workflow.
+`ci.yml` is the single implementation for every pull request, main push, manual
+run and reusable invocation. `CI` is the required summary. Pull requests may skip
+only the native graph-contract step when every changed path is classified as
+independent of graph construction. Unclassified paths fail closed to running the
+step. Main, tags, manual runs and reusable release/upgrade calls always run it.
+The only source override is the immutable bundle produced by the protected-main
+llama upgrade workflow.
 
 The hosted preflight projects `targets.json` with `jq`; it does not compile the
 Rust automation binary. A single Linux x86_64 CPU quality gate owns Rust lint and
@@ -11,6 +14,11 @@ tests, the core/API CTest suite, binding and documentation drift, generated-patc
 replay, and the native graph contracts. Runtime matrix jobs explicitly disable
 those graph suites. They compile one release runtime, compose it with its exact
 host producer, and run packaged inference on the required device.
+
+Graph-sensitive pull-request inputs include the llama pin and patch queues,
+native C++ facade and FFI, family manifests, native build scripts, rewriter and
+generator code, and workflows or Just recipes that own the gate. A missing base
+or head commit, an invalid diff, or an unknown path runs the graph contracts.
 
 Ad hoc CI is a full run, not a reduced diagnostic profile. Launch it from the
 Actions UI or with `gh workflow run ci.yml --ref main`. The workflow rejects a
