@@ -62,9 +62,7 @@ jobs:
   quality:
     name: Linux CPU quality gate
     needs: preflight
-    runs-on:
-      group: jy-rnr_vfnz8k5p4yrh334
-      labels: [self-hosted, jy-linux-docker, Linux]
+    runs-on: [self-hosted, jy-linux-docker, Linux]
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: '4'
       # Three large graph contracts can exceed the JY container's 6 GiB limit.

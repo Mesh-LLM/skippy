@@ -61,10 +61,11 @@ model and concurrent baseline contexts, not merely the GGUF file size.
 
 Quality and upstream candidate generation are the toolchain-specific exceptions
 to ordinary hosted CPU work. They request any available ephemeral Linux
-builder from the repository-scoped `jy-rnr_vfnz8k5p4yrh334` runner group with
-the container-only `jy-linux-docker` label and the `MeshLLM (latest) · CPU`
-environment,
-LLVM/Clang 22 development and CMake packages, Ninja and lld, with
+builder carrying the container-only `jy-linux-docker` label and the
+`MeshLLM (latest) · CPU` environment. Pilot registers those builders in
+repository-scoped runner groups; the workflow intentionally does not pin a
+specific group so compatible Linux capacity can claim queued work.
+The image provides LLVM/Clang 22 development and CMake packages, Ninja and lld, with
 `SKIPPY_REWRITER_LLVM_PREFIX` configured. The container-only label prevents a
 native Linux host runner in the same repository-scoped group from satisfying an
 image-dependent job. Mold remains an optional linker acceleration when the
