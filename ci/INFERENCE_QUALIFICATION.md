@@ -102,8 +102,13 @@ for the largest model), then requires positive GPU offload evidence and scores t
 repeats through the serving endpoint. These are a small regression set, not a
 comprehensive capability benchmark or an independent numerical implementation.
 
-Performance uses AIPerf 0.13.0 on Python 3.12, the date-named 2026-06-21 256k trace variant,
-seed 42 and concurrency one. PR uses an explicitly unsafe 120-second,
+Performance uses AIPerf 0.13.0 on Python 3.12, seed 42, concurrency one and the
+2026-06-21 256k trace variant admitted in `inference-corpus.json`. The upstream loader resolves
+main; qualification checks it against the pin before and after replay and retains
+both responses, failing if upstream moves. This guards the upstream resolution;
+it does not modify the official harness. Tokenizer assets use explicit per-model
+file lists, including vocabulary and merges, without CLI wildcard filtering.
+PR uses an explicitly unsafe 120-second,
 four-trajectory smoke with no official-score claim. Nightly uses two 900-second
 measurements; release uses two 1800-second measurements. Context is 65536 for all profiles. Extended runs require valid AIPerf exports.
 These capacity-limited runs are not full-native-context leaderboard submissions.

@@ -47,6 +47,7 @@ pub fn record(output: &Path, sha: &str) -> DynResult<()> {
             "correctness_sha256":artifact::sha256(Path::new("target/debug/skippy-correctness"))?,
             "model_manifest_sha256":artifact::sha256(Path::new("ci/inference-artifacts.json"))?,
             "client_lock_sha256":artifact::sha256(Path::new("ci/aiperf-requirements.lock"))?,
+            "corpus_manifest_sha256":artifact::sha256(Path::new("ci/inference-corpus.json"))?,
             "harness":"aiperf-0.13.0-python-3.12",
             "cuda_compiler":execution::capture(compiler,&["--version".into()],&[])?
         }),

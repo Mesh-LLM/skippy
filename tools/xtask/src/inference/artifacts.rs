@@ -8,6 +8,7 @@ pub struct Fixture {
     pub files: Vec<File>,
     pub tokenizer_repo: String,
     pub tokenizer_revision: String,
+    pub tokenizer_files: Vec<String>,
     pub layers: u32,
     pub activation_width: u32,
 }
@@ -57,7 +58,9 @@ pub fn admit(key: &str) -> DynResult<PathBuf> {
                 // Stream cold-download progress into durable JY logs. The second
                 // invocation resolves the now-cached path without redownloading.
                 execution::run("hf", &args, &[], 7200)?;
-                downloaded_path(&execution::capture_for("hf", &args, &[], 180)?)?
+                let mut resolve = args.to_vec();
+                resolve.push("--quiet".into());
+                downloaded_path(&execution::capture_for("hf", &resolve, &[], 180)?)?
             }
         };
         let metadata = fs::metadata(&path)
@@ -91,7 +94,11 @@ fn stage(source: &Path, destination: &Path) -> DynResult<()> {
 pub fn downloaded_path(text: &str) -> DynResult<PathBuf> {
     for line in text.lines().rev() {
         let line = line.trim();
-        let candidate = line.strip_prefix("path:").map(str::trim).unwrap_or(line);
+        let candidate = line
+            .strip_prefix("path:")
+            .or_else(|| line.strip_prefix("path="))
+            .map(str::trim)
+            .unwrap_or(line);
         if candidate.starts_with('/') && !candidate.contains('\u{1b}') {
             return Ok(PathBuf::from(candidate));
         }
@@ -127,6 +134,10 @@ mod tests {
         );
         assert!(downloaded_path("Downloaded successfully").is_err());
         assert!(downloaded_path("path: relative.gguf").is_err());
+        assert_eq!(
+            downloaded_path("path=/models/a.gguf\n").unwrap(),
+            PathBuf::from("/models/a.gguf")
+        );
     }
     #[test]
     fn all_ladder_models_have_pinned_base_weights() {
@@ -136,6 +147,12 @@ mod tests {
             let fixture = load(&model.id).unwrap();
             assert_eq!(fixture.revision.len(), 40);
             assert!(!fixture.files.is_empty());
+            assert!(
+                fixture
+                    .tokenizer_files
+                    .iter()
+                    .any(|file| file == "tokenizer.json")
+            );
             for f in fixture.files {
                 assert_eq!(f.sha256.len(), 64);
                 assert!(f.size > 0);

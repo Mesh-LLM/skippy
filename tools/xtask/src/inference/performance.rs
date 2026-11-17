@@ -7,21 +7,23 @@ pub fn run(
     out: &Path,
     fixture: &super::artifacts::Fixture,
 ) -> DynResult<()> {
-    let tokenizer = execution::capture_for(
-        "hf",
-        &[
-            "download".into(),
-            fixture.tokenizer_repo.clone(),
-            "--revision".into(),
-            fixture.tokenizer_revision.clone(),
-            "--include".into(),
-            "*token*".into(),
-            "*config.json".into(),
-            "*.jinja".into(),
-        ],
-        &[],
-        600,
-    )?;
+    let mut tokenizer_args = vec![
+        "download".into(),
+        fixture.tokenizer_repo.clone(),
+        "--revision".into(),
+        fixture.tokenizer_revision.clone(),
+        "--quiet".into(),
+    ];
+    tokenizer_args.extend(fixture.tokenizer_files.iter().cloned());
+    let tokenizer = execution::capture_for("hf", &tokenizer_args, &[], 600)?;
+    let tokenizer = super::artifacts::downloaded_path(&tokenizer)?;
+    for file in &fixture.tokenizer_files {
+        if std::fs::metadata(tokenizer.join(file))?.len() == 0 {
+            return Err("empty pinned tokenizer asset".into());
+        }
+    }
+    let corpus = super::corpus::load()?;
+    super::corpus::verify(out, "before")?;
     let mut aiperf = vec![
         "tool".into(),
         "run".into(),
@@ -42,15 +44,13 @@ pub fn run(
         "--model".into(),
         key.into(),
         "--tokenizer".into(),
-        super::artifacts::downloaded_path(&tokenizer)?
-            .display()
-            .to_string(),
+        tokenizer.display().to_string(),
         "--max-context-length".into(),
         context.to_string(),
         "--endpoint-type".into(),
         "chat".into(),
         "--public-dataset".into(),
-        "semianalysis_cc_traces_weka_062126_256k".into(),
+        corpus.alias,
         "--concurrency".into(),
         "1".into(),
         "--use-server-token-count".into(),
@@ -82,11 +82,13 @@ pub fn run(
         ]);
     }
     let result = execution::run("uv", &aiperf, &[], 15000);
+    let corpus = super::corpus::verify(out, "after");
     let retained = super::retention::archive(&out.join("agentx"), out);
     if let Err(error) = &retained {
         eprintln!("AgentX evidence retention failed: {error}");
     }
     result?;
+    corpus?;
     retained?;
     if validate_exports(&out.join("agentx"), profile != "pr")? == 0 {
         return Err("AgentX produced no result exports".into());

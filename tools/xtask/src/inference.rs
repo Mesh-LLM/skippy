@@ -1,6 +1,7 @@
 //! Source-bound qualification planning. A plan is never hardware evidence.
 mod admission;
 mod artifacts;
+mod corpus;
 mod dispatch;
 mod execute;
 mod gpu;
