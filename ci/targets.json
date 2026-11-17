@@ -66,7 +66,8 @@
         "macOS",
         "ARM64",
         "metal"
-      ]
+      ],
+      "runner_group": "jy-rnr_h7x5s2yx9gtkz3c"
     },
     {
       "id": "linux-x86_64-cpu",
@@ -90,7 +91,8 @@
         "Linux",
         "X64",
         "cuda12"
-      ]
+      ],
+      "runner_group": "jy-rnr_btc4xhvks1eer0j"
     },
     {
       "id": "linux-x86_64-cuda13",
@@ -104,7 +106,8 @@
         "Linux",
         "X64",
         "cuda13"
-      ]
+      ],
+      "runner_group": "jy-rnr_p0zx3thw895vrka"
     },
     {
       "id": "linux-aarch64-cpu",
@@ -128,7 +131,8 @@
         "Linux",
         "ARM64",
         "cuda12"
-      ]
+      ],
+      "runner_group": "jy-rnr_pg90ves41xbxvwy"
     },
     {
       "id": "linux-aarch64-cuda13",
@@ -142,7 +146,8 @@
         "Linux",
         "ARM64",
         "cuda13"
-      ]
+      ],
+      "runner_group": "jy-rnr_8gvzbe9b9d79y0k"
     },
     {
       "id": "windows-x86_64-cpu",

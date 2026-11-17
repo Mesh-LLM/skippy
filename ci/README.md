@@ -11,11 +11,14 @@ runtimes. Windows qualification and publication are temporarily deferred at the
 maintainer's request. Re-enable its retained definitions by adding
 `windows-x86_64` to `enabled_hosts`. CPU work uses GitHub-hosted
 `ubuntu-24.04`, `ubuntu-24.04-arm` and `macos-15`. Metal and CUDA rows require the explicit ephemeral
-hardware labels in that manifest. Compilation never counts as device evidence.
+hardware labels and JY runner group in that manifest. JY uses the requested group
+to attribute queued Actions jobs and place capacity; labels alone are insufficient.
+Compilation never counts as device evidence.
 
 ## Build prerequisites
 
-The hosted setup action installs only full-SHA-pinned Just 1.58.0. Rust follows
+The hosted setup action installs full-SHA-pinned Just 1.58.0 and restores Cargo
+dependencies and build outputs. Rust follows
 `rust-toolchain.toml`. Build agents must already provide Git, CMake, Ninja, a
 native C/C++ toolchain, curl, and the platform linker selected by `scripts/`.
 Linux runtime packaging also needs patchelf. Native binding/generator checks

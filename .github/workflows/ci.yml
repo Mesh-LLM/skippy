@@ -58,7 +58,9 @@ jobs:
     env:
       SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
       LIBCLANG_PATH: /usr/lib/llvm-22/lib
-    runs-on: [self-hosted, skippy-ephemeral, Linux, native-contracts]
+    runs-on:
+      group: jy-rnr_vfnz8k5p4yrh334
+      labels: [self-hosted, skippy-ephemeral, Linux, native-contracts]
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0

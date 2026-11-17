@@ -38,6 +38,9 @@ fn project_matrix(matrix: &matrix::Matrix) -> DynResult<(serde_json::Value, serd
     let mut runtime_rows = Vec::new();
     for runtime in &matrix.runtimes {
         let mut value = serde_json::to_value(runtime)?;
+        if let Some(group) = &runtime.runner_group {
+            value["runner"] = serde_json::json!({"group":group,"labels":runtime.runner});
+        }
         value["host_runner"] = serde_json::to_value(&matrix.host(&runtime.host)?.runner)?;
         runtime_rows.push(value);
     }
@@ -98,6 +101,12 @@ mod tests {
             );
             if row["backend"] != "cpu" {
                 assert_ne!(row["host_runner"], row["runner"]);
+                let runtime = matrix.runtime(row["id"].as_str().unwrap()).unwrap();
+                assert_eq!(
+                    row["runner"]["group"],
+                    runtime.runner_group.as_ref().unwrap().as_str()
+                );
+                assert_eq!(row["runner"]["labels"], serde_json::json!(runtime.runner));
             }
         }
     }

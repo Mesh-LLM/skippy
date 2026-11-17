@@ -20,6 +20,8 @@ pub struct Runtime {
     pub toolkit: String,
     pub gpu_architectures: String,
     pub runner: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runner_group: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -114,6 +116,17 @@ impl Matrix {
                 return Err(
                     "runtime runner labels do not match its exact OS/architecture/backend".into(),
                 );
+            }
+            if let Some(group) = &runtime.runner_group
+                && (runtime.runner.first().map(String::as_str) != Some("self-hosted")
+                    || !group.strip_prefix("jy-rnr_").is_some_and(|id| {
+                        !id.is_empty()
+                            && id
+                                .chars()
+                                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+                    }))
+            {
+                return Err("runner groups require self-hosted JY runner labels".into());
             }
             if !variants.insert((runtime.host.as_str(), variant)) {
                 return Err("duplicate runtime variant".into());
