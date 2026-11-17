@@ -13,7 +13,9 @@ preserving the extraction's newer upstream changes and standalone ownership.
 The port includes shared speculative forwards, concurrent sampling, resident
 prefix handling, KV allocation and row attention improvements, gated activation
 fusion, routed vector reuse, decode convolution changes, and tracing. The affine
-conversion preserves existing quantized values; model tuning is outside scope.
+conversion preserves integer codes and rounds affine coefficients to f16; that
+conversion utility is not used in these unchanged-GGUF serving measurements.
+Model tuning is outside scope.
 
 Compatibility resolutions retain upstream per-layer KV strides, the standalone
 context-capacity implementation, prompt shape statistics, and current sampling
