@@ -651,6 +651,52 @@
         "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub",
         "HF_HUB_DISABLE_XET": "1"
       }
+    },
+    {
+      "key": "inference-storage-inspect",
+      "name": "Inspect native workspace storage",
+      "target": {
+        "executor": "lab",
+        "selector": {
+          "os": {
+            "family": "linux"
+          },
+          "arch": {
+            "in": [
+              "aarch64"
+            ]
+          },
+          "accelerator": {
+            "backend": "cuda",
+            "model": {
+              "in": [
+                "NVIDIA GB10"
+              ]
+            }
+          },
+          "memory": {
+            "system_gib": {
+              "min": 120
+            }
+          },
+          "network": {
+            "in": [
+              "james-lab",
+              "dan-lab"
+            ]
+          }
+        }
+      },
+      "build": "",
+      "command": "set -eu\nfindmnt -no TARGET,SOURCE,FSTYPE -T \"$HOME\"\nfindmnt -no TARGET,SOURCE,FSTYPE -T \"$JIANYANG_REPO_DIR\"\nfindmnt -no TARGET,SOURCE,FSTYPE -T /tmp\nfindmnt -no TARGET,SOURCE,FSTYPE -T /mnt/model-store/huggingface\ndf -h \"$HOME\" /tmp /mnt/model-store/huggingface\n",
+      "budget": {
+        "max_usd": 0,
+        "max_duration_s": 120
+      },
+      "env": {
+        "HF_HOME": "/mnt/model-store/huggingface",
+        "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
+      }
     }
   ]
 }
