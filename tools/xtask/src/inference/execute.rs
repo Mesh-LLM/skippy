@@ -141,10 +141,11 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
     let fixture = super::artifacts::load(key)?;
     super::numerical::capacity(fixture.files.iter().map(|f| f.size).sum())?;
     let model = super::artifacts::admit(key)?;
+    let coordinate = format!("{}@{}", fixture.repo, fixture.revision);
     let context = if profile == "pr" { 32768 } else { 65536 };
     let worker = std::env::var("JIANYANG_ROLE").as_deref() == Ok("worker");
     if !worker {
-        super::numerical::run(&model, key, fixture.layers, &out)?;
+        super::numerical::run(&model, &coordinate, fixture.layers, &out)?;
     }
     let mut args = vec![
         "serve".into(),
@@ -184,7 +185,7 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
                 "--model-path".into(),
                 model.display().to_string(),
                 "--model-id".into(),
-                key.into(),
+                coordinate.clone(),
                 "--worker".into(),
                 format!("{leader}:9400"),
                 "--worker".into(),
@@ -223,7 +224,7 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
             "--model-path".into(),
             model.display().to_string(),
             "--model-id".into(),
-            key.into(),
+            coordinate.clone(),
         ]);
     }
     let mut server = spawn(&args, &out.join("server.log"))?;
@@ -241,8 +242,12 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
         return Err("split leader completion timed out".into());
     }
     ready(&mut server, "http://127.0.0.1:9337/v1/models")?;
-    score("http://127.0.0.1:9337", key, &out.join("quality.json"))?;
-    super::performance::run(profile, key, context, &out, &fixture)?;
+    score(
+        "http://127.0.0.1:9337",
+        &coordinate,
+        &out.join("quality.json"),
+    )?;
+    super::performance::run(profile, &coordinate, context, &out, &fixture)?;
     write_json_file(
         &out.join("qualification.json"),
         &json!({"source_sha":sha,"model":key,"mode":mode,"profile":profile,"status":"passed","performance_claim":plan.performance_claim,"gpu":gpu,"artifact_manifest_sha256":crate::artifact::sha256(Path::new("ci/inference-artifacts.json"))?,"layers":fixture.layers,"correctness_scope":"native chain parity, state handoff, deterministic endpoint repeat; not an independent implementation reference"}),

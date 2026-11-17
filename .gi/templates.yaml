@@ -297,14 +297,14 @@
           "name": "leader",
           "count": 1,
           "nodes": [
-            "spark-001095"
+            "spark-000137"
           ]
         },
         {
           "name": "worker",
           "count": 1,
           "nodes": [
-            "spark-001272"
+            "spark-000265"
           ]
         }
       ],
@@ -312,6 +312,47 @@
         "mode": "peers",
         "leader_role": "leader",
         "leader_port": 9400
+      }
+    },
+    {
+      "key": "inference-host-preflight",
+      "name": "Inference host prerequisites",
+      "target": {
+        "executor": "lab",
+        "selector": {
+          "os": {
+            "family": "linux"
+          },
+          "arch": {
+            "in": [
+              "aarch64"
+            ]
+          },
+          "accelerator": {
+            "backend": "cuda",
+            "model": {
+              "in": [
+                "NVIDIA GB10"
+              ]
+            }
+          },
+          "memory": {
+            "system_gib": {
+              "min": 120
+            }
+          },
+          "network": {
+            "in": [
+              "james-lab"
+            ]
+          }
+        }
+      },
+      "build": "",
+      "command": "set -eu\nid\ncommand -v hf uv nvidia-smi\nhf --help\nuv --version\nnvidia-smi --query-gpu=name --format=csv,noheader",
+      "budget": {
+        "max_usd": 0,
+        "max_duration_s": 120
       }
     }
   ]

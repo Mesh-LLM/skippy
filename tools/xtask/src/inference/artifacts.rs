@@ -43,7 +43,9 @@ pub fn admit(key: &str) -> DynResult<PathBuf> {
             7200,
         )?;
         let path = PathBuf::from(text.trim());
-        if fs::metadata(&path)?.len() != file.size || artifact::sha256(&path)? != file.sha256 {
+        let metadata = fs::metadata(&path)
+            .map_err(|error| format!("downloaded model path {}: {error}", path.display()))?;
+        if metadata.len() != file.size || artifact::sha256(&path)? != file.sha256 {
             return Err("model artifact digest mismatch".into());
         }
         paths.push(path);

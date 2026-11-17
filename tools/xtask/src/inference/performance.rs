@@ -46,7 +46,7 @@ pub fn run(
         "--endpoint-type".into(),
         "chat".into(),
         "--public-dataset".into(),
-        "semianalysis_cc_traces_weka_062126_256k".into(),
+        "semianalysis-cc-traces-weka-062126-256-k".into(),
         "--concurrency".into(),
         "1".into(),
         "--use-server-token-count".into(),
@@ -91,6 +91,14 @@ fn validate_exports(directory: &Path, official: bool) -> DynResult<usize> {
             .is_some_and(|name| name == "profile_export_aiperf.json")
         {
             let export: serde_json::Value = serde_json::from_slice(&std::fs::read(path)?)?;
+            if export["request_count"]["avg"]
+                .as_f64()
+                .is_none_or(|n| n <= 0.0)
+                || export["error_request_count"]["avg"].as_f64().unwrap_or(0.0) > 0.0
+                || export["is_complete"] != true
+            {
+                return Err("AgentX produced empty, incomplete or failed request evidence".into());
+            }
             if official && export["metadata"]["submission_valid"] != true {
                 return Err("AgentX rejected extended-run validity".into());
             }
@@ -107,7 +115,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         write_json_file(
             &d.path().join("profile_export_aiperf.json"),
-            &serde_json::json!({"metadata":{"submission_valid":false}}),
+            &serde_json::json!({"metadata":{"submission_valid":false},"is_complete":true,"request_count":{"avg":4}}),
         )
         .unwrap();
         assert!(validate_exports(d.path(), true).is_err());

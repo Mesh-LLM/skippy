@@ -93,7 +93,7 @@ pub fn run(profile: &str, sha: &str, output: &Path) -> DynResult<()> {
                 "POST",
                 &format!("/v1/repos/skippy/templates/inference-{}/launch", row.mode),
                 Some(
-                    &json!({"ref":sha,"inputs":{"profile":profile,"model":row.model.split('/').nth(1),"model_key": row.id.strip_suffix(&format!("-{}", row.mode)).ok_or("invalid row id")?},"idempotency_key":format!("inference-{}-{profile}-{}-{}",std::env::var("GITHUB_RUN_ID").unwrap_or_else(|_|"local".into()),std::env::var("GITHUB_RUN_ATTEMPT").unwrap_or_else(|_|"1".into()),row.id)}),
+                    &json!({"ref":sha,"inputs":{"profile":profile,"model":row.model.split('/').nth(1),"model_key": row.id.strip_suffix(&format!("-{}", row.mode)).ok_or("invalid row id")?},"idempotency_key":format!("inference-{}-{profile}-{}-{}-{sha}",std::env::var("GITHUB_RUN_ID").unwrap_or_else(|_|"local".into()),std::env::var("GITHUB_RUN_ATTEMPT").unwrap_or_else(|_|"1".into()),row.id)}),
                 ),
             )?;
             let id = launch["job_id"]
@@ -108,7 +108,30 @@ pub fn run(profile: &str, sha: &str, output: &Path) -> DynResult<()> {
                 let job = api("GET", &format!("/v1/jobs/{id}"), None)?;
                 write_json_file(&output.join(format!("{}-job.json", row.id)), &job)?;
                 match job["status"].as_str().ok_or("job status missing")? {
-                    "succeeded" => break,
+                    "succeeded" => {
+                        if job["repo_rev"] != sha {
+                            return Err("JY result source SHA mismatch".into());
+                        }
+                        if let Some(formation) = job["formation_id"].as_str() {
+                            let evidence =
+                                api("GET", &format!("/v1/formations/{formation}"), None)?;
+                            write_json_file(
+                                &output.join(format!("{}-formation.json", row.id)),
+                                &evidence,
+                            )?;
+                            match evidence["status"].as_str() {
+                                Some("succeeded") => break,
+                                Some("failed" | "cancelled" | "expired") => {
+                                    return Err("split formation failed".into());
+                                }
+                                _ => {
+                                    thread::sleep(Duration::from_secs(5));
+                                    continue;
+                                }
+                            }
+                        }
+                        break;
+                    }
                     "failed" | "cancelled" | "expired" => {
                         return Err(format!("{} failed: {job}", row.id).into());
                     }

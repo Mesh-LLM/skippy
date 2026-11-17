@@ -79,7 +79,7 @@ or model jobs. The controller records launches and terminal snapshots under
 `target/ci-evidence/inference`; JY retains native logs and artifact directories.
 
 `.gi/templates.yaml` defines standalone native jobs and atomic two-Spark
-formations. Split placement is explicitly pinned to spark-001095 and spark-001272
+formations. Split placement is explicitly pinned to spark-000137 and spark-000265
 because the current formation renderer does not apply job hardware selectors.
 Each native member independently verifies Linux/aarch64 and an actual GB10.
 The process supervisor bounds foreground commands; serving process groups are
@@ -97,7 +97,7 @@ monolithic execution, then scores three exact-output cases and deterministic
 repeats through the serving endpoint. These are a small regression set, not a
 comprehensive capability benchmark or an independent numerical implementation.
 
-Performance uses AIPerf 0.13.0, the date-named 2026-06-21 256k trace variant,
+Performance uses AIPerf 0.13.0 on Python 3.12, the date-named 2026-06-21 256k trace variant,
 seed 42 and concurrency one. PR uses an explicitly unsafe 120-second,
 four-trajectory smoke with no official-score claim. Nightly uses two 900-second
 measurements; release uses two 1800-second measurements. Context is 32768 for PR
