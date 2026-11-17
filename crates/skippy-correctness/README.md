@@ -34,8 +34,7 @@ against recompute.
 repeat and growing-chat reuse. It requires an uncached nonempty seed, actual
 cache hits and byte-identical generated content on both repeats, using
 temperature 0 and seed 42. Its JSON retains generated content separately from
-the cache-token accounting. The manual four-model owner is documented in
-[KV validation](../../evals/kv-validation/README.md).
+the cache-token accounting.
 
 ```bash
 skippy-correctness single-step \
