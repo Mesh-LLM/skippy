@@ -1,13 +1,31 @@
-From 230c95a56b7a31b809fc50065b79d03e806f7fe7 Mon Sep 17 00:00:00 2001
+From 00e703893fb718537f9ee6e06f388b89c830d047 Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
-Date: Tue, 17 Nov 2026 21:46:36 +1100
-Subject: [PATCH] test: bound synthetic MiMo2 KV geometry while retaining full
- graph coverage
+Date: Tue, 17 Nov 2026 22:14:38 +1100
+Subject: [PATCH] test: bound MiMo2 KV geometry and derive fused MTP shape from
+ hparams
 
 ---
- tests/test-llama-archs.cpp | 7 +++++++
- 1 file changed, 7 insertions(+)
+ tests/test-graph-contract-fixture.h | 6 +++++-
+ tests/test-llama-archs.cpp          | 7 +++++++
+ 2 files changed, 12 insertions(+), 1 deletion(-)
 
+diff --git a/tests/test-graph-contract-fixture.h b/tests/test-graph-contract-fixture.h
+index c45915888..3a520bdda 100644
+--- a/tests/test-graph-contract-fixture.h
++++ b/tests/test-graph-contract-fixture.h
+@@ -135,7 +135,11 @@ static int save_graph_contract_fixture(llm_arch arch, const std::string & out, u
+     if (arch == LLM_ARCH_MIMO2 && mtp_layers) {
+         ggml_context_ptr fused(ggml_init({ggml_tensor_overhead() * mtp_layers, nullptr, true}));
+         for (uint32_t head = 0; head < mtp_layers; ++head) {
+-            auto * qkv = ggml_new_tensor_2d(fused.get(), GGML_TYPE_F32, width, 3 * width);
++            const uint32_t layer = layers + head;
++            const auto & hparams = model->hparams;
++            const int64_t qkv_width = hparams.n_embd_head_k(layer) * hparams.n_head(layer) +
++                    hparams.n_embd_k_gqa(layer) + hparams.n_embd_v_gqa(layer);
++            auto * qkv = ggml_new_tensor_2d(fused.get(), GGML_TYPE_F32, width, qkv_width);
+             ggml_format_name(qkv, "blk.%u.attn_qkv.weight", layers + head);
+             gguf_add_tensor(output.get(), qkv);
+         }
 diff --git a/tests/test-llama-archs.cpp b/tests/test-llama-archs.cpp
 index 779763267..7083fed91 100644
 --- a/tests/test-llama-archs.cpp
