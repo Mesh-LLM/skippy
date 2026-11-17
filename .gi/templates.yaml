@@ -604,6 +604,53 @@
         "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub",
         "HF_HUB_DISABLE_XET": "1"
       }
+    },
+    {
+      "key": "inference-flash-cache-warm",
+      "name": "Admit pinned Flash Next weights via HTTP",
+      "target": {
+        "executor": "lab",
+        "selector": {
+          "os": {
+            "family": "linux"
+          },
+          "arch": {
+            "in": [
+              "aarch64"
+            ]
+          },
+          "accelerator": {
+            "backend": "cuda",
+            "model": {
+              "in": [
+                "NVIDIA GB10"
+              ]
+            }
+          },
+          "memory": {
+            "system_gib": {
+              "min": 120
+            }
+          },
+          "network": {
+            "in": [
+              "james-lab",
+              "dan-lab"
+            ]
+          }
+        }
+      },
+      "build": "",
+      "command": "set -eu\ndate -u\nhf download unsloth/Qwen3.8-Flash-Next-GGUF --revision f5d175de2cf7f720d45d6064019a81fcf056e986 UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00004.gguf\nprintf \"93ff23a08e5cd7501f24fa16f5b415d5807d0175e04edd3ed6a7a41b601a4eef  /mnt/model-store/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/f5d175de2cf7f720d45d6064019a81fcf056e986/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00004.gguf\\n\" | sha256sum -c -\nhf download unsloth/Qwen3.8-Flash-Next-GGUF --revision f5d175de2cf7f720d45d6064019a81fcf056e986 UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00002-of-00004.gguf\nprintf \"13d5dc8b93d039e4cfade5a9af7037f10c97f7ec4e53f75bd2e9ae34aae54aeb  /mnt/model-store/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/f5d175de2cf7f720d45d6064019a81fcf056e986/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00002-of-00004.gguf\\n\" | sha256sum -c -\nhf download unsloth/Qwen3.8-Flash-Next-GGUF --revision f5d175de2cf7f720d45d6064019a81fcf056e986 UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00003-of-00004.gguf\nprintf \"f6b9b5934908a2043732269dd740155d0f921d0763a1dcdd3452246311651f87  /mnt/model-store/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/f5d175de2cf7f720d45d6064019a81fcf056e986/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00003-of-00004.gguf\\n\" | sha256sum -c -\nhf download unsloth/Qwen3.8-Flash-Next-GGUF --revision f5d175de2cf7f720d45d6064019a81fcf056e986 UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00004-of-00004.gguf\nprintf \"5de8b5dbf89409acc39468decafd4a4a95b13c29d88a14b0356107897829ec36  /mnt/model-store/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/f5d175de2cf7f720d45d6064019a81fcf056e986/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00004-of-00004.gguf\\n\" | sha256sum -c -\ndate -u",
+      "budget": {
+        "max_usd": 0,
+        "max_duration_s": 7200
+      },
+      "env": {
+        "HF_HOME": "/mnt/model-store/huggingface",
+        "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub",
+        "HF_HUB_DISABLE_XET": "1"
+      }
     }
   ]
 }
