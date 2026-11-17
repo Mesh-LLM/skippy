@@ -82,7 +82,6 @@ pub fn run(
             "--num-profile-runs".into(),
             "1".into(),
             "--unsafe-override".into(),
-            "--no-profile-run-disable-warmup-after-first".into(),
         ]);
     }
     let result = execution::run("uv", &aiperf, &[], 15000);
