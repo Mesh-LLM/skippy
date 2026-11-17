@@ -1,7 +1,7 @@
 # skippy-events
 
 Skippy-owned request identifiers, token usage and inference lifecycle contracts,
-shared by standalone Skippy and Mesh.
+used by standalone Skippy and embedding applications.
 
 ## Diagnostic output
 

@@ -16,7 +16,7 @@ fn fetch(cache: &Path, endpoint: &str, args: &[&str]) -> std::process::Output {
         .args(["--timeout-secs", "5"])
         .args(args)
         .env("HF_ENDPOINT", endpoint)
-        .env("MESH_HF_RETRY_MAX_ATTEMPTS", "0")
+        .env("SKIPPY_HF_RETRY_MAX_ATTEMPTS", "0")
         .env_remove("HF_TOKEN")
         .output()
         .unwrap()
@@ -172,7 +172,7 @@ fn actual_cli_overall_deadline_kills_and_reaps_pending_native_worker_without_out
         .arg(cache.path())
         .args(["--timeout-secs", "2"])
         .env("HF_ENDPOINT", &server.endpoint)
-        .env("MESH_HF_RETRY_MAX_ATTEMPTS", "0")
+        .env("SKIPPY_HF_RETRY_MAX_ATTEMPTS", "0")
         .output()
         .unwrap();
     assert!(started.elapsed() < std::time::Duration::from_secs(4));

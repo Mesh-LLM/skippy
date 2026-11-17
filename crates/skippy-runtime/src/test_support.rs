@@ -3,7 +3,7 @@
 //! Statically linked builds always carry the runtime, so this is inert there.
 //! Dynamic builds (Windows, where the runtime is built with MinGW and cannot be
 //! linked into an MSVC test binary) load the runtime that
-//! `MESH_LLM_NATIVE_RUNTIME_BUNDLE_DIR` names, the variable the host and the CI
+//! `SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR` names, the variable the host and the CI
 //! smokes already use, with its libraries in manifest order.
 
 #[cfg(feature = "dynamic-native-runtime")]
@@ -26,7 +26,7 @@ pub fn require_native_runtime() {
 
 #[cfg(feature = "dynamic-native-runtime")]
 fn load_bundle_from_env() -> Result<(), String> {
-    const BUNDLE_DIR_ENV: &str = "MESH_LLM_NATIVE_RUNTIME_BUNDLE_DIR";
+    const BUNDLE_DIR_ENV: &str = "SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR";
     if crate::native_runtime_loaded() {
         return Ok(());
     }

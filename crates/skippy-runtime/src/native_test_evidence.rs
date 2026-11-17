@@ -1,6 +1,6 @@
 //! Evidence-marker writer for gated native-runtime integration tests.
 //!
-//! `skippy/crates/skippy-runtime/tests/runtime_events_native.rs` needs to prove, to
+//! `crates/skippy-runtime/tests/runtime_events_native.rs` needs to prove, to
 //! a reader who never ran it, whether a specific gated step genuinely
 //! executed. Defect D10 (`.omo/plans/event-system-fixes.md` task 11) was
 //! exactly this contract broken: the marker file's `executed` line was

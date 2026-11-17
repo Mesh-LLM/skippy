@@ -1,0 +1,8 @@
+name: Prepare Skippy command runner
+description: Supply pinned Just, the one missing command on standard hosted images.
+runs:
+  using: composite
+  steps:
+    - uses: taiki-e/install-action@3d23c1bbdafe696dfccad2664945a04f47d03dc3 # install-action
+      with:
+        tool: just@1.58.0

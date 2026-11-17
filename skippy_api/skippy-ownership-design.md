@@ -1,7 +1,7 @@
 # Ownership and memory in `skippy_api`, as types
 
 ```yaml
-for: skippy/skippy_api (C++23), skippy/skippy-api-rs (cxx bridge + safe crate)
+for: skippy_api (C++23), skippy-api-rs (cxx bridge + safe crate)
 companion: docs/TYPE_DESIGN.md (value types), TYPE-RULES.md §3 (the rules these types enforce)
 goal: C++ owns and frees; Rust borrows and checks. No borrow model in C++, no copies into Rust.
 ```
@@ -253,7 +253,7 @@ The staged C ABI is asymmetric: the planner hands identities *out* as `(offset, 
 
 ### 6.1 The upstream-shaped half: give the loader a view type
 
-A new patch in `skippy/llama_cpp/patches`, owned by the ABI-definition boundary, additive, with the PATCH bump mirrored in `skippy-ffi`:
+A new patch in `llama_cpp/patches`, owned by the ABI-definition boundary, additive, with the PATCH bump mirrored in `skippy-ffi`:
 
 ```c
 /** @brief A borrowed byte range. Not NUL-terminated; any byte is valid. */

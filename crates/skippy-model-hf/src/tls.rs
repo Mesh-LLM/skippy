@@ -178,7 +178,7 @@ mod tests {
     #[test]
     #[serial]
     fn forced_ring_provider_builds_a_real_hf_client() {
-        const CHILD_ENV: &str = "MESH_LLM_TEST_HF_TLS_RING_CHILD";
+        const CHILD_ENV: &str = "SKIPPY_TEST_HF_TLS_RING_CHILD";
 
         if std::env::var_os(CHILD_ENV).is_some() {
             assert_eq!(configure_hf_tls_provider_for(false), HfTlsProvider::Ring);

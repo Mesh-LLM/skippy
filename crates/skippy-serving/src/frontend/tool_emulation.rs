@@ -35,9 +35,9 @@ pub(super) const TOOL_CALL_MARKER: &str = "TOOL_CALL";
 /// Returns true when the loaded model's chat template natively supports tool
 /// calling.
 ///
-/// This is the mesh-llm analogue of goose's
+/// This is the standalone Skippy analogue of goose's
 /// `template_result_supports_native_tool_calling`. goose reads llama.cpp's
-/// `parse_tool_calls` + parser fields, but in mesh-llm's patched runtime
+/// `parse_tool_calls` + parser fields, but in Skippy's patched runtime
 /// `parse_tool_calls` only reflects whether the request carried tools (it is
 /// true for every tools request) and `chat_parser` is always a non-empty PEG
 /// structure, so neither field distinguishes a tool-capable template.
@@ -84,7 +84,7 @@ fn chat_parser_has_tool_semantics(metadata: &Value) -> bool {
 /// that natively support tool calling. Useful for testing the emulation path
 /// against strong models and as an escape hatch when a native template
 /// misbehaves.
-const FORCE_EMULATION_ENV: &str = "MESH_FORCE_TOOL_EMULATION";
+const FORCE_EMULATION_ENV: &str = "SKIPPY_FORCE_TOOL_EMULATION";
 
 /// Decides whether a tools request should be served via emulation rather than
 /// the native template path. Emulation is used when the template does not

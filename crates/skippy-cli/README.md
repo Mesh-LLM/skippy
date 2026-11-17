@@ -8,12 +8,13 @@ terminal output; `skippy-serving` owns the serving loops.
 Use `skippy --version` to identify the CLI build and `skippy runtime list` to
 inspect installed native runtime releases.
 
-Build with `just skippy` to package a local native runtime and build the CLI.
+Build with `just build` to package a local native runtime and build the CLI.
 The executable automatically discovers the verified `native-runtimes/` directory
 beside it, including `target/debug/native-runtimes` from that build. Use
 `just skippy-cli-build` only when a compatible runtime is already available.
-If no local runtime matches, serving tries a compatible release runtime;
-source builds can have a newer Skippy ABI than the published release. Use
+Private release assets require an authorized GitHub login; download them with
+`gh release download --repo general-inference/skippy`, verify and extract them.
+Source builds can have a newer ABI than a published release. Use
 `--runtime-bundle /path/to/bundle` to select another local bundle explicitly.
 
 ## Configure serving
@@ -42,15 +43,15 @@ supported, so use a GGUF variant such as
 reuses installed exact refs from the shared Hugging Face cache and reports the
 model ID and API address after `GET /v1/models` succeeds.
 
-For a local GGUF, Skippy uses the same memory-aware context planner as
-Mesh: it sizes one unified KV pool from the model metadata, weight footprint,
+For a local GGUF, Skippy's memory-aware context planner sizes one unified KV
+pool from the model metadata, weight footprint,
 and available device memory, up to a 128k-token ceiling, then defaults to four
 lanes sharing that pool. KV stays F16 by default; weight file size does not
 change its quantization. `--ctx-size` and `--generation-concurrency` override
 the corresponding automatic choices.
 
 For a SafeTensors family supported by the native checkpoint loader, `--quant`
-uses Mesh's on-load quantization recipes (`preserve` is the default). Low-bit
+uses Skippy's on-load quantization recipes (`preserve` is the default). Low-bit
 recipes that need an importance matrix also accept
 `--checkpoint-imatrix /path/to/model.imatrix`. Quantization does not add support
 for an otherwise unsupported checkpoint architecture; use a GGUF variant for
@@ -70,7 +71,7 @@ To start the server and immediately chat with the model in the same terminal:
 skippy serve --model Qwen3-0.6B-Q4_K_M --prompt
 ```
 
-Serving defaults are owned by Skippy and shared with Mesh. Both use an
+Serving defaults are owned by Skippy, with an
 8,192-token completion ceiling, clamped to remaining context space, automatic
 chat compaction, and disabled compatibility guardrails. Memory-aware context
 and concurrency planning, F16 KV, 512-token batch/microbatch limits, prefix
@@ -104,9 +105,8 @@ curl http://127.0.0.1:9337/v1/messages \
 
 ## Find and download models
 
-`skippy models` uses the same command contract, tables, and JSON schemas as
-`mesh-llm models`. Skippy owns the implementation; Mesh uses it with its own
-console destinations. Model commands default to human-readable output, even
+`skippy models` provides model inspection, downloads and cache maintenance.
+Model commands default to human-readable output, even
 when piped. Every model subcommand accepts `--json`, alongside Skippy’s global
 `--output` modes.
 
@@ -122,7 +122,8 @@ skippy models updates unsloth/Qwen3-8B-GGUF
 skippy models cleanup --unused-since 30d
 ```
 
-`recommended` reads the same remote `meshllm/catalog` as Mesh. `search` queries Hugging
+`recommended` reads the dataset selected by `SKIPPY_MODEL_CATALOG=namespace/name`;
+remote catalog reads are disabled when it is unset. `search` queries Hugging
 Face for GGUF repositories by default; `--mlx` selects MLX repositories, and
 `--catalog` limits results to the curated catalog. `show` resolves an exact artifact and displays its
 revision and file set. `download` uses a catalog layer package when available;
@@ -132,7 +133,7 @@ include a catalog projector when present. Serving the same reference reuses the
 Hub cache. The reported
 SHA-256 describes the bytes obtained but is not an external authenticity claim.
 
-Skippy and Mesh use the same Hugging Face Hub cache, honoring `HF_HUB_CACHE`,
+Skippy uses the Hugging Face Hub cache, honoring `HF_HUB_CACHE`,
 `HUGGINGFACE_HUB_CACHE`, `HF_HOME`, and `XDG_CACHE_HOME` in that order. Hub
 endpoint and token configuration follows Hugging Face settings. `skippy models
 delete org/repo:Q4_K_M` previews the selected installed GGUF files; add
@@ -144,7 +145,7 @@ by the CLI; use `--yes` after reviewing its preview. `delete` also previews
 derived stage files associated with the selected model before removal.
 `updates --check` compares cached repository refs to upstream revisions without
 downloading; `updates <repo>` or `updates --all` refreshes cached files and
-`config.json` using the same policy as Mesh.
+`config.json` using the verified artifact policy.
 
 Skippy owns the layer-package workflow used by both local and distributed
 serving. Package creation is a dry run unless `--confirm` is supplied:
@@ -152,12 +153,16 @@ serving. Package creation is a dry run unless `--confirm` is supplied:
 ```sh
 skippy models package unsloth/Qwen3-8B-GGUF:Q4_K_M
 skippy models package unsloth/Qwen3-8B-GGUF:Q4_K_M --confirm --follow
-skippy models certify meshllm/Qwen3-8B-Q4_K_M-layers --package-only
+skippy models certify owner/Qwen3-8B-Q4_K_M-layers --package-only
 skippy models prune
 skippy models prune --yes
 ```
 
-`models package` also accepts Mesh's job-management switches (`--status`,
+Publishing requires explicit `SKIPPY_MODEL_CATALOG` and `SKIPPY_PACKAGE_BUCKET`
+settings plus `SKIPPY_GITHUB_TOKEN` for private source read access. It defaults
+to the authenticated user's Hugging Face namespace.
+
+`models package` also accepts job-management switches (`--status`,
 `--logs`, `--cancel`, `--list`, and `--update-script`). Certification can use
 `--api-base` for runtime smoke checks and `--report-out` for an auditable JSON
 report. Stage-cache pruning is dry-run by default and preserves pinned stages.
@@ -224,8 +229,8 @@ skippy runtime prune
 ```
 
 Runtime storage resolves from `--runtime-cache`, then
-`MESH_LLM_NATIVE_RUNTIME_CACHE_DIR`, then the same platform cache directory as
-Mesh. `MESH_LLM_NATIVE_RUNTIME_BUNDLE_DIR` adds bundle roots. `runtime install`
+`SKIPPY_NATIVE_RUNTIME_CACHE_DIR`, then `skippy/native-runtimes` under the
+platform cache directory. `SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR` adds bundle roots. `runtime install`
 selects the recommended compatible runtime by default; `--manifest` selects an
 explicit release catalog. `runtime prune` keeps the active and previous release
 unless `--active-only` is passed.

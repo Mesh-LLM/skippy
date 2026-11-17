@@ -731,8 +731,8 @@ mod tests {
 
     #[test]
     fn record_model_usage_merges_managed_paths() {
-        let usage_dir = temp_dir("mesh-llm-usage-dir");
-        let cache_root = temp_dir("mesh-llm-hf-cache");
+        let usage_dir = temp_dir("skippy-usage-dir");
+        let cache_root = temp_dir("skippy-hf-cache");
         let primary = cache_root
             .join("models--Org--Demo")
             .join("snapshots")
@@ -774,8 +774,8 @@ mod tests {
 
     #[test]
     fn load_model_usage_record_for_split_shard_returns_bundle_record() {
-        let usage_dir = temp_dir("mesh-llm-usage-dir");
-        let cache_root = temp_dir("mesh-llm-hf-cache");
+        let usage_dir = temp_dir("skippy-usage-dir");
+        let cache_root = temp_dir("skippy-hf-cache");
         let primary = cache_root
             .join("models--Org--Bundle")
             .join("snapshots")
@@ -817,8 +817,8 @@ mod tests {
 
     #[test]
     fn record_model_usage_updates_last_used_at_by_managed_identity() {
-        let usage_dir = temp_dir("mesh-llm-usage-dir");
-        let cache_root = temp_dir("mesh-llm-hf-cache");
+        let usage_dir = temp_dir("skippy-usage-dir");
+        let cache_root = temp_dir("skippy-hf-cache");
         let primary = cache_root
             .join("models--Org--Bundle")
             .join("snapshots")
@@ -876,8 +876,8 @@ mod tests {
 
     #[test]
     fn cleanup_plan_filters_recent_and_external_records() {
-        let usage_dir = temp_dir("mesh-llm-usage-dir");
-        let cache_root = temp_dir("mesh-llm-hf-cache");
+        let usage_dir = temp_dir("skippy-usage-dir");
+        let cache_root = temp_dir("skippy-hf-cache");
         let old_path = cache_root
             .join("models--Org--Old")
             .join("snapshots")
@@ -964,8 +964,8 @@ mod tests {
 
     #[test]
     fn execute_cleanup_removes_files_and_records() {
-        let usage_dir = temp_dir("mesh-llm-usage-dir");
-        let cache_root = temp_dir("mesh-llm-hf-cache");
+        let usage_dir = temp_dir("skippy-usage-dir");
+        let cache_root = temp_dir("skippy-hf-cache");
         let primary = cache_root
             .join("models--Org--Cleanup")
             .join("snapshots")
@@ -1012,8 +1012,8 @@ mod tests {
 
     #[test]
     fn cleanup_skips_paths_that_no_longer_match_record_identity() {
-        let usage_dir = temp_dir("mesh-llm-usage-dir");
-        let cache_root = temp_dir("mesh-llm-hf-cache");
+        let usage_dir = temp_dir("skippy-usage-dir");
+        let cache_root = temp_dir("skippy-hf-cache");
         let old_path = cache_root
             .join("models--Org--Actual")
             .join("snapshots")

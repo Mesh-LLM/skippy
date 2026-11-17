@@ -75,7 +75,7 @@ just skippy-api-checkpoint "feat(skippy-api): ..." <embed.gguf> <reranker.gguf>
 ```
 
 `verify` is the gate CI-equivalent for this tree; `checkpoint` runs it, stages
-`skippy/skippy_api`, `skippy/skippy-api-rs`, `just/skippy.just`, and
+`skippy_api`, `skippy-api-rs`, `just/skippy.just`, and
 `.gitignore`, then commits with the subject you pass. Both accept the models
 as optional arguments — without them the Rust tests run unit-only, and
 `SKIPPY_TEST_REQUIRE_MODELS` is left unset so they skip rather than fail.

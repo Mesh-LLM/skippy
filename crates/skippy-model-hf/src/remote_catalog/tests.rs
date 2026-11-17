@@ -16,12 +16,12 @@ fn refresh_backoff_suppresses_then_clears() {
     assert!(!refresh_in_backoff(), "backoff cleared after success");
 }
 
-/// Hits the network: verifies that the live meshllm/catalog dataset
+/// Hits the network: verifies that the live skippy/catalog dataset
 /// downloads successfully with the patched hf-hub (redirect Content-Length
 /// no longer mistaken for the file size). Run with:
 ///   cargo test -p skippy-model-hf refresh_catalog_live -- --ignored --nocapture
 #[test]
-#[ignore = "network: downloads the live meshllm/catalog dataset"]
+#[ignore = "network: downloads the live skippy/catalog dataset"]
 #[serial]
 fn refresh_catalog_live() {
     refresh_catalog().expect("live catalog refresh should succeed");
@@ -505,7 +505,7 @@ fn stale_check_returns_true_for_nonexistent() {
 fn stale_check_uses_last_refresh_marker() {
     let prev = std::env::var_os("HF_HOME");
     let temp = std::env::temp_dir().join(format!(
-        "meshllm-catalog-stale-marker-{}",
+        "skippy-catalog-stale-marker-{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -537,14 +537,14 @@ fn stale_check_uses_last_refresh_marker() {
 fn an_empty_hf_home_or_home_counts_as_unset() {
     assert_eq!(
         catalog_cache_dir_from(Some("".into()), Some("/home/node".into())),
-        PathBuf::from("/home/node/.cache/meshllm/catalog")
+        PathBuf::from("/home/node/.cache/skippy/catalog")
     );
     assert_eq!(
         catalog_cache_dir_from(Some("".into()), Some("".into())),
-        std::env::temp_dir().join("meshllm/catalog")
+        std::env::temp_dir().join("skippy/catalog")
     );
     assert_eq!(
         catalog_cache_dir_from(Some("/srv/hf".into()), Some("/home/node".into())),
-        PathBuf::from("/srv/hf/meshllm-catalog")
+        PathBuf::from("/srv/hf/skippy-catalog")
     );
 }

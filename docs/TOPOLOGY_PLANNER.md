@@ -44,7 +44,7 @@ make that explicit rather than relying on tribal memory.
 dated artifact. It records correctness reports, state-handoff
 payload pressure, optional staged speculative corpus summaries, and a
 `capability-draft.json` that can inform explicit planner policy after review;
-see `skippy/docs/FAMILY_CERTIFY.md`.
+see `docs/FAMILY_CERTIFY.md`.
 
 ## Core Rule
 
@@ -204,7 +204,7 @@ The important behavioral distinction is:
 
 ## First Crate
 
-`skippy/crates/skippy-topology` is the first small implementation. It currently
+`crates/skippy-topology` is the first small implementation. It currently
 provides deterministic contiguous planning over a set of nodes, supports
 explicit split-boundary planning, classifies each stage by layer state
 affinity, evaluates boundaries against optional family capability records, and
@@ -247,10 +247,9 @@ contract:
 ## Latency-Aware Placement: current behaviour and gaps
 
 This section records what the planner actually does today for network-aware
-placement (verified against `skippy/crates/skippy-coordinator/src/topology.rs`,
-`skippy/crates/skippy-topology/src/{lib,edge_order}.rs`, and the host-runtime call site
-`mesh/crates/mesh-llm-host-runtime/src/inference/skippy/topology.rs`), and the gaps
-that matter as the mesh grows to many nodes.
+placement (verified against `crates/skippy-coordinator/src/topology.rs` and
+`crates/skippy-topology/src/{lib,edge_order}.rs`), and the gaps that matter as
+an explicit worker set grows to many nodes.
 
 ### What works today
 

@@ -7,7 +7,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub const NATIVE_RUNTIME_BUNDLE_DIR_ENV: &str = "MESH_LLM_NATIVE_RUNTIME_BUNDLE_DIR";
+pub const NATIVE_RUNTIME_BUNDLE_DIR_ENV: &str = "SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR";
 
 /// Discovers bundles using the requested release for versioned installation paths.
 pub fn discover_native_runtime_bundle_dirs(
@@ -264,11 +264,11 @@ fn executable_candidates(executable_path: &Path, release: &str) -> Vec<PathBuf> 
         candidates.push(
             prefix
                 .join("lib")
-                .join("mesh-llm")
+                .join("skippy")
                 .join(release)
                 .join("native-runtimes"),
         );
-        candidates.push(prefix.join("lib").join("mesh-llm").join("native-runtimes"));
+        candidates.push(prefix.join("lib").join("skippy").join("native-runtimes"));
         candidates.push(prefix.join("libexec").join("native-runtimes"));
     }
     candidates
@@ -411,14 +411,12 @@ mod tests {
         let explicit = temp.path().join("explicit");
         let environment = temp.path().join("environment");
         let prefix = temp.path().join("prefix");
-        let executable = prefix.join("bin/mesh-llm");
+        let executable = prefix.join("bin/skippy");
         let adjacent = prefix.join("bin/native-runtimes/adjacent");
-        let versioned_package =
-            prefix.join("lib/mesh-llm/0.75.0/native-runtimes/versioned-package");
-        let other_release_package =
-            prefix.join("lib/mesh-llm/0.76.1/native-runtimes/wrong-release");
+        let versioned_package = prefix.join("lib/skippy/0.75.0/native-runtimes/versioned-package");
+        let other_release_package = prefix.join("lib/skippy/0.76.1/native-runtimes/wrong-release");
         write_runtime(&other_release_package, "wrong-release");
-        let package = prefix.join("lib/mesh-llm/native-runtimes/package");
+        let package = prefix.join("lib/skippy/native-runtimes/package");
         let homebrew = prefix.join("libexec/native-runtimes/homebrew");
         fs::create_dir_all(executable.parent().unwrap()).unwrap();
         fs::write(&executable, b"host").unwrap();

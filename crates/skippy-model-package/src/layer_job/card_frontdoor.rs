@@ -27,7 +27,7 @@ pub(super) struct Options {
     #[arg(long, default_value = "text-generation")]
     pub pipeline_tag: String,
     #[arg(long, default_value = "main")]
-    pub mesh_llm_ref: String,
+    pub skippy_ref: String,
 }
 pub(super) fn run(options: Options, latch: &SignalLatch) -> Result<()> {
     let until = Instant::now() + Duration::from_secs(300);
@@ -65,7 +65,7 @@ pub(super) fn run(options: Options, latch: &SignalLatch) -> Result<()> {
             target: &options.target_repo,
             pipeline,
             source_file: &options.source_file,
-            mesh_ref: &options.mesh_llm_ref,
+            skippy_ref: &options.skippy_ref,
             license: &license,
         },
     )?;

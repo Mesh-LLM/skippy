@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LLAMA_WORKDIR="${LLAMA_WORKDIR:-$ROOT/.deps/llama.cpp}"
-PIN_FILE="${LLAMA_PIN_FILE:-$ROOT/skippy/llama_cpp/upstream.txt}"
+PIN_FILE="${LLAMA_PIN_FILE:-$ROOT/llama_cpp/upstream.txt}"
 
 if (( $# > 1 )); then
   echo "usage: scripts/update-llama-pin.sh [40-hex-upstream-sha]" >&2
@@ -12,8 +12,8 @@ fi
 
 if (( $# == 1 )); then
   NEW_SHA="$1"
-elif [[ -f "$LLAMA_WORKDIR/.mesh-llm-upstream-sha" ]]; then
-  NEW_SHA="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.mesh-llm-upstream-sha")"
+elif [[ -f "$LLAMA_WORKDIR/.skippy-upstream-sha" ]]; then
+  NEW_SHA="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.skippy-upstream-sha")"
 elif [[ -d "$LLAMA_WORKDIR/.git" ]]; then
   NEW_SHA="$(git -C "$LLAMA_WORKDIR" rev-parse HEAD)"
 else

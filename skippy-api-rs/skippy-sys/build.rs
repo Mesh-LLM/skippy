@@ -4,7 +4,7 @@
 //! Inputs, all optional:
 //!   SKIPPY_API_DIR            skippy_api checkout; default ../../skippy_api
 //!   SKIPPY_LLAMA_SOURCE_DIR   llama.cpp checkout; default: the nearest .deps/llama.cpp
-//!                             in a directory above this crate (mesh-llm keeps it at the repo root)
+//!                             in a directory above this crate (normally the repository root)
 //!   SKIPPY_CMAKE_PROFILE      CMake build type; default Release
 
 use std::collections::BTreeMap;

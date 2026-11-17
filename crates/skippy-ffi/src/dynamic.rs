@@ -32,8 +32,8 @@ pub fn native_runtime_loaded() -> bool {
 ///
 /// # Safety
 ///
-/// The caller must ensure the library is a MeshLLM native runtime built for
-/// the running MeshLLM version and Skippy ABI. Loading an arbitrary library
+/// The caller must ensure the library is a Skippy native runtime built for
+/// the running Skippy version and Skippy ABI. Loading an arbitrary library
 /// can bind incompatible C symbols and cause undefined behavior in later FFI
 /// calls.
 pub unsafe fn load_native_runtime_library(
@@ -53,8 +53,8 @@ pub unsafe fn load_native_runtime_library(
 ///
 /// # Safety
 ///
-/// The caller must ensure every library belongs to the same MeshLLM native
-/// runtime artifact for the running MeshLLM version and Skippy ABI. Loading
+/// The caller must ensure every library belongs to the same Skippy native
+/// runtime artifact for the running Skippy version and Skippy ABI. Loading
 /// arbitrary libraries can bind incompatible C symbols and cause undefined
 /// behavior in later FFI calls.
 pub unsafe fn load_native_runtime_libraries<I, P>(paths: I) -> Result<(), NativeRuntimeLoadError>
@@ -75,7 +75,7 @@ where
 fn symbols() -> &'static Symbols {
     SYMBOLS
         .get()
-        .expect("MeshLLM native runtime library has not been loaded")
+        .expect("Skippy native runtime library has not been loaded")
 }
 
 type SkippyAbiVersionFn = unsafe extern "C" fn() -> AbiVersion;

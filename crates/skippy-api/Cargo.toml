@@ -2,9 +2,10 @@
 name = "skippy-api"
 edition.workspace = true
 license.workspace = true
+publish = false
 version.workspace = true
 description = "Shared Skippy model preparation and serving lifecycle API"
-repository = "https://github.com/Mesh-LLM/mesh-llm"
+repository = "https://github.com/general-inference/skippy"
 readme = "README.md"
 
 [features]

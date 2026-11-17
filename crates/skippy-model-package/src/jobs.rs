@@ -1,5 +1,6 @@
 #[path = "jobs/delivery.rs"]
 pub mod delivery;
+pub mod source;
 use std::{collections::HashMap, time::Instant};
 
 mod cancellation;

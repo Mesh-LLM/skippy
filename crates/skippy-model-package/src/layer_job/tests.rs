@@ -130,7 +130,7 @@ fn layer_complete_card_preserves_license_fallback_metadata_artifacts_speculation
             target: "fixture/package",
             pipeline: "text-generation",
             source_file: "UD-Q4_K_XL/model-00001-of-00002.gguf",
-            mesh_ref: "pinned-build",
+            skippy_ref: "pinned-build",
             license: &license,
         },
     )
@@ -149,13 +149,13 @@ fn layer_complete_card_preserves_license_fallback_metadata_artifacts_speculation
         "Manifest SHA-256",
         "pinned-build",
         "Tensor Catalog",
-        "api/status",
+        "skippy doctor",
         "/v1/chat/completions",
         "does not promote",
         "pipeline_tag: \"text-generation\"",
         "- experimental",
         "- openai-compatible",
-        "Distributed GGUF inference package for Mesh LLM",
+        "Distributed GGUF inference package for Skippy",
         "## Model Overview",
         "## Highlights",
         "## Recommended Use",
@@ -163,8 +163,8 @@ fn layer_complete_card_preserves_license_fallback_metadata_artifacts_speculation
         "## Package Variant",
         "## What Is Included",
         "## Validation",
-        "https://www.meshllm.cloud",
-        "mesh-llm serve --model \"fixture/package\" --split",
+        "https://github.com/general-inference/skippy",
+        "skippy serve --model \"fixture/package\"",
     ] {
         assert!(card.contains(expected), "missing {expected}");
     }
@@ -182,7 +182,7 @@ fn layer_complete_card_preserves_license_fallback_metadata_artifacts_speculation
             target: "fixture/package",
             pipeline: "text-generation",
             source_file: "model.gguf",
-            mesh_ref: "pinned-build",
+            skippy_ref: "pinned-build",
             license: &absent,
         },
     )

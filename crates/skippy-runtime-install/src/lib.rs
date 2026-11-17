@@ -79,7 +79,7 @@ mod tests {
     fn test_catalog() -> NativeRuntimeCatalog {
         NativeRuntimeCatalog {
             release_tags: Default::default(),
-            releases_url: "https://github.com/Mesh-LLM/mesh-llm/releases".to_string(),
+            releases_url: "https://github.com/general-inference/skippy/releases".to_string(),
             rolling_release: None,
         }
     }
@@ -761,7 +761,7 @@ mod tests {
         assert_eq!(
             manifest_url(&options).as_deref(),
             Some(
-                "https://github.com/Mesh-LLM/mesh-llm/releases/download/v0.67.0/native-runtimes.json"
+                "https://github.com/general-inference/skippy/releases/download/v0.67.0/native-runtimes.json"
             )
         );
 
@@ -865,7 +865,7 @@ mod tests {
         assert_eq!(
             manifest_url(&options).as_deref(),
             Some(
-                "https://github.com/Mesh-LLM/mesh-llm/releases/download/v0.67.0/native-runtimes.json"
+                "https://github.com/general-inference/skippy/releases/download/v0.67.0/native-runtimes.json"
             )
         );
     }

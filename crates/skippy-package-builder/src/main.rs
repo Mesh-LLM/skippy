@@ -32,7 +32,7 @@ fn prepare_model_download_directories() {
         Err(error) => {
             eprintln!(
                 "⚠ Unable to prepare model download directories: {error:#}. \
-                 Model downloads may fail; set MESH_LLM_DATA_DIR to a writable directory."
+                 Model downloads may fail; set SKIPPY_DATA_DIR to a writable directory."
             );
             return;
         }
@@ -46,7 +46,7 @@ fn prepare_model_download_directories() {
 
 // ponytail: main runs on a child thread because the Windows main thread has a
 // 1 MB stack. sha256 over a multi-GB GGUF plus FFI slice writing blows that
-// stack in debug builds. 8 MB matches the mesh-llm runtime default. If a real
+// stack in debug builds. 8 MB matches the standalone runtime default. If a real
 // recursion sink appears, raise this or fix the recursion — don't go lower.
 const MAIN_STACK_SIZE: usize = 8 * 1024 * 1024;
 

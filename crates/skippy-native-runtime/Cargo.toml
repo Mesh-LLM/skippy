@@ -2,10 +2,11 @@
 name = "skippy-native-runtime"
 edition.workspace = true
 license.workspace = true
+publish = false
 version.workspace = true
 description = "Native runtime manifest, selection, and cache policy for Skippy"
-repository = "https://github.com/Mesh-LLM/mesh-llm"
-homepage = "https://github.com/Mesh-LLM/mesh-llm"
+repository = "https://github.com/general-inference/skippy"
+homepage = "https://github.com/general-inference/skippy"
 
 [lints]
 workspace = true

@@ -2,10 +2,11 @@
 name = "skippy-config"
 edition.workspace = true
 license.workspace = true
+publish = false
 version.workspace = true
 description = "Standalone Skippy settings for model, runtime and worker configuration"
 readme = "README.md"
-repository = "https://github.com/Mesh-LLM/mesh-llm"
+repository = "https://github.com/general-inference/skippy"
 
 [dependencies]
 anyhow.workspace = true

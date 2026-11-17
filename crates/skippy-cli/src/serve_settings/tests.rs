@@ -997,7 +997,7 @@ fn documented_example_is_a_valid_complete_settings_file() {
     // The repository guide is outside the published crate package.
     if !path.exists() {
         assert!(
-            !package_root.join("../../../.git").exists(),
+            !package_root.join("../../.git").exists(),
             "missing repository serving settings guide"
         );
         return;

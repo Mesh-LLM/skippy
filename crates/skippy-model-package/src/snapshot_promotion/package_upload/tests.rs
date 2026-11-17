@@ -184,6 +184,7 @@ fn package_upload_policy_limits_attempts_and_disallows_pr_on_staging_or_model() 
 #[test]
 fn layer_catalog_native_projection_preserves_dict_list_variants_and_replaces_only_target_package() {
     let input = catalog::CatalogInput {
+        catalog_repo: "fixture/catalog",
         source_repo: "source/model",
         source_revision: &"a".repeat(40),
         source_file: "Q4/model-Q4-00001-of-00002.gguf",
@@ -523,6 +524,7 @@ fn layer_catalog_actual_immutable_read_distinguishes_missing_entry_from_auth_and
         let server = Server::start(vec![reply(json!({"sha":"a".repeat(40)})), response]);
         let source_revision = "b".repeat(40);
         let input = catalog::CatalogInput {
+            catalog_repo: "fixture/catalog",
             source_repo: "source/model",
             source_revision: &source_revision,
             source_file: "model-Q4-00001-of-00002.gguf",
@@ -555,7 +557,7 @@ fn layer_catalog_actual_immutable_read_distinguishes_missing_entry_from_auth_and
         }
         let requests = server.finish();
         assert_eq!(requests.len(), 2);
-        assert!(String::from_utf8_lossy(&requests[1]).starts_with("GET /datasets/meshllm/catalog/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/entries/source/model.json "));
+        assert!(String::from_utf8_lossy(&requests[1]).starts_with("GET /datasets/fixture/catalog/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/entries/source/model.json "));
         root.close().unwrap();
     }
 }
@@ -601,6 +603,7 @@ fn layer_catalog_actual_held_initial_head_obeys_inherited_deadline() {
     }]);
     let pin = "b".repeat(40);
     let input = catalog::CatalogInput {
+        catalog_repo: "fixture/catalog",
         source_repo: "source/model",
         source_revision: &pin,
         source_file: "model.gguf",
@@ -622,7 +625,7 @@ fn layer_catalog_actual_held_initial_head_obeys_inherited_deadline() {
     assert_eq!(requests.len(), 1);
     assert!(
         String::from_utf8_lossy(&requests[0])
-            .starts_with("GET /api/datasets/meshllm/catalog/revision/main ")
+            .starts_with("GET /api/datasets/fixture/catalog/revision/main ")
     );
 }
 

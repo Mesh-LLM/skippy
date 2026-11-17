@@ -23,7 +23,7 @@ flowchart LR
     Cache --> Stage["admitted stage runtime"]
 ```
 
-Mesh treats these generated shards as derived cache. Package-backed models use
+Skippy treats these generated shards as derived cache. Package-backed models use
 stable Hugging Face identity from `skippy-model-ref`/`skippy-model-hf`; direct local GGUFs are
 materialized as synthetic package inputs instead of using the path stem as a
 model id.

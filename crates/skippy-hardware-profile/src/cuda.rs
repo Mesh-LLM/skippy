@@ -8,8 +8,8 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 pub(crate) fn detect_cuda_profile(gpus: &[HostGpuProfile]) -> Option<HostCudaProfile> {
-    let mut toolkit_majors = env_u32_set("MESH_LLM_CUDA_TOOLKIT_MAJORS");
-    if let Some(major) = env_u32("MESH_LLM_CUDA_TOOLKIT_MAJOR") {
+    let mut toolkit_majors = env_u32_set("SKIPPY_CUDA_TOOLKIT_MAJORS");
+    if let Some(major) = env_u32("SKIPPY_CUDA_TOOLKIT_MAJOR") {
         toolkit_majors.insert(major);
     }
     if toolkit_majors.is_empty() {
@@ -18,9 +18,9 @@ pub(crate) fn detect_cuda_profile(gpus: &[HostGpuProfile]) -> Option<HostCudaPro
     // `nvidia-smi` reports the newest CUDA the driver supports, which is often
     // ahead of the installed toolkit. Keep it separate so it is only used as an
     // upper bound during runtime selection.
-    let driver_max_major = env_u32("MESH_LLM_CUDA_DRIVER_MAX_MAJOR")
+    let driver_max_major = env_u32("SKIPPY_CUDA_DRIVER_MAX_MAJOR")
         .or_else(|| cuda_majors_from_nvidia_smi().into_iter().next_back());
-    let mut gpu_arches = env_string_set("MESH_LLM_CUDA_GPU_ARCHES");
+    let mut gpu_arches = env_string_set("SKIPPY_CUDA_GPU_ARCHES");
     gpu_arches.extend(gpus.iter().filter_map(|gpu| gpu.cuda_sm.clone()));
     let has_cuda_label = gpus.iter().any(|gpu| {
         let label = gpu.display_name.to_ascii_lowercase();
@@ -36,7 +36,7 @@ pub(crate) fn detect_cuda_profile(gpus: &[HostGpuProfile]) -> Option<HostCudaPro
     Some(HostCudaProfile {
         toolkit_majors,
         driver_max_major,
-        driver_version: std::env::var("MESH_LLM_CUDA_DRIVER_VERSION").ok(),
+        driver_version: std::env::var("SKIPPY_CUDA_DRIVER_VERSION").ok(),
         gpu_arches,
     })
 }

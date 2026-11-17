@@ -48,7 +48,11 @@ pub(super) fn run(options: Options, latch: &SignalLatch) -> Result<()> {
         &options.source_revision,
         options.create_pr,
     )?;
+    let catalog =
+        skippy_model_hf::repository_settings::HubRepository::require("SKIPPY_MODEL_CATALOG")?
+            .full_name();
     let input = package_upload::catalog::CatalogInput {
+        catalog_repo: &catalog,
         source_repo: &options.source_repo,
         source_revision: &options.source_revision,
         source_file: &options.source_file,
@@ -86,7 +90,7 @@ pub(super) fn run(options: Options, latch: &SignalLatch) -> Result<()> {
             .collect(),
     };
     let plan = package_upload::Plan {
-        repo: "meshllm/catalog".into(),
+        repo: catalog,
         kind: package_upload::RepositoryKind::Dataset,
         revision: "main".into(),
         path: prepared.entry_path.clone(),

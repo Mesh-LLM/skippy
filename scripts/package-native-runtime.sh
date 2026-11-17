@@ -17,9 +17,9 @@ rpath_paths() {
     '
 }
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../scripts" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../scripts" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-xtool() { if [[ -n "${MESH_LLM_AUTOMATION_BIN:-}" ]]; then "$MESH_LLM_AUTOMATION_BIN" "$@"; else cargo xtool "$@"; fi; }
+xtool() { if [[ -n "${SKIPPY_AUTOMATION_BIN:-}" ]]; then "$SKIPPY_AUTOMATION_BIN" "$@"; else just --justfile "$REPO_ROOT/Justfile" automation-run "$@"; fi; }
 
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib/cuda-toolkit.sh"
@@ -29,15 +29,15 @@ MODEL_PACKAGE_TOOL=1
 ID_SUFFIX=""
 OUT_DIR="$REPO_ROOT/dist/native-runtimes"
 BACKEND="${LLAMA_STAGE_BACKEND:-${SKIPPY_LLAMA_BACKEND:-cpu}}"
-TARGET_TRIPLE="${MESH_NATIVE_RUNTIME_TARGET:-}"
+TARGET_TRIPLE="${SKIPPY_NATIVE_RUNTIME_TARGET:-}"
 LLAMA_WORKDIR="${LLAMA_WORKDIR:-$REPO_ROOT/.deps/llama.cpp}"
 
 usage() {
     cat >&2 <<'EOF'
 Usage: scripts/package-native-runtime.sh [options]
 
-Package a MeshLLM native runtime artifact containing the patched llama/Skippy
-shared libraries selected by `mesh-llm runtime install`.
+Package a Skippy native runtime artifact containing the patched llama/Skippy
+shared libraries selected by `skippy runtime install`.
 
 Options:
   --build             Build patched llama.cpp shared libraries before packaging.
@@ -50,19 +50,19 @@ Options:
   --id-suffix NAME    Append -NAME to the runtime id, directory and archive
                       (lowercase letters, digits, dashes), so a distribution's
                       build is told apart from the release runtime of the same
-                      backend in `mesh-llm runtime list`.
+                      backend in `skippy runtime list`.
   -h, --help          Show this help.
 
 Environment:
   LLAMA_STAGE_CUDA_ARCHITECTURES / SKIPPY_CUDA_ARCHITECTURES
   LLAMA_STAGE_AMDGPU_TARGETS / SKIPPY_AMDGPU_TARGETS
   LLAMA_STAGE_BUILD_DIR
-  MESH_NATIVE_RUNTIME_TARGET
-  MESH_NATIVE_RUNTIME_MODEL_PACKAGE_TOOL (non-Windows test/packaging override)
-  MESH_CUDA_VERSION / MESH_LLM_CUDA_TOOLKIT_MAJOR (validated against the selected compiler)
-  MESH_LLM_CUDA_LICENSE_FILE (optional CUDA EULA/copyright file override)
-  MESH_LLM_LLAMA_PIN_SHA
-  MESH_LLM_NATIVE_RUNTIME_RANK (manifest rank, default 0; among compatible
+  SKIPPY_NATIVE_RUNTIME_TARGET
+  SKIPPY_NATIVE_RUNTIME_MODEL_PACKAGE_TOOL (non-Windows test/packaging override)
+  SKIPPY_CUDA_VERSION / SKIPPY_CUDA_TOOLKIT_MAJOR (validated against the selected compiler)
+  SKIPPY_CUDA_LICENSE_FILE (optional CUDA EULA/copyright file override)
+  SKIPPY_LLAMA_PIN_SHA
+  SKIPPY_NATIVE_RUNTIME_RANK (manifest rank, default 0; among compatible
                       runtimes the highest rank wins)
 EOF
 }
@@ -204,12 +204,12 @@ backend_flavor() {
 }
 
 cuda_toolkit_major() {
-    if [[ -z "$_mesh_cuda_toolkit_manifest_major_cache" ]]; then
-        if ! _mesh_cuda_toolkit_manifest_major_cache="$(cuda_toolkit_manifest_major)"; then
+    if [[ -z "$_skippy_cuda_toolkit_manifest_major_cache" ]]; then
+        if ! _skippy_cuda_toolkit_manifest_major_cache="$(cuda_toolkit_manifest_major)"; then
             return 1
         fi
     fi
-    printf '%s\n' "$_mesh_cuda_toolkit_manifest_major_cache"
+    printf '%s\n' "$_skippy_cuda_toolkit_manifest_major_cache"
 }
 
 build_backend() {
@@ -232,11 +232,11 @@ sha256_file() {
 }
 
 skippy_runtime_version() {
-    xtool native package-source-version runtime "$REPO_ROOT/skippy/crates/skippy-native-runtime/RUNTIME_VERSION"
+    xtool native package-source-version runtime "$REPO_ROOT/crates/skippy-native-runtime/RUNTIME_VERSION"
 }
 
 skippy_abi_version() {
-    xtool native package-source-version abi "$REPO_ROOT/skippy/crates/skippy-ffi/src/lib.rs"
+    xtool native package-source-version abi "$REPO_ROOT/crates/skippy-ffi/src/lib.rs"
 }
 
 library_pattern() {
@@ -257,9 +257,9 @@ primary_library_names() {
 
 gpu_benchmark_tool_path() {
     if [[ "$runtime_os" == "windows" ]]; then
-        printf 'tools/mesh-llm-gpu-benchmark.exe\n'
+        printf 'tools/skippy-gpu-benchmark.exe\n'
     else
-        printf 'tools/mesh-llm-gpu-benchmark\n'
+        printf 'tools/skippy-gpu-benchmark\n'
     fi
 }
 
@@ -375,7 +375,7 @@ build_gpu_benchmark_tool() {
 
     tool_rel="$(gpu_benchmark_tool_path)"
     tool_path="$stage_dir/$tool_rel"
-    source_root="$REPO_ROOT/skippy/crates/skippy-gpu-bench/native"
+    source_root="$REPO_ROOT/crates/skippy-gpu-bench/native"
     mkdir -p "$(dirname "$tool_path")"
 
     case "$BACKEND" in
@@ -436,7 +436,7 @@ build_model_package_tool() {
     )
     tool_rel="$(model_package_tool_path)"
     tool_path="$stage_dir/$tool_rel"
-    configured="${MESH_NATIVE_RUNTIME_MODEL_PACKAGE_TOOL:-}"
+    configured="${SKIPPY_NATIVE_RUNTIME_MODEL_PACKAGE_TOOL:-}"
     mkdir -p "$(dirname "$tool_path")"
 
     if [[ -n "$configured" ]]; then
@@ -447,10 +447,10 @@ build_model_package_tool() {
         source_path="$configured"
     else
         env "${cargo_env[@]}" \
-            cargo build --release --locked --target "$TARGET_TRIPLE" \
+            just --justfile "$REPO_ROOT/Justfile" with-lld cargo build --release --locked --target "$TARGET_TRIPLE" \
                 -p skippy-package-builder
         cargo_metadata="$(cargo metadata --no-deps --format-version 1)"
-        cargo_target_dir="$(xtool repository cargo-target-directory <<< "$cargo_metadata")"
+        cargo_target_dir="$(xtool native cargo-target-directory <<< "$cargo_metadata")"
         source_path="$cargo_target_dir/$TARGET_TRIPLE/release/$(basename "$tool_rel")"
         if [[ ! -x "$source_path" ]]; then
             echo "model package tool build did not produce $source_path" >&2
@@ -544,12 +544,12 @@ linux_cuda_dependency_search_dirs() {
 cuda_distribution_license_file() {
     local compiler root candidate major_dash
 
-    if [[ -n "${MESH_LLM_CUDA_LICENSE_FILE:-}" ]]; then
-        if [[ ! -f "$MESH_LLM_CUDA_LICENSE_FILE" ]]; then
-            echo "configured CUDA license file does not exist: $MESH_LLM_CUDA_LICENSE_FILE" >&2
+    if [[ -n "${SKIPPY_CUDA_LICENSE_FILE:-}" ]]; then
+        if [[ ! -f "$SKIPPY_CUDA_LICENSE_FILE" ]]; then
+            echo "configured CUDA license file does not exist: $SKIPPY_CUDA_LICENSE_FILE" >&2
             return 1
         fi
-        printf '%s\n' "$MESH_LLM_CUDA_LICENSE_FILE"
+        printf '%s\n' "$SKIPPY_CUDA_LICENSE_FILE"
         return 0
     fi
 
@@ -584,7 +584,7 @@ cuda_distribution_license_file() {
             return 0
         fi
     done
-    echo "CUDA redistribution license material was not found; set MESH_LLM_CUDA_LICENSE_FILE" >&2
+    echo "CUDA redistribution license material was not found; set SKIPPY_CUDA_LICENSE_FILE" >&2
     return 1
 }
 
@@ -728,7 +728,7 @@ fi
 # build to the previous stamp -- or to no stamp at all on a fresh checkout --
 # and quietly build into the directory this keying exists to separate.
 if [[ "$BUILD" == "1" ]]; then
-    "$SCRIPT_DIR/prepare-llama.sh" "${MESH_LLM_LLAMA_PIN_SHA:-pinned}"
+    "$SCRIPT_DIR/prepare-llama.sh" "${SKIPPY_LLAMA_PIN_SHA:-pinned}"
 fi
 
 if [[ -z "${LLAMA_STAGE_BUILD_DIR:-}" ]]; then
@@ -750,7 +750,7 @@ runtime_arch="$(target_runtime_arch "$TARGET_TRIPLE")"
 if ! flavor="$(backend_flavor)"; then
     exit 1
 fi
-artifact_id="meshllm-native-runtime-${platform}-${flavor}${ID_SUFFIX:+-$ID_SUFFIX}"
+artifact_id="skippy-native-runtime-${platform}-${flavor}${ID_SUFFIX:+-$ID_SUFFIX}"
 stage_dir="$OUT_DIR/$artifact_id"
 
 runtime_libraries=()
@@ -776,6 +776,9 @@ mkdir -p "$stage_dir/lib"
 
 tool_paths=()
 license_paths=()
+mkdir -p "$stage_dir/licenses"
+cp "$LLAMA_WORKDIR/LICENSE" "$stage_dir/licenses/llama.cpp-LICENSE"
+license_paths+=("licenses/llama.cpp-LICENSE")
 
 library_paths=()
 for library in "${runtime_libraries[@]}"; do
@@ -878,19 +881,19 @@ esac
 patched_sha=""
 upstream_sha=""
 patch_digest=""
-if [[ -f "$LLAMA_WORKDIR/.mesh-llm-patched-sha" ]]; then
-    patched_sha="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.mesh-llm-patched-sha")"
+if [[ -f "$LLAMA_WORKDIR/.skippy-patched-sha" ]]; then
+    patched_sha="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.skippy-patched-sha")"
 fi
-if [[ -f "$LLAMA_WORKDIR/.mesh-llm-upstream-sha" ]]; then
-    upstream_sha="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.mesh-llm-upstream-sha")"
+if [[ -f "$LLAMA_WORKDIR/.skippy-upstream-sha" ]]; then
+    upstream_sha="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.skippy-upstream-sha")"
 fi
-if [[ -f "$LLAMA_WORKDIR/.mesh-llm-patch-digest" ]]; then
-    patch_digest="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.mesh-llm-patch-digest")"
+if [[ -f "$LLAMA_WORKDIR/.skippy-patch-digest" ]]; then
+    patch_digest="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.skippy-patch-digest")"
 fi
 
 manifest_args=("$stage_dir/manifest.json" "$artifact_id" "$runtime_release_version" "$abi_version"
-    "$runtime_os" "$runtime_arch" "$TARGET_TRIPLE" "$platform" "$BACKEND" "$cuda_major"
-    "$primary_library" "$upstream_sha" "$patched_sha" "$patch_digest" "${library_paths[@]}" --)
+    "$runtime_os" "$runtime_arch" "$TARGET_TRIPLE" "$platform" "$BACKEND" "${cuda_major:--}"
+    "$primary_library" "${upstream_sha:--}" "${patched_sha:--}" "${patch_digest:--}" "${library_paths[@]}" --)
 if [[ "${#tool_paths[@]}" -gt 0 ]]; then
     manifest_args+=("${tool_paths[@]}")
 fi
@@ -905,7 +908,7 @@ xtool native runtime-manifest-write --schema-v2 "${manifest_args[@]}"
 cat > "$stage_dir/README.md" <<EOF
 # $artifact_id
 
-This artifact contains MeshLLM native runtime shared libraries for:
+This artifact contains Skippy native runtime shared libraries for:
 
 - target: \`$TARGET_TRIPLE\`
 - backend: \`$BACKEND\`
@@ -913,7 +916,7 @@ This artifact contains MeshLLM native runtime shared libraries for:
 - Skippy runtime release: \`$runtime_release_version\`
 - Skippy ABI: \`$abi_version\`
 
-\`mesh-llm runtime install\` reads \`manifest.json\`, verifies the archive
+\`skippy runtime install\` reads \`manifest.json\`, verifies the archive
 checksum from \`native-runtimes.json\`, installs the artifact into the
 versioned native runtime cache, and loads these libraries before Skippy starts.
 EOF

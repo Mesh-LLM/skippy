@@ -146,7 +146,7 @@ fn layer_job_actual_embedded_projection_block_forwards_source_and_experimental_p
     assert!(
         fs::read_to_string(root.join("layer-projection/README.preview.md"))
             .unwrap()
-            .contains("mesh-llm serve --model \"fixture/package\" --split")
+            .contains("skippy serve --model \"fixture/package\"")
     );
     temp.close().unwrap();
 }
@@ -419,7 +419,7 @@ while (($#)); do
  --relative-path) relative="$2"; shift 2;;
  --revision) revision="$2"; shift 2;;
  --credential-file) credential="$2"; shift 2;;
- --repo|--source-repo|--source-revision|--source-file|--target-repo|--maximum-attempts|--timeout-seconds|--manifest|--pipeline-tag|--mesh-llm-ref) shift 2;;
+ --repo|--source-repo|--source-revision|--source-file|--target-repo|--maximum-attempts|--timeout-seconds|--manifest|--pipeline-tag|--skippy-ref) shift 2;;
  *) exit 64;;
  esac
 done

@@ -265,20 +265,21 @@ llama-server baselines. Rows marked `untested` are intentionally not promoted as
 default evidence yet.
 
 Reproduce the family evidence and README tables with the pinned operator JSON
-profile described in [the cache-family skill](../../../.agents/skills/skippy-cache-family-bench/SKILL.md).
+profile consumed by the
+[cache-family benchmark](../../evals/skippy-cache-family-bench.sh).
 Preparation observes the model shards, binaries, native build and selected toolkit
 directories before launching the producer. Keep those inputs fixed across both arms:
 
 ```bash
 SKIPPY_CACHE_OPERATOR_INPUT=/absolute/cache-operator.json \
-  skippy/evals/skippy-cache-family-bench.sh /tmp/skippy-cache-family-bench
+  evals/skippy-cache-family-bench.sh /tmp/skippy-cache-family-bench
 ```
 
 For a faster rerun after building locally:
 
 ```bash
 SKIPPY_CACHE_OPERATOR_INPUT=/absolute/cache-operator.json SKIPPY_CACHE_SKIP_BUILD=1 \
-  skippy/evals/skippy-cache-family-bench.sh /tmp/skippy-cache-family-bench
+  evals/skippy-cache-family-bench.sh /tmp/skippy-cache-family-bench
 ```
 
 For an MoE tensor-presence/cache smoke, reuse an observed correctness profile from
@@ -372,7 +373,7 @@ artifact.
 | Open chat | 13.74x | 9.15x | 1.62x | 1.35x | 1.60x | 1.30x | 1.23x | 1.36x | 1.31x | 1.58x | 1.28x | 1.06x | 1.27x |
 | Summarization/RAG | 13.89x | 8.94x | 1.81x | 1.41x | 1.67x | 1.26x | 1.13x | 1.27x | 1.32x | 1.55x | 1.61x | 1.20x | 1.19x |
 
-Prompt sources are checked in at `skippy/evals/skippy-usecase-corpus.json` with source
+Prompt sources are checked in at `evals/skippy-usecase-corpus.json` with source
 dataset metadata:
 
 | Use case | Dataset | Config | Split | Row |

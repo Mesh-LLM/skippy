@@ -23,7 +23,7 @@ pub struct PrepareParams {
     pub generation_defaults: Option<skippy_package_format::GenerationRequestDefaults>,
     pub flavor: String,
     pub timeout_seconds: u64,
-    pub mesh_llm_ref: String,
+    pub skippy_ref: String,
     pub experimental: bool,
     pub hf_token: Option<String>,
 }
@@ -277,8 +277,13 @@ pub async fn resolve(
     )
     .await?;
 
+    let catalog =
+        skippy_model_hf::repository_settings::HubRepository::require("SKIPPY_MODEL_CATALOG")?;
+    let bucket =
+        skippy_model_hf::repository_settings::HubRepository::require("SKIPPY_PACKAGE_BUCKET")?;
     // Build environment variables.
     let mut environment = HashMap::new();
+    environment.insert("SKIPPY_MODEL_CATALOG".into(), catalog.full_name());
     environment.insert("SOURCE_REPO".into(), params.source_repo.clone());
     environment.insert("SOURCE_FILE".into(), source_file.clone());
     environment.insert("SOURCE_QUANT".into(), matched.name.clone());
@@ -304,7 +309,7 @@ pub async fn resolve(
                 .join("\n"),
         );
     }
-    environment.insert("MESH_LLM_REF".into(), params.mesh_llm_ref.clone());
+    environment.insert("SKIPPY_REF".into(), params.skippy_ref.clone());
     let catalog_create_pr = params.experimental || permissions.catalog_create_pr;
     environment.insert(
         "CATALOG_CREATE_PR".into(),
@@ -320,12 +325,16 @@ pub async fn resolve(
     let mut secrets = HashMap::new();
     if let Some(hf_token) = params.hf_token {
         secrets.insert("HF_TOKEN".into(), hf_token);
+        secrets.insert(
+            "SKIPPY_GITHUB_TOKEN".into(),
+            crate::jobs::source::github_token_from_env()?,
+        );
     }
 
     let volumes = vec![
         JobVolume {
             volume_type: "bucket".into(),
-            source: "meshllm/layer-split-output".into(),
+            source: bucket.full_name(),
             mount_path: "/bucket".into(),
             read_only: None,
             revision: None,

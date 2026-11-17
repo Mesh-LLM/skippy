@@ -10,8 +10,8 @@ summary telemetry, and balanced splits `10,20,30`.
 
 ```mermaid
 flowchart LR
-    Client["OpenAI client / benchmark driver"] --> Mesh["mesh-llm<br/>skippy-inference-api + stage-0 route"]
-    Mesh --> D["token IDs + control<br/>~183 KiB total corpus"]
+    Client["OpenAI client / benchmark driver"] --> Api["skippy-inference-api<br/>stage-0 route"]
+    Api --> D["token IDs + control<br/>~183 KiB total corpus"]
     D --> S0["stage-0<br/>layers 0..10<br/>embeddings + first block"]
 
     S0 -->|"activation frames<br/>~364.7 MiB total<br/>max prefill frame ~2.0 MiB<br/>decode frame 8 KiB/token"| S1["stage-1<br/>layers 10..20"]
@@ -24,10 +24,10 @@ flowchart LR
     S2 -->|"small replies<br/>ACKs / predicted token"| S1
     S1 -->|"small replies<br/>ACKs / predicted token"| S0
     S0 -->|"predicted tokens<br/>~6 KiB generated token IDs"| D
-    D --> Mesh
-    Mesh --> Client
+    D --> Api
+    Api --> Client
 
-    Mesh -.->|"run/topology metadata<br/>small"| M
+    Api -.->|"run/topology metadata<br/>small"| M
     S0 -.->|"summary OTLP<br/>small"| M["metrics-server"]
     S1 -.->|"summary OTLP<br/>small"| M
     S2 -.->|"summary OTLP<br/>small"| M
@@ -62,8 +62,8 @@ use the prediction-return channel. See [causal decisions](CAUSAL_DECISIONS.md).
 
 ```mermaid
 flowchart LR
-    Client["OpenAI client / benchmark driver"] --> Mesh["mesh-llm<br/>skippy-inference-api + stage-0 route"]
-    Mesh --> D["token IDs + control<br/>~183 KiB total corpus"]
+    Client["OpenAI client / benchmark driver"] --> Api["skippy-inference-api<br/>stage-0 route"]
+    Api --> D["token IDs + control<br/>~183 KiB total corpus"]
     D --> S0["stage-0<br/>layers 0..10<br/>embeddings + first block"]
 
     S0 -->|"activation frames<br/>~364.7 MiB total<br/>max prefill frame ~2.0 MiB<br/>decode frame 8 KiB/token"| S1["stage-1<br/>layers 10..20"]
@@ -72,14 +72,14 @@ flowchart LR
 
     S3 -->|"predicted token(s)<br/>direct return"| S0
     S0 -->|"predicted tokens<br/>~6 KiB generated token IDs"| D
-    D --> Mesh
-    Mesh --> Client
+    D --> Api
+    Api --> Client
 
     S3 -.->|"control ACKs / stats<br/>cold path"| S2
     S2 -.->|"control ACKs / stats<br/>cold path"| S1
     S1 -.->|"control ACKs / stats<br/>cold path"| S0
 
-    Mesh -.->|"run/topology metadata<br/>small"| M
+    Api -.->|"run/topology metadata<br/>small"| M
     S0 -.->|"summary OTLP<br/>small"| M["metrics-server"]
     S1 -.->|"summary OTLP<br/>small"| M
     S2 -.->|"summary OTLP<br/>small"| M

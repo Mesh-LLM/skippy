@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 /// Stack for the thread that drives the application future. The process main
 /// thread gets 1 MiB on Windows (8 MiB on Linux), which an unoptimized build
-/// overflows; `mesh-llm` runs its application on a thread of the same size.
+/// overflows when model preparation needs deeply nested native calls.
 const APPLICATION_STACK_SIZE: usize = 8 * 1024 * 1024;
 
 fn main() -> std::process::ExitCode {
@@ -84,7 +84,7 @@ fn prepare_model_download_directories() -> Vec<String> {
             warnings
         }
         Err(error) => vec![format!(
-            "⚠ Unable to prepare model download directories: {error:#}. Model downloads may fail; set MESH_LLM_DATA_DIR to a writable directory."
+            "⚠ Unable to prepare model download directories: {error:#}. Model downloads may fail; set SKIPPY_DATA_DIR to a writable directory."
         )],
     }
 }
@@ -207,7 +207,21 @@ fn shutdown_signal() -> Result<impl std::future::Future<Output = ()> + Send + 's
             }
         })
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        // Subscribe before serving starts: supervisors stop Windows process
+        // groups with CTRL_BREAK_EVENT, while interactive users send Ctrl-C.
+        let mut interrupt = tokio::signal::windows::ctrl_c().context("install Ctrl-C handler")?;
+        let mut terminate =
+            tokio::signal::windows::ctrl_break().context("install Ctrl-Break handler")?;
+        Ok(async move {
+            tokio::select! {
+                _ = interrupt.recv() => {}
+                _ = terminate.recv() => {}
+            }
+        })
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         Ok(async {
             if let Err(error) = tokio::signal::ctrl_c().await {

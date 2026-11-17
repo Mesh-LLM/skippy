@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 skippy_quantize_bin="${SKIPPY_QUANTIZE_BIN:-$repo_root/target/release/skippy-quantize}"
 if [[ ! -x "$skippy_quantize_bin" ]]; then
   echo "missing executable: $skippy_quantize_bin" >&2

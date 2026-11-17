@@ -371,7 +371,7 @@ mod tests {
 
     /// Reads the reference request against a real Clef GGUF named by
     /// `SKIPPY_CLEF_MODEL`, with the runtime bundle from
-    /// `MESH_LLM_NATIVE_RUNTIME_BUNDLE_DIR`. The expected probabilities are
+    /// `SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR`. The expected probabilities are
     /// what the upstream `llama-server /v1/systemone` answered for the same
     /// request on `ggml-org/Clef-Flash-GGUF` Q4_K_M; `SKIPPY_CLEF_EXPECTED`
     /// overrides them as `refund,urgency0..3,route0..2`.

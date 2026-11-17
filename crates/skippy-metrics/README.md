@@ -14,7 +14,7 @@ crates emit or consume OTLP data.
 
 ```mermaid
 flowchart LR
-    Mesh["mesh-llm<br/>topology + lifecycle metadata"] -.-> M["metrics-server"]
+    Host["embedding application<br/>topology + lifecycle metadata"] -.-> M["metrics-server"]
     S0["stage servers<br/>request summaries"] -.-> M
     B["bench / diagnostic drivers<br/>run metadata"] -.-> M
     M --> D["metrics.sqlite"]

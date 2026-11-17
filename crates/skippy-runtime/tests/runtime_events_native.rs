@@ -1,7 +1,7 @@
 //! Real native-runtime integration test for the runtime-event ABI:
 //! admission, capability probe, the process-global reporter, and per-call
 //! `ModelOpenEventQueue` delivery. Gated behind
-//! `MESH_LLM_RUNTIME_EVENTS_NATIVE_TEST=1` so it never touches a native
+//! `SKIPPY_RUNTIME_EVENTS_NATIVE_TEST=1` so it never touches a native
 //! symbol during an ordinary `cargo test`. An ungated run still executes
 //! (it is never skipped), but it must never claim `executed`: it prints a
 //! `BLOCKED: <prerequisite>` line to stdout, writes only a
@@ -41,15 +41,15 @@ mod libraries;
 #[path = "runtime_events_native/model_open_checks.rs"]
 mod model_open_checks;
 
-const GATE_ENV: &str = "MESH_LLM_RUNTIME_EVENTS_NATIVE_TEST";
+const GATE_ENV: &str = "SKIPPY_RUNTIME_EVENTS_NATIVE_TEST";
 #[cfg(feature = "dynamic-native-runtime")]
-const BUNDLE_DIR_ENV: &str = "MESH_LLM_NATIVE_RUNTIME_BUNDLE_DIR";
+const BUNDLE_DIR_ENV: &str = "SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR";
 #[cfg(feature = "dynamic-native-runtime")]
-const MODEL_ENV: &str = "MESH_LLM_RUNTIME_EVENTS_MODEL";
-const EVIDENCE_FILE_ENV: &str = "MESH_LLM_RUNTIME_EVENTS_EVIDENCE_FILE";
+const MODEL_ENV: &str = "SKIPPY_RUNTIME_EVENTS_MODEL";
+const EVIDENCE_FILE_ENV: &str = "SKIPPY_RUNTIME_EVENTS_EVIDENCE_FILE";
 
 /// Appends one evidence marker line, or does nothing when
-/// `MESH_LLM_RUNTIME_EVENTS_EVIDENCE_FILE` is unset. The actual file I/O is
+/// `SKIPPY_RUNTIME_EVENTS_EVIDENCE_FILE` is unset. The actual file I/O is
 /// `skippy_runtime::write_evidence_marker`, unit tested directly in
 /// `crates/skippy-runtime/src/native_test_evidence.rs`.
 fn write_marker(path: Option<&std::path::Path>, line: &str) {

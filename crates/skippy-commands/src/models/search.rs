@@ -48,10 +48,10 @@ struct RepoArtifactCandidate {
 }
 
 pub fn search_catalog_models(query: &str) -> Result<Vec<remote_catalog::RemoteCatalogModel>> {
-    remote_catalog::ensure_catalog().context("load meshllm/catalog for catalog search")?;
+    remote_catalog::ensure_catalog().context("load configured model catalog for catalog search")?;
     let q = query.to_lowercase();
     let mut results: Vec<_> = remote_catalog::loaded_models()
-        .context("parse meshllm/catalog models for catalog search")?
+        .context("parse configured model catalog models for catalog search")?
         .into_iter()
         .filter(|model| {
             model.name.to_lowercase().contains(&q)

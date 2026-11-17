@@ -4,9 +4,9 @@ New benchmark orchestration belongs in typed `tools/xtask` commands under the
 rule in `.agents/skills/manage-ci/SKILL.md`; from the repository root,
 `cargo xtool repo-consistency ci-crate-lists` is a working alias example. Use
 the native competitive prepared-run/report commands documented in
-`skippy/docs/COMPETITIVE_BENCHMARK.md`. Do not add new Python tooling.
+`docs/COMPETITIVE_BENCHMARK.md`. Do not add new Python tooling.
 
-Any change under `skippy/crates/skippy-scheduler/` must be checked for performance regressions before it is merged.
+Any change under `crates/skippy-scheduler/` must be checked for performance regressions before it is merged.
 
 - Run the complete crate test suite: `cargo test -p skippy-scheduler`.
 - Rerun the deterministic scheduler lab in release mode: `just with-lld cargo bench -p skippy-scheduler --features scheduler-lab --bench scheduler_lab`.

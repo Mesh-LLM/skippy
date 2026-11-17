@@ -44,7 +44,7 @@ pub(crate) fn resolve_cache_root(
         _ => dirs::cache_dir()
             .or_else(|| dirs::home_dir().map(|home| home.join(".cache")))
             .context("cannot determine native runtime cache directory")
-            .map(|dir| dir.join("mesh-llm").join("native-runtimes")),
+            .map(|dir| dir.join("skippy").join("native-runtimes")),
     }
 }
 

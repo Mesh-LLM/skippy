@@ -523,7 +523,7 @@ mod tests {
         let prev_xdg = std::env::var_os("XDG_CACHE_HOME");
 
         let temp = std::env::temp_dir().join(format!(
-            "mesh-llm-inventory-direct-cache-root-{}",
+            "skippy-inventory-direct-cache-root-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -560,7 +560,7 @@ mod tests {
         let prev_xdg = std::env::var_os("XDG_CACHE_HOME");
 
         let temp = std::env::temp_dir().join(format!(
-            "mesh-llm-inventory-snapshot-cache-{}",
+            "skippy-inventory-snapshot-cache-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -597,7 +597,7 @@ mod tests {
     #[serial]
     fn local_inventory_keys_sizes_and_metadata_by_canonical_model_ref() {
         let temp = std::env::temp_dir().join(format!(
-            "mesh-llm-inventory-canonical-ref-{}",
+            "skippy-inventory-canonical-ref-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()

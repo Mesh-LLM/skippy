@@ -13,7 +13,7 @@ pub(crate) fn from_public_settings(
 ) -> Result<Option<LocalDiskCacheOptions>> {
     let public_mode = mode
         .map(str::to_owned)
-        .or(env_utf8("MESH_LLM_KV_CACHE_DISK")?);
+        .or(env_utf8("SKIPPY_KV_CACHE_DISK")?);
     let legacy_directory = std::env::var_os("SKIPPY_L3_DIR").map(PathBuf::from);
     let budget = match public_mode {
         Some(mode) => parse_disk_budget(&mode)?,
@@ -32,12 +32,12 @@ pub(crate) fn from_public_settings(
         return Ok(None);
     }
     let directory = directory
-        .or_else(|| std::env::var_os("MESH_LLM_KV_CACHE_DISK_DIR").map(PathBuf::from))
+        .or_else(|| std::env::var_os("SKIPPY_KV_CACHE_DISK_DIR").map(PathBuf::from))
         .or(legacy_directory)
         .unwrap_or_else(|| {
-            std::env::var_os("MESH_LLM_HOME")
+            std::env::var_os("SKIPPY_HOME")
                 .map(PathBuf::from)
-                .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".mesh-llm"))
+                .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".skippy"))
                 .join("kv-cache")
         });
     if !directory.is_absolute() {
@@ -48,7 +48,7 @@ pub(crate) fn from_public_settings(
     }
     let minimum_free_bytes = minimum_free
         .map(str::to_owned)
-        .or(env_utf8("MESH_LLM_KV_CACHE_MIN_FREE")?)
+        .or(env_utf8("SKIPPY_KV_CACHE_MIN_FREE")?)
         .map(|value| parse_disk_budget(&value))
         .transpose()?
         .map_or(16 * 1024 * 1024 * 1024, |budget| match budget {

@@ -23,9 +23,9 @@ fn link_main() {
     println!("cargo:rerun-if-env-changed=SKIPPY_CUDA_ARCHITECTURES");
     println!("cargo:rerun-if-env-changed=LLAMA_STAGE_AMDGPU_TARGETS");
     println!("cargo:rerun-if-env-changed=SKIPPY_AMDGPU_TARGETS");
-    println!("cargo:rerun-if-env-changed=MESH_LLM_LLAMA_BUILD_ROOT");
+    println!("cargo:rerun-if-env-changed=SKIPPY_LLAMA_BUILD_ROOT");
     println!("cargo:rerun-if-env-changed=SKIPPY_LLAMA_AUTO_BUILD");
-    println!("cargo:rerun-if-env-changed=MESH_LLM_AUTO_BUILD_LLAMA");
+    println!("cargo:rerun-if-env-changed=SKIPPY_AUTO_BUILD_LLAMA");
     println!("cargo:rerun-if-env-changed=CUDA_PATH");
     println!("cargo:rerun-if-env-changed=HIP_PATH");
     println!("cargo:rerun-if-env-changed=ROCM_PATH");
@@ -40,19 +40,17 @@ fn link_main() {
     let workspace_root = std::path::PathBuf::from(
         std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set"),
     )
-    .join("../../..");
+    .join("../..");
     println!(
         "cargo:rerun-if-changed={}",
-        workspace_root
-            .join("skippy/scripts/build-llama.sh")
-            .display()
+        workspace_root.join("scripts/build-llama.sh").display()
     );
     // The default build directory is keyed by the patched llama sha, so a pin
     // switch must rerun this script instead of reusing the previous pin's.
     println!(
         "cargo:rerun-if-changed={}",
         workspace_root
-            .join(".deps/llama.cpp/.mesh-llm-patched-sha")
+            .join(".deps/llama.cpp/.skippy-patched-sha")
             .display()
     );
     let target = std::env::var("TARGET").unwrap_or_default();
@@ -309,7 +307,7 @@ fn link_main() {
 }
 
 fn emit_static_native_link_fingerprint(build_dir: &std::path::Path) {
-    let build_stamp = build_dir.join(".mesh-llm-build-stamp");
+    let build_stamp = build_dir.join(".skippy-build-stamp");
     println!("cargo:rerun-if-changed={}", build_stamp.display());
     let fingerprint = std::fs::read_to_string(&build_stamp).unwrap_or_else(|_| {
         let metadata = ["src/libllama.a", "src/llama.lib"]
@@ -335,7 +333,7 @@ fn emit_native_link_fingerprint(value: &str) {
 }
 
 fn default_build_dir(workspace_root: &std::path::Path, backend: &str) -> std::path::PathBuf {
-    let script = workspace_root.join("skippy/scripts/build-llama.sh");
+    let script = workspace_root.join("scripts/build-llama.sh");
     let output = std::process::Command::new("bash")
         .arg(&script)
         .arg("--print-build-dir")
@@ -391,13 +389,13 @@ fn ensure_static_native_ready(
         );
     }
 
-    let prepare = workspace_root.join("skippy/scripts/prepare-llama.sh");
-    let build = workspace_root.join("skippy/scripts/build-llama.sh");
+    let prepare = workspace_root.join("scripts/prepare-llama.sh");
+    let build = workspace_root.join("scripts/build-llama.sh");
     println!("cargo:rerun-if-changed={}", prepare.display());
     println!("cargo:rerun-if-changed={}", build.display());
     if !prepare.exists() || !build.exists() {
         panic!(
-            "patched llama.cpp ABI archives are missing from {}, and mesh-llm build scripts were not found under {}; set LLAMA_STAGE_BUILD_DIR to a prepared native build",
+            "patched llama.cpp ABI archives are missing from {}, and Skippy build scripts were not found under {}; set LLAMA_STAGE_BUILD_DIR to a prepared native build",
             build_dir.display(),
             workspace_root.display()
         );
@@ -410,7 +408,7 @@ fn ensure_static_native_ready(
     }
 
     eprintln!(
-        "building patched llama.cpp ABI for mesh-llm SDK ({backend}) at {}",
+        "building patched llama.cpp ABI for Skippy SDK ({backend}) at {}",
         build_dir.display()
     );
     run_native_script(
@@ -446,7 +444,7 @@ fn ensure_static_native_ready(
 }
 
 fn native_auto_build_enabled() -> bool {
-    for key in ["SKIPPY_LLAMA_AUTO_BUILD", "MESH_LLM_AUTO_BUILD_LLAMA"] {
+    for key in ["SKIPPY_LLAMA_AUTO_BUILD", "SKIPPY_AUTO_BUILD_LLAMA"] {
         if let Ok(value) = std::env::var(key) {
             return !matches!(
                 value.to_ascii_lowercase().as_str(),

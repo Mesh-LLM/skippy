@@ -20,7 +20,7 @@ pub struct ModelPrepareArgs<'a> {
     pub generation_defaults: Option<&'a Path>,
     pub flavor: &'a str,
     pub timeout: &'a str,
-    pub mesh_llm_ref: &'a str,
+    pub skippy_ref: &'a str,
     pub experimental: bool,
     pub dry_run: bool,
     pub confirm: bool,
@@ -43,7 +43,7 @@ pub async fn dispatch_model_package(args: ModelPrepareArgs<'_>) -> Result<()> {
         generation_defaults,
         flavor,
         timeout,
-        mesh_llm_ref,
+        skippy_ref,
         experimental,
         dry_run,
         confirm,
@@ -151,7 +151,7 @@ pub async fn dispatch_model_package(args: ModelPrepareArgs<'_>) -> Result<()> {
         generation_defaults,
         flavor: flavor.to_string(),
         timeout_seconds,
-        mesh_llm_ref: mesh_llm_ref.to_string(),
+        skippy_ref: skippy_ref.to_string(),
         experimental,
         hf_token: jobs_client
             .as_ref()
@@ -314,10 +314,10 @@ fn print_prepare_job(
         err,
         "🔑 Permissions: {} ({})",
         perms.username,
-        if perms.is_meshllm_member {
-            "meshllm org member"
+        if perms.can_update_catalog {
+            "catalog namespace member"
         } else {
-            "not in meshllm org"
+            "catalog changes require a pull request"
         }
     );
     let _ = writeln!(err, "   Target:  {}", job.target_repo);
@@ -332,7 +332,12 @@ fn print_prepare_job(
     );
     let _ = writeln!(
         err,
-        "   Catalog: meshllm/catalog ({})",
+        "   Catalog: {} ({})",
+        job.spec
+            .environment
+            .get("SKIPPY_MODEL_CATALOG")
+            .map(String::as_str)
+            .unwrap_or("unconfigured"),
         if job.catalog_create_pr {
             "will open PR"
         } else {
@@ -342,12 +347,12 @@ fn print_prepare_job(
     let _ = writeln!(err);
     let _ = writeln!(
         err,
-        "📋 Job: {}, timeout {}, mesh-llm@{}",
+        "📋 Job: {}, timeout {}, skippy@{}",
         job.spec.flavor,
         format_timeout(job.spec.timeout_seconds),
         job.spec
             .environment
-            .get("MESH_LLM_REF")
+            .get("SKIPPY_REF")
             .map(|s| s.as_str())
             .unwrap_or("main")
     );
@@ -446,19 +451,9 @@ async fn run_update_script() -> Result<()> {
     let mut err = crate::models::output::console_err();
     writeln!(
         err,
-        "📤 Uploading embedded script to meshllm/layer-split-output bucket..."
+        "📤 Uploading embedded script to the configured SKIPPY_PACKAGE_BUCKET..."
     )?;
     let client = ::skippy_model_package::build_hf_client()?;
-
-    // Check permissions first.
-    let perms = permissions::check_permissions(&client).await?;
-    if !perms.is_meshllm_member {
-        anyhow::bail!(
-            "Only meshllm org members can update the bucket script.\n\
-             You are logged in as '{}' which is not in the meshllm org.",
-            perms.username
-        );
-    }
 
     script::update_bucket_script(&client).await?;
     writeln!(

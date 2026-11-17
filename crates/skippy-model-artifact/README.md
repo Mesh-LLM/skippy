@@ -6,7 +6,7 @@ Model artifact resolution over a pluggable repository interface.
 file, artifact file set, and provenance record. It also owns GGUF artifact
 metadata scanning used for context planning and MoE/stage packaging. Its
 `capabilities` module owns model capability types and inference from names,
-configuration, and sibling files, shared by standalone model commands and Mesh
+configuration, and sibling files, shared by standalone model commands and embedding
 runtime consumers. It knows
 artifact-selection policy and file metadata formats, but it does not know how
 any particular registry downloads files.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # shellcheck disable=SC1091
 source "$ROOT/scripts/lib/cuda-toolkit.sh"
@@ -10,7 +10,7 @@ source "$ROOT/scripts/lib/cuda-toolkit.sh"
 source "$ROOT/scripts/lib/macos-deployment-target.sh"
 
 LLAMA_WORKDIR="${LLAMA_WORKDIR:-$ROOT/.deps/llama.cpp}"
-LLAMA_BUILD_ROOT="${MESH_LLM_LLAMA_BUILD_ROOT:-$ROOT/.deps/llama-build}"
+LLAMA_BUILD_ROOT="${SKIPPY_LLAMA_BUILD_ROOT:-$ROOT/.deps/llama-build}"
 LLAMA_BACKEND="${LLAMA_STAGE_BACKEND:-${SKIPPY_LLAMA_BACKEND:-${LLAMA_BACKEND:-cpu}}}"
 LLAMA_LINK_MODE="${LLAMA_STAGE_LINK_MODE:-${SKIPPY_LLAMA_LINK_MODE:-static}}"
 LLAMA_STAGE_BUILD_TESTS="${LLAMA_STAGE_BUILD_TESTS:-OFF}"
@@ -124,8 +124,8 @@ default_build_dir_for_backend() {
   # both library generations in one bundle. The stale generation then fails to
   # resolve against the other's ggml.
   local pin=""
-  if [[ -f "$LLAMA_WORKDIR/.mesh-llm-patched-sha" ]]; then
-    pin="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.mesh-llm-patched-sha")"
+  if [[ -f "$LLAMA_WORKDIR/.skippy-patched-sha" ]]; then
+    pin="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.skippy-patched-sha")"
   fi
   if [[ -n "$pin" ]]; then
     printf '%s/build-stage-abi-%s-%s-%s\n' "$LLAMA_BUILD_ROOT" "$LLAMA_LINK_MODE" "$suffix" "${pin:0:12}"
@@ -283,13 +283,22 @@ CMAKE_ARGS=(
   -DCMAKE_POSITION_INDEPENDENT_CODE=ON
   # mtmd video shells out to ffmpeg via sheredom/subprocess.h, which calls
   # posix_spawn_file_actions_addchdir_np - unavailable on iOS, so it breaks the
-  # Swift XCFramework build. mesh-llm does not use mtmd video; opt out on all
+  # Swift XCFramework build. Skippy does not use mtmd video; opt out on all
   # platforms.
   -DMTMD_VIDEO=OFF
 )
 if [[ "$LLAMA_STAGE_WORKLOAD_ORACLE" == "ON" ]]; then
   CMAKE_ARGS+=(-DLLAMA_BUILD_COMMON=ON -DLLAMA_BUILD_TOOLS=ON)
 fi
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    CMAKE_ARGS+=(-DCMAKE_OBJECT_PATH_MAX=180 -DGGML_AVX512=OFF -DGGML_BMI2=OFF)
+    if [[ "${CXX:-}" == cl || "${CXX:-}" == *cl.exe ]]; then
+      CMAKE_ARGS+=("-DCMAKE_CXX_FLAGS_INIT=/DPATH_MAX=4096")
+    fi
+    ;;
+esac
+
 if [[ "$LLAMA_BACKEND" == "cpu" ]]; then
   # macOS defaults Metal to ON even when the selected backend is CPU. Match
   # the backend contract for both the embedded runtime and its test oracle.
@@ -307,7 +316,7 @@ fi
 # embedded source/build paths so the archived link closure does not retain a
 # producer-local workspace path.
 if [[ "$LLAMA_LINK_MODE" == "static" ]]; then
-  PREFIX_MAP_FLAGS="-ffile-prefix-map=$ROOT=/mesh-llm -fdebug-prefix-map=$ROOT=/mesh-llm -fmacro-prefix-map=$ROOT=/mesh-llm"
+  PREFIX_MAP_FLAGS="-ffile-prefix-map=$ROOT=/skippy -fdebug-prefix-map=$ROOT=/skippy -fmacro-prefix-map=$ROOT=/skippy"
   case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*)
       # Setting CMAKE_<LANG>_FLAGS replaces CMake's platform defaults, which
@@ -394,8 +403,8 @@ if [[ "$USE_SCCACHE" != "0" && -n "$SCCACHE_BIN" ]] &&
    ! "$SCCACHE_BIN" --show-stats >/dev/null 2>&1; then
   if ! "$SCCACHE_BIN" --start-server >/dev/null 2>&1 ||
      ! "$SCCACHE_BIN" --show-stats >/dev/null 2>&1; then
-    if [[ "${MESH_LLM_REQUIRE_SCCACHE:-0}" == "1" ]]; then
-      echo "sccache is unavailable and MESH_LLM_REQUIRE_SCCACHE=1" >&2
+    if [[ "${SKIPPY_REQUIRE_SCCACHE:-0}" == "1" ]]; then
+      echo "sccache is unavailable and SKIPPY_REQUIRE_SCCACHE=1" >&2
       exit 1
     fi
     echo "sccache is unavailable; llama.cpp build will run without compiler caching" >&2
@@ -419,7 +428,7 @@ if [[ "$USE_SCCACHE" != "0" && -n "$SCCACHE_BIN" ]]; then
   echo "using sccache for llama.cpp C/C++ compilation: $SCCACHE_BIN"
 else
   if [[ "$USE_SCCACHE" != "0" ]]; then
-    if [[ "${MESH_LLM_REQUIRE_SCCACHE:-0}" == "1" ]]; then
+    if [[ "${SKIPPY_REQUIRE_SCCACHE:-0}" == "1" ]]; then
       echo "sccache is required but was not found" >&2
       exit 1
     fi
@@ -436,7 +445,7 @@ fi
 
 WHISPER_PIN=""
 if [[ "$SKIPPY_SPEECH_RECOGNITION" == "ON" ]]; then
-  WHISPER_PIN="$(tr -d '[:space:]' < "$ROOT/skippy/llama_cpp/whisper-upstream.txt")"
+  WHISPER_PIN="$(tr -d '[:space:]' < "$ROOT/llama_cpp/whisper-upstream.txt")"
   CMAKE_ARGS+=(-DSKIPPY_WHISPER_SOURCE_DIR="$WHISPER_WORKDIR")
 fi
 
@@ -444,14 +453,14 @@ if [[ "$#" -gt 0 ]]; then
   CMAKE_ARGS+=("$@")
 fi
 
-PATCHED_SHA="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.mesh-llm-patched-sha" 2>/dev/null || git -C "$LLAMA_WORKDIR" rev-parse HEAD)"
-BUILD_STAMP="$LLAMA_BUILD_DIR/.mesh-llm-build-stamp"
+PATCHED_SHA="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.skippy-patched-sha" 2>/dev/null || git -C "$LLAMA_WORKDIR" rev-parse HEAD)"
+BUILD_STAMP="$LLAMA_BUILD_DIR/.skippy-build-stamp"
 
 normalize_build_stamp_arg() {
   local value="$1"
   value="${value//"$LLAMA_BUILD_DIR"/@LLAMA_BUILD_DIR@}"
   value="${value//"$LLAMA_WORKDIR"/@LLAMA_WORKDIR@}"
-  value="${value//"$ROOT"/@MESH_LLM_ROOT@}"
+  value="${value//"$ROOT"/@SKIPPY_ROOT@}"
   if [[ -n "$SCCACHE_BIN" ]]; then
     value="${value//"$SCCACHE_BIN"/@SCCACHE@}"
   fi
@@ -464,7 +473,7 @@ CURRENT_BUILD_STAMP="$(
   printf 'whisper-sha=%s\n' "$WHISPER_PIN"
   printf 'backend=%s\n' "$LLAMA_BACKEND"
   printf 'link-mode=%s\n' "$LLAMA_LINK_MODE"
-  printf 'toolchain-epoch=%s\n' "${MESH_LLM_LLAMA_TOOLCHAIN_EPOCH:-local}"
+  printf 'toolchain-epoch=%s\n' "${SKIPPY_LLAMA_TOOLCHAIN_EPOCH:-local}"
   printf 'build-type=%s\n' "${CMAKE_BUILD_TYPE:-Release}"
   printf 'ggml-native=%s\n' "${LLAMA_STAGE_GGML_NATIVE:-${SKIPPY_GGML_NATIVE:-OFF}}"
   printf 'cuda-architectures=%s\n' "${LLAMA_STAGE_CUDA_ARCHITECTURES:-${SKIPPY_CUDA_ARCHITECTURES:-}}"
@@ -494,7 +503,7 @@ if [[ "$REQUIRE_EXISTING" == "1" ]]; then
   echo "prebuilt patched llama.cpp ABI did not match the requested build contract" >&2
   echo "  backend:         $LLAMA_BACKEND" >&2
   echo "  link mode:       $LLAMA_LINK_MODE" >&2
-  echo "  toolchain epoch: ${MESH_LLM_LLAMA_TOOLCHAIN_EPOCH:-local}" >&2
+  echo "  toolchain epoch: ${SKIPPY_LLAMA_TOOLCHAIN_EPOCH:-local}" >&2
   echo "  build dir:       $LLAMA_BUILD_DIR" >&2
   echo "refusing to rebuild because --require-existing was set" >&2
   exit 1
@@ -516,7 +525,7 @@ if [[ -f "$LLAMA_BUILD_DIR/CMakeCache.txt" ]]; then
 fi
 
 if [[ "$SKIPPY_SPEECH_RECOGNITION" == "ON" ]]; then
-  WHISPER_WORKDIR="$WHISPER_WORKDIR" "$ROOT/skippy/scripts/prepare-whisper.sh"
+  WHISPER_WORKDIR="$WHISPER_WORKDIR" "$ROOT/scripts/prepare-whisper.sh"
 fi
 
 cmake "${CMAKE_ARGS[@]}"

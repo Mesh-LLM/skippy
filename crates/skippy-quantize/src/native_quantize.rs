@@ -214,7 +214,7 @@ fn ensure_native_quantize_supported(args: &QuantRunnerArgs) -> Result<()> {
     );
     ensure!(
         args.max_memory.is_none(),
-        "--max-memory is not supported by the native llama quantize backend now that mesh-llm no longer patches llama-quantize memory chunking"
+        "--max-memory is not supported by the native llama quantize backend"
     );
     Ok(())
 }
@@ -222,7 +222,7 @@ fn ensure_native_quantize_supported(args: &QuantRunnerArgs) -> Result<()> {
 fn ensure_full_split_window(manifest: &Manifest, window: SplitWindow) -> Result<()> {
     ensure!(
         window.first_split == 1 && window.last_split == manifest.expected_splits,
-        "native llama quantize backend no longer supports partial split windows after removing mesh-llm's patched llama-quantize split-window support; requested {}..{} of {}",
+        "native llama quantize backend requires the full split range; requested {}..{} of {}",
         window.first_split,
         window.last_split,
         manifest.expected_splits
@@ -639,11 +639,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("no longer supports partial split windows")
-        );
+        assert!(error.to_string().contains("requires the full split range"));
     }
 
     #[test]

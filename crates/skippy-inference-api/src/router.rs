@@ -61,12 +61,12 @@ use crate::{
     system_one::{SystemOneRequest, SystemOneResponse},
 };
 
-const AGENT_SESSION_HEADER_ENV: &str = "MESH_AGENT_SESSION_HEADER";
+const AGENT_SESSION_HEADER_ENV: &str = "SKIPPY_AGENT_SESSION_HEADER";
 mod audio_upload;
 mod generation;
 use audio_upload::parse_audio_multipart;
 use generation::{chat_completions, responses};
-const BACKEND_TIMEOUT_SECS_ENV: &str = "MESH_OPENAI_BACKEND_TIMEOUT_SECS";
+const BACKEND_TIMEOUT_SECS_ENV: &str = "SKIPPY_OPENAI_BACKEND_TIMEOUT_SECS";
 const MAX_AUDIO_MULTIPART_BODY_BYTES: usize = 64 * 1024 * 1024 + 1024 * 1024;
 
 /// Backend timeout override, in whole seconds. `0` disables the timeout.
@@ -75,7 +75,7 @@ const MAX_AUDIO_MULTIPART_BODY_BYTES: usize = 64 * 1024 * 1024 + 1024 * 1024;
 /// [`InferenceFrontendConfig::DEFAULT_BACKEND_TIMEOUT`] in place. Returning
 /// `Some(None)` means the operator explicitly disabled the timeout.
 ///
-/// Public because the MeshLLM host proxy sits in front of this frontend and
+/// Public because the standalone Skippy CLI sits in front of this frontend and
 /// must not impose a shorter first-byte deadline than the one configured here:
 /// it reads this so its own budget covers it (see the host runtime's
 /// `network/openai/response/probe.rs`).

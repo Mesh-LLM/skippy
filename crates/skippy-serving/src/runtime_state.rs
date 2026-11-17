@@ -494,7 +494,7 @@ pub fn load_runtime_with_overrides_and_open_events(
 
 /// Effective lane-admission bound for a loaded model.
 ///
-/// Mirrors the native encoder-decoder serialization (skippy/llama_cpp/patches/
+/// Mirrors the native encoder-decoder serialization (llama_cpp/patches/
 /// 0002-skippy-implement-graph-planning-realization-and-runt.patch:
 /// `lane_count = encoder_decoder ? 1 : configured_lane_count`):
 /// encoder output is context-global in llama.cpp, so native only ever serves
@@ -881,7 +881,7 @@ mod tests {
     fn load_bypass_dummy_models_keep_the_configured_lane_count() {
         // The load-bypass dummy has no native model, so there is no native
         // lane contract to mirror: the configured bound must survive both
-        // the helper and the full construction path. MESH_LLM_BYPASS_SKIPPY_MODEL_LOAD
+        // the helper and the full construction path. SKIPPY_BYPASS_SKIPPY_MODEL_LOAD
         // is a test/CI shim, but multi-lane configs must keep working
         // through it.
         assert_eq!(

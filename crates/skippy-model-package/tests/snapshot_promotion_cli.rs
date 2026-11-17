@@ -288,7 +288,9 @@ fn embedded_native_helper_survives_build_workspace_cleanup() {
     let root = directory.path();
     let source = include_str!("../src/scripts/split-model-job.sh");
     assert!(
-        source.find("just bootstrap-build-tools").unwrap()
+        source
+            .find("just package-builder-release-build cpu")
+            .unwrap()
             < source.find("just snapshot-promoter-release-build").unwrap()
     );
     let start = source

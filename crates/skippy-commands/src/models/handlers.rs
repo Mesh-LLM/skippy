@@ -533,15 +533,19 @@ fn render_cleanup_console(
         "📁 HF cache: {}",
         crate::models::storage::huggingface_hub_cache_dir().display()
     )?;
-    writeln!(out, "📁 Mesh cache: {}", model_usage_cache_dir().display())?;
-    writeln!(out, "🛡️ Scope: mesh-managed records only")?;
+    writeln!(
+        out,
+        "📁 Skippy cache: {}",
+        model_usage_cache_dir().display()
+    )?;
+    writeln!(out, "🛡️ Scope: Skippy-managed records only")?;
     if let Some(unused_since) = unused_since {
         writeln!(out, "⏱️ Filter: unused for at least {}", unused_since)?;
     }
     writeln!(out)?;
 
     if plan.candidates.is_empty() {
-        writeln!(out, "No mesh-managed models matched the cleanup filters.")?;
+        writeln!(out, "No Skippy-managed models matched the cleanup filters.")?;
     } else {
         for candidate in &plan.candidates {
             writeln!(out, "📦 {}", candidate.display_name)?;
@@ -607,7 +611,7 @@ fn render_cleanup_console(
         if plan.skipped_recent > 0 {
             writeln!(
                 out,
-                "Skipped recent mesh-managed record{}: {}",
+                "Skipped recent Skippy-managed record{}: {}",
                 if plan.skipped_recent == 1 { "" } else { "s" },
                 plan.skipped_recent
             )?;
@@ -821,8 +825,7 @@ mod tests {
             PathBuf::from("/tmp/demo-layers/shared/embeddings.gguf"),
         ];
 
-        let derived_stage_paths =
-            vec![PathBuf::from("/tmp/mesh-llm/skippy-stages/demo-stage.gguf")];
+        let derived_stage_paths = vec![PathBuf::from("/tmp/skippy/skippy-stages/demo-stage.gguf")];
         let resolved =
             build_delete_preview_model("meshllm/Demo-layers", &paths, derived_stage_paths.clone());
 

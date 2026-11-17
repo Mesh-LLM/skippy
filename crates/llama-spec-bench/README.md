@@ -28,7 +28,7 @@ flowchart LR
     Base --> Compare["token equality check"]
     Spec --> Compare
     Compare --> Report["human summary<br/>optional JSON report"]
-    Report --> Mesh["mesh/skippy plan<br/>draft opt-in evidence"]
+    Report --> Host["Skippy plan<br/>draft opt-in evidence"]
 ```
 
 ## Verification Loop
@@ -64,7 +64,7 @@ llama-spec-bench \
 llama-spec-bench \
   --target-model-path target.gguf \
   --draft-model-path draft.gguf \
-  --prompt-corpus skippy/evals/corpora/kv_mixed_prompts.jsonl \
+  --prompt-corpus evals/corpora/kv_mixed_prompts.jsonl \
   --prompt-limit 20 \
   --json-out /tmp/spec-bench.json
 ```
@@ -100,4 +100,4 @@ generation may legitimately diverge from the baseline at a near-tie token.
 - per-prompt text previews and mismatch index
 
 The default corpus path is
-`skippy/evals/corpora/kv_mixed_prompts.jsonl`.
+`evals/corpora/kv_mixed_prompts.jsonl`.

@@ -97,7 +97,7 @@ skippy-correctness native-mtp-open-ai-ab \
   --model-id org/repo:Q4_K_M \
   --stage1-model /Volumes/models/huggingface/.../model.gguf \
   --stage1-ssh-host micstudio \
-  --stage1-remote-workdir /Users/micn/src/mesh-llm-codex \
+  --stage1-remote-workdir /path/to/skippy \
   --stage1-remote-stage-server-bin target/debug/skippy \
   --bind-addr 192.168.0.5:19170 \
   --stage0-bind-addr 192.168.0.5:19171 \
@@ -135,7 +135,7 @@ skippy-correctness open-ai-cache-reuse \
 ## Llama Family Parity Tests
 
 `tests/parity_models.rs` is the Rust regression lane for the P0/P1 llama.cpp
-family matrix in `skippy/docs/llama-parity-candidates.json`. Each P0/P1 family
+family matrix in `docs/llama-parity-candidates.json`. Each P0/P1 family
 has its own test module so missing coverage is obvious in test output and code
 review. The cheap tests validate manifest completeness and fail if a P0/P1
 manifest row is added without a matching family module.

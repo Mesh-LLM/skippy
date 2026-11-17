@@ -17,7 +17,7 @@ Issue #630, Cohere Command A+, is the first model tracked with this flow.
 | Package validated | `skippy-package-builder` writes, validates, and preflights a package with no unresolved manifest, artifact, sidecar, materialization, missing, duplicate, or checksum diagnostics. | May test staged serving. |
 | Runtime smoke passed | A package-backed model starts and answers through the OpenAI-compatible surface. | May collect serving evidence. |
 | Family certified | Split correctness, dtype matrix, state handoff/cache policy, required context capacity, and required multimodal sidebands pass. | May promote to reviewed support. |
-| Reviewed support | `skippy/docs/FAMILY_STATUS.md` and the release-bound certification roster are updated from evidence. | User-visible support claim. |
+| Reviewed support | `docs/FAMILY_STATUS.md` and the release-bound certification roster are updated from evidence. | User-visible support claim. |
 
 Do not skip from candidate to reviewed support. A big or popular model is still
 only a candidate until the evidence exists.
@@ -41,9 +41,9 @@ only a candidate until the evidence exists.
    is not promotion evidence: the live split must allocate 131,072 and complete
    a request with at least 120,000 prompt tokens plus a continuation.
 7. Promote only after the evidence maps cleanly to
-   `skippy/docs/FAMILY_STATUS.md` and the release-bound certification manifest
+   `docs/FAMILY_STATUS.md` and the release-bound certification manifest
    at `ci/llama-canary/family-certified.json`. Review any exceptional topology
-   rules in `skippy/crates/skippy-topology`.
+   rules in `crates/skippy-topology`.
 
 ## Standard Checks
 
@@ -69,7 +69,7 @@ cargo run -p skippy-model-package --bin queue-unsloth-layer-packages -- \
 For a selected GGUF repo and quant, use the normal package CLI in dry-run mode:
 
 ```bash
-mesh-llm models package DevQuasar/CohereLabs.command-a-plus-05-2026-bf16-GGUF:Q4_K_M --dry-run
+skippy models package DevQuasar/CohereLabs.command-a-plus-05-2026-bf16-GGUF:Q4_K_M --dry-run
 ```
 
 After a package exists, validate the package and then run the certification
@@ -77,8 +77,8 @@ surface that matches the evidence you need:
 
 ```bash
 skippy-package-builder verify-package-v2 /path/to/package --source /path/to/model.gguf
-mesh-llm models certify hf://namespace/repo@revision --package-only --report-out cert.json
-mesh-llm models certify hf://namespace/repo@revision --api-base http://127.0.0.1:9337 --json
+skippy models certify hf://namespace/repo@revision --package-only --report-out cert.json
+skippy models certify hf://namespace/repo@revision --api-base http://127.0.0.1:9337 --json
 ```
 
 Full family promotion still uses the family certification runbook:

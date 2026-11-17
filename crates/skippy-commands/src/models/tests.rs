@@ -48,13 +48,13 @@ async fn prune_preserves_schema_and_uses_the_invoking_command() {
         yes: false,
         json: true,
     };
-    let mesh: serde_json::Value =
-        serde_json::from_str(&render(&command, "mesh-llm", root.path()).await).unwrap();
+    let host: serde_json::Value =
+        serde_json::from_str(&render(&command, "embedding-host", root.path()).await).unwrap();
     let skippy: serde_json::Value =
         serde_json::from_str(&render(&command, "skippy", root.path()).await).unwrap();
     assert_eq!(skippy["apply"], "skippy models prune --yes");
-    assert_eq!(mesh["apply"], "mesh-llm models prune --yes");
-    assert_eq!(skippy["cache_dir"], mesh["cache_dir"]);
+    assert_eq!(host["apply"], "embedding-host models prune --yes");
+    assert_eq!(skippy["cache_dir"], host["cache_dir"]);
     assert_eq!(skippy["dry_run"], true);
     assert!(!root.path().join("skippy-stages").exists());
 }
@@ -67,27 +67,30 @@ async fn cleanup_uses_the_same_preview_schema_in_both_products() {
         yes: false,
         json: true,
     };
-    let mesh: serde_json::Value =
-        serde_json::from_str(&render(&command, "mesh-llm", root.path()).await).unwrap();
+    let host: serde_json::Value =
+        serde_json::from_str(&render(&command, "embedding-host", root.path()).await).unwrap();
     let skippy: serde_json::Value =
         serde_json::from_str(&render(&command, "skippy", root.path()).await).unwrap();
-    assert_eq!(mesh, skippy);
+    assert_eq!(host, skippy);
     assert_eq!(skippy["dry_run"], true);
     assert_eq!(skippy["mesh_managed_only"], true);
     assert_eq!(skippy["unused_since"], "7d");
 }
 #[tokio::test]
 #[serial]
-async fn human_cleanup_matches_mesh_tables_and_uses_skippy_hints() {
+async fn human_cleanup_matches_embedding_tables_and_uses_skippy_hints() {
     let root = tempfile::tempdir().unwrap();
     let command = cli::ModelsCommand::Cleanup {
         unused_since: Some("12h".into()),
         yes: false,
         json: false,
     };
-    let mesh = render(&command, "mesh-llm", root.path()).await;
+    let host = render(&command, "embedding-host", root.path()).await;
     let skippy = render(&command, "skippy", root.path()).await;
-    assert_eq!(mesh.replace("mesh-llm models ", "skippy models "), skippy);
+    assert_eq!(
+        host.replace("embedding-host models ", "skippy models "),
+        skippy
+    );
     assert!(skippy.contains("skippy models cleanup --unused-since 12h --yes"));
 }
 #[tokio::test]
@@ -101,20 +104,20 @@ async fn installed_model_tables_and_json_keep_the_same_fields() {
     let mut row = InstalledRow {
         name: "Demo Q4_K_M".into(),
         model_ref: "org/Demo-GGUF:Q4_K_M".into(),
-        show_command: Some("mesh-llm models show org/Demo-GGUF:Q4_K_M".into()),
-        download_command: Some("mesh-llm models download org/Demo-GGUF:Q4_K_M".into()),
-        delete_command: "mesh-llm models delete org/Demo-GGUF:Q4_K_M".into(),
+        show_command: Some("embedding-host models show org/Demo-GGUF:Q4_K_M".into()),
+        download_command: Some("embedding-host models download org/Demo-GGUF:Q4_K_M".into()),
+        delete_command: "embedding-host models delete org/Demo-GGUF:Q4_K_M".into(),
         path: root.path().join("Demo-Q4_K_M.gguf"),
         size: Some(4_000_000_000),
         layer_count: None,
         catalog_model: None,
         capabilities: ModelCapabilities::default(),
-        managed_by_mesh: true,
+        managed_by_product: true,
         last_used_at: None,
     };
     for json in [false, true] {
         let mut results = Vec::new();
-        for program in ["mesh-llm", "skippy"] {
+        for program in ["embedding-host", "skippy"] {
             row.show_command = Some(format!("{program} models show org/Demo-GGUF:Q4_K_M"));
             row.download_command = Some(format!("{program} models download org/Demo-GGUF:Q4_K_M"));
             row.delete_command = format!("{program} models delete org/Demo-GGUF:Q4_K_M");
@@ -128,7 +131,7 @@ async fn installed_model_tables_and_json_keep_the_same_fields() {
             results.push(String::from_utf8(CAPTURE.lock().unwrap().clone()).unwrap());
         }
         assert_eq!(
-            results[0].replace("mesh-llm models ", "skippy models "),
+            results[0].replace("embedding-host models ", "skippy models "),
             results[1]
         );
         if json {

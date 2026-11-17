@@ -4,13 +4,13 @@ set -euo pipefail
 # Fetches the pinned whisper.cpp source that build-llama.sh folds into the
 # patched llama.cpp build for speech recognition. whisper.cpp is built on that
 # tree's ggml, so the pin must track a whisper.cpp commit whose ggml matches
-# skippy/llama_cpp/upstream.txt.
+# llama_cpp/upstream.txt.
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 WHISPER_UPSTREAM_URL="${WHISPER_UPSTREAM_URL:-https://github.com/ggml-org/whisper.cpp.git}"
 WHISPER_WORKDIR="${WHISPER_WORKDIR:-$ROOT/.deps/whisper.cpp}"
-PIN_FILE="${WHISPER_PIN_FILE:-$ROOT/skippy/llama_cpp/whisper-upstream.txt}"
+PIN_FILE="${WHISPER_PIN_FILE:-$ROOT/llama_cpp/whisper-upstream.txt}"
 
 if [[ ! -f "$PIN_FILE" ]]; then
   echo "missing whisper.cpp upstream pin: $PIN_FILE" >&2

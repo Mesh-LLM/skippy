@@ -23,7 +23,7 @@ patched llama.cpp ABI without owning policy:
 
 ```mermaid
 flowchart TB
-    Mesh["mesh-llm<br/>embedded runtime owner"] --> Runtime
+    Host["embedding application<br/>embedded runtime owner"] --> Runtime
     Server["skippy-serving<br/>lifecycle + transport"] --> Runtime["skippy-runtime<br/>safe model/session API"]
     Runtime --> FFI["skippy-ffi<br/>raw ABI declarations"]
     FFI --> Llama["llama_cpp<br/>skippy.h stage execution"]
@@ -54,7 +54,7 @@ Generation inputs and allowlists live in two reviewed places:
   Rust-facing discriminant spellings stable.
 
 `build.rs` watches the wrapper headers, the generator, the llama.cpp pin
-(`skippy/llama_cpp/upstream.txt`), the patch queue, and the patched-tree
+(`llama_cpp/upstream.txt`), the patch queue, and the patched-tree
 identity as `rerun-if-changed` inputs, and regenerates on demand:
 
 | `SKIPPY_FFI_BINDGEN` | Behavior |
@@ -106,8 +106,8 @@ same Rust crate.
 ## ABI Contract
 
 The staged ABI is versioned as `0.1.80`. The patch header in
-`skippy/llama_cpp/patches/` and the Rust constants in
-`skippy/crates/skippy-ffi/src/lib.rs` are the source of truth, so keep this README
+`llama_cpp/patches/` and the Rust constants in
+`crates/skippy-ffi/src/lib.rs` are the source of truth, so keep this README
 aligned with those files instead of treating it as canonical prose.
 
 ABI `0.1.80` adds `mtmd_helper_get_decode_budget`, the load-time probe a caller

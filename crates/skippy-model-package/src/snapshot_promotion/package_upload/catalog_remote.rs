@@ -27,7 +27,7 @@ impl Publisher {
     ) -> Result<PreparedCatalog> {
         let (entry_path, _) = catalog::project(None, input)?;
         let plan = Plan {
-            repo: "meshllm/catalog".into(),
+            repo: input.catalog_repo.into(),
             kind: RepositoryKind::Dataset,
             revision: "main".into(),
             path: entry_path.clone(),

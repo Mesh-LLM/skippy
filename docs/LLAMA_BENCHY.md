@@ -76,7 +76,7 @@ RUN_BENCHY=1 \
 scripts/openai-smoke.sh
 ```
 
-Artifacts default to `/tmp/skippy-openai-smoke`.
+Keep benchmark artifacts under a dedicated local output directory.
 
 ## Run Benchy
 
@@ -85,7 +85,7 @@ unset, native `cargo xtool automation endpoint-model-discovery` selects the
 first advertised `/v1/models` ID with a ten-second deadline. An explicit `MODEL`
 bypasses discovery. `SERVED_MODEL_NAME` defaults to the selected model, and an
 explicit served name stays unchanged. Run from the repository root, or supply
-an absolute executable `MESH_LLM_AUTOMATION_BIN` from automation preparation.
+an absolute executable `SKIPPY_AUTOMATION_BIN` from automation preparation.
 Discovery reads `API_KEY` from the environment and keeps its bearer bytes out of
 child argv and displayed commands. DNS/HTTPS discovery uses the existing
 supervised curl transport, which requires installed curl 8.4 or newer.
@@ -140,7 +140,6 @@ Use the guardrail corpus runner when you need reliability evidence for the same
 OpenAI surface, not throughput numbers:
 
 ```bash
-mesh-llm runtime guardrails --mode metrics --port 3131
 curl -s localhost:3131/api/status | jq '.runtime.openai_guardrails'
 ```
 

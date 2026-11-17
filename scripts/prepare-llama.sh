@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODE="${1:-pinned}"
 
 LLAMA_UPSTREAM_URL="${LLAMA_UPSTREAM_URL:-https://github.com/ggml-org/llama.cpp.git}"
 LLAMA_WORKDIR="${LLAMA_WORKDIR:-$ROOT/.deps/llama.cpp}"
-PIN_FILE="${LLAMA_PIN_FILE:-$ROOT/skippy/llama_cpp/upstream.txt}"
-PATCH_DIR="${LLAMA_PATCH_DIR:-$ROOT/skippy/llama_cpp/patches}"
+PIN_FILE="${LLAMA_PIN_FILE:-$ROOT/llama_cpp/upstream.txt}"
+PATCH_DIR="${LLAMA_PATCH_DIR:-$ROOT/llama_cpp/patches}"
 PREPARE_SCHEMA=5
 
 if [[ ! -f "$PIN_FILE" ]]; then
@@ -26,7 +26,7 @@ mkdir -p "$(dirname "$LLAMA_WORKDIR")"
 # changes directory; it does NOT pin git to that directory. If $LLAMA_WORKDIR
 # has no valid .git (e.g. an interrupted/partial clone), git's normal upward
 # repository discovery walks PAST it to the nearest enclosing .git. When
-# mesh-llm is vendored inside another git repo's working tree (cargo/hermit git
+# Skippy is vendored inside another git repo's working tree (cargo/hermit git
 # checkouts do exactly this), that enclosing repo gets mutated instead -- its
 # origin rewritten by `remote set-url`, its HEAD clobbered by `git am`. Pin the
 # ceiling to the workdir's parent so discovery can never escape upward: a
@@ -246,10 +246,10 @@ sha256_file() {
   elif command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | awk '{print $1}'
   else
-    if [[ -n "${MESH_LLM_AUTOMATION_BIN:-}" ]]; then
-      "$MESH_LLM_AUTOMATION_BIN" artifact file-projection sha256 "$1"
+    if [[ -n "${SKIPPY_AUTOMATION_BIN:-}" ]]; then
+      "$SKIPPY_AUTOMATION_BIN" artifact file-projection sha256 "$1"
     else
-      cargo xtool artifact file-projection sha256 "$1"
+      just --justfile "$ROOT/Justfile" automation-run artifact file-projection sha256 "$1"
     fi
   fi
 }
@@ -260,10 +260,10 @@ sha256_stream() {
   elif command -v sha256sum >/dev/null 2>&1; then
     sha256sum | awk '{print $1}'
   else
-    if [[ -n "${MESH_LLM_AUTOMATION_BIN:-}" ]]; then
-      "$MESH_LLM_AUTOMATION_BIN" artifact file-projection sha256 -
+    if [[ -n "${SKIPPY_AUTOMATION_BIN:-}" ]]; then
+      "$SKIPPY_AUTOMATION_BIN" artifact file-projection sha256 -
     else
-      cargo xtool artifact file-projection sha256 -
+      just --justfile "$ROOT/Justfile" automation-run artifact file-projection sha256 -
     fi
   fi
 }
@@ -281,14 +281,14 @@ compute_patch_digest() {
 
 PATCH_DIGEST="$(compute_patch_digest)"
 
-if [[ -f "$LLAMA_WORKDIR/.mesh-llm-upstream-sha" &&
-      -f "$LLAMA_WORKDIR/.mesh-llm-patched-sha" &&
-      -f "$LLAMA_WORKDIR/.mesh-llm-patch-digest" &&
-      -f "$LLAMA_WORKDIR/.mesh-llm-prepare-schema" ]]; then
-  PREPARED_UPSTREAM="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.mesh-llm-upstream-sha")"
-  PREPARED_PATCHED="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.mesh-llm-patched-sha")"
-  PREPARED_DIGEST="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.mesh-llm-patch-digest")"
-  PREPARED_SCHEMA="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.mesh-llm-prepare-schema")"
+if [[ -f "$LLAMA_WORKDIR/.skippy-upstream-sha" &&
+      -f "$LLAMA_WORKDIR/.skippy-patched-sha" &&
+      -f "$LLAMA_WORKDIR/.skippy-patch-digest" &&
+      -f "$LLAMA_WORKDIR/.skippy-prepare-schema" ]]; then
+  PREPARED_UPSTREAM="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.skippy-upstream-sha")"
+  PREPARED_PATCHED="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.skippy-patched-sha")"
+  PREPARED_DIGEST="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.skippy-patch-digest")"
+  PREPARED_SCHEMA="$(tr -d '[:space:]' < "$LLAMA_WORKDIR/.skippy-prepare-schema")"
   CURRENT_HEAD="$(git -C "$LLAMA_WORKDIR" rev-parse HEAD 2>/dev/null || true)"
 
   if [[ "$PREPARED_SCHEMA" == "$PREPARE_SCHEMA" &&
@@ -307,24 +307,24 @@ fi
 
 git -C "$LLAMA_WORKDIR" am --abort >/dev/null 2>&1 || true
 git -C "$LLAMA_WORKDIR" remote set-url origin "$LLAMA_UPSTREAM_URL"
-if [[ "$MODE" != "latest" ]]; then
+if [[ "$MODE" != "latest" ]] && ! git -C "$LLAMA_WORKDIR" cat-file -e "$TARGET_SHA^{commit}" 2>/dev/null; then
   git_retry git -C "$LLAMA_WORKDIR" fetch origin master --tags
 fi
 # The patched checkout is an artifact identity shared across CI jobs. Keep the
 # synthetic committer and timestamp deterministic so applying the same ordered
 # patch queue to the same upstream pin always produces the same HEAD.
-git -C "$LLAMA_WORKDIR" config user.name "Mesh-LLM CI"
-git -C "$LLAMA_WORKDIR" config user.email "ci@mesh-llm.local"
+git -C "$LLAMA_WORKDIR" config user.name "Skippy CI"
+git -C "$LLAMA_WORKDIR" config user.email "ci@skippy.local"
 
 # The llama.cpp checkout is a generated dependency worktree. Local edits there
-# should live in skippy/llama_cpp/patches, so reset before switching pins.
+# should live in llama_cpp/patches, so reset before switching pins.
 git -C "$LLAMA_WORKDIR" reset --hard HEAD
 git -C "$LLAMA_WORKDIR" clean -fdx
 git -C "$LLAMA_WORKDIR" checkout --force --detach "$TARGET_SHA"
 git -C "$LLAMA_WORKDIR" reset --hard "$TARGET_SHA"
 git -C "$LLAMA_WORKDIR" clean -fdx
 
-printf '%s\n' "$TARGET_SHA" > "$LLAMA_WORKDIR/.mesh-llm-upstream-sha"
+printf '%s\n' "$TARGET_SHA" > "$LLAMA_WORKDIR/.skippy-upstream-sha"
 
 if (( ${#PATCHES[@]} > 0 )); then
   (
@@ -348,11 +348,11 @@ if (( ${#PATCHES[@]} > 0 )); then
   )
 fi
 
-git -C "$LLAMA_WORKDIR" rev-parse HEAD > "$LLAMA_WORKDIR/.mesh-llm-patched-sha"
-printf '%s\n' "$PATCH_DIGEST" > "$LLAMA_WORKDIR/.mesh-llm-patch-digest"
-printf '%s\n' "$PREPARE_SCHEMA" > "$LLAMA_WORKDIR/.mesh-llm-prepare-schema"
+git -C "$LLAMA_WORKDIR" rev-parse HEAD > "$LLAMA_WORKDIR/.skippy-patched-sha"
+printf '%s\n' "$PATCH_DIGEST" > "$LLAMA_WORKDIR/.skippy-patch-digest"
+printf '%s\n' "$PREPARE_SCHEMA" > "$LLAMA_WORKDIR/.skippy-prepare-schema"
 
 echo "prepared llama.cpp"
 echo "  upstream: $TARGET_SHA"
-echo "  patched:  $(cat "$LLAMA_WORKDIR/.mesh-llm-patched-sha")"
+echo "  patched:  $(cat "$LLAMA_WORKDIR/.skippy-patched-sha")"
 echo "  workdir:  $LLAMA_WORKDIR"

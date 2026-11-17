@@ -6,10 +6,9 @@ Model downloads use the shared Hugging Face cache policy in [`skippy-model-hf`](
 
 The crate sits below serving and the lifecycle API: it depends only on protocol primitives and path policy, never on `skippy-api` or `skippy-serving`, and reads no configuration beyond the documented environment variables.
 
-[`local_serving`](src/local_serving.rs) owns serving constants for both products:
+[`local_serving`](src/local_serving.rs) owns standalone serving constants:
 context and batch fallbacks, concurrency, output budget, prefill controls,
 speculative proposal windows, and downstream connection timeouts. Model-dependent
 KV policy and draft discovery live in [`skippy-api`](../skippy-api/README.md);
 sampling, guardrails, and compaction stay in their Skippy runtime/API owners.
-Mesh translates explicit configuration into these policies rather than defining
-an independent set of serving defaults.
+Embedding products translate their configuration into these explicit policies.

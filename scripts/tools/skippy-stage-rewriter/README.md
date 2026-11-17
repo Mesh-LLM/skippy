@@ -17,7 +17,7 @@ remain the semantic gates for generated changes.
 Build with a pinned LLVM/Clang installation:
 
 ```sh
-cmake -S skippy/scripts/tools/skippy-stage-rewriter \
+cmake -S scripts/tools/skippy-stage-rewriter \
   -B .scratch/skippy-stage-rewriter-build \
   -G Ninja \
   -DLLVM_DIR=/path/to/llvm/lib/cmake/llvm \
@@ -59,7 +59,7 @@ cargo xtool automation native-generator generate \
   --report .scratch/skippy-stage-rewriter-report.json \
   --diff-base "$(git -C .scratch/llama-central rev-parse HEAD)" \
   --output target/generated-family-combined.patch \
-  --shard-output-dir skippy/llama_cpp/patches/generated \
+  --shard-output-dir llama_cpp/patches/generated \
   --family-source-map ci/llama-canary/generated-family-map.json \
   --family-manifest ci/llama-canary/family-certified.json
 ```

@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn released_v078_catalog_maps_to_internal_release_version() {
-        // Published asset: https://github.com/Mesh-LLM/mesh-llm/releases/download/v0.78.0/native-runtimes.json
+        // Historical schema fixture: its original publication metadata is deliberately retained.
         let manifest = NativeRuntimeReleaseManifest::from_json_str(include_str!(
             "../../tests/fixtures/native-runtimes-v0.78.0.json"
         ))

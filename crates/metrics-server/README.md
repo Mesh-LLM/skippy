@@ -14,7 +14,7 @@ executing if telemetry queues fill or export retries fail.
 ```mermaid
 flowchart LR
     S["skippy-serving<br/>request summaries"] -.-> M["metrics-server"]
-    Mesh["mesh-llm<br/>topology, lifecycle, model refs"] -.-> M
+    Host["embedding application<br/>topology, lifecycle, model refs"] -.-> M
     O["skippy-inference-api<br/>request IDs"] -.-> M
     B["bench / debug launcher<br/>run metadata"] -.-> M
     M --> D["metrics.sqlite"]

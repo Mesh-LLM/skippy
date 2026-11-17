@@ -174,7 +174,7 @@ impl ModelsFormatter for JsonFormatter {
                     "size_bytes": row.size,
                     "size": row.size.map(super::formatters::format_installed_size),
                     "layer_count": row.layer_count,
-                    "mesh_managed": row.managed_by_mesh,
+                    "mesh_managed": row.managed_by_product,
                     "last_used_at": row.last_used_at,
                     "capabilities": capabilities_json(row.capabilities),
                     "ref": row.model_ref,

@@ -144,7 +144,7 @@ certifies the supplied tool, image, model, measured memory or actual cost.
 Failed windows, native verification, export, signals and deadline boundaries
 retain observations and refuse delivery completion. Local monitoring interruption
 sends no automatic remote cancel. Inspect authorized Jobs state before retrying
-an uncertain submission. Existing `mesh-llm models package --status`, `--logs`
+an uncertain submission. Existing `skippy models package --status`, `--logs`
 and `--cancel` surfaces remain available; cancellation acknowledgment alone is
 not remote terminal proof.
 

@@ -46,7 +46,7 @@ impl std::fmt::Display for CandidateRejection {
             Self::ReleaseVersionMismatch { expected, actual } => {
                 write!(
                     f,
-                    "MeshLLM version mismatch: expected {expected}, found {actual}"
+                    "Skippy version mismatch: expected {expected}, found {actual}"
                 )
             }
             Self::SkippyAbiMismatch { expected, actual } => {
@@ -112,12 +112,12 @@ impl std::fmt::Display for CandidateRejection {
                 f,
                 "no CUDA toolkit detected: runtime requires CUDA {required} libraries \
                  (libcudart, libcublas, libcublasLt) on the loader path; \
-                 set MESH_LLM_CUDA_TOOLKIT_MAJORS if the toolkit is installed elsewhere"
+                 set SKIPPY_CUDA_TOOLKIT_MAJORS if the toolkit is installed elsewhere"
             ),
             Self::CudaGpuArchUnknown => write!(
                 f,
                 "CUDA GPU architecture unknown: no NVIDIA GPU architecture was detected to match \
-                 the runtime's kernels against; set MESH_LLM_CUDA_GPU_ARCHES (for example 87) \
+                 the runtime's kernels against; set SKIPPY_CUDA_GPU_ARCHES (for example 87) \
                  if the GPU is supported"
             ),
             Self::CudaGpuArchUnsupported { supported } => write!(
@@ -134,7 +134,7 @@ impl std::fmt::Display for CandidateRejection {
             Self::RocmGpuArchUnknown => write!(
                 f,
                 "ROCm GPU architecture unknown: no AMD GPU architecture was detected to match \
-                 the runtime's kernels against; set MESH_LLM_ROCM_GPU_ARCHES (for example \
+                 the runtime's kernels against; set SKIPPY_ROCM_GPU_ARCHES (for example \
                  gfx1100) if the GPU is supported"
             ),
             Self::RocmGpuArchUnsupported { supported } => write!(
@@ -202,7 +202,10 @@ impl RuntimeSelection {
         if let Some(id) = value.strip_prefix("exact:") {
             return Ok(Self::Id(id.to_string()));
         }
-        if value.starts_with("meshllm-") || value.starts_with("mesh-llm-") {
+        if value.starts_with("skippy-")
+            || value.starts_with("meshllm-")
+            || value.starts_with("mesh-llm-")
+        {
             return Ok(Self::Id(value.to_string()));
         }
         let lower = value.to_ascii_lowercase();
@@ -330,7 +333,7 @@ impl NativeRuntimeResolver {
             }
         }
         // Older cache versions can contain pre-checksum manifests (#1162), and
-        // they cannot satisfy this resolver's exact MeshLLM version anyway.
+        // they cannot satisfy this resolver's exact Skippy version anyway.
         for installed in self.cache.installed_for_version(&self.release_version)? {
             let artifact = installed.manifest.runtime;
             if seen.insert(artifact_key(&artifact)) {
@@ -657,7 +660,7 @@ fn evaluate_cuda_toolkit_major(
     // `libcudart.so.<major>: cannot open shared object file` at load; refusing
     // instead keeps the reason visible and actionable. Hosts with a toolkit
     // installed somewhere the loader cannot see it can set
-    // `MESH_LLM_CUDA_TOOLKIT_MAJORS`.
+    // `SKIPPY_CUDA_TOOLKIT_MAJORS`.
     if cuda.toolkit_majors.is_empty() {
         reasons.push(CandidateRejection::CudaToolkitNotDetected { required });
         return;
@@ -942,7 +945,7 @@ mod tests {
         assert!(
             CandidateRejection::CudaGpuArchUnknown
                 .to_string()
-                .contains("MESH_LLM_CUDA_GPU_ARCHES")
+                .contains("SKIPPY_CUDA_GPU_ARCHES")
         );
         assert_eq!(
             best_candidate(&evaluated).unwrap().artifact.backend.kind,

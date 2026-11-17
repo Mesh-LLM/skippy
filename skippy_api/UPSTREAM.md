@@ -3,7 +3,7 @@
 The ledger for work that belongs in llama.cpp rather than in this façade.
 "Never modify llama.cpp from here" (AGENTS.md) means discoveries need a home
 that survives the PR that found them — this is that home. The patch queue
-(`skippy/llama_cpp/patches`) is where an upstream-shaped change lands once it
+(`llama_cpp/patches`) is where an upstream-shaped change lands once it
 is accepted into our runtime; this file tracks everything before that.
 
 Rules:

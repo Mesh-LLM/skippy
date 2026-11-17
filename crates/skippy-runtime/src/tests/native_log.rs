@@ -46,7 +46,7 @@ fn native_log_note_forwards_when_forwarding_enabled() {
     write_native_log_note("skippy_model_open begin\nwith context");
 
     let expected = NativeLogEvent {
-        message: "mesh-llm: skippy_model_open begin with context".to_string(),
+        message: "skippy: skippy_model_open begin with context".to_string(),
         category: "model",
         params: Vec::new(),
     };

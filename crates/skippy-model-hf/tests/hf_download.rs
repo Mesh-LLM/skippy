@@ -51,11 +51,11 @@ struct SingleDownloadFixture {
     sha256: String,
 }
 
-/// Read the selected fixture manifest generated from ci/model-artifacts/registry.json.
+/// Read the pinned download fixture manifest owned by this test suite.
 fn download_fixture(id: &str) -> DownloadFixture {
-    let default_manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../ci/model-artifacts/manifests/hf-download-smoke.json");
-    let manifest_path = std::env::var_os("MESH_HF_DOWNLOAD_TEST_MANIFEST")
+    let default_manifest =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hf-download-smoke.json");
+    let manifest_path = std::env::var_os("SKIPPY_HF_DOWNLOAD_TEST_MANIFEST")
         .map(PathBuf::from)
         .unwrap_or(default_manifest);
     let manifest_contents = std::fs::read_to_string(&manifest_path).unwrap_or_else(|error| {
@@ -99,7 +99,7 @@ fn single_download_fixture(id: &str) -> SingleDownloadFixture {
 
 /// Build a repository pointed at a fresh temp cache directory by default.
 ///
-/// CI can set MESH_HF_DOWNLOAD_TEST_CACHE_DIR to reuse the GitHub Actions
+/// CI can set SKIPPY_HF_DOWNLOAD_TEST_CACHE_DIR to reuse the GitHub Actions
 /// model cache while still exercising the real Rust HF download path on misses.
 fn make_repo(tmp: &Path) -> HfModelRepository {
     HfModelRepository::builder()
@@ -109,9 +109,9 @@ fn make_repo(tmp: &Path) -> HfModelRepository {
 }
 
 fn test_cache_dir(tmp: &Path) -> PathBuf {
-    if let Some(cache_dir) = std::env::var_os("MESH_HF_DOWNLOAD_TEST_CACHE_DIR") {
+    if let Some(cache_dir) = std::env::var_os("SKIPPY_HF_DOWNLOAD_TEST_CACHE_DIR") {
         let cache_dir = PathBuf::from(cache_dir);
-        std::fs::create_dir_all(&cache_dir).expect("create MESH_HF_DOWNLOAD_TEST_CACHE_DIR");
+        std::fs::create_dir_all(&cache_dir).expect("create SKIPPY_HF_DOWNLOAD_TEST_CACHE_DIR");
         cache_dir
     } else {
         tmp.join("hf-cache")
@@ -345,7 +345,7 @@ async fn download_single_gguf_file() {
 /// Full pipeline: resolve → download → identity.
 ///
 /// Exercises the complete code path a user hits when running
-/// `mesh-llm serve --model jc-builds/SmolLM2-135M-Instruct-Q4_K_M-GGUF:Q4_K_M`.
+/// `skippy serve --model jc-builds/SmolLM2-135M-Instruct-Q4_K_M-GGUF:Q4_K_M`.
 #[tokio::test]
 #[ignore]
 async fn full_resolve_download_identity_pipeline() {
@@ -459,7 +459,7 @@ fn run_cache_lifecycle_child(mode: &str) {
         .env("HF_HUB_CACHE", root.path().join("hub"))
         .env("HF_XET_CACHE", root.path().join("xet"))
         .env("XDG_CACHE_HOME", root.path().join("cache"))
-        .env("MESH_LLM_DATA_DIR", root.path().join("data"))
+        .env("SKIPPY_DATA_DIR", root.path().join("data"))
         .env_remove("HF_TOKEN")
         .env_remove("HF_TOKEN_PATH")
         .env_remove("HF_ENDPOINT")

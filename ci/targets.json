@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "hosts": [
+    {
+      "id": "darwin-aarch64",
+      "target": "aarch64-apple-darwin",
+      "os": "macos",
+      "arch": "aarch64",
+      "runner": [
+        "macos-15"
+      ]
+    },
+    {
+      "id": "linux-x86_64",
+      "target": "x86_64-unknown-linux-gnu",
+      "os": "linux",
+      "arch": "x86_64",
+      "runner": [
+        "ubuntu-24.04"
+      ]
+    },
+    {
+      "id": "linux-aarch64",
+      "target": "aarch64-unknown-linux-gnu",
+      "os": "linux",
+      "arch": "aarch64",
+      "runner": [
+        "ubuntu-24.04-arm"
+      ]
+    },
+    {
+      "id": "windows-x86_64",
+      "target": "x86_64-pc-windows-msvc",
+      "os": "windows",
+      "arch": "x86_64",
+      "runner": [
+        "windows-2025"
+      ]
+    }
+  ],
+  "runtimes": [
+    {
+      "id": "darwin-aarch64-cpu",
+      "host": "darwin-aarch64",
+      "backend": "cpu",
+      "toolkit": "",
+      "gpu_architectures": "",
+      "runner": [
+        "macos-15"
+      ]
+    },
+    {
+      "id": "darwin-aarch64-metal",
+      "host": "darwin-aarch64",
+      "backend": "metal",
+      "toolkit": "",
+      "gpu_architectures": "",
+      "runner": [
+        "self-hosted",
+        "skippy-ephemeral",
+        "macOS",
+        "ARM64",
+        "metal"
+      ]
+    },
+    {
+      "id": "linux-x86_64-cpu",
+      "host": "linux-x86_64",
+      "backend": "cpu",
+      "toolkit": "",
+      "gpu_architectures": "",
+      "runner": [
+        "ubuntu-24.04"
+      ]
+    },
+    {
+      "id": "linux-x86_64-cuda12",
+      "host": "linux-x86_64",
+      "backend": "cuda",
+      "toolkit": "12.9.2",
+      "gpu_architectures": "61;75;80;86;89;90",
+      "runner": [
+        "self-hosted",
+        "skippy-ephemeral",
+        "Linux",
+        "X64",
+        "cuda12"
+      ]
+    },
+    {
+      "id": "linux-x86_64-cuda13",
+      "host": "linux-x86_64",
+      "backend": "cuda",
+      "toolkit": "13.1.2",
+      "gpu_architectures": "75;80;86;89;90;100;103;120;121",
+      "runner": [
+        "self-hosted",
+        "skippy-ephemeral",
+        "Linux",
+        "X64",
+        "cuda13"
+      ]
+    },
+    {
+      "id": "linux-aarch64-cpu",
+      "host": "linux-aarch64",
+      "backend": "cpu",
+      "toolkit": "",
+      "gpu_architectures": "",
+      "runner": [
+        "ubuntu-24.04-arm"
+      ]
+    },
+    {
+      "id": "linux-aarch64-cuda12",
+      "host": "linux-aarch64",
+      "backend": "cuda",
+      "toolkit": "12.9.2",
+      "gpu_architectures": "61;75;80;86;87;89;90",
+      "runner": [
+        "self-hosted",
+        "skippy-ephemeral",
+        "Linux",
+        "ARM64",
+        "cuda12"
+      ]
+    },
+    {
+      "id": "linux-aarch64-cuda13",
+      "host": "linux-aarch64",
+      "backend": "cuda",
+      "toolkit": "13.1.2",
+      "gpu_architectures": "75;80;86;87;89;90;110",
+      "runner": [
+        "self-hosted",
+        "skippy-ephemeral",
+        "Linux",
+        "ARM64",
+        "cuda13"
+      ]
+    },
+    {
+      "id": "windows-x86_64-cpu",
+      "host": "windows-x86_64",
+      "backend": "cpu",
+      "toolkit": "",
+      "gpu_architectures": "",
+      "runner": [
+        "windows-2025"
+      ]
+    },
+    {
+      "id": "windows-x86_64-cuda12",
+      "host": "windows-x86_64",
+      "backend": "cuda",
+      "toolkit": "12.9.2",
+      "gpu_architectures": "61;75;80;86;89;90",
+      "runner": [
+        "self-hosted",
+        "skippy-ephemeral",
+        "Windows",
+        "X64",
+        "cuda12"
+      ]
+    },
+    {
+      "id": "windows-x86_64-cuda13",
+      "host": "windows-x86_64",
+      "backend": "cuda",
+      "toolkit": "13.1.2",
+      "gpu_architectures": "75;80;86;89;90;100;103;120",
+      "runner": [
+        "self-hosted",
+        "skippy-ephemeral",
+        "Windows",
+        "X64",
+        "cuda13"
+      ]
+    }
+  ]
+}

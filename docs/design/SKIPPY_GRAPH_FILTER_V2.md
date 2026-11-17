@@ -872,14 +872,14 @@ The completed cutover satisfies the accepted criteria:
 
 ## Evidence Base
 
-- `skippy/crates/skippy-package-builder/src/package_v2.rs`
-- `skippy/crates/skippy-package-builder/src/package.rs`
-- `skippy/crates/skippy-package-builder/src/write.rs`
-- `skippy/crates/skippy-runtime/src/package.rs`
-- `skippy/crates/skippy-runtime/src/types.rs`
-- `skippy/crates/skippy-protocol/proto/stage.proto`
-- `skippy/crates/skippy-protocol/src/binary/types.rs`
-- `skippy/llama_cpp/patches/0002-skippy-implement-graph-planning-realization-and-runt.patch`
+- `crates/skippy-package-builder/src/package_v2.rs`
+- `crates/skippy-package-builder/src/package.rs`
+- `crates/skippy-package-builder/src/write.rs`
+- `crates/skippy-runtime/src/package.rs`
+- `crates/skippy-runtime/src/types.rs`
+- `crates/skippy-protocol/proto/stage.proto`
+- `crates/skippy-protocol/src/binary/types.rs`
+- `llama_cpp/patches/0002-skippy-implement-graph-planning-realization-and-runt.patch`
 - [PR #1662: recurrent KV restoration and split-cache integration](https://github.com/Mesh-LLM/mesh-llm/pull/1662)
 - [PR #1665: consolidated dense/recurrent split smoke](https://github.com/Mesh-LLM/mesh-llm/pull/1665)
 

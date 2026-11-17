@@ -35,7 +35,7 @@ pub use unused_gpu::{
     UnusedGpuBackend, describe_unused_gpu_backends, describe_unused_gpus, unused_gpu_backends,
 };
 
-/// Native runtime artifact release, independent of the Mesh workspace package version.
+/// Native runtime artifact release, tracked separately from crate package versions.
 ///
 /// The packaging producer reads the same Skippy-owned version file. This is a
 /// release identity; native binary compatibility is checked separately by ABI.

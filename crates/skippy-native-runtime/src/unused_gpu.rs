@@ -135,7 +135,7 @@ impl UnusedGpuBackend {
 /// The warning for the detected GPU backends that `selected` leaves unused,
 /// judging the `artifacts` of one release the way startup does: those without
 /// startup compatibility metadata are named with that reason, the others are
-/// evaluated against `profile`. Startup and `mesh-llm runtime doctor` share it.
+/// evaluated against `profile`. Startup and `skippy doctor` share it.
 pub fn describe_unused_gpus(
     artifacts: &[NativeRuntimeArtifact],
     profile: &HostRuntimeProfile,

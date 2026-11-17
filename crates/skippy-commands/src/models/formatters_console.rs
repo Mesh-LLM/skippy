@@ -410,8 +410,8 @@ impl ModelsFormatter for ConsoleFormatter {
             writeln!(
                 &mut output,
                 "   owner: {}",
-                if row.managed_by_mesh {
-                    "mesh-managed"
+                if row.managed_by_product {
+                    "Skippy-managed"
                 } else {
                     "external"
                 }

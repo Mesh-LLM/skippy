@@ -19,7 +19,7 @@ use skippy_runtime_install::{
 pub(crate) fn ensure_native_runtime_available() -> Result<()> {
     if !skippy_runtime::native_runtime_loaded() {
         anyhow::bail!(
-            "Local model and split-stage loading require a MeshLLM native runtime; run `mesh-llm runtime install` and restart this node"
+            "Local model and split-stage loading require a Skippy native runtime; supply --runtime-bundle or run `skippy runtime install` with a downloaded bundle"
         );
     }
     Ok(())
@@ -34,7 +34,7 @@ pub struct NativeRuntimeOptions {
     pub selection: Option<String>,
 }
 
-/// Resolve without entering native code, preserving the shared Mesh selection rules.
+/// Resolve without entering native code, using the native runtime selection contract.
 pub fn local_native_runtime_plan(args: &NativeRuntimeOptions) -> Result<NativeRuntimeLoadPlan> {
     let release = args
         .release

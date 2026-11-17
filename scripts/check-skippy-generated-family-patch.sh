@@ -10,10 +10,10 @@ if [[ "$(uname -s)" == "Darwin" && "$NATIVE_ARCH" == "x86_64" ]] \
   exec arch -arm64 "${BASH_SOURCE[0]}" "$@"
 fi
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_ROOT="${SKIPPY_REWRITER_SOURCE_ROOT:-$ROOT/.deps/llama.cpp}"
 LLAMA_BUILD_DIR="${LLAMA_STAGE_BUILD_DIR:-${LLAMA_BUILD_DIR:-$ROOT/.deps/llama-build/build-stage-abi-static-metal}}"
-CHECKED_PATCH_DIR="${SKIPPY_REWRITER_PATCH_DIR:-$ROOT/skippy/llama_cpp/patches/generated}"
+CHECKED_PATCH_DIR="${SKIPPY_REWRITER_PATCH_DIR:-$ROOT/llama_cpp/patches/generated}"
 CHECKED_PATCH_SERIES="$CHECKED_PATCH_DIR/series"
 FAMILY_SOURCE_MAP="${SKIPPY_REWRITER_FAMILY_MAP:-$ROOT/ci/llama-canary/generated-family-map.json}"
 FAMILY_MANIFEST="${SKIPPY_REWRITER_FAMILY_MANIFEST:-$ROOT/ci/llama-canary/family-certified.json}"
@@ -110,7 +110,7 @@ if [[ -z "$LLVM_PREFIX" || ! -x "$LLVM_PREFIX/bin/clang" ]]; then
 fi
 
 mkdir -p "$ARTIFACT_ROOT"
-tool_source="$ROOT/skippy/scripts/tools/skippy-stage-rewriter"
+tool_source="$ROOT/scripts/tools/skippy-stage-rewriter"
 cached_tool_source="$(sed -n 's/^CMAKE_HOME_DIRECTORY:INTERNAL=\(.*\)$/\1/p' \
   "$TOOL_BUILD/CMakeCache.txt" 2>/dev/null || true)"
 if [[ -n "$cached_tool_source" && "$cached_tool_source" != "$tool_source" ]]; then
@@ -140,7 +140,7 @@ if command -v xcrun >/dev/null 2>&1; then
   EXTRA_ARGS+=(--extra-arg -isysroot --extra-arg "$(xcrun --show-sdk-path)")
 fi
 
-cargo xtool automation native-generator generate \
+just --justfile "$ROOT/Justfile" automation-run automation native-generator generate \
   --git "$(command -v git)" \
   --max-diff-bytes 16777216 \
   --source-root "$SOURCE_ROOT" \
@@ -154,7 +154,7 @@ cargo xtool automation native-generator generate \
   --family-manifest "$FAMILY_MANIFEST" \
   "${EXTRA_ARGS[@]}"
 
-cargo xtool automation native-generator contracts coverage \
+just --justfile "$ROOT/Justfile" automation-run automation native-generator contracts coverage \
   --manifest "$FAMILY_MANIFEST" \
   --family-map "$FAMILY_SOURCE_MAP" \
   --report "$FIRST_REPORT"
@@ -181,17 +181,17 @@ if diff -qr "$CHECKED_PATCH_DIR" "$GENERATED_PATCH_DIR" >/dev/null; then
 else
   patch_result=fail
   diff -ru "$CHECKED_PATCH_DIR" "$GENERATED_PATCH_DIR" > "$ARTIFACT_ROOT/patch-drift.diff" || true
-  cargo xtool automation native-generator contracts select-shards \
+  just --justfile "$ROOT/Justfile" automation-run automation native-generator contracts select-shards \
     --base "$CHECKED_PATCH_DIR/series.json" \
     --current "$GENERATED_PATCH_DIR/series.json" \
     --output "$ARTIFACT_ROOT/changed-family-selection.json"
 fi
 
 # Reject stale or non-idempotent annotations before the expensive native pass.
-cargo xtool automation rewriter-report \
+just --justfile "$ROOT/Justfile" automation-run automation rewriter-report \
   --report "$FIRST_REPORT" --mode validate \
   --patch-check "$patch_result" --patch-drift-gate fail
-cargo xtool automation rewriter-report --report "$SECOND_REPORT" --mode idempotence
+just --justfile "$ROOT/Justfile" automation-run automation rewriter-report --report "$SECOND_REPORT" --mode idempotence
 
 TRANSFORMED_TREE_TARGETS=(
   llama
@@ -238,7 +238,7 @@ else
   graph_verify_result=fail
 fi
 
-cargo xtool automation rewriter-report \
+just --justfile "$ROOT/Justfile" automation-run automation rewriter-report \
   --report "$FIRST_REPORT" \
   --mode validate \
   --patch-check "$patch_result" \

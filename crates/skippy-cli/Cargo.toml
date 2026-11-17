@@ -2,9 +2,10 @@
 name = "skippy-cli"
 edition.workspace = true
 license.workspace = true
+publish = false
 version.workspace = true
 description = "Standalone Skippy model serving and management CLI"
-repository = "https://github.com/Mesh-LLM/mesh-llm"
+repository = "https://github.com/general-inference/skippy"
 
 [[bin]]
 name = "skippy"

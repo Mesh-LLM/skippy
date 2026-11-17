@@ -1,8 +1,8 @@
 # skippy-runtime-install
 
 `skippy-runtime-install` owns the public native runtime installation flow for
-callers supplying a runtime release and catalog policy. Mesh defaults live in
-`mesh_llm_system::native_runtime_install`.
+callers supplying a runtime release and catalog policy. Standalone defaults
+belong to Skippy; embedding applications can supply their own locations.
 
 It provides:
 
@@ -23,7 +23,7 @@ native code through Cargo.
 `NativeRuntimeInstallOptions::catalog` and `NativeRuntimeManifestOptions::catalog`
 carry a `NativeRuntimeCatalog`: a release URL root and an optional release that
 should track its latest catalog. Other releases use pinned version URLs. The
-loader uses these inputs; it does not infer release channels from Mesh build
+loader uses these inputs; it does not infer release channels from host build
 metadata. Explicit manifest files and URLs, environment overrides and download
 permissions keep their existing precedence.
 
@@ -43,11 +43,12 @@ let options = NativeRuntimeInstallOptions::new(
 ```
 
 The example URL is illustrative. Options have no `Default` implementation:
-callers must provide the release and catalog. Mesh callers use
-`mesh_native_runtime_install_options()` or `mesh_native_runtime_manifest_options()`
-from the Mesh facade. Standalone Skippy release metadata must be supplied by its
-lifecycle layer. Bundle discovery takes an explicit release; existing Mesh path
-and environment names remain pending the coordinated packaging migration.
+callers must provide the release and catalog. Bundle discovery takes an explicit
+release. Standalone settings use `SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR`,
+`SKIPPY_NATIVE_RUNTIME_CACHE_DIR`, and `SKIPPY_NATIVE_RUNTIME_MANIFEST_URL`.
+Default caches live under the platform cache directory's `skippy/native-runtimes`;
+installed bundles are discovered beside the executable or under
+`lib/skippy[/<release>]/native-runtimes`.
 Installer options, runtime manifests, and cache inventory name runtime identity
 `release_version`. Normal readers accept schema-2 metadata and the published
 Mesh-era format with `mesh_version` and no `schema_version`. The legacy version
@@ -63,12 +64,34 @@ option field. Bundle discovery and `discover_local_native_runtimes` now require
 an explicit release argument so discovery and installation select the same
 version. These are source API changes.
 
-Mesh callers can use `mesh_llm_system::native_runtime_install` for Mesh policy
-defaults and compatibility discovery helpers. The Mesh SDK re-exports those
-helpers. Valid existing Mesh cache entries remain readable in place. The explicit
+Embedding applications supply their product policy explicitly. Valid existing
+cache entries remain readable when their directories are supplied. The explicit
 importer can copy verified bytes and write current metadata to a separate cache
 without changing its source.
 Artifact names and environment names are separate migration surfaces.
+
+## Private release downloads
+
+`general-inference/skippy` is private. The native HTTP downloader does not read
+GitHub CLI credentials or send access tokens to release URLs. Download the desired
+release with an authorized `gh` login, verify its checksum, and extract the CLI
+and runtime archives into one installation directory so `native-runtimes/` sits
+beside `skippy` (or `skippy.exe`). Use the release's documented asset names:
+
+```sh
+gh release download vVERSION --repo general-inference/skippy --dir downloads
+```
+
+An extracted runtime can also be imported into the cache explicitly:
+
+```sh
+skippy --runtime-bundle /absolute/path/to/native-runtimes runtime install
+```
+
+This local-bundle path verifies payload hashes and native ABI compatibility.
+An embedding application or managed distribution can instead supply an explicit
+manifest file or its own accessible manifest URL; those sources retain their
+existing precedence. Never put GitHub tokens into a URL or a runtime manifest.
 
 ## Example
 

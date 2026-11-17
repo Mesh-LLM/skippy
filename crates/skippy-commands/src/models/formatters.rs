@@ -55,7 +55,7 @@ pub(crate) struct InstalledRow {
     pub(crate) layer_count: Option<usize>,
     pub(crate) catalog_model: Option<remote_catalog::RemoteCatalogModel>,
     pub(crate) capabilities: ModelCapabilities,
-    pub(crate) managed_by_mesh: bool,
+    pub(crate) managed_by_product: bool,
     pub(crate) last_used_at: Option<String>,
 }
 

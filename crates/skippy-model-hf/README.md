@@ -11,18 +11,18 @@ paths inside the local Hugging Face cache.
 
 The pure identity and selection crates stay registry-agnostic. This crate owns
 the Hugging Face edge: endpoint, token, cache layout, repo metadata, downloads,
-remote `meshllm/catalog` refresh and caching, and cache path identity recovery.
+configured model catalog refresh and caching, and cache path identity recovery.
 
 ```mermaid
 flowchart TB
-    C["caller<br/>mesh resolver<br/>skippy-package-builder<br/>runtime package loader"] --> H["HfModelRepository"]
+    C["caller<br/>model resolver<br/>skippy-package-builder<br/>runtime package loader"] --> H["HfModelRepository"]
     H --> API["Hugging Face Hub API<br/>repo info + siblings"]
     H --> Cache["local HF cache<br/>snapshots/revision/file"]
     API --> A["skippy-model-artifact<br/>resolve_model_artifact"]
     A --> H
     H --> D["downloaded artifact paths"]
     Cache --> I["HfModelIdentity<br/>repo, revision, file"]
-    I --> Mesh["mesh model status<br/>full ref ids"]
+    I --> Host["model status<br/>full ref ids"]
 ```
 
 ## Configuration
@@ -38,21 +38,27 @@ HUGGINGFACE_HUB_CACHE
 HF_HOME
 HF_XET_CACHE
 XDG_CACHE_HOME
-MESH_LLM_DATA_DIR
+SKIPPY_DATA_DIR
+SKIPPY_MODEL_CATALOG
 ```
 
-Both CLIs validate the Hub destination and Xet's independent working cache
-before starting worker threads. If a configured path is read-only, they use the
-same fallback order: `MESH_LLM_DATA_DIR`, the platform-local Mesh data
-directory, `~/.mesh-llm/data`, then the system temp directory. Embedding
+Skippy validates the Hub destination and Xet's independent working cache
+before starting worker threads. If a configured path is read-only, it uses this
+fallback order: `SKIPPY_DATA_DIR`, the platform-local Skippy data
+directory, `~/.skippy/data`, then the system temp directory. Embedding
 applications can supply explicit fallback roots.
 
-Both CLIs use the same application cache root for model-usage records and GGUF
+Skippy uses its application cache root for model-usage records and GGUF
 metadata. Store APIs with an `_in` suffix accept an explicit application cache
 root for tests and embedding applications.
 
 Use `HfModelRepository::builder()` to override the cache directory, endpoint, or
 token explicitly in tests and embedding applications.
+
+Remote catalog discovery is disabled unless `SKIPPY_MODEL_CATALOG` names a
+dataset as `namespace/name`. Cached entries can still be read locally. Catalog
+caches live under `skippy-catalog` in `HF_HOME` (or `.cache/skippy/catalog`),
+with separate namespace/repository directories for configured catalogs.
 
 ## TLS portability
 

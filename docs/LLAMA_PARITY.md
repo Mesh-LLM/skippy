@@ -22,17 +22,17 @@ enough to promote.
    cargo xtool automation replay-matrix parity-local --input /absolute/parity-local.json
    ```
 
-2. Preview missing candidate acquisition with the existing native downloader wrapper:
+2. Provision the exact immutable model revisions and files from `ci/llama-canary/family-certified.json`:
 
    ```bash
-   scripts/download-skippy-parity-candidates.sh --dry-run
+   hf download REPOSITORY FILE --revision IMMUTABLE_COMMIT
    ```
 
-   Set `HF_HOME` or `HF_HUB_CACHE` for the downloader and supply that resolved absolute cache directory as `cache_root` in the inventory/run request. Acquisition is manual and separate from certification.
+   Set `HF_HUB_CACHE` to the resolved absolute cache directory. The standalone upgrade qualifier verifies every model and projector file against the manifest size and SHA-256. Acquisition is manual and separate from certification.
 
 3. Set `mode` to `run` and supply the retained settings described in [NATIVE_PARITY.md](NATIVE_PARITY.md). Use `limit: 1` and policy fields `prefix_token_count: 8`, `cache_hit_repeats: 2`, `borrow_resident_hits: true` for the former one-candidate production-cache example. Run the same native command above. Dense prefixes select resident KV; recurrent/hybrid prefixes select recurrent KV. Omitting those policy fields runs the split/debug lane, without claiming the cache evidence below. The source-bound harness, fresh evidence directory, binary/build and operator profile prerequisites remain explicit.
 
-4. Keep the Rust regression lane green. `skippy/crates/skippy-correctness/tests/parity_models.rs`
+4. Keep the Rust regression lane green. `crates/skippy-correctness/tests/parity_models.rs`
    has one module per P0/P1 family and a cheap coverage test that fails when a
    P0/P1 manifest row does not have a module:
 
@@ -71,9 +71,9 @@ enough to promote.
    artifact should fail the run instead of being reported as a skipped
    package-only proof.
 
-5. Promote passing rows into `skippy/docs/FAMILY_STATUS.md` and the
+5. Promote passing rows into `docs/FAMILY_STATUS.md` and the
    release-bound certification manifest at `ci/llama-canary/family-certified.json`.
-   Review exceptional topology rules in `skippy/crates/skippy-topology`.
+   Review exceptional topology rules in `crates/skippy-topology`.
 
 Raw run artifacts stay under `target/family-certify/...`.
 
@@ -216,7 +216,7 @@ text stage-split support after the text lane passes, but multimodal support
 requires projector/token-sideband evidence.
 
 The candidate manifest lives at
-`skippy/docs/llama-parity-candidates.json`.
+`docs/llama-parity-candidates.json`.
 
 ## Popularity Priority
 
@@ -240,7 +240,7 @@ Use priority filters when working the active queue:
 ```bash
 # Set priorities to ["p0"] or ["p1"] in the inventory JSON.
 cargo xtool automation replay-matrix parity-local --input /absolute/parity-local.json
-scripts/download-skippy-parity-candidates.sh --dry-run --priority p0
+just automation-run upgrade certify --backend cpu --suite supported --pass candidate
 ```
 
 ## Current Coverage Summary
@@ -336,7 +336,7 @@ or a blocker is discovered.
 | `seed_oss` | `seed-oss` | package selected | yes | package validated | package validated | package-local `ResidentKv` target | package validated | `lmstudio-community/Seed-OSS-36B-Instruct-GGUF:Q4_K_M` package-only certified; 64-layer package materialized and validated with all 771 tensors accounted for |
 | `deepseek2ocr` | `deepseek2ocr` | selected | yes | pass | pass | `ResidentKv` | pass + split multimodal pass | DeepSeek-OCR split/cache and split multimodal ready |
 
-Broader coverage lives in `skippy/docs/llama-parity-candidates.json`. The board
+Broader coverage lives in `docs/llama-parity-candidates.json`. The board
 above tracks the active certification queue rather than every pinned llama.cpp
 implementation.
 
@@ -477,15 +477,13 @@ Raw run directories:
 ## Cache Correctness Evidence
 
 The native cache correctness batch uses the same observed local tools, model
-roster, backend and toolkit profile as the cache producer. Prepare those inputs
-with the [cache operator](../../.agents/skills/skippy-cache-family-bench/SKILL.md),
-then run the [closed correctness batch request](CACHE_CORRECTNESS_GATE.md):
+roster, backend and toolkit profile as the cache producer. Run the
+[cache-family benchmark](../evals/skippy-cache-family-bench.sh) with a pinned
+operator input and retain its evidence beside the parity reports:
 
 ```sh
-just automation-run automation cache-family-run prepare-full \
-  --input /absolute/operator.json --output /absolute/fresh-preparation
-just automation-run automation cache-family-correctness batch \
-  --input /absolute/gate.json --output /absolute/fresh-gate
+SKIPPY_CACHE_OPERATOR_INPUT=/absolute/operator.json \
+  evals/skippy-cache-family-bench.sh /absolute/fresh-cache-evidence
 ```
 
 For the previous example's local gate settings, `gate.json` is:
@@ -519,7 +517,7 @@ tranche reports are the current evidence.
 
 Negative policy regression tests now assert that Falcon-H1, Qwen3Next, Jamba,
 Kimi Linear, LFM2, Mamba, Mamba2, RWKV6, and RWKV7 select `KvRecurrent`, never
-`ResidentKv`, through mesh family policy and server-side auto-payload
+`ResidentKv`, through Skippy family policy and server-side auto-payload
 inference.
 
 | Family | Model ref | Payload | Topology | Result | Seq remap | Source -> target seq | Suffix prefill | Payload bytes | Recurrent bytes | Repeated hits |

@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn load_error_includes_library_path_and_os_error() {
-        let path = Path::new("mesh-llm-missing-native-runtime.dll");
+        let path = Path::new("skippy-missing-native-runtime.dll");
         let expected_error = match unsafe { Library::new(path) } {
             Ok(_) => panic!("unexpectedly loaded missing test library"),
             Err(error) => error,
@@ -100,7 +100,7 @@ mod tests {
     #[cfg(not(target_os = "windows"))]
     #[test]
     fn source_less_non_windows_errors_report_unavailable_os_error() {
-        let path = Path::new("mesh-llm-missing-native-runtime.dll");
+        let path = Path::new("skippy-missing-native-runtime.dll");
         let message = format_load_error(path, &libloading::Error::DlOpenUnknown);
 
         assert!(message.contains("OS error unavailable"));
@@ -121,7 +121,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn unknown_windows_errors_report_os_error_zero() {
-        let path = Path::new("mesh-llm-missing-native-runtime.dll");
+        let path = Path::new("skippy-missing-native-runtime.dll");
         let message = format_load_error(path, &libloading::Error::LoadLibraryExWUnknown);
 
         assert!(message.contains("OS error 0"));

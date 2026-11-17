@@ -3,7 +3,7 @@
 Status: implementation contract for `feature/skippy_graph_filter_v2`.
 
 The authoritative Rust types and validation rules live in
-`skippy/crates/skippy-package-format`. Package creation, preflight, runtime loading,
+`crates/skippy-package-format`. Package creation, preflight, runtime loading,
 offline conversion, and test fixtures must consume that crate rather than
 declaring private copies of the manifest.
 
@@ -156,7 +156,7 @@ if it appears in the sidecar list. When the source has no native
 speculative-decoding support the field is omitted entirely (it is not
 serialized as `null`), so a non-MTP package carries no `generation` key.
 
-The authoritative type is `Generation` in `skippy/crates/skippy-package-format`. It is
+The authoritative type is `Generation` in `crates/skippy-package-format`. It is
 `deny_unknown_fields` with two sub-fields: `speculative_decoding` and the
 optional `request_defaults` publisher profile set described below. `policy` and
 `thresholds` are not part of this manifest field and are rejected at parse time;

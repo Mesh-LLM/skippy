@@ -1,4 +1,4 @@
-//! Native-runtime commands using the same cache, discovery, and installer as Mesh.
+//! Native-runtime commands using the Skippy cache, discovery, and installer.
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -64,7 +64,7 @@ fn release<'a>(options: &'a RuntimeRunOptions, override_release: Option<&'a str>
 }
 
 fn catalog(runtime_release: &str) -> NativeRuntimeCatalog {
-    let build = option_env!("MESH_LLM_BUILD_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
+    let build = option_env!("SKIPPY_BUILD_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
     skippy_runtime_install::publication_catalog(build, env!("CARGO_PKG_VERSION"), runtime_release)
 }
 
@@ -156,7 +156,9 @@ async fn install(
             let _ = crate::console::progress("Native runtime", progress.downloaded_bytes, total);
         }
     }));
-    let outcome = skippy_runtime_install::install_native_runtime(install).await?;
+    let outcome = skippy_runtime_install::install_native_runtime(install).await.context(
+        "private Skippy releases require `gh release download --repo general-inference/skippy` with an authorized GitHub login; extract the runtime and pass --runtime-bundle to install it, or provide a custom manifest through SKIPPY_NATIVE_RUNTIME_MANIFEST_URL",
+    )?;
     crate::console::present(&outcome, |output| {
         writeln!(
             output,

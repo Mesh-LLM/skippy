@@ -28,7 +28,9 @@ pub struct ScriptFreshness {
 ///
 /// If sizes match, downloads the ~10 KB file and verifies the SHA-256 hash.
 pub async fn check_bucket_script(client: &HFClient) -> Result<ScriptFreshness> {
-    let bucket = client.bucket("meshllm", "layer-split-output");
+    let location =
+        skippy_model_hf::repository_settings::HubRepository::require("SKIPPY_PACKAGE_BUCKET")?;
+    let bucket = client.bucket(&location.namespace, &location.name);
     let paths = vec!["split-model-job.sh".to_string()];
 
     let entries = bucket
@@ -44,7 +46,7 @@ pub async fn check_bucket_script(client: &HFClient) -> Result<ScriptFreshness> {
             BucketTreeEntry::File { size, .. } => Some(size),
             _ => None,
         })
-        .context("split-model-job.sh not found in meshllm/layer-split-output bucket")?;
+        .context("split-model-job.sh not found in configured package bucket")?;
 
     if bucket_size != EMBEDDED_SCRIPT_SIZE {
         return Ok(ScriptFreshness {
@@ -91,11 +93,13 @@ pub async fn check_bucket_script(client: &HFClient) -> Result<ScriptFreshness> {
     })
 }
 
-/// Upload the embedded script to the meshllm bucket.
+/// Upload the embedded script to the explicitly configured package bucket.
 ///
-/// Requires meshllm org write access.
+/// Requires write access to that bucket.
 pub async fn update_bucket_script(client: &HFClient) -> Result<()> {
-    let bucket = client.bucket("meshllm", "layer-split-output");
+    let location =
+        skippy_model_hf::repository_settings::HubRepository::require("SKIPPY_PACKAGE_BUCKET")?;
+    let bucket = client.bucket(&location.namespace, &location.name);
 
     // Write embedded script to a unique temp file for upload.
     let tmp_dir = tempfile::tempdir().context("create bucket script upload temp dir")?;
@@ -110,7 +114,7 @@ pub async fn update_bucket_script(client: &HFClient) -> Result<()> {
         )])
         .send()
         .await
-        .context("upload script to meshllm/layer-split-output bucket")?;
+        .context("upload script to configured package bucket")?;
 
     Ok(())
 }
@@ -120,10 +124,10 @@ mod tests {
     use super::EMBEDDED_SCRIPT;
 
     #[test]
-    fn embedded_script_prints_mesh_llm_repo_shorthand() {
-        assert!(EMBEDDED_SCRIPT.contains("mesh-llm serve --model ${TARGET_REPO} --split"));
-        assert!(!EMBEDDED_SCRIPT.contains(r#"mesh-llm serve --model "hf://${TARGET_REPO}""#));
-        assert!(!EMBEDDED_SCRIPT.contains("mesh-llm serve --model hf://${TARGET_REPO}"));
+    fn embedded_script_prints_skippy_repo_shorthand() {
+        assert!(EMBEDDED_SCRIPT.contains("skippy serve --model ${TARGET_REPO}"));
+        assert!(!EMBEDDED_SCRIPT.contains(r#"skippy serve --model "hf://${TARGET_REPO}""#));
+        assert!(!EMBEDDED_SCRIPT.contains("skippy serve --model hf://${TARGET_REPO}"));
     }
 
     #[test]
@@ -140,7 +144,7 @@ mod tests {
         assert!(
             EMBEDDED_SCRIPT.contains(r#"--pipeline-tag "${SOURCE_PIPELINE_TAG:-text-generation}""#)
         );
-        assert!(EMBEDDED_SCRIPT.contains(r#"--mesh-llm-ref "${MESH_LLM_REF:-main}""#));
+        assert!(EMBEDDED_SCRIPT.contains(r#"--skippy-ref "${SKIPPY_REF:-main}""#));
         assert!(EMBEDDED_SCRIPT.contains(r#"CARD_EXPERIMENTAL_ARGS+=(--experimental)"#));
         assert!(EMBEDDED_SCRIPT.contains(r#""${CARD_EXPERIMENTAL_ARGS[@]}""#));
         assert!(EMBEDDED_SCRIPT.contains(

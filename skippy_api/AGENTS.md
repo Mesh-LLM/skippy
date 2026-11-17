@@ -1,7 +1,7 @@
 # Porting a llama.cpp patch into `skippy_api`
 
 This file is for whoever (human or agent) ports the next patch from
-`skippy/llama_cpp/patches` into this library, and for anyone writing code here.
+`llama_cpp/patches` into this library, and for anyone writing code here.
 It records rules that were agreed the hard way; most of them exist because
 something broke.
 
@@ -22,7 +22,7 @@ something broke.
 ## What this library is
 
 A C++23 façade over the patched llama.cpp staged runtime, plus Rust bindings in
-`skippy/skippy-api-rs`. It owns *use* of the runtime, never the runtime itself.
+`skippy-api-rs`. It owns *use* of the runtime, never the runtime itself.
 
 ```
 include/            public headers, one per capability
@@ -54,7 +54,7 @@ same commit as the change that taught you something:
 - **A new rule or a changed rule** is written here before or with the code. If
   code and this file disagree, this file is wrong until you update it — do not
   leave the divergence for the next person.
-- **A new boundary** (something that belongs in `skippy/llama_cpp/patches`, a
+- **A new boundary** (something that belongs in `llama_cpp/patches`, a
   missing ABI entry point, a model that cannot be staged) gets a manifest row
   with acceptance `blocked-upstream` and its reason, plus a line here if it
   changes what "ported" means.
@@ -240,7 +240,7 @@ have your context, and this file is the only thing that survives it.
 
 ## Never modify llama.cpp from here
 
-`skippy/llama_cpp/patches` is the only place llama.cpp changes live. This
+`llama_cpp/patches` is the only place llama.cpp changes live. This
 library **wraps** the runtime; it never edits it, and no PR here may touch a
 patch file, regenerate it, or carry a private llama fork.
 
@@ -287,7 +287,7 @@ it is a patch, not a façade feature.
 
 ## Porting a patch: the procedure
 
-1. **Read the patch, not the docs.** `skippy/llama_cpp/patches/NNNN-*.patch`.
+1. **Read the patch, not the docs.** `llama_cpp/patches/NNNN-*.patch`.
    Identify whether it adds (a) an ABI entry point, (b) graph/family behaviour,
    (c) metadata/validation, or (d) build wiring.
 2. **Classify it** — this decides how it can ever be "proven":
@@ -326,7 +326,7 @@ it is a patch, not a façade feature.
 | `win` | measured faster than the old ABI (class A) or than the reference (class B) |
 | `parity` | measured equal within the class's noise floor; the honest outcome when llama owns the work |
 | `pending` | the row is ours to write and has not been written yet |
-| `blocked-upstream` | the fix belongs in `skippy/llama_cpp/patches`; the note names the missing entry point or the owning patch |
+| `blocked-upstream` | the fix belongs in `llama_cpp/patches`; the note names the missing entry point or the owning patch |
 
 `just skippy-ab <case>` refuses `pending` and `blocked-upstream` rows with their
 note and exits 0 — an unwritten or upstream-blocked case is a known boundary,
@@ -563,7 +563,7 @@ just skippy-llama-api-planner-probe <model.gguf>      # plan/probe a model
   be `(void)`-cast, and the benchmark will fail to compile (not run) if missed.
 - **A green tidy gate that ran without its plugin.** `skippy-llama-api-tidy`
   passed `--load=target/skippy-tidy/SkippyTidyChecks.so` relative to the repo
-  root, then `cd`'d into `skippy/skippy_api` before the first invocation;
+  root, then `cd`'d into `skippy_api` before the first invocation;
   dlopen resolved the path against the new working directory, failed, and
   clang-tidy treats a failed `--load` as non-fatal — so every skippy-* check
   silently vanished and the gate passed on the built-ins alone. Symptom:

@@ -1,0 +1,204 @@
+name: Llama upgrade
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_sha:
+        description: Optional full upstream commit; otherwise select latest published release.
+        type: string
+        default: ''
+      force_certify:
+        description: Certify the unchanged pin without opening an upgrade PR.
+        type: boolean
+        default: false
+  # Enable after the unchanged-pin and changed-pin acceptance runs in ci/README.md.
+  # schedule:
+  #   - cron: '17 3 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: skippy-llama-upgrade
+  cancel-in-progress: false
+env:
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_PROFILE_RELEASE_DEBUG: '0'
+  CARGO_PROFILE_BENCH_DEBUG: '0'
+jobs:
+  candidate:
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: [self-hosted, skippy-ephemeral, Linux, X64, native-contracts]
+    timeout-minutes: 180
+    outputs:
+      changed: ${{ steps.resolve.outputs.changed }}
+      certify: ${{ steps.resolve.outputs.certify }}
+      candidate_sha: ${{ steps.prepare.outputs.candidate_sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve immutable upstream source
+        id: resolve
+        env:
+          UPSTREAM_SHA: ${{ inputs.upstream_sha }}
+          FORCE_CERTIFY: ${{ inputs.force_certify || false }}
+          GH_TOKEN: ${{ github.token }}
+        run: just automation-run upgrade resolve --upstream "$UPSTREAM_SHA" --force-certify "$FORCE_CERTIFY"
+      - name: Prepare and freeze candidate
+        id: prepare
+        if: steps.resolve.outputs.certify == 'true'
+        env:
+          UPSTREAM_SHA: ${{ steps.resolve.outputs.upstream_sha }}
+        run: just automation-run upgrade prepare "$UPSTREAM_SHA"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: steps.prepare.outcome == 'success'
+        with:
+          name: llama-candidate
+          path: |
+            target/llama-upgrade/candidate.bundle
+            target/llama-upgrade/candidate.json
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: failure()
+        with:
+          name: llama-preparation-diagnostics
+          path: |
+            target/llama-upgrade/evidence/**
+            target/llama-upgrade/candidate.json
+            target/llama-upgrade/candidate.bundle
+            target/llama-upgrade/diagnostics/**
+          if-no-files-found: ignore
+          retention-days: 14
+  candidate_ci:
+    needs: candidate
+    if: needs.candidate.outputs.certify == 'true'
+    uses: ./.github/workflows/ci.yml
+    with:
+      artifact_scope: upgrade-candidate
+      candidate_artifact: llama-candidate
+      candidate_sha: ${{ needs.candidate.outputs.candidate_sha }}
+  candidate_families:
+    needs: [candidate, candidate_ci]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: cpu
+            runner: [self-hosted, skippy-ephemeral, Linux, X64, family-256g, cpu]
+          - backend: metal
+            runner: [self-hosted, skippy-ephemeral, macOS, ARM64, family-256g, metal]
+          - backend: cuda
+            runner: [self-hosted, skippy-ephemeral, Linux, X64, family-256g, cuda13]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 1440
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/source
+        with:
+          artifact: llama-candidate
+          sha: ${{ needs.candidate.outputs.candidate_sha }}
+      - name: Certify supported family roster
+        env:
+          BACKEND: ${{ matrix.backend }}
+        run: just automation-run upgrade certify --backend "$BACKEND" --suite supported --pass candidate
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: llama-candidate-${{ matrix.backend }}-evidence
+          path: target/llama-upgrade/evidence
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: failure()
+        with:
+          name: llama-candidate-${{ matrix.backend }}-native-diagnostics
+          path: target/llama-upgrade/native/${{ matrix.backend }}/Testing
+          if-no-files-found: ignore
+          retention-days: 14
+  independent_ci:
+    needs: [candidate, candidate_ci, candidate_families]
+    uses: ./.github/workflows/ci.yml
+    with:
+      artifact_scope: upgrade-independent
+      candidate_artifact: llama-candidate
+      candidate_sha: ${{ needs.candidate.outputs.candidate_sha }}
+  independent_families:
+    needs: [candidate, independent_ci]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: cpu
+            runner: [self-hosted, skippy-ephemeral, Linux, X64, family-256g, cpu]
+          - backend: metal
+            runner: [self-hosted, skippy-ephemeral, macOS, ARM64, family-256g, metal]
+          - backend: cuda
+            runner: [self-hosted, skippy-ephemeral, Linux, X64, family-256g, cuda13]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 1440
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/source
+        with:
+          artifact: llama-candidate
+          sha: ${{ needs.candidate.outputs.candidate_sha }}
+      - name: Independently rebuild and certify identical candidate
+        env:
+          BACKEND: ${{ matrix.backend }}
+        run: just automation-run upgrade certify --backend "$BACKEND" --suite supported --pass independent
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: llama-independent-${{ matrix.backend }}-evidence
+          path: target/llama-upgrade/evidence
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: failure()
+        with:
+          name: llama-independent-${{ matrix.backend }}-native-diagnostics
+          path: target/llama-upgrade/native/${{ matrix.backend }}/Testing
+          if-no-files-found: ignore
+          retention-days: 14
+  publish:
+    needs: [candidate, candidate_ci, candidate_families, independent_ci, independent_families]
+    if: needs.candidate.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: llama-candidate
+          path: candidate
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: llama-*-evidence
+          path: evidence
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        id: app
+        with:
+          app-id: ${{ vars.SKIPPY_UPGRADE_APP_ID }}
+          private-key: ${{ secrets.SKIPPY_UPGRADE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: skippy
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Publish exact verified candidate as a PR
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: just automation-run upgrade publish --candidate candidate/candidate.bundle --evidence evidence

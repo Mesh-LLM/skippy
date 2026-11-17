@@ -92,31 +92,31 @@ pub fn huggingface_xet_cache_dir() -> PathBuf {
 pub fn application_cache_dir() -> PathBuf {
     dirs::cache_dir()
         .or_else(|| dirs::home_dir().map(|home| home.join(".cache")))
-        .unwrap_or_else(|| std::env::temp_dir().join("mesh-llm-cache"))
-        .join("mesh-llm")
+        .unwrap_or_else(|| std::env::temp_dir().join("skippy-cache"))
+        .join("skippy")
 }
 
 pub fn prepare_download_directories() -> Result<PreparedDownloadDirectories> {
     prepare_cli_download_directories()
 }
 
-/// CLI cache preparation shared by Mesh and standalone Skippy.
+/// Prepare the standalone CLI's model download caches.
 pub fn prepare_cli_download_directories() -> Result<PreparedDownloadDirectories> {
     prepare_download_directories_with_data_roots(&fallback_data_roots())
 }
 
 fn fallback_data_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
-    if let Some(path) = env_path("MESH_LLM_DATA_DIR") {
+    if let Some(path) = env_path("SKIPPY_DATA_DIR") {
         roots.push(path);
     }
     if let Some(path) = dirs::data_local_dir() {
-        roots.push(path.join("mesh-llm"));
+        roots.push(path.join("skippy"));
     }
     if let Some(path) = dirs::home_dir() {
-        roots.push(path.join(".mesh-llm").join("data"));
+        roots.push(path.join(".skippy").join("data"));
     }
-    roots.push(std::env::temp_dir().join("mesh-llm-data"));
+    roots.push(std::env::temp_dir().join("skippy-data"));
     deduplicate_paths(roots)
 }
 
@@ -188,7 +188,7 @@ fn default_data_root() -> PathBuf {
     fallback_data_roots()
         .into_iter()
         .next()
-        .unwrap_or_else(|| std::env::temp_dir().join("mesh-llm-data"))
+        .unwrap_or_else(|| std::env::temp_dir().join("skippy-data"))
 }
 
 fn deduplicate_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
@@ -273,7 +273,7 @@ fn probe_writable_directory(path: &Path) -> std::io::Result<()> {
         .write(true)
         .create_new(true)
         .open(&probe)?;
-    file.write_all(b"mesh-llm")?;
+    file.write_all(b"skippy")?;
     drop(file);
     std::fs::remove_file(&probe)
 }
@@ -334,7 +334,7 @@ mod tests {
         } else {
             PathBuf::from("/sys")
         };
-        let requested_hub = read_only_root.join("mesh-llm-issue-980").join("hub");
+        let requested_hub = read_only_root.join("skippy-issue-980").join("hub");
         let writable_xet = temp.path().join("xet");
 
         let prepared = prepare_download_directories_in(
@@ -378,6 +378,6 @@ mod tests {
         assert!(message.contains(&os_error));
         assert!(message.contains("/writable/data/huggingface/xet"));
         assert!(message.contains("HF_XET_CACHE"));
-        assert!(!message.contains("MESH_LLM_DATA_DIR"));
+        assert!(!message.contains("SKIPPY_DATA_DIR"));
     }
 }

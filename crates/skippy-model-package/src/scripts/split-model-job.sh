@@ -2,22 +2,23 @@
 set -euo pipefail
 
 # This script runs inside an HF Job container.
-# It clones mesh-llm, builds the splitter, splits the model, validates, and publishes.
+# It clones skippy, builds the splitter, splits the model, validates, and publishes.
 #
-# Environment variables (set by mesh-llm skippy-model-package job spec):
+# Environment variables (set by skippy skippy-model-package job spec):
 #   SOURCE_REPO, SOURCE_FILE, SOURCE_QUANT, TARGET_REPO, MODEL_ID, SOURCE_REVISION
 #   SOURCE_PROJECTOR_FILES — optional newline-delimited repo-relative mmproj GGUFs
 #   SOURCE_PIPELINE_TAG — source model pipeline tag for the published model card
-#   MESH_LLM_REF — git ref to build from (default: main)
+#   SKIPPY_REF — git ref to build from (default: main)
 #   CATALOG_CREATE_PR — "true" to open a PR for catalog updates (non-org members)
 #   REPUBLISH — "true" to stage a replacement and atomically promote it to main
 #   PACKAGE_EXPERIMENTAL — "true" to label the public package as not runtime-certified
 #   HF_TOKEN — injected as a secret by HF Jobs
+#   SKIPPY_GITHUB_TOKEN — read-only Skippy source access, injected as a job secret
 #
 # Volumes:
 #   /bucket  — writable storage bucket for script and fallback source cache
 
-MESH_LLM_REF="${MESH_LLM_REF:-main}"
+SKIPPY_REF="${SKIPPY_REF:-main}"
 SOURCE_REVISION="${SOURCE_REVISION:-main}"
 SOURCE_QUANT="${SOURCE_QUANT:-}"
 REPUBLISH="${REPUBLISH:-false}"
@@ -37,7 +38,7 @@ echo "║  Source: ${SOURCE_REPO}/${SOURCE_FILE}"
 echo "║  Quant:  ${SOURCE_QUANT}"
 echo "║  Target: ${TARGET_REPO}"
 echo "║  Model:  ${MODEL_ID}"
-echo "║  Build:  mesh-llm @ ${MESH_LLM_REF}"
+echo "║  Build:  skippy @ ${SKIPPY_REF}"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -49,7 +50,7 @@ echo ""
 # artifacts through the writable /bucket FUSE mount surfaces I/O errors.
 JOB_WORK_ROOT="${JOB_WORK_ROOT:-/bucket/job-work}"
 SAFE_TARGET_REPO="$(printf '%s' "$TARGET_REPO" | tr -c '[:alnum:]._-' '_')"
-LOCAL_WORK_DIR="${LOCAL_WORK_DIR:-/tmp/meshllm-layer-job-${SAFE_TARGET_REPO}-$$}"
+LOCAL_WORK_DIR="${LOCAL_WORK_DIR:-/tmp/skippy-layer-job-${SAFE_TARGET_REPO}-$$}"
 if [ -z "${JOB_WORK_DIR:-}" ]; then
     JOB_WORK_DIR="${JOB_WORK_ROOT}/${SAFE_TARGET_REPO}-$(date +%Y%m%d%H%M%S)-$$"
     CLEANUP_JOB_WORK_DIR="${CLEANUP_JOB_WORK_DIR:-true}"
@@ -182,45 +183,33 @@ fetch_ref_with_retry() {
     return 1
 }
 
-echo "=== [3/9] Cloning mesh-llm and building skippy-package-builder ==="
-git clone --filter=blob:none https://github.com/Mesh-LLM/mesh-llm.git "$BUILD_DIR"
+echo "=== [3/9] Cloning skippy and building skippy-package-builder ==="
+: "${SKIPPY_GITHUB_TOKEN:?read access to general-inference/skippy is required}"
+# Keep credentials out of clone URLs, Git configuration files and command logs.
+export GIT_CONFIG_COUNT=2
+export GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0=
+export GIT_CONFIG_KEY_1=credential.https://github.com.helper
+export GIT_CONFIG_VALUE_1='!f() { printf "username=x-access-token\npassword=%s\n" "$SKIPPY_GITHUB_TOKEN"; }; f'
+export GIT_TERMINAL_PROMPT=0
+git clone --filter=blob:none https://github.com/general-inference/skippy.git "$BUILD_DIR"
 cd "$BUILD_DIR"
-if git ls-remote --exit-code --heads origin "$MESH_LLM_REF" >/dev/null 2>&1 || \
-   git ls-remote --exit-code --tags origin "$MESH_LLM_REF" >/dev/null 2>&1; then
-    fetch_ref_with_retry "$MESH_LLM_REF"
+if git ls-remote --exit-code --heads origin "$SKIPPY_REF" >/dev/null 2>&1 || \
+   git ls-remote --exit-code --tags origin "$SKIPPY_REF" >/dev/null 2>&1; then
+    fetch_ref_with_retry "$SKIPPY_REF"
     git checkout --detach FETCH_HEAD
-elif git cat-file -e "$MESH_LLM_REF^{commit}" 2>/dev/null; then
-    git checkout --detach "$MESH_LLM_REF"
+elif git cat-file -e "$SKIPPY_REF^{commit}" 2>/dev/null; then
+    git checkout --detach "$SKIPPY_REF"
 else
-    fetch_ref_with_retry "$MESH_LLM_REF"
+    fetch_ref_with_retry "$SKIPPY_REF"
     git checkout --detach FETCH_HEAD
 fi
+unset SKIPPY_GITHUB_TOKEN GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+unset GIT_CONFIG_KEY_1 GIT_CONFIG_VALUE_1
 
-# Install the canonical compiler-cache/linker prerequisites for Just builds.
-just bootstrap-build-tools
-
-# Full clone needed for git-am patches in prepare-llama
-sed -i 's/--filter=blob:none //' scripts/prepare-llama.sh
-echo "  Running prepare-llama.sh..."
-scripts/prepare-llama.sh pinned 2>&1 | tail -5
-echo "  Running build-llama.sh..."
-scripts/build-llama.sh 2>&1 | tail -5
-
-# Locate the llama.cpp build directory (build-llama.sh puts it here)
-LLAMA_BUILD_DIR=".deps/llama-build/build-stage-abi-cpu"
-echo "  Verifying llama.cpp build at $LLAMA_BUILD_DIR..."
-find "$LLAMA_BUILD_DIR" -name "*.a" 2>/dev/null | head -10 || echo "  WARNING: no .a files found"
-
-# Build the splitter binary
-echo "  Building skippy-package-builder..."
-SKIPPY_LLAMA_BUILD_DIR="$LLAMA_BUILD_DIR" \
-    cargo build --release -p skippy-package-builder 2>&1 | tail -20
+just package-builder-release-build cpu
 SLICER="${CARGO_TARGET_DIR}/release/skippy-package-builder"
 if [ ! -f "$SLICER" ]; then
     echo "ERROR: Build failed — binary not found at $SLICER"
-    echo "Retrying with full output..."
-    SKIPPY_LLAMA_BUILD_DIR=.deps/llama.cpp/build-stage-abi-static \
-        cargo build --release -p skippy-package-builder 2>&1
     exit 1
 fi
 cp "$SLICER" "${TOOL_DIR}/skippy-package-builder"
@@ -472,7 +461,7 @@ fi
 
 # ─── Update catalog ───────────────────────────────────────────────────────
 echo ""
-echo "=== [7/9] Updating meshllm/catalog ==="
+echo "=== [7/9] Updating configured model catalog ==="
 CATALOG_CREDENTIAL="${JOB_TMP_DIR}/layer-catalog-credential"
 (umask 077; printf '%s' "${HF_TOKEN}" > "$CATALOG_CREDENTIAL")
 CATALOG_PR_ARGS=()
@@ -493,7 +482,7 @@ if [ "${PACKAGE_EXPERIMENTAL:-false}" = "true" ]; then CARD_EXPERIMENTAL_ARGS+=(
 "$LAYER_JOB" prepare-card --manifest "$PACKAGE_DIR/model-package.json" \
     --source-repo "$SOURCE_REPO" --source-revision "$SOURCE_REVISION" --source-file "$SOURCE_FILE" \
     --target-repo "$TARGET_REPO" --credential-file "$CARD_CREDENTIAL" \
-    --pipeline-tag "${SOURCE_PIPELINE_TAG:-text-generation}" --mesh-llm-ref "${MESH_LLM_REF:-main}" \
+    --pipeline-tag "${SOURCE_PIPELINE_TAG:-text-generation}" --skippy-ref "${SKIPPY_REF:-main}" \
     --output-directory "${LOCAL_WORK_DIR}/model-card" "${CARD_EXPERIMENTAL_ARGS[@]}"
 rm -f "$CARD_CREDENTIAL"
 publish_layer_file "${LOCAL_WORK_DIR}/model-card/README.md" README.md main
@@ -507,5 +496,5 @@ echo "  Published:  https://huggingface.co/${TARGET_REPO}"
 echo "  Layers:     ${LAYER_COUNT}"
 echo "  Total size: ${TOTAL_SIZE_LABEL}"
 echo ""
-echo "  Use with mesh-llm:"
-echo "    mesh-llm serve --model ${TARGET_REPO} --split"
+echo "  Use with skippy:"
+echo "    skippy serve --model ${TARGET_REPO}"

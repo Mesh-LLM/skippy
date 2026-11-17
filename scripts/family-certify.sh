@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Frozen automation selection begins.
 family_automation=(just --justfile "$ROOT/Justfile" automation-run)
-if [[ "${MESH_LLM_AUTOMATION_BIN+set}" == set ]]; then
-  if [[ "$MESH_LLM_AUTOMATION_BIN" != /* || ! -f "$MESH_LLM_AUTOMATION_BIN" || ! -x "$MESH_LLM_AUTOMATION_BIN" ]]; then
-    echo 'MESH_LLM_AUTOMATION_BIN must be an absolute executable' >&2
+if [[ "${SKIPPY_AUTOMATION_BIN+set}" == set ]]; then
+  if [[ "$SKIPPY_AUTOMATION_BIN" != /* || ! -f "$SKIPPY_AUTOMATION_BIN" || ! -x "$SKIPPY_AUTOMATION_BIN" ]]; then
+    echo 'SKIPPY_AUTOMATION_BIN must be an absolute executable' >&2
     exit 1
   fi
-  family_automation=("$MESH_LLM_AUTOMATION_BIN")
+  family_automation=("$SKIPPY_AUTOMATION_BIN")
 fi
 # Frozen automation selection ends.
 # shellcheck source=scripts/lib/family-outcome.sh
 source "$ROOT/scripts/lib/family-outcome.sh"
 PORT_START_ATTEMPTS=3
+BIN_DIR="${FAMILY_BATTERY_BIN_DIR:-$ROOT/target/debug}"
 
 usage() {
   cat >&2 <<'EOF'
@@ -77,7 +78,7 @@ Output options:
   --run-id ID                 output run id; default: timestamp
   -h, --help                  show this help
 
-Arguments after -- are currently ignored by the mesh-llm import.
+Arguments after -- are currently ignored by the standalone certification adapter.
 EOF
 }
 
@@ -134,7 +135,7 @@ SKIP_STATE=0
 SKIP_SPECULATIVE=0
 REQUIRE_NATIVE_MTP_DRAFT=0
 REQUIRE_LANES=0
-CORPUS="skippy/evals/corpora/speculative_coding_prompts.jsonl"
+CORPUS="evals/corpora/speculative_coding_prompts.jsonl"
 CORPUS_LIMIT=""
 SPEC_WINDOW="8"
 MAX_TOKENS="24"
@@ -201,8 +202,8 @@ if [[ -z "$FAMILY" || -z "$TARGET_MODEL" ]]; then
   exit 2
 fi
 
-# Reserved flags captured above for forward compatibility with the mesh-llm
-# import; referenced here so their capture is deliberate.
+# Reserved flags captured above for forward compatibility with the standalone
+# adapter; referenced here so their capture is deliberate.
 : "${DECODE_TIMEOUT}" "${EXTRA_ARGS[*]:-}"
 
 TARGET_MODEL_PATH="$(abs_path "$TARGET_MODEL")"
@@ -392,7 +393,7 @@ maybe_build() {
   fi
   run_logged "build" "" \
     env LLAMA_STAGE_BUILD_DIR="${LLAMA_STAGE_BUILD_DIR:-$ROOT/.deps/llama-build/build-stage-abi-static}" \
-    cargo build -p skippy-correctness -p skippy-cli -p llama-spec-bench
+    just --justfile "$ROOT/Justfile" with-lld cargo build -p skippy-correctness -p skippy-cli -p llama-spec-bench
 }
 
 correctness_common=(
@@ -401,7 +402,7 @@ correctness_common=(
   --ctx-size "$CTX_SIZE"
   --n-gpu-layers "$N_GPU_LAYERS"
   --prompt "$PROMPT"
-  --stage-server-bin "$ROOT/target/debug/skippy"
+  --stage-server-bin "$BIN_DIR/skippy"
   --child-logs
 )
 native_mtp_args=()
@@ -428,7 +429,7 @@ if (( SKIP_CORRECTNESS != 0 )); then
 else
   if (( REQUIRE_NATIVE_MTP_DRAFT != 0 )); then
     head_args=(
-      "$ROOT/target/debug/skippy-correctness" native-mtp-heads
+      "$BIN_DIR/skippy-correctness" native-mtp-heads
       --model "$TARGET_MODEL_PATH"
       --layer-end "${LAYER_END:-30}"
       --ctx-size "$CTX_SIZE"
@@ -449,7 +450,7 @@ else
       printf 'core-parity: skipped (requires exactly two chain split indexes)\n'
     else
       core_args=(
-      "$ROOT/target/debug/skippy-correctness"
+      "$BIN_DIR/skippy-correctness"
       core-parity
       "${correctness_common[@]}"
       --split-layer "$SPLIT_LAYER"
@@ -482,7 +483,7 @@ else
     record_event "state-handoff" "skipped" 0 "" "" "--skip-state"
   elif [[ -n "$ACTIVATION_WIDTH" && -n "$LAYER_END" ]]; then
     state_args=(
-      "$ROOT/target/debug/skippy-correctness"
+      "$BIN_DIR/skippy-correctness"
       state-handoff
       "${correctness_common[@]}"
       --activation-width "$ACTIVATION_WIDTH"
@@ -513,7 +514,7 @@ elif [[ -n "$DRAFT_MODEL_PATH" ]]; then
   spec_args=(
     env
     "LLAMA_STAGE_BUILD_DIR=${LLAMA_STAGE_BUILD_DIR:-$ROOT/.deps/llama-build/build-stage-abi-static}"
-    "$ROOT/target/debug/llama-spec-bench"
+    "$BIN_DIR/llama-spec-bench"
     --target-model-path "$TARGET_MODEL_PATH"
     --draft-model-path "$DRAFT_MODEL_PATH"
     --prompt-corpus "$(abs_path "$CORPUS")"

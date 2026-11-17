@@ -232,7 +232,7 @@ worse than solo decode.
   no role concept in the planner today.
 - Activate the peer-to-peer RTT/bandwidth matrix (`edge_order.rs` is
   currently dead code in production — known gap in
-  `docs/skippy/TOPOLOGY_PLANNER.md`); handoff needs link throughput between
+  `docs/TOPOLOGY_PLANNER.md`); handoff needs link throughput between
   the *pair*, not coordinator RTT.
 - Cost-gated routing: break-even prompt length computed from measured link
   throughput, state bytes/token, and the fixed recurrent floor; reject

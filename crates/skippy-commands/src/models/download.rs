@@ -14,7 +14,7 @@ pub struct DownloadedModel {
     pub(super) transfer_stats: Option<super::transfer::DownloadTransferStats>,
 }
 
-/// Mesh and Skippy use the same Hugging Face cache resolution policy.
+/// Model downloads use Skippy's Hugging Face cache resolution policy.
 pub fn model_cache_dir() -> PathBuf {
     skippy_model_hf::huggingface_hub_cache_dir()
 }

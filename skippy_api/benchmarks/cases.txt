@@ -4,7 +4,7 @@
 # acceptance: win | parity | pending | blocked-upstream
 #   win/parity     measured in this repository; run with `just skippy-ab <case>`
 #   pending        row not written yet
-#   blocked-upstream  needs a change in skippy/llama_cpp/patches, not here
+#   blocked-upstream  needs a change in llama_cpp/patches, not here
 #
 # Filters are regexes over google benchmark's REGISTERED names, and any
 # benchmark registered with ->UseRealTime() gets a trailing "/real_time" in

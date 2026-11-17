@@ -111,7 +111,7 @@ fn actual_full_native_prefetch_acquires_four_families_exports_and_generates_mani
             executable(
                 &launcher,
                 &format!(
-                    "#!/bin/sh\nexport MESH_LLM_TRAJECTORY_READER_BIN={}\nexec {} \"$@\"\n",
+                    "#!/bin/sh\nexport SKIPPY_TRAJECTORY_READER_BIN={}\nexec {} \"$@\"\n",
                     quote(reader.to_str().unwrap()),
                     quote(xtask.to_str().unwrap())
                 ),

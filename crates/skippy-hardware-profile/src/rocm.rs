@@ -149,7 +149,7 @@ mod tests {
         fn new() -> Self {
             let suffix = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
             let root = std::env::temp_dir().join(format!(
-                "mesh-llm-kfd-topology-{}-{suffix}",
+                "skippy-kfd-topology-{}-{suffix}",
                 std::process::id()
             ));
             std::fs::create_dir_all(&root).expect("create KFD topology fixture");

@@ -1,0 +1,231 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+    inputs:
+      artifact_scope:
+        type: string
+        default: ci
+      candidate_artifact:
+        type: string
+        default: ''
+      candidate_sha:
+        type: string
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: skippy-ci-${{ github.workflow }}-${{ inputs.artifact_scope || 'ci' }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_PROFILE_RELEASE_DEBUG: '0'
+  CARGO_PROFILE_BENCH_DEBUG: '0'
+  SKIPPY_ARTIFACT_SCOPE: ${{ inputs.artifact_scope || 'ci' }}
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      hosts: ${{ steps.plan.outputs.hosts }}
+      runtimes: ${{ steps.plan.outputs.runtimes }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - id: plan
+        run: just ci-plan
+  quality:
+    needs: plan
+    runs-on: [self-hosted, skippy-ephemeral, Linux, X64, native-contracts]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        if: runner.environment == 'github-hosted'
+      - uses: ./.github/actions/source
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
+      - run: just ci-contracts
+      - run: just lint
+      - run: just test
+      - run: just llama-check
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-quality-evidence
+          path: |
+            target/ci-evidence/**
+            target/skippy-stage-rewriter-check/report*
+            target/skippy-stage-rewriter-check/patch-drift.diff
+            target/skippy-stage-rewriter-check/changed-family-selection.json
+            target/skippy-stage-rewriter-check/generated-family-shards/**
+            target/skippy-stage-rewriter-check/tool-build/Testing/**
+            .deps/llama-build/**/Testing/**
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+  host:
+    needs: [plan, quality]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.hosts) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        if: runner.environment == 'github-hosted'
+      - uses: ./.github/actions/source
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
+      - name: Build backend-neutral host
+        shell: bash
+        env:
+          HOST_ID: ${{ matrix.id }}
+        run: just ci-host "$HOST_ID"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-host-${{ matrix.id }}
+          path: dist/hosts/${{ matrix.id }}
+          if-no-files-found: error
+          retention-days: 7
+  runtime:
+    needs: [plan, quality]
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.plan.outputs.runtimes) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        if: runner.environment == 'github-hosted'
+      - uses: ./.github/actions/source
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
+      - name: Build native runtime
+        shell: bash
+        env:
+          RUNTIME_ID: ${{ matrix.id }}
+        run: just ci-runtime "$RUNTIME_ID"
+      - name: Retain native failure diagnostics
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: failure()
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-runtime-${{ matrix.id }}-diagnostics
+          path: |
+            .deps/llama-build/**/CMakeCache.txt
+            .deps/llama-build/**/CMakeFiles/CMakeConfigureLog.yaml
+            .deps/llama-build/**/Testing/**
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-runtime-${{ matrix.id }}
+          path: dist/runtimes/${{ matrix.id }}
+          if-no-files-found: error
+          retention-days: 7
+  product:
+    needs: [plan, host, runtime]
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.plan.outputs.runtimes) }}
+    runs-on: ${{ matrix.host_runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        if: runner.environment == 'github-hosted'
+      - uses: ./.github/actions/source
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-host-${{ matrix.host }}
+          path: inputs/host
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-runtime-${{ matrix.id }}
+          path: inputs/runtime
+      - name: Compose exact producers and verify startup on a hosted machine
+        shell: bash
+        env:
+          RUNTIME_ID: ${{ matrix.id }}
+        run: just ci-package "$RUNTIME_ID" inputs/host inputs/runtime
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-package-${{ matrix.id }}
+          path: dist/products/${{ matrix.id }}
+          if-no-files-found: error
+          retention-days: 7
+  smoke:
+    needs: [plan, product]
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.plan.outputs.runtimes) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        if: runner.environment == 'github-hosted'
+      - uses: ./.github/actions/source
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-package-${{ matrix.id }}
+          path: dist/products/${{ matrix.id }}
+      - name: Admit pinned Qwen3 fixture
+        run: just automation-run ci model-fetch
+        shell: bash
+      - name: Execute packaged Qwen3 on the required backend
+        shell: bash
+        env:
+          RUNTIME_ID: ${{ matrix.id }}
+        run: just ci-smoke "$RUNTIME_ID" "dist/products/$RUNTIME_ID"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-product-${{ matrix.id }}
+          path: dist/products/${{ matrix.id }}
+          if-no-files-found: error
+          retention-days: 7
+  summary:
+    name: CI
+    needs: [plan, quality, host, runtime, product, smoke]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: just ci-summary
+        env:
+          SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}

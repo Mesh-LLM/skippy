@@ -1,6 +1,6 @@
 //! skippy-serving library interface.
 //!
-//! Exposes the stage serving loop for in-process embedding by mesh-llm
+//! Exposes the stage serving loop for in-process embedding by standalone applications
 //! or other host runtimes.
 
 pub mod binary_transport;

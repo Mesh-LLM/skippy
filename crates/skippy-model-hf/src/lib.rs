@@ -5,6 +5,7 @@ pub mod inventory;
 pub mod local_cache;
 pub mod package_cache;
 pub mod remote_catalog;
+pub mod repository_settings;
 pub mod search;
 pub mod store;
 mod tls;
@@ -40,8 +41,8 @@ use skippy_model_ref::{
     quant_selector_from_gguf_file,
 };
 
-const HF_RETRY_MAX_ATTEMPTS_ENV: &str = "MESH_HF_RETRY_MAX_ATTEMPTS";
-const HF_RETRY_BASE_DELAY_MS_ENV: &str = "MESH_HF_RETRY_BASE_DELAY_MS";
+const HF_RETRY_MAX_ATTEMPTS_ENV: &str = "SKIPPY_HF_RETRY_MAX_ATTEMPTS";
+const HF_RETRY_BASE_DELAY_MS_ENV: &str = "SKIPPY_HF_RETRY_BASE_DELAY_MS";
 
 #[derive(Clone)]
 pub struct HfModelRepository {

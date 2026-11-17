@@ -1,24 +1,21 @@
 # Skippy
 
-Skippy is the standalone model-serving product in this workspace. It owns model
-management, native runtimes, local inference, layer-package execution,
-distributed stage serving, and an OpenAI-compatible frontend.
-
-Skippy can run independently through its `skippy` CLI. The sibling
-[Mesh product](../mesh/README.md) composes the same serving implementation with
-peer discovery, routing, transport, plugins, SDKs, and a web console.
+Skippy is a standalone model server for local and distributed staged inference.
+It owns model management, native runtimes, layer-package execution, scheduling,
+and OpenAI-compatible serving. This repository contains no MeshLLM product code.
 
 ## Build and run
 
 Run repository commands from the workspace root:
 
 ```bash
-just skippy-cli-build
+just build
 ./target/debug/skippy --help
 ```
 
-`skippy serve` selects a verified local native runtime or installs a compatible
-release runtime when needed. A typical local invocation is:
+`just build` produces the CLI and a verified adjacent native runtime. Private
+release bundles can be downloaded with `gh release download` and used offline.
+A typical local invocation is:
 
 ```bash
 ./target/debug/skippy serve --model /path/to/model.gguf
@@ -26,7 +23,7 @@ release runtime when needed. A typical local invocation is:
 
 See the [CLI guide](crates/skippy-cli/README.md) for runtime management, model
 downloads, single-model serving, and explicit split-worker commands. See
-[CONTRIBUTING.md](../CONTRIBUTING.md) for the workspace development workflow.
+[CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow.
 
 ## Source layout
 
@@ -47,15 +44,17 @@ shared HTTP surface in
 ## Key guides
 
 - [Architecture and API boundaries](docs/ARCHITECTURE.md)
+- [Retained compatibility identifiers](docs/COMPATIBILITY.md)
 - [Configuration reference](docs/CONFIGURATION.md)
+- [Serving settings](docs/SERVING_SETTINGS.md)
+- [Continuous integration](ci/README.md)
+- [Private releases](RELEASE.md)
 - [Split serving](docs/SKIPPY_SPLITS.md)
 - [Layer package repositories](docs/LAYER_PACKAGE_REPOS.md)
 - [Qwen3-MoE native MTP](docs/QWEN3_MOE_NATIVE_MTP.md)
 - [Supported model families](docs/FAMILY_STATUS.md)
-- [Non-chat models](docs/NON_CHAT_MODELS.md)
 - [Data flow](docs/DATA_FLOW.md)
-- [Topology planner](docs/TOPOLOGY_PLANNER.md)
 
-Skippy is intentionally independent of Mesh. Both products share the root Cargo
-workspace, lockfile, build infrastructure, and native working caches, while
-product-owned code, documentation, scripts, and evaluations stay in this tree.
+The repository was extracted with filtered Git history from the original
+workspace. Its native ABI and selected compatibility field names remain stable
+where changing them would invalidate existing packages or clients.

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Frozen automation selection begins.
 workload_automation=(just --justfile "$ROOT/Justfile" automation-run)
-if [[ "${MESH_LLM_AUTOMATION_BIN+set}" == set ]]; then
-  if [[ "$MESH_LLM_AUTOMATION_BIN" != /* || ! -f "$MESH_LLM_AUTOMATION_BIN" || ! -x "$MESH_LLM_AUTOMATION_BIN" ]]; then
-    echo 'MESH_LLM_AUTOMATION_BIN must be an absolute executable' >&2
+if [[ "${SKIPPY_AUTOMATION_BIN+set}" == set ]]; then
+  if [[ "$SKIPPY_AUTOMATION_BIN" != /* || ! -f "$SKIPPY_AUTOMATION_BIN" || ! -x "$SKIPPY_AUTOMATION_BIN" ]]; then
+    echo 'SKIPPY_AUTOMATION_BIN must be an absolute executable' >&2
     exit 1
   fi
-  workload_automation=("$MESH_LLM_AUTOMATION_BIN")
+  workload_automation=("$SKIPPY_AUTOMATION_BIN")
 fi
 # Frozen automation selection ends.
 MODEL_CLASS=""
@@ -18,7 +18,6 @@ MODEL_PATH=""
 MODEL_ID=""
 PROJECTOR_PATH=""
 WORK_DIR=""
-SKIP_BUILD=0
 ORACLE_SERVER=""
 ORACLE_COMPLETION=""
 ORACLE_TTS=""
@@ -33,7 +32,6 @@ usage: scripts/skippy-workload-certify.sh --class CLASS --lane LANE
   [--oracle-server PATH] [--oracle-completion PATH] [--oracle-tts PATH]
   [--require-oracle]  # fail closed unless the class-appropriate oracle is selected
   [--startup-timeout-secs SECONDS]  # per-server readiness deadline (default: 180)
-  [--skip-build]  # oracle runs require a prebuilt SKIPPY_WORKLOAD_PRODUCER_MANIFEST
 EOF
 }
 
@@ -50,7 +48,6 @@ while (( $# > 0 )); do
     --oracle-tts) ORACLE_TTS="$2"; shift ;;
     --require-oracle) ORACLE_REQUIRED=1 ;;
     --startup-timeout-secs) STARTUP_TIMEOUT_SECS="$2"; shift ;;
-    --skip-build) SKIP_BUILD=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage; exit 1 ;;
   esac
@@ -61,7 +58,6 @@ if [[ ! "$STARTUP_TIMEOUT_SECS" =~ ^[1-9][0-9]{0,4}$ ]] || (( STARTUP_TIMEOUT_SE
   echo "--startup-timeout-secs must be a positive integer between 1 and 86400 seconds" >&2
   exit 1
 fi
-
 case "$MODEL_CLASS" in
   embedding) EXPECTED_LANE="embedding-smoke" ;;
   rerank) EXPECTED_LANE="rerank-smoke" ;;
@@ -100,7 +96,9 @@ fi
 CANDIDATE_BUILD_DIR="${SKIPPY_WORKLOAD_NATIVE_BUILD_DIR:-${LLAMA_STAGE_BUILD_DIR:-$(LLAMA_STAGE_BACKEND="${LLAMA_STAGE_BACKEND:-cpu}" LLAMA_STAGE_LINK_MODE=static "$ROOT/scripts/build-llama.sh" --print-build-dir)}}"
 CANDIDATE_BIN_DIR="${SKIPPY_WORKLOAD_CANDIDATE_BIN_DIR:-$ROOT/target/debug}"
 PRODUCER_MANIFEST="${SKIPPY_WORKLOAD_PRODUCER_MANIFEST:-}"
-TEST_COMMAND=(cargo test --manifest-path "$ROOT/Cargo.toml" -p skippy-serving --lib)
+TEST_BINARY="${SKIPPY_UPGRADE_SERVING_TEST_BIN:?source-bound serving test binary is required}"
+[[ -x "$TEST_BINARY" ]] || { echo "serving test binary is not executable" >&2; exit 1; }
+TEST_COMMAND=("$TEST_BINARY")
 require_pinned_cpu_oracle() {
   local executable="$1" expected_name="$2" cmake_option="$3"
   local build_dir stamp patched_sha
@@ -108,9 +106,9 @@ require_pinned_cpu_oracle() {
     echo "oracle executable is not executable: $executable" >&2
     return 1
   fi
-  patched_sha="$("${workload_automation[@]}" automation canary-receipts prepared-source --root "$ROOT")" || return 1
+  patched_sha="$("${workload_automation[@]}" upgrade prepared-source --root "$ROOT")" || return 1
   build_dir="$(cd "$(dirname "$executable")/.." && pwd -P)"
-  stamp="$build_dir/.mesh-llm-build-stamp"
+  stamp="$build_dir/.skippy-build-stamp"
   if [[ "$(basename "$executable")" != "$expected_name" ]] ||
      [[ ! -f "$stamp" ]] ||
      ! grep -Fxq "patched-sha=$patched_sha" "$stamp" ||
@@ -122,8 +120,8 @@ require_pinned_cpu_oracle() {
   fi
 }
 require_pinned_cpu_candidate() {
-  local stamp="$CANDIDATE_BUILD_DIR/.mesh-llm-build-stamp" patched_sha
-  patched_sha="$("${workload_automation[@]}" automation canary-receipts prepared-source --root "$ROOT")" || return 1
+  local stamp="$CANDIDATE_BUILD_DIR/.skippy-build-stamp" patched_sha
+  patched_sha="$("${workload_automation[@]}" upgrade prepared-source --root "$ROOT")" || return 1
   if [[ ! -f "$stamp" ]] ||
      ! grep -Fxq "patched-sha=$patched_sha" "$stamp" ||
      ! grep -Fxq 'backend=cpu' "$stamp" ||
@@ -155,27 +153,11 @@ if [[ -n "$ORACLE_TTS" ]]; then
   require_pinned_cpu_oracle "$ORACLE_TTS" llama-tts 'cmake-arg=-DLLAMA_BUILD_TOOLS=ON'
 fi
 
-# Required SDK environment admission begins.
-SDK_PYTHON="${SKIPPY_WORKLOAD_SDK_PYTHON:-}"
-if [[ "$MODEL_CLASS" == embedding ]]; then
-  if [[ "$SDK_PYTHON" != /* || ! -f "$SDK_PYTHON" || ! -x "$SDK_PYTHON" ]]; then
-    echo "embedding SDK smoke needs an absolute executable SKIPPY_WORKLOAD_SDK_PYTHON from the locked environment" >&2
-    exit 1
-  fi
-  # The supervised SDK client performs its real import below; no unbounded interpreter probe.
-fi
-# Required SDK environment admission ends.
-if [[ "$MODEL_CLASS" == embedding ]]; then
-  "${workload_automation[@]}" automation smoke-observation sdk-source --kind root >/dev/null || exit 1
-fi
-
 mkdir -p "$WORK_DIR"
 EVIDENCE_PATH="$WORK_DIR/workload-oracle-evidence.json"
 COMPARISON_LOG="$WORK_DIR/workload-oracle-comparison.txt"
 rm -f "$EVIDENCE_PATH" "$COMPARISON_LOG"
-DIMENSIONS="$("${workload_automation[@]}" automation family-battery-policy --inspect-gguf "$MODEL_PATH")"
-LAYER_END="$(jq -r '.layer_count' <<<"$DIMENSIONS")"
-MODEL_SHA256="$(shasum -a 256 "$MODEL_PATH" | awk '{print $1}')"
+LAYER_END="${SKIPPY_WORKLOAD_LAYER_END:?manifest layer end is required}"
 N_GPU_LAYERS="${SKIPPY_WORKLOAD_N_GPU_LAYERS:-0}"
 BACKEND="${LLAMA_STAGE_BACKEND:-cpu}"
 if [[ -n "$PRODUCER_MANIFEST" ]]; then
@@ -192,27 +174,7 @@ if [[ -n "$ORACLE_SERVER" || -n "$ORACLE_COMPLETION" || -n "$ORACLE_TTS" ]]; the
   export LLAMA_STAGE_BUILD_DIR="$CANDIDATE_BUILD_DIR"
 fi
 
-# The canary explicitly produces a CPU candidate and test binary separately
-# from its Metal lane. Consume that immutable, source-bound closure without
-# rebuilding or changing the other family lanes' native/Rust outputs.
-if [[ -n "$PRODUCER_MANIFEST" ]]; then
-  "${workload_automation[@]}" automation canary-receipts workload-manifest verify \
-    "$ROOT" "$CANDIDATE_BIN_DIR/skippy" "$CANDIDATE_BUILD_DIR" "$PRODUCER_MANIFEST"
-  # Producer manifest paths are relative to the manifest's own directory.
-  TEST_COMMAND=("$(dirname "$PRODUCER_MANIFEST")/$(jq -er '.files.test_binary.path' "$PRODUCER_MANIFEST")")
-elif (( SKIP_BUILD == 0 )); then
-  LLAMA_STAGE_BUILD_DIR="$CANDIDATE_BUILD_DIR" \
-    cargo build -p skippy-cli
-elif [[ -n "$ORACLE_SERVER" || -n "$ORACLE_COMPLETION" || -n "$ORACLE_TTS" ]]; then
-  echo "--skip-build oracle certification requires a source-bound workload producer manifest" >&2
-  exit 1
-fi
-if [[ -n "$ORACLE_SERVER" || -n "$ORACLE_COMPLETION" || -n "$ORACLE_TTS" ]]; then
-  require_pinned_cpu_candidate
-  "${workload_automation[@]}" automation canary-receipts workload-manifest fresh \
-    "$ROOT" "$CANDIDATE_BIN_DIR/skippy" "$CANDIDATE_BUILD_DIR"
-fi
-
+require_pinned_cpu_candidate
 MEDIA_PATH=""
 case "$MODEL_CLASS" in
   ocr) MEDIA_PATH="$ROOT/ci/fixtures/ocr-mesh-42.png" ;;
@@ -220,11 +182,7 @@ case "$MODEL_CLASS" in
 esac
 
 TEST_FILTER=frontend::tests::non_chat::real_non_chat_class_smoke_when_fixture_is_set
-if [[ -n "$PRODUCER_MANIFEST" ]]; then
-  TEST_COMMAND+=("$TEST_FILTER" --nocapture --exact --test-threads=1)
-else
-  TEST_COMMAND+=("$TEST_FILTER" -- --nocapture --exact --test-threads=1)
-fi
+TEST_COMMAND+=("$TEST_FILTER" --nocapture --exact --test-threads=1)
 env \
   SKIPPY_WORKLOAD_CLASS="$MODEL_CLASS" \
   SKIPPY_WORKLOAD_MODEL="$MODEL_PATH" \
@@ -430,34 +388,4 @@ if [[ -n "$ORACLE_TTS" ]]; then
     --model "$MODEL_ID" \
     --layer-end "$LAYER_END" \
     --work-dir "$WORK_DIR" | tee "$COMPARISON_LOG"
-fi
-
-if [[ "$MODEL_CLASS" == "embedding" ]]; then
-  # Battery retries reuse the same per-family work dir. Admission refuses any
-  # pre-existing receipt so each run publishes its own; drop the stale one.
-  rm -f "$WORK_DIR/embedding-sdk.json"
-  "${workload_automation[@]}" automation smoke-observation sdk-client \
-    --client embeddings --python "$SDK_PYTHON" \
-    --base-url "http://127.0.0.1:$PORT/v1" --model "$MODEL_ID" \
-    --timeout-secs "${SKIPPY_WORKLOAD_SDK_TIMEOUT_SECS:-240}" \
-    --receipt "$WORK_DIR/embedding-sdk.json"
-fi
-
-if [[ -n "$ORACLE_SERVER" || -n "$ORACLE_COMPLETION" || -n "$ORACLE_TTS" ]]; then
-  ORACLE_EXECUTABLE="${ORACLE_SERVER:-${ORACLE_COMPLETION:-$ORACLE_TTS}}"
-  evidence_command=("${workload_automation[@]}" automation workload-oracle-evidence write
-    --output "$EVIDENCE_PATH"
-    --comparison-log "$COMPARISON_LOG"
-    --class "$MODEL_CLASS"
-    --smoke-lane "$EXPECTED_LANE"
-    --model-id "$MODEL_ID"
-    --model-sha256 "$MODEL_SHA256"
-    --candidate-executable "$CANDIDATE_BIN_DIR/skippy"
-    --oracle-executable "$ORACLE_EXECUTABLE"
-    --pinned-patch-sha "$("${workload_automation[@]}" automation canary-receipts prepared-source --root "$ROOT")"
-    --work-dir "$WORK_DIR")
-  if [[ -n "$PROJECTOR_PATH" ]]; then
-    evidence_command+=(--projector-path "$PROJECTOR_PATH")
-  fi
-  "${evidence_command[@]}"
 fi

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 skippy_quantize_bin="${SKIPPY_QUANTIZE_BIN:-$repo_root/target/release/skippy-quantize}"
 skippy_model_package_bin="${SKIPPY_MODEL_PACKAGE_BIN:-$repo_root/target/release/skippy-package-builder}"
@@ -17,7 +17,7 @@ package_dir="${PACKAGE_DIR:-$work_base/package/GLM-5.2-Q2_K-RoutedDown-MTP-Q8-la
 package_model_id="${PACKAGE_MODEL_ID:-meshllm/GLM-5.2-Q2_K-RoutedDown-MTP-Q8-GGUF:Q2_K-RoutedDown-MTP-Q8}"
 package_source_repo="${PACKAGE_SOURCE_REPO:-meshllm/GLM-5.2-Q2_K-RoutedDown-MTP-Q8-GGUF}"
 package_source_revision="${PACKAGE_SOURCE_REVISION:-local}"
-recipe="${TENSOR_TYPE_FILE:-$repo_root/skippy/scripts/recipes/quantization/glm-5.2-q2-k-routed-down-mtp-q8.tensor-types.txt}"
+recipe="${TENSOR_TYPE_FILE:-$repo_root/scripts/recipes/quantization/glm-5.2-q2-k-routed-down-mtp-q8.tensor-types.txt}"
 work_dir="${WORK_DIR:-$work_base/native-work}"
 spool_dir="${SPOOL_DIR:-$work_base/spool}"
 record_dir="${RECORD_DIR:-$work_base/records}"

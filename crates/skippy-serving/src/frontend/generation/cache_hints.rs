@@ -20,10 +20,10 @@ static OPENAI_PROCESS_NONCE: OnceLock<String> = OnceLock::new();
 ///
 /// This is opt-in and should only be wired in by callers that have made
 /// a deliberate decision to allow unbounded chat completions. The
-/// embedded mesh-llm wiring uses [`DEFAULT_EMBEDDED_MAX_TOKENS`] instead.
+/// standalone Skippy wiring uses [`DEFAULT_EMBEDDED_MAX_TOKENS`] instead.
 pub const CONTEXT_BUDGET_MAX_TOKENS: u32 = u32::MAX;
 
-/// Default max completion tokens for embedded mesh-llm chat serving when
+/// Default max completion tokens for standalone Skippy chat serving when
 /// the client omits max_tokens. Bounded so that an adversarial or
 /// non-terminating generation cannot run for the full context window.
 /// Clients can still request more by sending max_tokens explicitly, up

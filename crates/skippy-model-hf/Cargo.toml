@@ -2,10 +2,11 @@
 name = "skippy-model-hf"
 edition.workspace = true
 license.workspace = true
+publish = false
 version.workspace = true
-description = "Hugging Face model repository integration for Skippy and MeshLLM"
-repository = "https://github.com/Mesh-LLM/mesh-llm"
-homepage = "https://github.com/Mesh-LLM/mesh-llm"
+description = "Hugging Face model repository integration for Skippy"
+repository = "https://github.com/general-inference/skippy"
+homepage = "https://github.com/general-inference/skippy"
 
 [dependencies]
 hex = "0.4"

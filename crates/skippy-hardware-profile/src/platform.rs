@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use std::process::Command;
 
 pub(crate) fn detect_glibc_version() -> Option<String> {
-    let override_value = std::env::var("MESH_LLM_GLIBC_VERSION").ok();
+    let override_value = std::env::var("SKIPPY_GLIBC_VERSION").ok();
     let detected_value = cfg!(target_os = "linux")
         .then(loaded_glibc_version)
         .flatten();

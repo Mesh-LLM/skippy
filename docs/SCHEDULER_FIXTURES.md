@@ -14,7 +14,7 @@ waiting-prefix policy boundary:
   tail latency.
 
 The source of truth is
-[`skippy/evals/skippy-scheduler-fixtures.json`](../evals/skippy-scheduler-fixtures.json).
+[`evals/skippy-scheduler-fixtures.json`](../evals/skippy-scheduler-fixtures.json).
 It pins the Hugging Face commit, selected source, eight session IDs, selection
 rules, runtime shape, generated prompt-manifest hash, exact GGUF repository
 revision and content hash (including its embedded tokenizer), and acceptance
@@ -27,7 +27,7 @@ traces:
 
 ```bash
 just with-lld cargo xtool automation agentic-prompt-manifest validate-fixtures \
-  skippy/evals/skippy-scheduler-fixtures.json
+  evals/skippy-scheduler-fixtures.json
 just with-lld cargo test -p skippy-scheduler
 ```
 
@@ -64,7 +64,7 @@ just with-lld cargo build --locked -p trajectory-reader --features parquet-input
 
 The reader includes the Parquet compression codecs. The main automation tool
 finds it next to its executable, or uses an explicit absolute
-`MESH_LLM_TRAJECTORY_READER_BIN` path. The tool supervises the reader with a
+`SKIPPY_TRAJECTORY_READER_BIN` path. The tool supervises the reader with a
 120-second deadline and validates its versioned response file before publication.
 Selected trajectory data uses a private temporary file, independently of the
 bounded diagnostic capture. The normal `just ci-automation-contracts` gate also
@@ -78,7 +78,7 @@ Prepare the model-backed eviction-pressure prompts with:
 
 ```bash
 just with-lld cargo xtool automation agentic-prompt-manifest prepare-fixture \
-  --catalog skippy/evals/skippy-scheduler-fixtures.json \
+  --catalog evals/skippy-scheduler-fixtures.json \
   --profile agentic-eviction-pressure \
   --hf-bin "$(command -v hf)" \
   --output /tmp/skippy-agentic-eviction-pressure.json
@@ -101,7 +101,7 @@ packages. To regenerate from an already verified local Parquet file:
 
 ```bash
 just with-lld cargo xtool automation agentic-prompt-manifest materialize-fixture \
-  --catalog skippy/evals/skippy-scheduler-fixtures.json \
+  --catalog evals/skippy-scheduler-fixtures.json \
   --profile agentic-eviction-pressure \
   --dataset-file /path/to/verified/sessions.parquet \
   --output /tmp/skippy-agentic-eviction-pressure.json

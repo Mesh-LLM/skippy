@@ -2,10 +2,11 @@
 name = "skippy-inference-api"
 edition.workspace = true
 license.workspace = true
+publish = false
 version.workspace = true
-description = "OpenAI-compatible HTTP frontend shared by mesh-llm runtimes"
-repository = "https://github.com/Mesh-LLM/mesh-llm"
-homepage = "https://github.com/Mesh-LLM/mesh-llm"
+description = "OpenAI-compatible HTTP frontend shared by Skippy runtimes"
+repository = "https://github.com/general-inference/skippy"
+homepage = "https://github.com/general-inference/skippy"
 
 [dependencies]
 async-trait = "0.1"

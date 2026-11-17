@@ -29,7 +29,7 @@ fn bindings_main() {
     let manifest_dir = std::path::PathBuf::from(
         std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set"),
     );
-    let workspace_root = manifest_dir.join("../../..");
+    let workspace_root = manifest_dir.join("../..");
     let wrapper_dir = manifest_dir.join("bindgen/wrapper");
     let bindings_dir = manifest_dir.join("src/bindings");
     // LLAMA_WORKDIR selects the header tree bindgen consumes; it must be
@@ -69,13 +69,13 @@ fn bindings_main() {
     // the prepared checkout must rerun this script so regen refreshes the
     // committed bindings deterministically and check re-compares them.
     for input in [
-        workspace_root.join("skippy/llama_cpp/upstream.txt"),
-        workspace_root.join("skippy/llama_cpp/patches/model_support/series"),
-        workspace_root.join("skippy/llama_cpp/patches/generated/series"),
+        workspace_root.join("llama_cpp/upstream.txt"),
+        workspace_root.join("llama_cpp/patches/model_support/series"),
+        workspace_root.join("llama_cpp/patches/generated/series"),
     ] {
         println!("cargo:rerun-if-changed={}", input.display());
     }
-    let patch_dir = workspace_root.join("skippy/llama_cpp/patches");
+    let patch_dir = workspace_root.join("llama_cpp/patches");
     if let Ok(entries) = std::fs::read_dir(&patch_dir) {
         let mut patches: Vec<_> = entries
             .filter_map(|entry| entry.ok().map(|entry| entry.path()))
@@ -88,7 +88,7 @@ fn bindings_main() {
     }
     // The patched-sha marker is written by prepare-llama.sh after the queue
     // is applied; it is the identity of the header tree bindgen consumes.
-    let patched_sha = llama_root.join(".mesh-llm-patched-sha");
+    let patched_sha = llama_root.join(".skippy-patched-sha");
     println!("cargo:rerun-if-changed={}", patched_sha.display());
     // The marker does not change when a header inside the tree is edited, so
     // watch the consumed header files themselves as well.
@@ -156,7 +156,7 @@ fn bindings_main() {
                      the refreshed bindings together with the header change. Never \
                      hand-edit src/bindings/*.rs.",
                     stale.join(", "),
-                    std::fs::read_to_string(workspace_root.join("skippy/llama_cpp/upstream.txt"))
+                    std::fs::read_to_string(workspace_root.join("llama_cpp/upstream.txt"))
                         .map(|pin| pin.trim().to_string())
                         .unwrap_or_else(|_| "unknown".to_string()),
                     std::fs::read_to_string(&patched_sha)

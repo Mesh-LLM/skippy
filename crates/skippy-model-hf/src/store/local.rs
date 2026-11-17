@@ -43,7 +43,7 @@ fn served_model_refs() -> &'static Mutex<HashSet<String>> {
 
 /// Record that `model_ref` resolves to `path` so [`find_model_path`] can map a
 /// runtime-minted ref (for example the content-addressed `local-gguf/sha256-…`
-/// id mesh-llm serves a loaded GGUF under) back to the file it was loaded from.
+/// id Skippy serves a loaded GGUF under) back to the file it was loaded from.
 pub fn remember_model_ref_path(model_ref: &str, path: &Path) {
     if let Ok(mut paths) = model_ref_paths().lock() {
         // A served ref's file is dictated by whoever serves it; scanner
@@ -499,7 +499,7 @@ fn scan_hf_cache_models(
         push_model_name(&path, names, seen, min_size_bytes);
     }
 
-    if std::env::var("MESH_LLM_ALLOW_FULL_HF_CACHE_SCAN").unwrap_or_default() == "1" {
+    if std::env::var("SKIPPY_ALLOW_FULL_HF_CACHE_SCAN").unwrap_or_default() == "1" {
         let Some(cache_info) = scan_hf_cache_info(cache_root) else {
             return;
         };
@@ -942,20 +942,20 @@ mod tests {
         let prev_xdg = std::env::var_os("XDG_CACHE_HOME");
         // SAFETY: the enclosing test contract is `#[serial]`, so this process
         // environment mutation cannot race another test.
-        unsafe { std::env::set_var("HF_HUB_CACHE", "/tmp/mesh-llm-hub-cache") };
+        unsafe { std::env::set_var("HF_HUB_CACHE", "/tmp/skippy-hub-cache") };
         // SAFETY: the enclosing test contract is `#[serial]`, so this process
         // environment mutation cannot race another test.
-        unsafe { std::env::set_var("HUGGINGFACE_HUB_CACHE", "/tmp/mesh-llm-alt-hub-cache") };
+        unsafe { std::env::set_var("HUGGINGFACE_HUB_CACHE", "/tmp/skippy-alt-hub-cache") };
         // SAFETY: the enclosing test contract is `#[serial]`, so this process
         // environment mutation cannot race another test.
-        unsafe { std::env::set_var("HF_HOME", "/tmp/mesh-llm-hf-home") };
+        unsafe { std::env::set_var("HF_HOME", "/tmp/skippy-hf-home") };
         // SAFETY: the enclosing test contract is `#[serial]`, so this process
         // environment mutation cannot race another test.
-        unsafe { std::env::set_var("XDG_CACHE_HOME", "/tmp/mesh-llm-xdg") };
+        unsafe { std::env::set_var("XDG_CACHE_HOME", "/tmp/skippy-xdg") };
 
         assert_eq!(
             huggingface_hub_cache_dir(),
-            PathBuf::from("/tmp/mesh-llm-hub-cache")
+            PathBuf::from("/tmp/skippy-hub-cache")
         );
 
         restore_env("HF_HUB_CACHE", prev_hub_cache);
@@ -976,17 +976,17 @@ mod tests {
         unsafe { std::env::remove_var("HF_HUB_CACHE") };
         // SAFETY: the enclosing test contract is `#[serial]`, so this process
         // environment mutation cannot race another test.
-        unsafe { std::env::set_var("HUGGINGFACE_HUB_CACHE", "/tmp/mesh-llm-alt-hub-cache") };
+        unsafe { std::env::set_var("HUGGINGFACE_HUB_CACHE", "/tmp/skippy-alt-hub-cache") };
         // SAFETY: the enclosing test contract is `#[serial]`, so this process
         // environment mutation cannot race another test.
-        unsafe { std::env::set_var("HF_HOME", "/tmp/mesh-llm-hf-home") };
+        unsafe { std::env::set_var("HF_HOME", "/tmp/skippy-hf-home") };
         // SAFETY: the enclosing test contract is `#[serial]`, so this process
         // environment mutation cannot race another test.
-        unsafe { std::env::set_var("XDG_CACHE_HOME", "/tmp/mesh-llm-xdg") };
+        unsafe { std::env::set_var("XDG_CACHE_HOME", "/tmp/skippy-xdg") };
 
         assert_eq!(
             huggingface_hub_cache_dir(),
-            PathBuf::from("/tmp/mesh-llm-alt-hub-cache")
+            PathBuf::from("/tmp/skippy-alt-hub-cache")
         );
 
         restore_env("HF_HUB_CACHE", prev_hub_cache);
@@ -1010,14 +1010,14 @@ mod tests {
         unsafe { std::env::remove_var("HUGGINGFACE_HUB_CACHE") };
         // SAFETY: the enclosing test contract is `#[serial]`, so this process
         // environment mutation cannot race another test.
-        unsafe { std::env::set_var("HF_HOME", "/tmp/mesh-llm-hf-home") };
+        unsafe { std::env::set_var("HF_HOME", "/tmp/skippy-hf-home") };
         // SAFETY: the enclosing test contract is `#[serial]`, so this process
         // environment mutation cannot race another test.
-        unsafe { std::env::set_var("XDG_CACHE_HOME", "/tmp/mesh-llm-xdg") };
+        unsafe { std::env::set_var("XDG_CACHE_HOME", "/tmp/skippy-xdg") };
 
         assert_eq!(
             huggingface_hub_cache_dir(),
-            PathBuf::from("/tmp/mesh-llm-hf-home").join("hub")
+            PathBuf::from("/tmp/skippy-hf-home").join("hub")
         );
 
         restore_env("HF_HUB_CACHE", prev_hub_cache);
@@ -1162,7 +1162,7 @@ mod tests {
         let prev_xdg = std::env::var_os("XDG_CACHE_HOME");
 
         let temp = std::env::temp_dir().join(format!(
-            "mesh-llm-scoped-model-lookup-{}",
+            "skippy-scoped-model-lookup-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -1228,7 +1228,7 @@ mod tests {
         let prev_xdg = std::env::var_os("XDG_CACHE_HOME");
 
         let temp = std::env::temp_dir().join(format!(
-            "mesh-llm-hf-identity-{}",
+            "skippy-hf-identity-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -1280,7 +1280,7 @@ mod tests {
         let prev_xdg = std::env::var_os("XDG_CACHE_HOME");
 
         let temp = std::env::temp_dir().join(format!(
-            "mesh-llm-hf-ancestor-{}",
+            "skippy-hf-ancestor-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -1326,7 +1326,7 @@ mod tests {
         let prev_xdg = std::env::var_os("XDG_CACHE_HOME");
 
         let temp = std::env::temp_dir().join(format!(
-            "mesh-llm-direct-cache-root-{}",
+            "skippy-direct-cache-root-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -1367,7 +1367,7 @@ mod tests {
         let prev_xdg = std::env::var_os("XDG_CACHE_HOME");
 
         let temp = std::env::temp_dir().join(format!(
-            "mesh-llm-layered-cache-{}",
+            "skippy-layered-cache-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()

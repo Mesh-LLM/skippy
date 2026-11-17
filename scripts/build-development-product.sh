@@ -2,7 +2,7 @@
 # Build the standalone Skippy CLI and its packageable native runtime.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../scripts" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../scripts" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 BACKEND=""
@@ -10,7 +10,7 @@ CUDA_ARCH=""
 ROCM_ARCH=""
 
 usage() {
-    echo "usage: skippy/scripts/build-development-product.sh [--backend BACKEND] [--cuda-arch LIST] [--rocm-arch LIST]" >&2
+    echo "usage: scripts/build-development-product.sh [--backend BACKEND] [--cuda-arch LIST] [--rocm-arch LIST]" >&2
 }
 
 while (($# > 0)); do
@@ -42,19 +42,7 @@ ROCM_ARCH="$(normalize_recipe_argument "$ROCM_ARCH" rocm_arch rocm-arch amd_arch
 if [[ -z "$BACKEND" ]]; then
     case "$(uname -s)" in
         Darwin) BACKEND=metal ;;
-        Linux)
-            if command -v nvidia-smi >/dev/null 2>&1 || command -v tegrastats >/dev/null 2>&1 || command -v nvcc >/dev/null 2>&1; then
-                BACKEND=cuda
-            elif command -v rocm-smi >/dev/null 2>&1 || command -v rocminfo >/dev/null 2>&1 || command -v hipcc >/dev/null 2>&1 || [[ -x /opt/rocm/bin/hipcc ]]; then
-                BACKEND=rocm
-            elif command -v glslc >/dev/null 2>&1 && \
-                { (command -v vulkaninfo >/dev/null 2>&1 && vulkaninfo --summary >/dev/null 2>&1) || \
-                  pkg-config --exists vulkan 2>/dev/null || [[ -n "${VULKAN_SDK:-}" ]]; }; then
-                BACKEND=vulkan
-            else
-                BACKEND=cpu
-            fi
-            ;;
+        Linux) BACKEND=cpu ;;
         *) BACKEND=cpu ;;
     esac
 fi

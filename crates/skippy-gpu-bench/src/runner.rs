@@ -51,7 +51,7 @@ pub fn runner_for(
 
         if gpu_upper.contains("INTEL") || gpu_upper.contains("ARC") {
             tracing::info!(
-                "Intel GPU benchmark is not supported in standard mesh-llm builds; skipping"
+                "Intel GPU benchmark is not supported in standard Skippy builds; skipping"
             );
             return None;
         }

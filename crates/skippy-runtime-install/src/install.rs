@@ -29,7 +29,7 @@ pub async fn install_native_runtime(
 }
 
 /// Install using only explicit cache, bundle roots and catalog policy. Never
-/// consult Mesh environment settings or executable-adjacent bundle discovery.
+/// consult process environment settings or executable-adjacent bundle discovery.
 pub async fn install_native_runtime_explicit(
     options: NativeRuntimeInstallOptions,
 ) -> Result<NativeRuntimeInstallOutcome> {
@@ -69,7 +69,7 @@ async fn install_with_source_policy(
     }
     let skippy_abi_version = options.skippy_abi_version.clone().unwrap_or_else(|| {
         // A release catalog can lag behind a locally built host with the
-        // same MeshLLM version. Match the ABI that this host can load,
+        // same Skippy version. Match the ABI that this host can load,
         // while retaining catalog defaults when staging another version.
         if options.release_version == skippy_native_runtime::runtime_release_version() {
             current_skippy_abi_version()
@@ -453,7 +453,7 @@ async fn download_runtime_archive(
         .build()
         .context("build native runtime download HTTP client")?
         .get(url)
-        .header("User-Agent", "mesh-llm")
+        .header("User-Agent", "skippy")
         .send()
         .await
         .map_err(reqwest::Error::without_url)

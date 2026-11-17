@@ -446,10 +446,10 @@ mod tests {
     fn translation_and_explicit_context_keep_audio_marker_last() {
         let mut request = audio_request();
         request.language = Some("German".to_string());
-        request.prompt = Some("mesh-llm".to_string());
+        request.prompt = Some("Skippy".to_string());
         assert_eq!(
             audio_text_instruction(&request, false),
-            "Transcribe audio to text (language: German) Use this context when resolving names or terminology: mesh-llm"
+            "Transcribe audio to text (language: German) Use this context when resolving names or terminology: Skippy"
         );
 
         let instruction = audio_text_instruction(&request, true);

@@ -4,10 +4,10 @@ Use this runbook to certify a model family for the stage-split runtime. Keep it
 operator-facing; the customer-facing support matrix lives elsewhere.
 
 Current supported families, recommended artifacts, and shipping settings live in
-`skippy/docs/FAMILY_STATUS.md`.
+`docs/FAMILY_STATUS.md`.
 
 For a new model that is not already in the support matrix, start with
-`skippy/docs/NEW_MODEL_ONBOARDING.md` before adding reviewed family policy or a
+`docs/NEW_MODEL_ONBOARDING.md` before adding reviewed family policy or a
 customer-facing support row.
 
 ## What Certified Means
@@ -49,7 +49,7 @@ just family-certify FAMILY /path/to/model.gguf \
   --activation-width H \
   --ctx-size 256 \
   --n-gpu-layers 999 \
-  --corpus skippy/evals/corpora/kv_mixed_prompts.jsonl \
+  --corpus evals/corpora/kv_mixed_prompts.jsonl \
   --corpus-limit 24 \
   --max-tokens 8 \
   --run-id family-cert-$(date +%Y%m%d-%H%M%S)
@@ -85,7 +85,7 @@ just family-certify FAMILY /path/to/target.gguf \
 Before promoting neural draft support, run a target/draft preflight with the
 `spec-bench` workflow to prove tokenizer compatibility and useful acceptance.
 Do not list neural draft as a shipping feature in
-`skippy/docs/FAMILY_STATUS.md` until that preflight and staged prompt/spec lane
+`docs/FAMILY_STATUS.md` until that preflight and staged prompt/spec lane
 pass.
 
 ## Large Model Lifecycle
@@ -107,9 +107,9 @@ shortcut.
 
 After a meaningful run:
 
-1. Update `skippy/docs/FAMILY_STATUS.md` first. This is the source of truth for
+1. Update `docs/FAMILY_STATUS.md` first. This is the source of truth for
    what a customer can run and with which settings.
-2. Review any exceptional topology rules in `skippy/crates/skippy-topology`
+2. Review any exceptional topology rules in `crates/skippy-topology`
    against the inspected model metadata. Update
    `ci/llama-canary/family-certified.json` and regenerate the release-bound
    `skippy-api` certification roster when the evidence supports default splits.

@@ -3,6 +3,7 @@ name = "skippy-correctness"
 description = "Correctness checker for staged versus full-model Skippy execution"
 edition.workspace = true
 license.workspace = true
+publish = false
 version.workspace = true
 
 [dependencies]

@@ -2,6 +2,7 @@
 use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
 pub struct CatalogInput<'a> {
+    pub catalog_repo: &'a str,
     pub source_repo: &'a str,
     pub source_revision: &'a str,
     pub source_file: &'a str,

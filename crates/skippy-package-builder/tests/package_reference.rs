@@ -17,7 +17,7 @@ fn actual_cli_preserves_revision_and_refuses_before_cache_preparation() {
         let out = Command::new(builder())
             .args(["parse-package-reference", input])
             .env("HF_HOME", &cache)
-            .env("MESH_LLM_DATA_DIR", &cache)
+            .env("SKIPPY_DATA_DIR", &cache)
             .output()
             .unwrap();
         assert!(

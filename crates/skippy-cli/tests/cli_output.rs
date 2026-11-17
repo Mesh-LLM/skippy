@@ -29,7 +29,7 @@ fn effective_serving_config_is_json_without_loading_a_runtime_or_model() {
     for transport in [None, Some("binary")] {
         let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_skippy"));
         command
-            .env_remove("MESH_LLM_NATIVE_RUNTIME_BUNDLE_DIR")
+            .env_remove("SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR")
             .env_remove("SKIPPY_SERVE_THREADS")
             .env_remove("SKIPPY_SERVE_TEMPERATURE")
             .args(["--runtime-release", "999.999.999-test", "--runtime-cache"])
@@ -81,7 +81,7 @@ fn example_config_is_one_json_document_on_stdout() {
 fn standalone_rejects_missing_runtime_before_reading_stage_config() {
     let temp = tempfile::tempdir().unwrap();
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_skippy"))
-        .env_remove("MESH_LLM_NATIVE_RUNTIME_BUNDLE_DIR")
+        .env_remove("SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR")
         .args([
             "--output",
             "human",
@@ -139,7 +139,7 @@ fn standalone_selection_uses_verified_bundle_and_rejects_abi_mismatch() {
         let output = std::process::Command::new(env!("CARGO_BIN_EXE_skippy"))
             .arg("--runtime-bundle")
             .arg(&bundle)
-            .env_remove("MESH_LLM_NATIVE_RUNTIME_BUNDLE_DIR")
+            .env_remove("SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR")
             .args([
                 "--output",
                 "human",
@@ -238,7 +238,7 @@ fn jsonl_syntax_error_is_structured_too() {
 #[test]
 fn recommended_models_have_human_and_json_presentations() {
     let root = tempfile::tempdir().unwrap();
-    let entries = root.path().join("meshllm-catalog/entries/test");
+    let entries = root.path().join("skippy-catalog/entries/test");
     std::fs::create_dir_all(&entries).unwrap();
     std::fs::write(entries.join("tiny.json"), serde_json::to_vec(&serde_json::json!({
         "schema_version": 1,
@@ -249,12 +249,13 @@ fn recommended_models_have_human_and_json_presentations() {
         }}
     })).unwrap()).unwrap();
     std::fs::write(
-        root.path().join("meshllm-catalog/entries/.last_refresh"),
+        root.path().join("skippy-catalog/entries/.last_refresh"),
         b"",
     )
     .unwrap();
     let human = std::process::Command::new(env!("CARGO_BIN_EXE_skippy"))
         .env("HF_HOME", root.path())
+        .env_remove("SKIPPY_MODEL_CATALOG")
         .args(["--output", "human", "models", "recommended"])
         .output()
         .unwrap();
@@ -262,6 +263,7 @@ fn recommended_models_have_human_and_json_presentations() {
     assert!(String::from_utf8_lossy(&human.stdout).contains("• Tiny Test  1GB"));
     let default = std::process::Command::new(env!("CARGO_BIN_EXE_skippy"))
         .env("HF_HOME", root.path())
+        .env_remove("SKIPPY_MODEL_CATALOG")
         .args(["models", "recommended"])
         .output()
         .unwrap();
@@ -270,6 +272,7 @@ fn recommended_models_have_human_and_json_presentations() {
 
     let json = std::process::Command::new(env!("CARGO_BIN_EXE_skippy"))
         .env("HF_HOME", root.path())
+        .env_remove("SKIPPY_MODEL_CATALOG")
         .args(["--output", "json", "models", "recommended"])
         .output()
         .unwrap();
@@ -287,6 +290,7 @@ fn recommended_models_have_human_and_json_presentations() {
     );
     let flag_json = std::process::Command::new(env!("CARGO_BIN_EXE_skippy"))
         .env("HF_HOME", root.path())
+        .env_remove("SKIPPY_MODEL_CATALOG")
         .args(["models", "recommended", "--json"])
         .output()
         .unwrap();
@@ -301,10 +305,7 @@ fn recommended_models_have_human_and_json_presentations() {
 fn runtime_uses_shared_mesh_cache_override_without_loading_native_code() {
     let dir = tempfile::tempdir().unwrap();
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_skippy"))
-        .env(
-            "MESH_LLM_NATIVE_RUNTIME_CACHE_DIR",
-            dir.path().join("empty"),
-        )
+        .env("SKIPPY_NATIVE_RUNTIME_CACHE_DIR", dir.path().join("empty"))
         .args(["doctor"])
         .output()
         .unwrap();

@@ -23,7 +23,7 @@ The checked-in contract covers:
 The Thoughtworks subset is pinned to the MIT-licensed
 `swe-smith-claude-3-7-sonnet` source. The eight selected trajectory identities,
 dataset commit, dataset checksum, and generated manifest checksum live in
-`skippy/evals/skippy-competitive-benchmark.json`. The exact llama-benchy tokenizer
+`evals/skippy-competitive-benchmark.json`. The exact llama-benchy tokenizer
 directory digest for every model is pinned there as well. Corpus, tokenizer,
 and model bytes are never checked into the repository.
 
@@ -36,7 +36,7 @@ than the legacy logical JSON hash. The native acquisition, local-layout preparat
 described below; executable observations do not authenticate a build producer.
 
 ```bash
-cargo xtool automation replay-matrix competitive-plan --config skippy/evals/skippy-competitive-benchmark.json
+cargo xtool automation replay-matrix competitive-plan --config evals/skippy-competitive-benchmark.json
 ```
 
 The full required raw-versus-Mesh matrix contains 576 arm-level cells. Optional
@@ -44,7 +44,7 @@ comparison arms add cells only where their pinned model inputs are available.
 Filters are repeatable:
 
 ```bash
-cargo xtool automation replay-matrix competitive-plan --config skippy/evals/skippy-competitive-benchmark.json \
+cargo xtool automation replay-matrix competitive-plan --config evals/skippy-competitive-benchmark.json \
   --platform metal \
   --model falcon-h1-recurrent \
   --workload thoughtworks

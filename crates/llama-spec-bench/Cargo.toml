@@ -3,6 +3,7 @@ name = "llama-spec-bench"
 description = "Local speculative-decoding checker and benchmark for target and draft GGUF models"
 edition.workspace = true
 license.workspace = true
+publish = false
 version.workspace = true
 
 [dependencies]

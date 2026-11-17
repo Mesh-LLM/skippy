@@ -81,7 +81,7 @@ fn build_installed_rows(cache_root: &Path) -> Vec<InstalledRow> {
                 layer_count,
                 catalog_model,
                 capabilities,
-                managed_by_mesh: usage.as_ref().is_some_and(|record| record.mesh_managed),
+                managed_by_product: usage.as_ref().is_some_and(|record| record.mesh_managed),
                 last_used_at: usage.map(|record| record.last_used_at),
             }
         })
@@ -104,7 +104,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("mesh-llm-{prefix}-{stamp}"))
+        std::env::temp_dir().join(format!("skippy-{prefix}-{stamp}"))
     }
 
     fn create_cache_repo_file(

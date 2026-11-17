@@ -4,7 +4,7 @@
 //! by path.
 //!
 //! A build that runs the workspace's tests with
-//! `MESH_LLM_NATIVE_RUNTIME_BUNDLE_DIR` set, for the tests that load the
+//! `SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR` set, for the tests that load the
 //! runtime, would also hand that bundle to every test that discovers
 //! runtimes, and they would find runtimes they don't expect. Those tests start
 //! with [`rerun_without_bundle_env!`]: when the variable is set, the test runs
@@ -43,7 +43,7 @@ pub fn rerun_without_bundle_env(test: &str) -> bool {
     true
 }
 
-/// Starts a runtime discovery test: when `MESH_LLM_NATIVE_RUNTIME_BUNDLE_DIR`
+/// Starts a runtime discovery test: when `SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR`
 /// is set, runs the test again without it and returns.
 #[macro_export]
 macro_rules! rerun_without_bundle_env {

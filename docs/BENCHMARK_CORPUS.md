@@ -53,7 +53,7 @@ reports can show both overall latency and per-bucket latency.
 The initial KV-focused checked-in corpus lives at:
 
 ```text
-skippy/evals/corpora/kv_mixed_prompts.jsonl
+evals/corpora/kv_mixed_prompts.jsonl
 ```
 
 It is intentionally smaller than the full 60-prompt production corpus while the
@@ -93,7 +93,7 @@ cold one-pass prompts in the broader `long` corpus.
 The cache benchmark use-case matrix uses a small checked-in HF-derived corpus at:
 
 ```text
-skippy/evals/skippy-usecase-corpus.json
+evals/skippy-usecase-corpus.json
 ```
 
 It keeps the source dataset/config/split/row metadata beside each prompt so the

@@ -14,6 +14,9 @@ use skippy_model_package::jobs::{CpuJobPlan, HfJobsClient, JobInfo, JobSpec, Job
 use skippy_model_package::prepare::{self, DiscoveredProjector, DiscoveredQuant};
 use skippy_model_package::script;
 
+#[path = "queue_unsloth/destinations.rs"]
+mod destinations;
+
 const DEFAULT_QUANT_PREFERENCE: &[&str] = &["UD-Q4_K_XL", "UD-Q4_K_M", "Q4_K_XL", "Q4_K_M"];
 const DEFAULT_SPLIT_CANDIDATE_VRAM_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const RUNTIME_MODEL_FIT_HEADROOM_NUMERATOR: u64 = 11;
@@ -29,9 +32,11 @@ struct Args {
     max_per_family: usize,
     target_namespace: String,
     job_namespace: String,
+    catalog_repository: String,
+    package_bucket: String,
     flavor: String,
     timeout_seconds: u64,
-    mesh_llm_ref: String,
+    skippy_ref: String,
     retry_queued_after: Duration,
     split_candidate_vram_bytes: u64,
     quant_preference: Vec<String>,
@@ -93,7 +98,7 @@ struct QueueMarker<'a> {
     quant: &'a str,
     target_repo: &'a str,
     model_id: &'a str,
-    mesh_llm_ref: &'a str,
+    skippy_ref: &'a str,
     github_run_url: Option<String>,
     recent_rank: Option<usize>,
     popular_rank: Option<usize>,
@@ -110,7 +115,7 @@ struct QueueFailureMarker<'a> {
     quant: &'a str,
     target_repo: &'a str,
     model_id: &'a str,
-    mesh_llm_ref: &'a str,
+    skippy_ref: &'a str,
     github_run_url: Option<String>,
     hf_job_id: &'a str,
     stage: String,
@@ -119,12 +124,13 @@ struct QueueFailureMarker<'a> {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
-    let args = Args::parse()?;
+    let mut args = Args::parse()?;
     if args.max_jobs == 0 {
         bail!("--max-jobs must be at least 1");
     }
 
     let hf_client = skippy_model_package::build_hf_client()?;
+    destinations::configure(&mut args, &hf_client).await?;
     let submitting = args.confirm && !args.dry_run;
     let jobs_client = if submitting {
         Some(HfJobsClient::from_env()?)
@@ -218,7 +224,13 @@ async fn main() -> Result<()> {
             );
             continue;
         }
-        let status = candidate_status(&hf_client, &candidate, args.retry_queued_after).await?;
+        let status = candidate_status(
+            &hf_client,
+            &candidate,
+            args.retry_queued_after,
+            &args.catalog_repository,
+        )
+        .await?;
         // `Queued` is authoritative regardless of `--republish`: a fresh
         // queue marker means an in-flight (paid) job already covers this
         // candidate, and re-submitting would double-spend. The republish
@@ -321,11 +333,13 @@ impl Args {
             popular_limit: 80,
             max_jobs: 5,
             max_per_family: 1,
-            target_namespace: "meshllm".to_string(),
-            job_namespace: "meshllm".to_string(),
+            target_namespace: String::new(),
+            job_namespace: String::new(),
+            catalog_repository: String::new(),
+            package_bucket: String::new(),
             flavor: "auto".to_string(),
             timeout_seconds: parse_duration_seconds("1h")?,
-            mesh_llm_ref: "main".to_string(),
+            skippy_ref: "main".to_string(),
             retry_queued_after: Duration::from_secs(30 * 60 * 60),
             split_candidate_vram_bytes: DEFAULT_SPLIT_CANDIDATE_VRAM_BYTES,
             quant_preference: DEFAULT_QUANT_PREFERENCE
@@ -356,7 +370,7 @@ impl Args {
                 "--timeout" => {
                     args.timeout_seconds = parse_duration_seconds(&next_value(&mut iter, &flag)?)?
                 }
-                "--mesh-llm-ref" => args.mesh_llm_ref = next_value(&mut iter, &flag)?,
+                "--skippy-ref" => args.skippy_ref = next_value(&mut iter, &flag)?,
                 "--retry-queued-after-hours" => {
                     let hours: u64 = parse_next(&mut iter, &flag)?;
                     args.retry_queued_after = Duration::from_secs(hours * 60 * 60);
@@ -445,7 +459,7 @@ fn print_help() {
            --max-per-family N\n\
            --confirm\n\
            --dry-run\n\
-           --mesh-llm-ref REF\n\
+           --skippy-ref REF\n\
            --quant-preference CSV\n\
            --recent-limit N\n\
            --popular-limit N\n\
@@ -800,6 +814,7 @@ async fn candidate_status(
     client: &HFClient,
     candidate: &Candidate,
     retry_queued_after: Duration,
+    catalog_repository: &str,
 ) -> Result<QueueStatus> {
     // Check the target repo's queue marker FIRST: a recent marker means an
     // in-flight (paid) job already covers this candidate. Without this, the
@@ -809,7 +824,7 @@ async fn candidate_status(
         return Ok(QueueStatus::Queued { repo });
     }
 
-    if let Some(repo) = catalog_layer_package_repo(client, candidate).await? {
+    if let Some(repo) = catalog_layer_package_repo(client, candidate, catalog_repository).await? {
         return Ok(QueueStatus::Cataloged { repo });
     }
 
@@ -902,7 +917,7 @@ fn should_skip(status: &QueueStatus, republish: bool) -> Option<String> {
             Some(format!("already has published layer package {repo}"))
         }
         QueueStatus::Cataloged { repo } if !republish => Some(format!(
-            "already has layer package {repo} in meshllm/catalog"
+            "already has layer package {repo} in the configured catalog"
         )),
         QueueStatus::Failed { repo } if !republish => {
             Some(format!("layer package job previously failed for {repo}"))
@@ -947,9 +962,11 @@ async fn model_repo_info(client: &HFClient, repo_id: &str) -> Result<Option<Mode
 async fn catalog_layer_package_repo(
     client: &HFClient,
     candidate: &Candidate,
+    catalog_repository: &str,
 ) -> Result<Option<String>> {
     let entry_path = catalog_entry_path(&candidate.model.repo_id)?;
-    let dataset = client.dataset("meshllm", "catalog");
+    let location = skippy_model_hf::repository_settings::HubRepository::parse(catalog_repository)?;
+    let dataset = client.dataset(&location.namespace, &location.name);
     let bytes = match dataset
         .download_file_to_bytes()
         .filename(entry_path.clone())
@@ -1017,7 +1034,7 @@ async fn write_queue_marker(client: &HFClient, candidate: &Candidate, args: &Arg
         quant: &candidate.quant.name,
         target_repo: &candidate.target_repo,
         model_id: &candidate.model_id,
-        mesh_llm_ref: &args.mesh_llm_ref,
+        skippy_ref: &args.skippy_ref,
         github_run_url: std::env::var("GITHUB_RUN_URL").ok(),
         recent_rank: candidate.model.recent_rank,
         popular_rank: candidate.model.popular_rank,
@@ -1078,7 +1095,7 @@ async fn write_queue_failure_marker(
         quant: &submitted.candidate.quant.name,
         target_repo: &submitted.candidate.target_repo,
         model_id: &submitted.candidate.model_id,
-        mesh_llm_ref: &args.mesh_llm_ref,
+        skippy_ref: &args.skippy_ref,
         github_run_url: std::env::var("GITHUB_RUN_URL").ok(),
         hf_job_id: &info.id,
         stage: info.status.stage.to_string(),
@@ -1110,7 +1127,12 @@ fn job_spec(
     jobs_client: &HfJobsClient,
     job_plan: &CpuJobPlan,
 ) -> Result<JobSpec> {
-    job_spec_with_token(candidate, args, jobs_client.token(), job_plan)
+    let mut spec = job_spec_with_token(candidate, args, jobs_client.token(), job_plan)?;
+    spec.secrets.insert(
+        "SKIPPY_GITHUB_TOKEN".into(),
+        skippy_model_package::jobs::source::github_token_from_env()?,
+    );
+    Ok(spec)
 }
 
 fn job_spec_with_token(
@@ -1154,7 +1176,11 @@ fn job_spec_with_token(
                 .join("\n"),
         );
     }
-    environment.insert("MESH_LLM_REF".into(), args.mesh_llm_ref.clone());
+    environment.insert("SKIPPY_REF".into(), args.skippy_ref.clone());
+    environment.insert(
+        "SKIPPY_MODEL_CATALOG".into(),
+        args.catalog_repository.clone(),
+    );
     environment.insert(
         "CATALOG_CREATE_PR".into(),
         if args.catalog_direct { "false" } else { "true" }.into(),
@@ -1178,7 +1204,7 @@ fn job_spec_with_token(
         volumes: vec![
             JobVolume {
                 volume_type: "bucket".into(),
-                source: "meshllm/layer-split-output".into(),
+                source: args.package_bucket.clone(),
                 mount_path: "/bucket".into(),
                 read_only: None,
                 revision: None,
@@ -1553,9 +1579,11 @@ mod tests {
             max_per_family: 1,
             target_namespace: "meshllm".to_string(),
             job_namespace: "meshllm".to_string(),
+            catalog_repository: "fixture/catalog".into(),
+            package_bucket: "fixture/packages".into(),
             flavor: "cpu-upgrade".to_string(),
             timeout_seconds: 43_200,
-            mesh_llm_ref: "main".to_string(),
+            skippy_ref: "main".to_string(),
             retry_queued_after: Duration::from_secs(1),
             split_candidate_vram_bytes: 8,
             quant_preference: vec!["UD-Q4_K_XL".to_string()],

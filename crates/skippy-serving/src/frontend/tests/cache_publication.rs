@@ -22,7 +22,7 @@ fn request(model: &str) -> Result<GenerationRequest> {
     Ok(serde_json::from_value::<ChatCompletionRequest>(json!({
         "model": model,
         "messages": [{"role": "user", "content": include_str!(
-            "../../../../../../ci/fixtures/skippy-cache-prompt-input.txt"
+            "../../../tests/fixtures/skippy-cache-prompt-input.txt"
         )}],
         "max_tokens": 8,
         "reasoning_effort": "none"

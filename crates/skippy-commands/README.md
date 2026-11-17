@@ -1,8 +1,8 @@
 # skippy-commands
 
-Skippy command execution and output formatting. This crate owns the `models` argument contract, model discovery and variant selection, human-readable tables, JSON schemas, cache maintenance, and package-job commands used by both `skippy models` and `mesh-llm models`. The products supply their console destinations and detected memory budget; Skippy owns the behavior and generates command hints for the invoking product.
+Skippy command execution and output formatting. This crate owns the `models` argument contract, model discovery and variant selection, human-readable tables, JSON schemas, cache maintenance, and package-job commands used by `skippy models`. Embedding applications can supply console destinations and detected memory budgets.
 
-`models` resolves Hub references, downloads verified artifacts with size/SHA-256 verification and manages the local model cache. `runtime` lists, installs from explicit catalogs, imports and migrates native runtime caches. `split` plans and admits direct GGUF splits against the same release-bound certification roster Mesh uses, publishing stage configs and admission descriptors only after every stage is admitted. `console` installs the standalone diagnostics sink and writes JSON documents.
+`models` resolves Hub references, downloads verified artifacts with size/SHA-256 verification and manages the local model cache. `runtime` lists, installs from explicit catalogs, imports and migrates native runtime caches. `split` plans and admits direct GGUF splits against the release-bound certification roster, publishing stage configs and admission descriptors only after every stage is admitted. `console` installs the standalone diagnostics sink and writes JSON documents.
 
 `prompt` connects to an existing stage-0 OpenAI endpoint and provides an
 interactive chat or raw-completion client. It does not load a native runtime or
@@ -25,6 +25,10 @@ Model commands support `recommended`, `installed`, `search`, `show`, `download`,
 `updates` (`update`), `delete`, `cleanup`, `prune`, `certify`, and `package`.
 Each accepts `--json`; standalone Skippy also honors its global `--output` modes.
 Deletion, cleanup, and pruning preview their scope unless `--yes` is supplied.
+
+Existing JSON consumers retain the legacy `mesh_managed`, `mesh_cache_dir`,
+and `mesh_managed_only` field spellings. These are compatibility keys for
+Skippy-owned usage records; they do not select another product's cache or code.
 
 ```sh
 skippy models installed

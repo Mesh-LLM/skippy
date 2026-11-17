@@ -1172,9 +1172,7 @@ fn run_correctness_chain(layout: &TestLayout, spec: FamilySpec, splits: (u32, u3
         .unwrap_or_else(|_| "skippy-correctness".to_string());
     let stage_server_bin = std::env::var_os("SKIPPY_STAGE_SERVER_BIN")
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/debug/skippy")
-        });
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/skippy"));
     if !stage_server_bin.is_file() {
         bail!(
             "skippy-server binary is required for activation chain tests; build it with `just skippy-cli-build` or set SKIPPY_STAGE_SERVER_BIN"

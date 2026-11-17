@@ -32,7 +32,7 @@ pub const ACTIVATION_BOUNDARY_DESC_VERSION: u32 = skippy_ffi::ACTIVATION_BOUNDAR
 ///
 /// This is intentionally derived from the native model descriptor rather than
 /// a repository-name or family-name lookup. New architectures therefore
-/// inherit llama.cpp's own classification without a MeshLLM table update.
+/// inherit llama.cpp's own classification without a Skippy table update.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelStateKind {
     Dense,

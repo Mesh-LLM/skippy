@@ -1,7 +1,7 @@
 # Types that make the PR #2481 bug classes unrepresentable
 
 ```yaml
-for: skippy/skippy_api (C++23), skippy/skippy-api-rs bridge
+for: skippy_api (C++23), skippy-api-rs bridge
 derived_from: review-pr-2481.md (heads 42b1bd57, a2252f53, 5f19c740)
 goal: the wrong spelling does not compile, and the compiler error names the rule
 ```

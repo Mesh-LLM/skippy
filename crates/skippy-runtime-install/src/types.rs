@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use skippy_native_runtime::{InstalledNativeRuntime, RuntimeSelection};
 use std::path::PathBuf;
 use std::sync::Arc;
-pub const NATIVE_RUNTIME_CACHE_DIR_ENV: &str = "MESH_LLM_NATIVE_RUNTIME_CACHE_DIR";
-pub const NATIVE_RUNTIME_MANIFEST_URL_ENV: &str = "MESH_LLM_NATIVE_RUNTIME_MANIFEST_URL";
+pub const NATIVE_RUNTIME_CACHE_DIR_ENV: &str = "SKIPPY_NATIVE_RUNTIME_CACHE_DIR";
+pub const NATIVE_RUNTIME_MANIFEST_URL_ENV: &str = "SKIPPY_NATIVE_RUNTIME_MANIFEST_URL";
 
 pub type NativeRuntimeDownloadProgressCallback =
     Arc<dyn Fn(NativeRuntimeDownloadProgress) + Send + Sync + 'static>;
@@ -66,29 +66,17 @@ impl NativeRuntimeCatalog {
 }
 
 /// Map a runtime ABI release to the product release that publishes its bundle.
-/// Both CLIs use this release-channel policy.
+/// Standalone releases are immutable tags, including when the CLI is a local build.
 pub fn publication_catalog(
-    build_version: &str,
+    _build_version: &str,
     product_release: &str,
     runtime_release: &str,
 ) -> NativeRuntimeCatalog {
-    let rolling = is_sha_build(build_version);
     NativeRuntimeCatalog {
         release_tags: [(runtime_release.to_string(), format!("v{product_release}"))].into(),
-        releases_url: "https://github.com/Mesh-LLM/mesh-llm/releases".to_string(),
-        rolling_release: rolling.then(|| runtime_release.to_string()),
+        releases_url: "https://github.com/general-inference/skippy/releases".to_string(),
+        rolling_release: None,
     }
-}
-
-fn is_sha_build(version: &str) -> bool {
-    let Some((_, metadata)) = version.split_once('+') else {
-        return false;
-    };
-    let sha = metadata.strip_suffix(".dirty").unwrap_or(metadata);
-    let Some(hex) = sha.strip_prefix('g') else {
-        return false;
-    };
-    hex.len() >= 6 && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 #[derive(Clone)]
@@ -105,7 +93,7 @@ pub struct NativeRuntimeManifestOptions {
 pub struct NativeRuntimeInstallOptions {
     pub catalog: NativeRuntimeCatalog,
     pub release_version: String,
-    /// Override the required ABI. Otherwise installs for the current MeshLLM
+    /// Override the required ABI. Otherwise installs for the current Skippy
     /// version use the compiled ABI; other versions use the catalog's ABI.
     pub skippy_abi_version: Option<String>,
     pub selection: RuntimeSelection,
@@ -167,5 +155,20 @@ impl NativeRuntimeInstallOptions {
             progress: None,
             allow_download: true,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn standalone_catalog_is_pinned_even_for_source_builds() {
+        let catalog = publication_catalog("1.2.3+gabcdef.dirty", "1.2.3", "0.9.0");
+        assert_eq!(
+            catalog.manifest_url("0.9.0"),
+            "https://github.com/general-inference/skippy/releases/download/v1.2.3/native-runtimes.json"
+        );
+        assert!(catalog.rolling_release.is_none());
     }
 }

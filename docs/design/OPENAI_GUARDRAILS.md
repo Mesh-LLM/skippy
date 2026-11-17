@@ -11,26 +11,15 @@ Phase 0 stays off by default unless an operator turns it on explicitly.
 - `metrics` is opt-in.
 - `enforce` is opt-in.
 
-Server-side activation is now an explicit runtime setting for mesh-hosted Skippy
-backends:
+Server-side activation is an explicit standalone serving setting:
 
 ```bash
-# startup default for this process and all later runtime-loaded Skippy models
-mesh-llm serve --model MiniMax-M2.5-Q4_K_M --mesh-guardrails metrics
-
-# no-restart update for the running process
-mesh-llm runtime guardrails --mode enforce --port 3131
-
-# equivalent local management API call
-curl -s -X POST localhost:3131/api/runtime/mesh-guardrails \
-  -H 'Content-Type: application/json' \
-  -d '{"mode":"enforce"}' | jq .
+# startup setting for this process
+skippy serve --model MiniMax-M2.5-Q4_K_M --guardrails metrics
 ```
 
-The runtime command updates the shared server-side `GuardrailPolicy.mode`, so
-already wrapped hosted models and future runtime-loaded/replacement Skippy
-backends observe the new mode without a process restart. The current posture is
-visible at `/api/status.runtime.openai_guardrails`.
+Restart the standalone server to change its guardrail mode. The effective
+configuration reports the selected posture before model load.
 
 The goal is validation of native runtime output, not a second tool-call parser
 or a general OpenAI tool runtime.
@@ -44,10 +33,9 @@ records the request mode and the expected server posture.
 - `metrics` sends and records `mesh_guardrails: true`.
 - `enforce` sends and records `mesh_guardrails: true`.
 
-The operator still has to launch or reconfigure the server with
-`--mesh-guardrails`, `mesh-llm runtime guardrails`, or the management API to
-match the chosen mode. A request flag never upgrades a server that is still
-running in a different mode.
+The operator still has to launch the server with `--guardrails` to match the
+chosen mode. A request flag never upgrades a server that is running in a
+different mode.
 
 ## v1 Limits
 

@@ -10,7 +10,7 @@ GGUF writing.
 ## Architecture Role
 
 The standalone Skippy CLI and benchmark flows ask this crate whether a split plan is
-acceptable before slicing models or starting servers. Mesh production split
+acceptable before slicing models or starting servers. Production split
 placement uses the separate resource-based coordinator planner. This crate's plan carries
 stage ranges, peer/device placement, boundary decisions, payload sizing, and
 diagnostics.

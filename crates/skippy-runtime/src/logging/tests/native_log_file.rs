@@ -124,7 +124,7 @@ fn native_log_note_writes_sanitized_flushed_context() -> anyhow::Result<()> {
     fs::remove_file(&path)?;
 
     assert!(
-        contents.ends_with("mesh-llm: native call begin with context\n"),
+        contents.ends_with("skippy: native call begin with context\n"),
         "unexpected native log contents: {contents:?}"
     );
     assert!(

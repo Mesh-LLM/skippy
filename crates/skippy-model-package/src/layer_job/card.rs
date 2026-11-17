@@ -37,7 +37,7 @@ pub(super) fn render(
         None => String::new(),
     };
     let mut card = format!(
-        "---\nlibrary_name: mesh-llm\n{license_line}base_model:\n- {}\npipeline_tag: {}\ntags:\n- gguf\n- mesh-llm\n- layer-package\n- skippy\n- distributed-inference\n- local-inference\n- openai-compatible\n{}---\n\n# {}\n\nDistributed GGUF inference package for Mesh LLM.\n\n",
+        "---\nlibrary_name: skippy\n{license_line}base_model:\n- {}\npipeline_tag: {}\ntags:\n- gguf\n- layer-package\n- skippy\n- distributed-inference\n- local-inference\n- openai-compatible\n{}---\n\n# {}\n\nDistributed GGUF inference package for Skippy.\n\n",
         serde_json::to_string(&projection.source_repo)?,
         serde_json::to_string(pipeline)?,
         if projection.experimental {
@@ -48,7 +48,7 @@ pub(super) fn render(
         cell(&projection.model_id)
     );
     if projection.experimental {
-        card.push_str("> [!WARNING]\n> Experimental package: artifact integrity, runtime, split-correctness and multimodal qualification are separate. This card does not promote an entry into meshllm/catalog@main.\n\n");
+        card.push_str("> [!WARNING]\n> Experimental package: artifact integrity, runtime, split-correctness and multimodal qualification are separate. This card does not promote an entry into a catalog@main.\n\n");
     }
     card.push_str("## Highlights\n\nPrivate local inference, pooled memory/compute and OpenAI-compatible serving.\n\n## Model Overview\n\n| Property | Value |\n|---|---|\n");
     for (name, value) in [
@@ -61,7 +61,7 @@ pub(super) fn render(
     ] {
         card.push_str(&format!("| {} | {} |\n", name, cell(&value)));
     }
-    card.push_str(&format!("\n## Recommended Use\n\nLocal/private and multi-machine serving. Review upstream architecture, license, templates and sampling guidance at https://huggingface.co/{}. The source license, when present, is declared from the admitted source metadata; no base-model fallback or license was inferred.\n\n## Quickstart\n\n```bash\nmesh-llm serve --model \"{}\" --split\n```\n\n## Package Variant\n\n| Property | Value |\n|---|---|\n| Format | {} |\n| Package identity | {} |\n| Manifest SHA-256 | {} |\n| Source identity | {} |\n| Native ABI | {} |\n",projection.source_repo,target,cell(&manifest.format),cell(&projection.package_id),projection.manifest_sha256,cell(&projection.source_identity),cell(&manifest.native_abi_version)));
+    card.push_str(&format!("\n## Recommended Use\n\nLocal/private and multi-machine serving. Review upstream architecture, license, templates and sampling guidance at https://huggingface.co/{}. The source license, when present, is declared from the admitted source metadata; no base-model fallback or license was inferred.\n\n## Quickstart\n\n```bash\nskippy serve --model \"{}\"\n```\n\n## Package Variant\n\n| Property | Value |\n|---|---|\n| Format | {} |\n| Package identity | {} |\n| Manifest SHA-256 | {} |\n| Source identity | {} |\n| Native ABI | {} |\n",projection.source_repo,target,cell(&manifest.format),cell(&projection.package_id),projection.manifest_sha256,cell(&projection.source_identity),cell(&manifest.native_abi_version)));
     if let Some(spec) = manifest
         .generation
         .as_ref()
@@ -84,7 +84,7 @@ pub(super) fn render(
             artifact.sha256
         ));
     }
-    card.push_str("\n## Validation\n\nThe native job validates the package root, canonical package identity and catalog/source bindings. Listed hashes are declared artifact identities. Upload confirmation, immutable remote verification, independently verified source tensors, ABI/runtime behavior and catalog promotion require their own receipts.\n\n## Links\n\n- https://www.meshllm.cloud\n- https://github.com/Mesh-LLM/mesh-llm\n- https://huggingface.co/datasets/meshllm/catalog\n");
+    card.push_str("\n## Validation\n\nThe native job validates the package root, canonical package identity and catalog/source bindings. Listed hashes are declared artifact identities. Upload confirmation, immutable remote verification, independently verified source tensors, ABI/runtime behavior and catalog promotion require their own receipts.\n\n## Links\n\n- https://github.com/general-inference/skippy\n");
     if card.len() > 2 * 1024 * 1024 {
         bail!("model card size refused");
     }
@@ -95,7 +95,7 @@ pub(super) struct CardContext<'a> {
     pub target: &'a str,
     pub pipeline: &'a str,
     pub source_file: &'a str,
-    pub mesh_ref: &'a str,
+    pub skippy_ref: &'a str,
     pub license: &'a super::License,
 }
 pub(super) fn render_complete(
@@ -107,10 +107,10 @@ pub(super) fn render_complete(
         target,
         pipeline,
         source_file,
-        mesh_ref,
+        skippy_ref,
         license,
     } = context;
-    if [source_file, mesh_ref]
+    if [source_file, skippy_ref]
         .iter()
         .any(|s| s.is_empty() || s.len() > 4096 || s.chars().any(char::is_control))
     {
@@ -145,7 +145,7 @@ pub(super) fn render_complete(
         ("Family", family),
         ("Source file", source_file),
         ("Source SHA-256", manifest.source_model.sha256.as_str()),
-        ("Mesh LLM ref", mesh_ref),
+        ("Skippy ref", skippy_ref),
         ("Generator version", manifest.generator_version.as_str()),
     ] {
         card.push_str(&format!("| {} | {} |\n", label, cell(value)));
@@ -188,7 +188,7 @@ pub(super) fn render_complete(
             bail!("model card size refused");
         }
     }
-    card.push_str("\n## Operator Checks\n\n```bash\ncurl -s http://localhost:3131/api/status\ncurl -s http://localhost:3131/v1/models\n```\n\nUse the returned model name with /v1/chat/completions and max_tokens 128. Artifact identities and successful publication are separate from runtime, ABI, split correctness and model qualification.\n");
+    card.push_str("\n## Operator Checks\n\n```bash\nskippy doctor\ncurl -s http://127.0.0.1:9337/v1/models\n```\n\nUse the returned model name with /v1/chat/completions and max_tokens 128. Artifact identities and successful publication are separate from runtime, ABI, split correctness and model qualification.\n");
     if card.len() > 2 * 1024 * 1024 {
         bail!("model card size refused");
     }

@@ -228,7 +228,7 @@ pub(crate) async fn download_release_manifest(url: &str) -> Result<NativeRuntime
         .context("build native runtime manifest HTTP client")?;
     let bytes = client
         .get(url)
-        .header("User-Agent", "mesh-llm")
+        .header("User-Agent", "skippy")
         .send()
         .await
         .map_err(reqwest::Error::without_url)
@@ -246,7 +246,7 @@ pub(crate) async fn download_release_manifest(url: &str) -> Result<NativeRuntime
     let diagnostic_checksum_url = url_without_query(&checksum_url);
     let checksum = client
         .get(&checksum_url)
-        .header("User-Agent", "mesh-llm")
+        .header("User-Agent", "skippy")
         .send()
         .await
         .map_err(reqwest::Error::without_url)
@@ -298,9 +298,8 @@ pub(crate) fn release_manifest_checksum_url(url: &str) -> String {
 
 /// Strips the query string and the fragment, and redacts any userinfo
 /// (`user:pass@`) from a URL before it is surfaced in error context,
-/// progress events or catalog reports. Mirrors `redact_url_userinfo` in
-/// `mesh-llm-host-runtime::logging::policy`; kept local because this crate
-/// does not otherwise depend on host-runtime.
+/// progress events or catalog reports. Runtime acquisition must not expose
+/// credentials through diagnostic URLs.
 pub(crate) fn url_without_query(url: &str) -> String {
     let without_fragment = url.split_once('#').map_or(url, |(base, _)| base);
     let without_query = without_fragment
@@ -330,7 +329,7 @@ fn redact_url_userinfo(url: &str) -> String {
 }
 
 /// Picks the remote catalog URL to consult: the explicit option, then the
-/// `MESH_LLM_NATIVE_RUNTIME_MANIFEST_URL` override, then the default release
+/// `SKIPPY_NATIVE_RUNTIME_MANIFEST_URL` override, then the default release
 /// URL when `allow_default_manifest_url` is set. `None` means no remote
 /// catalog is consulted.
 pub(crate) fn manifest_url(options: &NativeRuntimeManifestOptions) -> Option<String> {

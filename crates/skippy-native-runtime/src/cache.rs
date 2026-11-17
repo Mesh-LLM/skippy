@@ -14,9 +14,9 @@ use std::{
 /// The manifest checksum must include this path before the executable is
 /// selected or run. CPU and Vulkan runtimes intentionally do not provide it.
 #[cfg(target_os = "windows")]
-pub const GPU_BENCHMARK_TOOL_PATH: &str = "tools/mesh-llm-gpu-benchmark.exe";
+pub const GPU_BENCHMARK_TOOL_PATH: &str = "tools/skippy-gpu-benchmark.exe";
 #[cfg(not(target_os = "windows"))]
-pub const GPU_BENCHMARK_TOOL_PATH: &str = "tools/mesh-llm-gpu-benchmark";
+pub const GPU_BENCHMARK_TOOL_PATH: &str = "tools/skippy-gpu-benchmark";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NativeRuntimeCacheRoot {
@@ -244,7 +244,7 @@ impl NativeRuntimeCache {
     /// skipped instead of failing the scan.
     ///
     /// Startup paths must use this instead of [`Self::installed`] so a stale
-    /// entry written by an older MeshLLM version (pre-checksum manifests,
+    /// entry written by an older Skippy version (pre-checksum manifests,
     /// issue #1162) can never abort runtime resolution while a valid runtime
     /// is present or installable.
     pub fn installed_lenient(&self) -> Result<LenientInstalledScan> {
@@ -344,7 +344,7 @@ impl NativeRuntimeCache {
         Ok(scan)
     }
 
-    /// Returns strictly validated runtimes for one MeshLLM version.
+    /// Returns strictly validated runtimes for one Skippy version.
     ///
     /// TODO(issue #1162): Remove this resolver-specific compatibility boundary
     /// once the oldest supported upgrade path no longer contains pre-checksum
@@ -474,7 +474,7 @@ impl NativeRuntimeCache {
 }
 
 pub fn native_runtime_cache_root(base_cache_dir: &Path) -> PathBuf {
-    base_cache_dir.join("mesh-llm").join("native-runtimes")
+    base_cache_dir.join("skippy").join("native-runtimes")
 }
 
 fn installed_runtime_from_dir(dir: &Path) -> Result<Option<InstalledNativeRuntime>> {

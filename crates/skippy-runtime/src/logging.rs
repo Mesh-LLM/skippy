@@ -850,7 +850,7 @@ fn write_native_log_note_with_mask(note: impl AsRef<str>, required_mask: u8) {
     if let Ok(mut guard) = native_log_file().lock()
         && let Some(writer) = guard.as_mut()
     {
-        let _ = writeln!(writer, "mesh-llm: {note}");
+        let _ = writeln!(writer, "skippy: {note}");
         let _ = writer.flush();
     }
     forward_native_log_note(note, required_mask);
@@ -862,7 +862,7 @@ fn forward_native_log_note(note: String, required_mask: u8) {
         return;
     }
     let event = NativeLogEvent {
-        message: format!("mesh-llm: {note}"),
+        message: format!("skippy: {note}"),
         category: "model",
         params: Vec::new(),
     };

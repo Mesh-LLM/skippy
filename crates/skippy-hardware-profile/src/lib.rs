@@ -68,13 +68,9 @@ pub fn detected_native_runtime_flavors(
 }
 
 fn detect_rocm_profile(gpus: &[HostGpuProfile]) -> Option<HostRocmProfile> {
-    let mut gpu_arches = env_string_set("MESH_LLM_ROCM_GPU_ARCHES");
+    let mut gpu_arches = env_string_set("SKIPPY_ROCM_GPU_ARCHES");
     gpu_arches.extend(rocm::gpu_arches(gpus));
-    detect_rocm_profile_with_arches(
-        gpus,
-        gpu_arches,
-        std::env::var("MESH_LLM_ROCM_VERSION").ok(),
-    )
+    detect_rocm_profile_with_arches(gpus, gpu_arches, std::env::var("SKIPPY_ROCM_VERSION").ok())
 }
 
 fn detect_rocm_profile_with_arches(
@@ -100,8 +96,8 @@ fn has_rocm_label(gpus: &[HostGpuProfile]) -> bool {
 }
 
 fn detect_vulkan_profile() -> Option<HostVulkanProfile> {
-    let api_version = std::env::var("MESH_LLM_VULKAN_API_VERSION").ok();
-    let enabled = std::env::var("MESH_LLM_VULKAN_AVAILABLE")
+    let api_version = std::env::var("SKIPPY_VULKAN_API_VERSION").ok();
+    let enabled = std::env::var("SKIPPY_VULKAN_AVAILABLE")
         .ok()
         .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"));
     if enabled || api_version.is_some() || command_output("vulkaninfo", &["--summary"]).is_some() {
@@ -111,8 +107,8 @@ fn detect_vulkan_profile() -> Option<HostVulkanProfile> {
 }
 
 fn apply_gpu_arch_overrides(gpus: &mut [HostGpuProfile]) {
-    let cuda_arches = env_string_vec("MESH_LLM_CUDA_GPU_ARCHES");
-    let rocm_arches = env_string_vec("MESH_LLM_ROCM_GPU_ARCHES");
+    let cuda_arches = env_string_vec("SKIPPY_CUDA_GPU_ARCHES");
+    let rocm_arches = env_string_vec("SKIPPY_ROCM_GPU_ARCHES");
     apply_gpu_arch_overrides_from(gpus, &cuda_arches, &rocm_arches);
 }
 
@@ -152,7 +148,7 @@ mod tests {
         let Some((class, machine)) = current_elf_identity() else {
             return;
         };
-        let root = std::env::temp_dir().join(format!("mesh-llm-cuda-probe-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("skippy-cuda-probe-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         for name in ["libcudart.so.12", "libcublas.so.12", "libcublasLt.so.12"] {

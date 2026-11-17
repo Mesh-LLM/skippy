@@ -4,7 +4,7 @@ Production stage service and embeddable staged runtime crate.
 
 `skippy-serving` owns stage config, readiness, transport, runtime calls, and
 non-blocking telemetry emission. Argument parsing and the `skippy` executable live
-in [`skippy-cli`](../skippy-cli/README.md); Mesh hosts the same service loops in-process.
+in [`skippy-cli`](../skippy-cli/README.md); Embedding applications host the same service loops in-process.
 
 ## Native runtime startup
 
@@ -23,7 +23,7 @@ artifact ID. These global flags work with `skippy serve`;
 `skippy example-config` does not load native code.
 
 Selection uses `skippy_runtime_install::startup::select_local_native_runtime_plan`,
-also used by Mesh's embedded local startup. Release, compiled Skippy ABI,
+also used by embedded local startup. Release, compiled Skippy ABI,
 platform and payload verification must succeed. The loader checks the actual
 library's ABI as well. This entry point uses local bundles/cache only; acquisition
 is explicit. Static native test builds retain their existing linked-runtime path.
@@ -31,10 +31,10 @@ This adds native startup, not model-reference resolution or clean-install proof.
 
 ## Architecture Role
 
-Each embedded server or server process owns one contiguous layer range. Mesh
+Each embedded server or server process owns one contiguous layer range. Host
 plans peers and layer ranges, sends `LoadStage` downstream-to-upstream, waits
 for readiness, and then publishes the stage-0 route. OpenAI clients talk to
-mesh/skippy-inference-api; diagnostic and benchmark clients may connect directly to
+skippy-inference-api; diagnostic and benchmark clients may connect directly to
 the first stage.
 
 The full request/reply path is tip-to-tip: token IDs enter at the driver-facing
@@ -48,16 +48,16 @@ downstream while local compute advances.
 
 ```mermaid
 flowchart LR
-    C["OpenAI client"] --> Mesh["mesh-llm<br/>skippy-inference-api + coordinator"]
-    Mesh --> D["stage-0 route<br/>token IDs"]
+    C["OpenAI client"] --> Host["Skippy<br/>skippy-inference-api + coordinator"]
+    Host --> D["stage-0 route<br/>token IDs"]
     D --> S0["stage-0<br/>layers 0..10"]
     S0 -->|activation frames| S1["stage-1<br/>layers 10..20"]
     S1 -->|activation frames| S2["..."]
     S2 -->|activation frames| SF["final tip<br/>output/readout"]
     SF -->|PredictedToken / PredictedTokens<br/>direct return| S0
     S0 -->|PredictedToken / ACK| D
-    D --> Mesh
-    Mesh --> C
+    D --> Host
+    Host --> C
 
     SF -.->|control ACK / stats<br/>cold path| S2
     S2 -.->|control ACK / stats<br/>cold path| S1
@@ -107,7 +107,7 @@ skippy serve --config stage-0.json --stage-transport binary --topology topology.
 
 `serve --model-path` prepares a local GGUF (including multipart sources)
 or safetensors checkpoint through the same `skippy-api` identity and stage
-builder used by Mesh. It does not require a stage JSON file or a Mesh process.
+builder used by embedding applications. It does not require a stage JSON file or another host process.
 Choose exactly one of `--model-path` and `--config`. Local preparation uses
 VRAM-aware context planning and four generation lanes by default.
 `--hash-cache` selects an optional advisory checkpoint digest cache; strict
@@ -117,7 +117,7 @@ HTTP API; stage zero serves the public inference APIs.
 
 ## Embedding API
 
-Mesh should use the `embedded` module instead of shelling out to the CLI:
+Embedding applications should use the `embedded` module instead of shelling out to the CLI:
 
 - `SkippyRuntimeHandle::load(...)` loads a stage runtime from Rust-owned
   `StageConfig` / `StageTopology` values and exposes status, telemetry,
@@ -144,7 +144,7 @@ round trip or a second model load. Every request supplies the expected
 includes the model, source digest, tokenizer id, stage, and serving profile.
 
 The capability also exposes a bounded structured encode operation for ordinary
-byte runs and opaque native control descriptors. Mesh does not interpret
+byte runs and opaque native control descriptors. An embedding application does not interpret
 Rosetta vocabulary or control identities. The loaded backend accepts only
 lossless inputs it can preserve; unsupported controls, invalid UTF-8, interior
 NULs, identity mismatches, and limit violations return explicit errors rather
@@ -215,7 +215,7 @@ deadline handling.
   session-pool counts before/after execution so concurrent-depth runs can
   separate useful compute, model-lock wait, and non-runtime overhead.
 - Stage configs accept `cache_type_k` and `cache_type_v`, defaulting to `f16`.
-  Mesh carries runtime-supported cache types such as `f16` and `q8_0`; the
+  Skippy carries runtime-supported cache types such as `f16` and `q8_0`; the
   experimental TCQ/TurboQuant cache lane is documented as benchmark evidence
   but is not built into this tree.
 - Embedded stage-0 OpenAI serving preconnects a persistent downstream lane pool
@@ -265,7 +265,7 @@ deadline handling.
   work are visible on OpenAI-path spans. The draft runner is
   single-session guarded; use this first as a depth-1 measurement knob before
   promoting it for concurrent serving.
-- Benchy usage lives in [`skippy/docs/LLAMA_BENCHY.md`](../../docs/LLAMA_BENCHY.md).
+- Benchy usage lives in [`docs/LLAMA_BENCHY.md`](../../docs/LLAMA_BENCHY.md).
 - The local OpenAI smoke harness is `scripts/openai-smoke.sh`.
 - Binary stages forward eligible non-final prefill activation frames on a
   bounded background writer by default. Use `--no-async-prefill-forward` only

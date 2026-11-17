@@ -1,7 +1,7 @@
 # skippy-native-runtime
 
 Shared native runtime manifest, host profile, resolver, cache, and load-plan
-policy for Skippy and its embedding products, including MeshLLM.
+policy for Skippy and embedding applications.
 
 This crate is the source of truth for selecting native runtimes. CLI install,
 SDK serving install, dynamic loading, and autoupdate should all use this same
@@ -10,7 +10,7 @@ contract instead of carrying their own CUDA/ROCm/Vulkan detection logic.
 ## Native Runtimes
 
 A native runtime is a release artifact containing patched llama.cpp/Skippy
-shared libraries for one platform/backend lane. The `mesh-llm` binary can stay
+shared libraries for one platform/backend lane. The `skippy` binary can stay
 one artifact per OS/architecture; native runtimes carry the backend-specific
 matrix:
 
@@ -21,20 +21,20 @@ matrix:
 - `vulkan`
 
 Selection is a hard match on four things, and failing any one of them is a
-rejection rather than a lower rank: `mesh_version`, `skippy_abi`, platform
+rejection rather than a lower rank: `release_version`, `skippy_abi`, platform
 (OS, architecture, target triple, minimum glibc), and the backend
 requirements the host must satisfy. `resolver.rs` returns the reason as a
 structured `CandidateRejection`.
 
-`mesh_version` is not only cache layout. Installed runtimes live under
-`<cache-root>/<mesh_version>/<runtime-id>/`, `NativeRuntimeCache::install_manifest`
+`release_version` is not only cache layout. Installed runtimes live under
+`<cache-root>/<release_version>/<runtime-id>/`, `NativeRuntimeCache::install_manifest`
 writes the *manifest's* version into that path, and the prune policy removes
-non-active version directories. `mesh-llm-runtime-install` also treats
-`mesh_version` and `skippy_abi` together as the single "matches the current
-SDK" predicate. A runtime from a different MeshLLM release is therefore not
+non-active version directories. `skippy-runtime-install` also treats
+`release_version` and `skippy_abi` together as the single "matches the current
+SDK" predicate. A runtime from a different Skippy release is therefore not
 selectable even when its Skippy ABI matches: it would be installed under a
 version directory the running host does not read. Expect a
-`MeshVersionMismatch` rejection (`MeshLLM version mismatch: expected X, found
+`ReleaseVersionMismatch` rejection (`Skippy version mismatch: expected X, found
 Y`) until the runtime is rebuilt or re-fetched for the host's own version.
 
 ## Artifact Manifest
@@ -43,9 +43,10 @@ Each packaged runtime directory contains `manifest.json`:
 
 ```json
 {
+  "schema_version": 2,
   "runtime": {
-    "id": "meshllm-native-runtime-linux-x86_64-cuda13-sm120",
-    "mesh_version": "0.80.0",
+    "id": "skippy-native-runtime-linux-x86_64-cuda13-sm120",
+    "release_version": "0.80.0",
     "skippy_abi": "0.1.25",
     "platform": {
       "os": "linux",
@@ -111,18 +112,19 @@ Release jobs publish `native-runtimes.json`:
 
 ```json
 {
-  "mesh_version": "0.80.0",
+  "schema_version": 2,
+  "release_version": "0.80.0",
   "skippy_abi": "0.1.25",
   "artifacts": [
     {
-      "id": "meshllm-native-runtime-linux-x86_64-cpu",
-      "mesh_version": "0.80.0",
+      "id": "skippy-native-runtime-linux-x86_64-cpu",
+      "release_version": "0.80.0",
       "skippy_abi": "0.1.25",
       "platform": { "os": "linux", "arch": "x86_64" },
       "backend": { "kind": "cpu" },
       "rank": 0,
       "libraries": ["lib/libllama.so"],
-      "url": "https://github.com/Mesh-LLM/mesh-llm/releases/download/v0.80.0/meshllm-native-runtime-linux-x86_64-cpu.tar.gz",
+      "url": "https://github.com/general-inference/skippy/releases/download/v0.80.0/skippy-native-runtime-linux-x86_64-cpu.tar.gz",
       "sha256": "2f1c..."
     }
   ]
@@ -160,11 +162,11 @@ let profile = HostRuntimeProfile {
 };
 ```
 
-`mesh-llm-hardware-profile` builds this profile for real hosts. It supports
+`skippy-hardware-profile` builds this profile for real hosts. It supports
 explicit environment overrides for CI/release testing, including
-`MESH_LLM_CUDA_TOOLKIT_MAJOR`, `MESH_LLM_CUDA_TOOLKIT_MAJORS`,
-`MESH_LLM_CUDA_DRIVER_MAX_MAJOR`, `MESH_LLM_CUDA_GPU_ARCHES`,
-`MESH_LLM_ROCM_GPU_ARCHES`, and `MESH_LLM_VULKAN_AVAILABLE`.
+`SKIPPY_CUDA_TOOLKIT_MAJOR`, `SKIPPY_CUDA_TOOLKIT_MAJORS`,
+`SKIPPY_CUDA_DRIVER_MAX_MAJOR`, `SKIPPY_CUDA_GPU_ARCHES`,
+`SKIPPY_ROCM_GPU_ARCHES`, and `SKIPPY_VULKAN_AVAILABLE`.
 
 ### ROCm GPU architectures
 
@@ -173,12 +175,12 @@ portable fallback, so a ROCm runtime is only selected when every detected AMD
 GPU architecture is in its list. Linux reads them from the KFD topology; Windows
 asks the HIP runtime that ships with AMD's driver, in a child process. When no
 architecture is detected, the ROCm runtime is not selected;
-`MESH_LLM_ROCM_GPU_ARCHES` (comma-separated, for example `gfx1100`) supplies
+`SKIPPY_ROCM_GPU_ARCHES` (comma-separated, for example `gfx1100`) supplies
 them by hand.
 
 CUDA runtimes list GPU architectures too. When none is detected (the compute
 capability comes from `nvidia-smi`), a CUDA runtime that lists any is not
-selected; `MESH_LLM_CUDA_GPU_ARCHES` (comma-separated, for example `87`)
+selected; `SKIPPY_CUDA_GPU_ARCHES` (comma-separated, for example `87`)
 supplies them by hand.
 
 ### CUDA toolkit vs driver
@@ -217,10 +219,10 @@ use std::path::PathBuf;
 #     profile: skippy_native_runtime::HostRuntimeProfile,
 #     manifest: NativeRuntimeReleaseManifest,
 # ) -> anyhow::Result<()> {
-let cache = NativeRuntimeCache::new("/tmp/mesh-llm/native-runtimes");
+let cache = NativeRuntimeCache::new("/tmp/skippy/native-runtimes");
 let resolution = NativeRuntimeResolver::new("0.80.0", profile, manifest, cache)
     .with_skippy_abi_version("0.1.25")
-    .with_bundle_dirs(vec![PathBuf::from("./meshllm-native-runtime-linux-x86_64-cpu")])
+    .with_bundle_dirs(vec![PathBuf::from("./skippy-native-runtime-linux-x86_64-cpu")])
     .resolve(&RuntimeSelection::Recommended)?;
 
 println!("selected {}", resolution.selected.id);
@@ -254,7 +256,7 @@ Compatibility checks:
 - explicit selection policy
 
 Every candidate is returned in `NativeRuntimeResolution::evaluated` with
-structured rejection reasons for `mesh-llm runtime list`, `mesh-llm doctor`, SDK
+structured rejection reasons for `skippy runtime list`, `skippy doctor`, SDK
 diagnostics, and support output.
 
 ## Cache Layout
@@ -262,13 +264,13 @@ diagnostics, and support output.
 Installed runtimes are stored under:
 
 ```text
-<cache-root>/<mesh_version>/<runtime-id>/
+<cache-root>/<release_version>/<runtime-id>/
   manifest.json
   lib/...
 ```
 
-`mesh_version` remains part of the cache layout and prune policy so upgrading
-MeshLLM can install the newly selected runtime, switch to it, and remove older
+`release_version` remains part of the cache layout and prune policy so upgrading
+Skippy can install the newly selected runtime, switch to it, and remove older
 runtime caches after success.
 
 ## Load Plan Boundary
@@ -301,7 +303,7 @@ scripts/package-native-runtime.sh \
 scripts/verify-native-runtime-package.sh dist/native-runtimes/*.tar.gz
 ```
 
-Linux runtime packages must be relocatable from the installed cache. MeshLLM's
+Linux runtime packages must be relocatable from the installed cache. Skippy's
 ELF shared libraries use `$ORIGIN` in their runtime search path so sibling
 libraries under `lib/` resolve without requiring users, CI, or SDK smoke tests
 to set `LD_LIBRARY_PATH`. Redistributed NVIDIA libraries are loaded first from
@@ -310,28 +312,28 @@ rejects absolute build or CI `RPATH`/`RUNPATH` entries and proves that the
 declared dependency-first load plan closes every packaged CUDA dependency while
 `LD_LIBRARY_PATH` is absent.
 
-CUDA lanes use `MESH_LLM_CUDA_TOOLKIT_MAJOR` to emit IDs such as `cuda12` or
+CUDA lanes use `SKIPPY_CUDA_TOOLKIT_MAJOR` to emit IDs such as `cuda12` or
 `cuda13`. `--backend cuda-blackwell` defaults to `cuda13-sm120`.
 
 Distributions that build the runtime from source and install it next to
-`mesh-llm` can keep their library paths and skip the offline model package
+`skippy` can keep their library paths and skip the offline model package
 tool (such packages are not relocatable, so not for the release catalog):
 
 ```bash
-scripts/package-native-runtime.sh --backend vulkan --out "$prefix/share/mesh-llm/runtimes" \
+scripts/package-native-runtime.sh --backend vulkan --out "$prefix/share/skippy/runtimes" \
   --keep-runpath --no-model-package-tool
 ```
 
 `--id-suffix NAME` appends `-NAME` to the runtime id (and to its directory and
-archive), so `mesh-llm runtime list` tells the distribution's build apart from
-the release runtime of the same backend. `MESH_LLM_NATIVE_RUNTIME_RANK` sets
+archive), so `skippy runtime list` tells the distribution's build apart from
+the release runtime of the same backend. `SKIPPY_NATIVE_RUNTIME_RANK` sets
 the manifest's rank (default 0); among compatible runtimes the highest rank
 wins, so a distribution can make its bundle preferred over a newer catalog
 entry:
 
 ```bash
-MESH_LLM_NATIVE_RUNTIME_RANK=1000 scripts/package-native-runtime.sh --backend vulkan \
-  --out "$prefix/share/mesh-llm/runtimes" --keep-runpath --no-model-package-tool \
+SKIPPY_NATIVE_RUNTIME_RANK=1000 scripts/package-native-runtime.sh --backend vulkan \
+  --out "$prefix/share/skippy/runtimes" --keep-runpath --no-model-package-tool \
   --id-suffix nixpkgs
 ```
 

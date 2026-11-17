@@ -8,11 +8,11 @@ This crate owns the public API shapes and route machinery that should not be
 duplicated inside `skippy-serving`. Stage server code should provide a thin
 backend adapter that implements the frontend trait, while this crate handles
 request/response JSON, OpenAI-style errors, model discovery, generation,
-embedding, rerank, audio, and streaming Server-Sent Events framing. Mesh uses
+embedding, rerank, audio, and streaming Server-Sent Events framing. An embedding host uses
 this as the shared inference frontend for embedded single-stage and stage-split
 serving.
 
-Mesh-local compatibility wrappers should stay thin. Request normalization,
+Host-local compatibility wrappers should stay thin. Request normalization,
 Responses API translation, stream-chunk parsing, stream usage conversion, and
 upstream error mapping are owned here so the host binary and staged runtimes do
 not grow separate OpenAI compatibility layers.
@@ -27,7 +27,7 @@ logprobs, and `/v1/responses` are parsed and normalized here; backend support
 is advertised or rejected explicitly by the runtime adapter.
 
 For the concrete benchy command and contract, see
-[`skippy/docs/LLAMA_BENCHY.md`](../../docs/LLAMA_BENCHY.md).
+[`docs/LLAMA_BENCHY.md`](../../docs/LLAMA_BENCHY.md).
 
 ## Generation boundary
 
@@ -40,7 +40,7 @@ import these from `skippy_inference_api::generation`.
 The generation envelopes deliberately do not implement Serde. HTTP object tags,
 JSON field omission, and SSE framing belong to protocol adapters. The OpenAI
 adapter provides explicit owned conversions to/from the existing `chat` wire
-types. Anthropic translates directly to/from generation types. Mesh's raw
+types. Anthropic translates directly to/from generation types. An embedding application's raw
 OpenAI upstream adapter and native template inputs retain their existing wire
 representations.
 
@@ -92,7 +92,7 @@ off by `max_tokens` can therefore contain reasoning with no final answer.
 | `GET /health` / `GET /healthz` | Supported | Lightweight liveness probes for hosts and CI smoke tests. |
 | `GET /readyz` | Supported | Backend readiness probe that verifies model discovery through `InferenceBackend::models`. |
 | Server-Sent Events | Supported | Emits OpenAI-style JSON chunks and `[DONE]`. |
-| `model` | Supported | Opaque exact-match id; Mesh-style refs such as `org/repo:Q4_K_M` pass through without frontend parsing. |
+| `model` | Supported | Opaque exact-match id; Hub refs such as `org/repo:Q4_K_M` pass through without frontend parsing. |
 | `messages` | Supported | String and text-part content are parsed; stage backend applies the model chat template through llama.cpp `llama-common`. |
 | `prompt` | Supported | String and string-array prompts are accepted; token prompts parse but are rejected until a backend can honor token IDs directly. |
 | `max_tokens` / `max_completion_tokens` | Parsed | Backend decides enforcement. |
@@ -107,12 +107,11 @@ off by `max_tokens` can therefore contain reasoning with no final answer.
 | OpenAI-style HTTP fallbacks | Supported | Unknown routes, unsupported methods, invalid JSON, and oversized JSON return the shared error envelope. |
 | Request body limit | Supported | Configurable via `InferenceFrontendConfig`; defaults to 4 MiB. |
 | Request IDs | Supported | Reuses only a valid UUID `x-request-id`; missing or invalid values are replaced with a generated UUID. Every response returns the canonical hyphenated UUID and the frontend emits a tracing event with method, URI, status, and request ID. |
-| Client nonce | Supported | Accepts `x-capsule-client-nonce` only when it is exactly one valid UUIDv4; a missing, invalid, non-UUIDv4, or duplicated value is replaced with a freshly minted UUIDv4. When this frontend mints the value it stamps `x-capsule-nonce-origin: frontend`; a forwarded (client-supplied) nonce carries no origin marker, and any inbound `x-capsule-nonce-origin` is always stripped so a caller cannot forge it. Both headers are echoed on covered responses: the axum router and, via the host runtime's forwarding rebuild, the public `:9337` proxy JSON/SSE paths (including the pipeline/MoA strong-model path and remapped upstream error responses). Locally synthesized error responses (e.g. no-target `503`s and `/v1/models` listings) do not yet carry the headers; threading the request nonce onto those senders is a cross-cutting signature change tracked as a follow-up. The origin marker asserts only that *this* frontend minted the value, not that it is the original ingress for a remote-routed request. |
-| Backend timeout | Supported | Configurable via `InferenceFrontendConfig` or the `MESH_OPENAI_BACKEND_TIMEOUT_SECS` environment variable; defaults to 600 seconds (`0` disables it) and maps timeouts to OpenAI-shaped 504 errors. A long non-streaming prefill needs this deadline to cover the whole completion, not just the first token. The MeshLLM host proxy in front of this frontend honours the same setting: it raises its own local first-byte budget to cover it (and drops that budget when this one is disabled), or takes `MESH_LLM_OPENAI_FIRST_BYTE_TIMEOUT_SECS` when the operator names that layer directly. |
-| Agent session header | Supported | Set `MESH_AGENT_SESSION_HEADER` to accept a trusted upstream header as the stable agent-session identity. |
+| Client nonce | Supported | Accepts `x-capsule-client-nonce` when it contains one valid UUIDv4; otherwise the frontend creates a fresh nonce. Responses echo it. A frontend-created nonce also carries `x-capsule-nonce-origin: frontend`; inbound origin markers are stripped. |
+| Backend timeout | Supported | Configurable via `InferenceFrontendConfig` or `SKIPPY_OPENAI_BACKEND_TIMEOUT_SECS`; defaults to 600 seconds (`0` disables it) and maps timeouts to OpenAI-shaped 504 errors. The deadline covers the whole completion. |
+| Agent session header | Supported | Set `SKIPPY_AGENT_SESSION_HEADER` to accept a trusted upstream header as the stable agent-session identity. |
 | Vision input | Supported | Preserved through chat/Responses content parts and executed by projector-backed runtimes. |
 | Non-chat staging | Fail closed | Embedding, rerank, encoder-decoder, and speech-synthesis models currently require an unsplit full-model runtime. |
-| Mesh routing headers | Supported (remote-mesh routing only) | Implemented by the host runtime's public `:9337` proxy, not this crate, but documented here as part of the same header contract. `x-mesh-target: <EndpointId>` forces dispatch to exactly that peer if it currently advertises the requested model; otherwise the request fails closed with a `409` naming the mismatch — it is never silently rerouted to another peer or served locally. `x-mesh-exclude: <EndpointId>[,...]` removes one or more peers from the candidate set before selection (comma-separated within one header, or repeated). The routing node echoes the resolved peer back as `x-mesh-served-by: <EndpointId>` on the response when `x-mesh-target` resolves to a remote peer or a locally-served (non-plugin) model; plugin-served self-targets do not yet echo this header. Both request headers are no-ops when absent, and an unparseable value is a `400`, never a silently ignored one. `x-mesh-twin-bracket: <id>` (1–128 characters of `A-Za-z0-9._:-`; spaces or tabs around it are trimmed, any other whitespace is a `400`) lets a client mark requests it sent to different nodes as one pair: the routing node copies the value, unread, onto each of the request's `openai.exchange.v1` remote-mesh envelopes as `twin_bracket_id` (including the terminal of a request that a node serving the model itself handed to a peer), and strips the header before forwarding, so the serving peer never sees it. The host never sends a second request or compares answers. |
 
 ## Shape
 
@@ -174,7 +173,7 @@ pub trait InferenceBackend: Send + Sync + 'static {
 ## Model Identity
 
 `skippy-inference-api` treats model ids as opaque OpenAI-facing strings. For
-Mesh-owned routing, the expected user-facing form is a Hugging Face coordinate
+Host-owned routing, the expected user-facing form is a Hugging Face coordinate
 plus artifact selector, for example `org/repo:Q4_K_M`. The suffix is an artifact
 selector, not a stage-server topology or serving-backend variant.
 
@@ -223,5 +222,5 @@ That keeps `serve-openai` and the embedded mesh path thin: parse or build the
 runtime config, construct the backend, pass it to `skippy_inference_api::router`,
 and serve the Axum app.
 
-See [`skippy/docs/NON_CHAT_MODELS.md`](../../docs/NON_CHAT_MODELS.md) for endpoint
+See [`docs/NON_CHAT_MODELS.md`](../../docs/NON_CHAT_MODELS.md) for endpoint
 examples, execution boundaries, and certification policy.

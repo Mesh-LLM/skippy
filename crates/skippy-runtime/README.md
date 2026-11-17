@@ -13,7 +13,7 @@ It does not own TCP transport, mesh lifecycle, or telemetry export.
 
 ```mermaid
 flowchart TB
-    Mesh["mesh-llm<br/>embedded serving + lifecycle"] --> R["skippy-runtime"]
+    Host["embedding application<br/>embedded serving + lifecycle"] --> R["skippy-runtime"]
     P["bench / prompt / correctness<br/>tokenization and local checks"] --> R
     S["skippy-serving<br/>prefill/decode requests"] --> R
     ST["HF SafeTensors checkpoint<br/>config + tokenizer + shards"] --> M["skippy-model<br/>mapping + transforms"]
@@ -63,7 +63,7 @@ types or select a supported llama.cpp quantization recipe such as `Bf16`,
 `RuntimeConfig::checkpoint_imatrix`; relative paths resolve from the checkpoint
 directory, and required tensor entries are validated before model allocation.
 The shipped runtime exposes the same settings as
-`mesh-llm serve --quant <RECIPE>` and `--checkpoint-imatrix <PATH>`; explicit
+`skippy serve --quant <RECIPE>` and `--checkpoint-imatrix <PATH>`; explicit
 CLI values take precedence over both default and model-local configuration.
 
 The runtime validates immutable shards with the official Rust `safetensors`

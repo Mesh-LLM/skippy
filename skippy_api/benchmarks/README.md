@@ -28,7 +28,7 @@ fails the comparison instead of producing a timing verdict.
 ## Build
 
 ```bash
-cmake -S skippy/skippy_api -B target/skippy-ffi-vs-api-build -G Ninja \
+cmake -S skippy_api -B target/skippy-ffi-vs-api-build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DSKIPPY_LLAMA_SOURCE_DIR="$PWD/.deps/llama.cpp" \
   -DSKIPPY_API_BUILD_BENCHMARKS=ON \
@@ -36,7 +36,7 @@ cmake -S skippy/skippy_api -B target/skippy-ffi-vs-api-build -G Ninja \
 cmake --build target/skippy-ffi-vs-api-build --target skippy_api_ffi_benchmarks --parallel
 ```
 
-`SKIPPY_LLAMA_SOURCE_DIR` must be the patched checkout (`skippy/scripts/prepare-llama.sh pinned`),
+`SKIPPY_LLAMA_SOURCE_DIR` must be the patched checkout (`scripts/prepare-llama.sh pinned`),
 because the old side calls `skippy_session_embed` out of `libllama.a`. The
 `skippy-llama-api-ffi-bench` just recipe does all of this in one step.
 
@@ -84,7 +84,7 @@ The facade's own behaviour is covered by the Rust integration tests, which
 need the same two files:
 
 ```bash
-cd skippy/skippy-api-rs
+cd skippy-api-rs
 RUSTC_WRAPPER= \
 SKIPPY_TEST_MODEL=~/models/all-MiniLM-L6-v2.Q4_K_M.gguf \
 SKIPPY_TEST_RERANKER=~/models/bge-reranker-v2-m3.Q4_K_M.gguf \

@@ -728,7 +728,7 @@ The installed MeshLLM templates currently lack a canary entry. A complete
 It preserves the existing templates, runs two independent candidate builds,
 reconciles the complete roster, and archives failure receipts. It is not yet
 installed or submitted. Publish the candidate and template, sync the repository,
-then run `jy repos run mesh-llm skippy-canary --ref <full-sha> --node micstudio`.
+then run `jy repos run skippy canary --ref <full-sha> --node micstudio`.
 Do not dispatch
 an old commit, upload an uncommitted checkout, or relabel a decode benchmark as
 full family certification. Preserve candidate, upstream, queue digest, backend,

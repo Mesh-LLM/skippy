@@ -3,9 +3,10 @@ name = "skippy-scheduler"
 version.workspace = true
 edition = { workspace = true }
 license = { workspace = true }
+publish = false
 description = "Iteration-level scheduler for concurrent staged serving with unified KV"
-repository = "https://github.com/Mesh-LLM/mesh-llm"
-homepage = "https://github.com/Mesh-LLM/mesh-llm"
+repository = "https://github.com/general-inference/skippy"
+homepage = "https://github.com/general-inference/skippy"
 categories = ["concurrency", "artificial-intelligence"]
 
 [features]

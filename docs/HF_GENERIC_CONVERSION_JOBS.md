@@ -32,7 +32,7 @@ Archive original delivery.json and submitted.json together. Collection rebinds t
 target/release/model-package-generic-jobs collect --input /absolute/delivery.json --submitted-file /absolute/fresh-submitted/submitted.json --credential-file /absolute/private-token --output-directory /absolute/fresh-collected --timeout-seconds 259200
 ```
 
-Failed native Jobs can produce correlated immutable observations with conversion_admitted=false. Public bytes, locator hashes and native success are required for admission; CERTIFIED is rejected. `mesh-llm models package --status JOB_ID`, `--logs JOB_ID` and `--cancel JOB_ID` remain the existing inspect/log/cancel surfaces. Local signal/timeout stops monitoring or an in-flight POST; it sends no automatic remote cancel and does not prove remote acceptance absent. On unconfirmed submission, inspect authorized Jobs status before deciding whether to retry. Receipt publication and actual cloud job/model/image/tool qualification remain distinct.
+Failed native Jobs can produce correlated immutable observations with conversion_admitted=false. Public bytes, locator hashes and native success are required for admission; CERTIFIED is rejected. `skippy models package --status JOB_ID`, `--logs JOB_ID` and `--cancel JOB_ID` remain the existing inspect/log/cancel surfaces. Local signal/timeout stops monitoring or an in-flight POST; it sends no automatic remote cancel and does not prove remote acceptance absent. On unconfirmed submission, inspect authorized Jobs status before deciding whether to retry. Receipt publication and actual cloud job/model/image/tool qualification remain distinct.
 
 ## Prepare the Linux helpers once
 

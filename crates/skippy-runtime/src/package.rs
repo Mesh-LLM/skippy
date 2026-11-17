@@ -734,7 +734,7 @@ fn resolve_package_dir(package_ref: &str) -> Result<PathBuf> {
     if is_hf_package_ref(package_ref) {
         bail!(
             "hf:// package refs must be resolved to a local path before calling skippy-runtime. \
-             Use the mesh-llm layer package resolver to download first. Got: {package_ref}"
+             Use the Skippy layer-package resolver to download first. Got: {package_ref}"
         );
     }
     Ok(PathBuf::from(package_ref))
@@ -1509,23 +1509,23 @@ mod tests {
     #[test]
     fn parses_hf_package_refs() {
         assert_eq!(
-            parse_hf_package_ref("hf://Mesh-LLM/Qwen3.6-package").unwrap(),
+            parse_hf_package_ref("hf://general-inference/Qwen3.6-package").unwrap(),
             HfPackageRef {
-                repo_id: "Mesh-LLM/Qwen3.6-package".to_string(),
+                repo_id: "general-inference/Qwen3.6-package".to_string(),
                 revision: None,
             }
         );
         assert_eq!(
-            parse_hf_package_ref("hf://Mesh-LLM/Qwen3.6-package:abc123").unwrap(),
+            parse_hf_package_ref("hf://general-inference/Qwen3.6-package:abc123").unwrap(),
             HfPackageRef {
-                repo_id: "Mesh-LLM/Qwen3.6-package".to_string(),
+                repo_id: "general-inference/Qwen3.6-package".to_string(),
                 revision: Some("abc123".to_string()),
             }
         );
         assert_eq!(
-            parse_hf_package_ref("hf://Mesh-LLM/Qwen3.6-package@branch-name").unwrap(),
+            parse_hf_package_ref("hf://general-inference/Qwen3.6-package@branch-name").unwrap(),
             HfPackageRef {
-                repo_id: "Mesh-LLM/Qwen3.6-package".to_string(),
+                repo_id: "general-inference/Qwen3.6-package".to_string(),
                 revision: Some("branch-name".to_string()),
             }
         );

@@ -1,6 +1,6 @@
-//! Fetches and caches the meshllm/catalog HuggingFace dataset for layer package discovery.
+//! Fetches and caches an explicitly configured Hugging Face layer-package catalog.
 //!
-//! The catalog lives at <https://huggingface.co/datasets/meshllm/catalog> with entries like:
+//! Set SKIPPY_MODEL_CATALOG=namespace/name to enable remote reads, with entries like:
 //! ```text
 //! entries/unsloth/Qwen3-Coder-480B-A35B-Instruct-GGUF.json
 //! ```
@@ -114,7 +114,11 @@ impl Drop for HfModelFileProbeOverrideGuard {
 
 /// Returns the directory where the catalog dataset is cached locally.
 pub fn catalog_cache_dir() -> PathBuf {
-    catalog_cache_dir_from(std::env::var_os("HF_HOME"), std::env::var_os("HOME"))
+    let root = catalog_cache_dir_from(std::env::var_os("HF_HOME"), std::env::var_os("HOME"));
+    match crate::repository_settings::HubRepository::from_env("SKIPPY_MODEL_CATALOG") {
+        Ok(Some(repository)) => root.join(repository.namespace).join(repository.name),
+        _ => root,
+    }
 }
 
 /// An empty `HF_HOME` or `HOME` counts as unset, as in the crate's other
@@ -125,12 +129,12 @@ fn catalog_cache_dir_from(
 ) -> PathBuf {
     hf_home
         .and_then(crate::cache_paths::nonempty_path)
-        .map(|path| path.join("meshllm-catalog"))
+        .map(|path| path.join("skippy-catalog"))
         .or_else(|| {
             home.and_then(crate::cache_paths::nonempty_path)
-                .map(|path| path.join(".cache/meshllm/catalog"))
+                .map(|path| path.join(".cache/skippy/catalog"))
         })
-        .unwrap_or_else(|| std::env::temp_dir().join("meshllm/catalog"))
+        .unwrap_or_else(|| std::env::temp_dir().join("skippy/catalog"))
 }
 
 /// Returns true if the catalog cache is older than 24 hours or doesn't exist.
@@ -155,7 +159,7 @@ pub fn is_catalog_stale() -> bool {
 
 /// Downloads/refreshes the catalog dataset from HuggingFace and loads entries into memory.
 ///
-/// Lists all files in the `meshllm/catalog` dataset via the HF API, then downloads
+/// Lists all files in the configured catalog dataset via the HF API, then downloads
 /// every `entries/**/*.json` file. No hardcoded file list — new models added to the
 /// catalog are discovered automatically.
 pub fn refresh_catalog() -> Result<()> {
@@ -163,19 +167,20 @@ pub fn refresh_catalog() -> Result<()> {
 }
 
 fn refresh_catalog_sync() -> Result<()> {
+    let repository = crate::repository_settings::HubRepository::require("SKIPPY_MODEL_CATALOG")?;
     let api = build_hf_api()?;
-    let dataset = api.dataset("meshllm", "catalog");
+    let dataset = api.dataset(&repository.namespace, &repository.name);
 
     // List all files in the dataset repo
     let info = dataset
         .info()
         .revision("main".to_string())
         .send()
-        .context("fetch meshllm/catalog dataset info")?;
+        .context("fetch configured model catalog dataset info")?;
 
     let siblings = info.siblings.as_ref();
     let Some(siblings) = siblings else {
-        bail!("meshllm/catalog dataset info has no file listing");
+        bail!("configured model catalog dataset info has no file listing");
     };
 
     let cache_dir = catalog_cache_dir();
@@ -190,7 +195,7 @@ fn refresh_catalog_sync() -> Result<()> {
         .collect::<Result<Vec<_>>>()?;
 
     if entry_files.is_empty() {
-        bail!("meshllm/catalog has no entry files");
+        bail!("configured model catalog has no entry files");
     }
 
     let entries_dir = cache_dir.join("entries");
@@ -260,6 +265,16 @@ pub fn ensure_catalog() -> Result<()> {
         }
     }
 
+    if crate::repository_settings::HubRepository::from_env("SKIPPY_MODEL_CATALOG")?.is_none() {
+        if catalog_cache_dir().join("entries").is_dir() {
+            return load_catalog_from_disk();
+        }
+        *CATALOG_ENTRIES
+            .write()
+            .map_err(|_| anyhow::anyhow!("catalog lock poisoned"))? = Some(Vec::new());
+        return Ok(());
+    }
+
     {
         let lock = CATALOG_ENTRIES
             .read()
@@ -299,7 +314,7 @@ pub fn ensure_catalog() -> Result<()> {
                 if catalog_entries().is_some() {
                     set_refresh_backoff();
                     tracing::warn!(
-                        "failed to refresh stale meshllm/catalog; using already-loaded stale catalog \
+                        "failed to refresh the configured model catalog; using already-loaded stale catalog \
                          (suppressing retries for {}s): {refresh_err:#}",
                         CATALOG_REFRESH_BACKOFF.as_secs()
                     );
@@ -308,7 +323,7 @@ pub fn ensure_catalog() -> Result<()> {
 
                 load_catalog_from_disk().with_context(|| {
                     format!(
-                        "failed to refresh meshllm/catalog ({refresh_err:#}) and failed to load stale cache"
+                        "failed to refresh the configured model catalog ({refresh_err:#}) and failed to load stale cache"
                     )
                 })
             }

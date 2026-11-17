@@ -57,11 +57,7 @@ fn candidate_roots() -> Vec<PathBuf> {
     }
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     roots.push(manifest_dir.clone());
-    if let Some(repo_root) = manifest_dir
-        .parent()
-        .and_then(Path::parent)
-        .and_then(Path::parent)
-    {
+    if let Some(repo_root) = manifest_dir.parent().and_then(Path::parent) {
         roots.push(repo_root.to_path_buf());
     }
     roots.dedup();

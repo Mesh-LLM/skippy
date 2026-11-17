@@ -68,7 +68,7 @@ The final acceptance gate remains open.
 
 The upstream v0.5.0 API does not provide the fork's typed HFClient/repository
 surface. Rehoming the pinned fork avoids rewriting acquisition consumers while
-preserving its Apache-2.0 license. `skippy/crates/skippy-hf-hub/SOURCE_PROVENANCE.json`
+preserving its Apache-2.0 license. `crates/skippy-hf-hub/SOURCE_PROVENANCE.json`
 records hashes of all 24 original Rust files, verified against the pinned Git
 blobs, and the imported hashes and explicit local changes.
 

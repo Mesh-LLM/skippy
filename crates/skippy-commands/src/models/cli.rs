@@ -39,9 +39,9 @@ pub enum ModelsCommand {
         /// Requested job timeout; raised automatically by model-size minimums.
         #[arg(long, default_value = "1h")]
         timeout: String,
-        /// Branch or tag of mesh-llm to build in the job.
+        /// Branch or tag of skippy to build in the job.
         #[arg(long, default_value = "main")]
-        mesh_llm_ref: String,
+        skippy_ref: String,
         /// Publish a public package marked experimental and open an unmerged HF catalog PR.
         #[arg(long)]
         experimental: bool,
@@ -66,14 +66,14 @@ pub enum ModelsCommand {
         /// List recent package jobs.
         #[arg(long)]
         list: bool,
-        /// Upload the latest job script to the meshllm bucket (requires org access).
+        /// Upload the latest job script to the configured SKIPPY_PACKAGE_BUCKET (requires org access).
         #[arg(long)]
         update_script: bool,
         /// Emit JSON output.
         #[arg(long)]
         json: bool,
     },
-    /// List recommended models from the remote meshllm/catalog.
+    /// List recommended models from the configured model catalog.
     Recommended {
         /// Emit JSON output.
         #[arg(long)]
@@ -85,9 +85,9 @@ pub enum ModelsCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Preview or remove mesh-managed models from the Hugging Face cache.
+    /// Preview or remove Skippy-managed models from the Hugging Face cache.
     Cleanup {
-        /// Only include models that mesh-llm has not used for the given age (for example 30d or 12h).
+        /// Only include models that skippy has not used for the given age (for example 30d or 12h).
         #[arg(long)]
         unused_since: Option<String>,
         /// Remove the selected files instead of printing a dry run preview.
@@ -97,7 +97,7 @@ pub enum ModelsCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Remove stale derived skippy stage artifacts from the mesh cache.
+    /// Remove stale derived skippy stage artifacts from the Skippy cache.
     Prune {
         /// Remove files instead of printing a dry run note.
         #[arg(long)]
@@ -119,7 +119,7 @@ pub enum ModelsCommand {
         /// Stop after package resolution, integrity checks, and local stage materialization.
         #[arg(long)]
         package_only: bool,
-        /// Existing mesh-llm OpenAI-compatible API base for runtime smoke gates.
+        /// Existing skippy OpenAI-compatible API base for runtime smoke gates.
         #[arg(long)]
         api_base: Option<String>,
         /// Prompt for runtime smoke gates.
@@ -148,7 +148,7 @@ pub enum ModelsCommand {
         /// Filter search results to MLX artifacts.
         #[arg(long, conflicts_with = "gguf")]
         mlx: bool,
-        /// Search only the remote meshllm/catalog.
+        /// Search only the configured model catalog.
         #[arg(long)]
         catalog: bool,
         /// Maximum number of results to show.

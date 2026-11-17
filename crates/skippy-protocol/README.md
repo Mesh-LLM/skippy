@@ -9,7 +9,7 @@ bindings.
 ## Architecture Role
 
 `skippy-protocol` is the binary contract for Skippy stage control, artifact
-transfer, and activation transport. Mesh owns admission, subprotocol discovery,
+transfer, and activation transport. An embedding application owns admission, subprotocol discovery,
 connectivity, and stream muxing; Skippy owns the protobuf schema and semantics.
 Control and artifact frames are carried through the mesh `STREAM_SUBPROTOCOL`
 envelope, while activation transport remains on `skippy-stage/2` between

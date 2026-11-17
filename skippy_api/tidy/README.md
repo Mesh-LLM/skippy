@@ -22,10 +22,10 @@ The plugin must be built against the exact LLVM that owns the clang-tidy binary.
 
 ```bash
 # Homebrew (macOS)
-cmake -S skippy/skippy_api/tidy -B target/skippy-tidy \
+cmake -S skippy_api/tidy -B target/skippy-tidy \
       -DClang_DIR=/opt/homebrew/opt/llvm/lib/cmake/clang -DCMAKE_CXX_COMPILER=/opt/homebrew/opt/llvm/bin/clang++
 # Debian/Ubuntu
-cmake -S skippy/skippy_api/tidy -B target/skippy-tidy -DClang_DIR=/usr/lib/llvm-18/lib/cmake/clang
+cmake -S skippy_api/tidy -B target/skippy-tidy -DClang_DIR=/usr/lib/llvm-18/lib/cmake/clang
 cmake --build target/skippy-tidy --parallel
 ctest --test-dir target/skippy-tidy           # 18 fixtures
 ```
@@ -76,7 +76,7 @@ skippy-llama-api-tidy:
     plugin="target/skippy-tidy/SkippyTidyChecks$( [[ "$(uname)" == Darwin ]] && echo .dylib || echo .so )"
     [[ -f "$plugin" ]] || just skippy-tidy-plugin-build
     "${SKIPPY_CLANG_TIDY:-clang-tidy}" --load="$plugin" -p target/skippy-llama-api --warnings-as-errors='*' \
-        $(git ls-files 'skippy/skippy_api/src/*.cpp' 'skippy/skippy_api/tools/*.cpp' 'skippy/skippy-api-rs/skippy-sys/cpp/*.cpp')
+        $(git ls-files 'skippy_api/src/*.cpp' 'skippy_api/tools/*.cpp' 'skippy-api-rs/skippy-sys/cpp/*.cpp')
 ```
 
 ## The checks
