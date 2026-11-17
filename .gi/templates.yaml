@@ -505,7 +505,7 @@
           }
         }
       },
-      "build": "cd ${repo_dir} && LLAMA_STAGE_BACKEND=cpu LLAMA_STAGE_LINK_MODE=static LLAMA_STAGE_BUILD_TESTS=ON just llama-build",
+      "build": "cd ${repo_dir} && LLAMA_STAGE_BACKEND=cpu LLAMA_STAGE_LINK_MODE=static LLAMA_STAGE_BUILD_TESTS=ON just --command scripts/build-llama.sh --build-only",
       "command": "cd \"$JIANYANG_REPO_DIR\" && just native-mimo2-contract",
       "budget": {
         "max_usd": 0,
