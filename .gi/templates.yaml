@@ -697,6 +697,53 @@
         "HF_HOME": "/mnt/model-store/huggingface",
         "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
       }
+    },
+    {
+      "key": "inference-gpu-process-inspect",
+      "name": "Inspect GPU clients and job memory limits",
+      "target": {
+        "executor": "lab",
+        "selector": {
+          "os": {
+            "family": "linux"
+          },
+          "arch": {
+            "in": [
+              "aarch64"
+            ]
+          },
+          "accelerator": {
+            "backend": "cuda",
+            "model": {
+              "in": [
+                "NVIDIA GB10"
+              ]
+            }
+          },
+          "memory": {
+            "system_gib": {
+              "min": 120
+            }
+          },
+          "network": {
+            "in": [
+              "james-lab",
+              "dan-lab"
+            ]
+          }
+        }
+      },
+      "build": "",
+      "command": "set -eu\nnvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory --format=csv\nsed -n '/Max locked memory/p' /proc/self/limits\ncg_path=\"$(sed -n 's/^0:://p' /proc/self/cgroup)\"\nfor name in memory.max memory.current memory.swap.max; do\n  file=\"/sys/fs/cgroup$cg_path/$name\"\n  if test -r \"$file\"; then printf '%s: ' \"$name\"; cat \"$file\"; fi\ndone\nfor file in /proc/[0-9]*/comm; do\n  name=\"$(cat \"$file\" 2>/dev/null || true)\"\n  case \"$name\" in\n    skippy*|llama*)\n      pid=\"${file#/proc/}\"; pid=\"${pid%/comm}\"\n      ps -p \"$pid\" -o pid=,ppid=,pgid=,etimes=,comm= || true\n      readlink \"/proc/$pid/cwd\" || true\n      ;;\n  esac\ndone\n",
+      "budget": {
+        "max_usd": 0,
+        "max_duration_s": 120
+      },
+      "env": {
+        "HF_HOME": "/mnt/model-store/huggingface",
+        "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
+      },
+      "priority": 100
     }
   ]
 }
