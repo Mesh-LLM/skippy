@@ -1,6 +1,7 @@
 pub(crate) mod artifacts;
 pub(crate) use crate::execution;
 mod contracts;
+mod gates;
 pub(crate) mod matrix;
 mod producers;
 mod smoke;
@@ -17,7 +18,9 @@ pub fn run(args: &[String]) -> DynResult<()> {
         ["smoke", id, product] => smoke::run(id, Path::new(product)),
         ["model-fetch"] => smoke::prepare_model(),
         ["summary"] => summary(),
-        _ => Err("usage: ci {plan|contracts|model-fetch|host ID|runtime ID|package ID HOST_DIR RUNTIME_DIR|smoke ID PRODUCT_DIR|summary}".into()),
+        ["runtime-summary"] => gates::run("runtime"),
+        ["smoke-summary"] => gates::run("smoke"),
+        _ => Err("usage: ci {plan|contracts|model-fetch|host ID|runtime ID|package ID HOST_DIR RUNTIME_DIR|smoke ID PRODUCT_DIR|summary|runtime-summary|smoke-summary}".into()),
     }
 }
 fn plan() -> DynResult<()> {

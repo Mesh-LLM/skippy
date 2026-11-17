@@ -13,6 +13,13 @@ maintainer's request. Re-enable its retained definitions by adding
 `ubuntu-24.04`, `ubuntu-24.04-arm` and `macos-15`. Metal and CUDA rows require the explicit ephemeral
 hardware labels and JY runner group in that manifest. JY uses the requested group
 to attribute queued Actions jobs and place capacity; labels alone are insufficient.
+Hardware build and smoke jobs declare literal groups and labels in the workflow:
+JY cannot resolve a runner group hidden behind a matrix expression. Shared
+composite actions retain one implementation of each contract. The runtime and
+smoke aggregate gates require every active manifest row, rejecting missing,
+skipped, cancelled or failed jobs before packaging or the final CI summary.
+Host and runtime producers start after planning, in parallel with quality; the
+final CI gate still requires quality and every producer and smoke result.
 Compilation never counts as device evidence.
 
 ## Build prerequisites

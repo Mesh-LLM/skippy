@@ -93,7 +93,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
   host:
-    needs: [plan, quality]
+    needs: plan
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.hosts) }}
@@ -120,47 +120,133 @@ jobs:
           path: dist/hosts/${{ matrix.id }}
           if-no-files-found: error
           retention-days: 7
-  runtime:
-    needs: [plan, quality]
-    strategy:
-      fail-fast: false
-      max-parallel: 4
-      matrix: ${{ fromJSON(needs.plan.outputs.runtimes) }}
-    runs-on: ${{ matrix.runner }}
+  runtime_darwin_aarch64_cpu:
+    needs: plan
+    runs-on: macos-15
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+      - uses: ./.github/actions/ci-runtime
+        with:
+          runtime_id: darwin-aarch64-cpu
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  runtime_darwin_aarch64_metal:
+    needs: plan
+    runs-on:
+      group: jy-rnr_h7x5s2yx9gtkz3c
+      labels: ["self-hosted", "skippy-ephemeral", "macOS", "ARM64", "metal"]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-runtime
+        with:
+          runtime_id: darwin-aarch64-metal
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  runtime_linux_x86_64_cpu:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-runtime
+        with:
+          runtime_id: linux-x86_64-cpu
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  runtime_linux_x86_64_cuda12:
+    needs: plan
+    runs-on:
+      group: jy-rnr_btc4xhvks1eer0j
+      labels: ["self-hosted", "skippy-ephemeral", "Linux", "X64", "cuda12"]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-runtime
+        with:
+          runtime_id: linux-x86_64-cuda12
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  runtime_linux_x86_64_cuda13:
+    needs: plan
+    runs-on:
+      group: jy-rnr_p0zx3thw895vrka
+      labels: ["self-hosted", "skippy-ephemeral", "Linux", "X64", "cuda13"]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-runtime
+        with:
+          runtime_id: linux-x86_64-cuda13
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  runtime_linux_aarch64_cpu:
+    needs: plan
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-runtime
+        with:
+          runtime_id: linux-aarch64-cpu
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  runtime_linux_aarch64_cuda12:
+    needs: plan
+    runs-on:
+      group: jy-rnr_pg90ves41xbxvwy
+      labels: ["self-hosted", "skippy-ephemeral", "Linux", "ARM64", "cuda12"]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-runtime
+        with:
+          runtime_id: linux-aarch64-cuda12
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  runtime_linux_aarch64_cuda13:
+    needs: plan
+    runs-on:
+      group: jy-rnr_8gvzbe9b9d79y0k
+      labels: ["self-hosted", "skippy-ephemeral", "Linux", "ARM64", "cuda13"]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-runtime
+        with:
+          runtime_id: linux-aarch64-cuda13
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  runtime:
+    needs: [runtime_darwin_aarch64_cpu, runtime_darwin_aarch64_metal, runtime_linux_x86_64_cpu, runtime_linux_x86_64_cuda12, runtime_linux_x86_64_cuda13, runtime_linux_aarch64_cpu, runtime_linux_aarch64_cuda12, runtime_linux_aarch64_cuda13]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
-        if: runner.environment == 'github-hosted'
-      - uses: ./.github/actions/source
-        with:
-          artifact: ${{ inputs.candidate_artifact }}
-          sha: ${{ inputs.candidate_sha }}
-      - name: Build native runtime
-        shell: bash
+      - run: just automation-run ci runtime-summary
         env:
-          RUNTIME_ID: ${{ matrix.id }}
-        run: just ci-runtime "$RUNTIME_ID"
-      - name: Retain native failure diagnostics
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        if: failure()
-        with:
-          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-runtime-${{ matrix.id }}-diagnostics
-          path: |
-            .deps/llama-build/**/CMakeCache.txt
-            .deps/llama-build/**/CMakeFiles/CMakeConfigureLog.yaml
-            .deps/llama-build/**/Testing/**
-          include-hidden-files: true
-          if-no-files-found: ignore
-          retention-days: 14
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-runtime-${{ matrix.id }}
-          path: dist/runtimes/${{ matrix.id }}
-          if-no-files-found: error
-          retention-days: 7
+          SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
   product:
     needs: [plan, host, runtime]
     strategy:
@@ -198,43 +284,133 @@ jobs:
           path: dist/products/${{ matrix.id }}
           if-no-files-found: error
           retention-days: 7
-  smoke:
+  smoke_darwin_aarch64_cpu:
     needs: [plan, product]
-    strategy:
-      fail-fast: false
-      max-parallel: 4
-      matrix: ${{ fromJSON(needs.plan.outputs.runtimes) }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+      - uses: ./.github/actions/ci-smoke
+        with:
+          runtime_id: darwin-aarch64-cpu
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  smoke_darwin_aarch64_metal:
+    needs: [plan, product]
+    runs-on:
+      group: jy-rnr_h7x5s2yx9gtkz3c
+      labels: ["self-hosted", "skippy-ephemeral", "macOS", "ARM64", "metal"]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-smoke
+        with:
+          runtime_id: darwin-aarch64-metal
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  smoke_linux_x86_64_cpu:
+    needs: [plan, product]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-smoke
+        with:
+          runtime_id: linux-x86_64-cpu
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  smoke_linux_x86_64_cuda12:
+    needs: [plan, product]
+    runs-on:
+      group: jy-rnr_btc4xhvks1eer0j
+      labels: ["self-hosted", "skippy-ephemeral", "Linux", "X64", "cuda12"]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-smoke
+        with:
+          runtime_id: linux-x86_64-cuda12
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  smoke_linux_x86_64_cuda13:
+    needs: [plan, product]
+    runs-on:
+      group: jy-rnr_p0zx3thw895vrka
+      labels: ["self-hosted", "skippy-ephemeral", "Linux", "X64", "cuda13"]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-smoke
+        with:
+          runtime_id: linux-x86_64-cuda13
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  smoke_linux_aarch64_cpu:
+    needs: [plan, product]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-smoke
+        with:
+          runtime_id: linux-aarch64-cpu
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  smoke_linux_aarch64_cuda12:
+    needs: [plan, product]
+    runs-on:
+      group: jy-rnr_pg90ves41xbxvwy
+      labels: ["self-hosted", "skippy-ephemeral", "Linux", "ARM64", "cuda12"]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-smoke
+        with:
+          runtime_id: linux-aarch64-cuda12
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  smoke_linux_aarch64_cuda13:
+    needs: [plan, product]
+    runs-on:
+      group: jy-rnr_8gvzbe9b9d79y0k
+      labels: ["self-hosted", "skippy-ephemeral", "Linux", "ARM64", "cuda13"]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-smoke
+        with:
+          runtime_id: linux-aarch64-cuda13
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  smoke:
+    needs: [smoke_darwin_aarch64_cpu, smoke_darwin_aarch64_metal, smoke_linux_x86_64_cpu, smoke_linux_x86_64_cuda12, smoke_linux_x86_64_cuda13, smoke_linux_aarch64_cpu, smoke_linux_aarch64_cuda12, smoke_linux_aarch64_cuda13]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
-        if: runner.environment == 'github-hosted'
-      - uses: ./.github/actions/source
-        with:
-          artifact: ${{ inputs.candidate_artifact }}
-          sha: ${{ inputs.candidate_sha }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-package-${{ matrix.id }}
-          path: dist/products/${{ matrix.id }}
-      - name: Admit pinned Qwen3 fixture
-        run: just automation-run ci model-fetch
-        shell: bash
-      - name: Execute packaged Qwen3 on the required backend
-        shell: bash
+      - run: just automation-run ci smoke-summary
         env:
-          RUNTIME_ID: ${{ matrix.id }}
-        run: just ci-smoke "$RUNTIME_ID" "dist/products/$RUNTIME_ID"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        if: always()
-        with:
-          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-product-${{ matrix.id }}
-          path: dist/products/${{ matrix.id }}
-          if-no-files-found: error
-          retention-days: 7
+          SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
   summary:
     name: CI
     needs: [plan, inference_contracts, quality, host, runtime, product, smoke]
