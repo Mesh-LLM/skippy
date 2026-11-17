@@ -17,6 +17,7 @@ pub fn run() -> DynResult<()> {
         30,
     )?;
     let inputs = json!({"schema":1,"source":sha,"os":std::env::consts::OS,"arch":std::env::consts::ARCH,
+        "cargo_lock_sha256":artifact::sha256(Path::new("Cargo.lock"))?,
         "rust":execution::capture("rustc", &["-vV".into()], &[])?,
         "cuda":execution::capture("nvcc", &["--version".into()], &[])?,
         "cxx":execution::capture("c++", &["--version".into()], &[])?,
@@ -44,9 +45,24 @@ pub fn run() -> DynResult<()> {
     println!("Inference executable cache MISS: {key}");
     let workspace = std::env::current_dir()?.display().to_string();
     let compiler_cache = home.join(".cache/skippy/compiler");
+    let mut dependency_inputs = inputs.clone();
+    dependency_inputs
+        .as_object_mut()
+        .ok_or("build inputs missing")?
+        .remove("source");
+    let dependency_key = hex::encode(Sha256::digest(serde_json::to_vec(&dependency_inputs)?));
+    let cargo_root = home.join(".cache/skippy/cargo-v1");
+    fs::create_dir_all(&cargo_root)?;
+    let _cargo_lock = lock(&cargo_root.join(format!("{dependency_key}.lock")))?;
+    let cargo_target = cargo_root.join(dependency_key);
     let mut env = vec![
+        ("CARGO_TARGET_DIR", cargo_target.display().to_string()),
+        (
+            "SKIPPY_AUTOMATION_BIN",
+            std::env::current_exe()?.display().to_string(),
+        ),
         ("SCCACHE_DIR", compiler_cache.display().to_string()),
-        ("SCCACHE_BASEDIR", workspace),
+        ("SCCACHE_BASEDIRS", workspace),
         ("CARGO_INCREMENTAL", "0".into()),
         ("SCCACHE_SERVER_PORT", "4227".into()),
         ("SCCACHE_CACHE_SIZE", "20G".into()),
@@ -54,8 +70,19 @@ pub fn run() -> DynResult<()> {
     ];
     if execution::capture("sccache", &["--version".into()], &[]).is_ok() {
         env.push(("RUSTC_WRAPPER", "sccache".into()));
+        // The private compiler server reads base directories at startup. Each
+        // JY checkout has a new path; retain its disk cache and refresh config.
+        let _ = execution::capture("sccache", &["--stop-server".into()], &env);
+        execution::run("sccache", &["--start-server".into()], &env, 30)?;
     }
     execution::run("just", &["inference-build-uncached".into()], &env, 7200)?;
+    fs::create_dir_all("target/debug")?;
+    for name in ["skippy", "skippy-correctness"] {
+        fs::copy(
+            cargo_target.join("debug").join(name),
+            Path::new("target/debug").join(name),
+        )?;
+    }
     let mut identity = super::provenance::identity(&sha)?;
     identity["cache_key"] = key.clone().into();
     identity["build_inputs"] = inputs;

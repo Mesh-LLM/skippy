@@ -120,12 +120,16 @@ These capacity-limited runs are not full-native-context leaderboard submissions.
 Native builds use a host-local executable cache keyed by the immutable source,
 Rust/C++/CUDA/CMake toolchains, backend, architecture and build environment.
 Cached executable hashes are verified before use and retained in provenance;
-invalid entries rebuild. A separate bounded sccache stores Rust and native
-compiler results across commits. Model shards are copied once into host-local
+invalid entries rebuild. A locked, persistent Cargo target directory is keyed
+by toolchains, lockfile and build settings so dependency artifacts survive fresh
+checkouts. A separate bounded sccache stores compiler results across commits;
+its base directories are refreshed for each workspace. Model shards are copied once into host-local
 content-addressed storage, verified by SHA-256 on every admission, then hardlinked
 into each fresh job workspace. Hosted CI caches Cargo dependencies and debug
 build outputs per OS, architecture, job, matrix row and toolchain/lockfile.
 Cache hits accelerate execution and never replace the required smoke evidence.
+Cold model startup has a separate five-minute allowance; scored PR requests have
+a 60-second deadline and 64-token output cap. Streaming remains capped at 16 tokens.
 
 Local checks and live template-schema admission must precede a native pilot.
 No successful hardware qualification is implied by implementation or schema

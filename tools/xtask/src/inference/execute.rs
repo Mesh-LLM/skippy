@@ -103,27 +103,29 @@ fn ready(server: &mut Server, url: &str) -> DynResult<()> {
     }
     Err("server readiness timed out".into())
 }
-fn score(base: &str, model: &str, out: &Path) -> DynResult<()> {
+fn score(base: &str, model: &str, out: &Path, profile: &str) -> DynResult<()> {
     let cases: Vec<Value> =
         serde_json::from_str(include_str!("../../../../ci/inference-quality.json"))?;
     let mut evidence = Vec::new();
     for case in cases {
-        let payload = json!({"model":model,"messages":[{"role":"user","content":case["prompt"]}],"temperature":0,"seed":42,"max_tokens":256,"chat_template_kwargs":{"enable_thinking":false}});
+        let timeout = if profile == "pr" { 60 } else { 300 };
+        let payload = json!({"model":model,"messages":[{"role":"user","content":case["prompt"]}],"temperature":0,"seed":42,"max_tokens":if profile == "pr" { 64 } else { 256 },"chat_template_kwargs":{"enable_thinking":false}});
         let data = tempfile::NamedTempFile::new()?;
         write_json_file(data.path(), &payload)?;
         let args = vec![
             "-fsS".into(),
             "--max-time".into(),
-            "300".into(),
+            timeout.to_string(),
             "-H".into(),
             "Content-Type: application/json".into(),
             "--data-binary".into(),
             format!("@{}", data.path().display()),
             format!("{base}/v1/chat/completions"),
         ];
-        let first: Value = serde_json::from_str(&execution::capture_for("curl", &args, &[], 310)?)?;
+        let first: Value =
+            serde_json::from_str(&execution::capture_for("curl", &args, &[], timeout + 10)?)?;
         let second: Value =
-            serde_json::from_str(&execution::capture_for("curl", &args, &[], 310)?)?;
+            serde_json::from_str(&execution::capture_for("curl", &args, &[], timeout + 10)?)?;
         let text = first["choices"][0]["message"]["content"]
             .as_str()
             .ok_or("missing response text")?;
@@ -182,7 +184,12 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
             &out,
         )?;
     }
-    let mut args = vec!["--debug".into(), "serve".into()];
+    let mut args = vec![
+        "--debug".into(),
+        "serve".into(),
+        "--startup-timeout-secs".into(),
+        "300".into(),
+    ];
     if !worker {
         args.extend([
             "--speculative-strategy".into(),
@@ -296,6 +303,7 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
         "http://127.0.0.1:9337",
         &coordinate,
         &out.join("quality.json"),
+        profile,
     )?;
     if profile == "pr" {
         super::smoke::run(&coordinate, &out)?;

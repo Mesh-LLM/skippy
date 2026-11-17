@@ -86,6 +86,7 @@ pub fn admit(key: &str) -> DynResult<PathBuf> {
         if !valid_file(staged.path(), &file)? {
             return Err("model artifact digest mismatch".into());
         }
+        staged.as_file().sync_all()?;
         staged.persist(&cached_local)?;
         let admitted = directory.join(name);
         stage(&cached_local, &admitted)?;
