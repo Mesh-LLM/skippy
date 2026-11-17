@@ -11,7 +11,11 @@ pub fn run(stage: &str) -> DynResult<()> {
 
 fn validate(matrix: &Matrix, stage: &str, needs: &Value) -> DynResult<()> {
     let jobs = needs.as_object().ok_or("needs must be an object")?;
-    if jobs.len() != matrix.runtimes.len() {
+    if jobs.len() != matrix.runtimes.len() + 1
+        || jobs
+            .get("plan")
+            .is_none_or(|value| value["result"] != "success")
+    {
         return Err(
             format!("{stage} gate requires every active runtime from ci/targets.json").into(),
         );
@@ -38,6 +42,7 @@ mod tests {
         let matrix = Matrix::from_json(include_str!("../../../../ci/targets.json")).unwrap();
         for stage in ["runtime", "smoke"] {
             let mut jobs = serde_json::Map::new();
+            jobs.insert("plan".into(), json!({"result":"success"}));
             for runtime in &matrix.runtimes {
                 jobs.insert(
                     format!("{stage}_{}", runtime.id.replace('-', "_")),
