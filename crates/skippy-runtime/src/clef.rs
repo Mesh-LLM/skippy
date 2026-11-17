@@ -106,7 +106,7 @@ impl ClefModel {
             unsafe { skippy_ffi::skippy_clef_model_info_v1(self.raw, &mut raw_info, &mut error) };
         ensure_ok(status, error).context("query Clef model info")?;
         // `c_char` is `i8` or `u8` depending on the target; reinterpret bytewise.
-        let decision_type_bytes = raw_info.decision_type.map(|byte| byte as u8);
+        let decision_type_bytes = raw_info.decision_type.map(|byte| byte.to_ne_bytes()[0]);
         let decision_type = CStr::from_bytes_until_nul(&decision_type_bytes)
             .map(|value| value.to_string_lossy().into_owned())
             .unwrap_or_default();
