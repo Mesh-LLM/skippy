@@ -47,18 +47,16 @@ model and concurrent baseline contexts, not merely the GGUF file size.
 Quality and upstream candidate generation are the toolchain-specific exceptions
 to ordinary hosted CPU work. They request an ephemeral Linux x86_64
 builder from the repository-scoped `jy-rnr_vfnz8k5p4yrh334` runner group with
-the container-only `jy-linux-docker` label,
-LLVM/Clang 22 development and CMake packages, Ninja, mold, lld and
+the container-only `jy-linux-docker` label and the `MeshLLM (latest) · CPU`
+environment,
+LLVM/Clang 22 development and CMake packages, Ninja and lld, with
 `SKIPPY_REWRITER_LLVM_PREFIX` configured. The container-only label prevents a
 native Linux host runner in the same repository-scoped group from satisfying an
-image-dependent job. Mold must pass the repository's active-target linker probe;
-quality CI sets `SKIPPY_REQUIRE_MOLD=1` and pins `SKIPPY_MOLD=mold`, matching
-GCC's `-fuse-ld=mold` contract, so it cannot silently fall back to lld. The
-preceding `/usr/bin/mold --version` check also verifies the GitOps-managed binary
-at its fixed image path rather than depending on a runner-specific job `PATH`.
-The same generator tools must be available on full family builders. A standard
-hosted image without those development packages cannot run these gates; no job
-downloads system packages to disguise that prerequisite.
+image-dependent job. Mold remains an optional linker acceleration when the
+runner image provides it and the active-target probe succeeds; it is not a CI
+prerequisite. The same generator tools must be available on full family
+builders. A standard hosted image without those development packages cannot run
+these gates; no job downloads system packages to disguise that prerequisite.
 
 Qwen3 dense smoke preparation is explicit: `just automation-run ci model-fetch`
 resolves the immutable public model URL and verifies the family manifest's size

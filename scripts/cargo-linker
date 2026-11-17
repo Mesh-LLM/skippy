@@ -172,10 +172,6 @@ Falling back to lld or the platform linker for this build.
 
 ${LLD_PROBE_OUTPUT:-}
 MSG
-            if [[ "${SKIPPY_REQUIRE_MOLD:-0}" == 1 ]]; then
-                echo "Error: SKIPPY_REQUIRE_MOLD=1 requires a usable mold linker." >&2
-                exit 1
-            fi
         fi
         if [[ -z "$selected_linker" ]]; then
             lld="$(find_lld)"
