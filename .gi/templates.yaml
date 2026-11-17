@@ -146,7 +146,11 @@
       },
       "retain": "never",
       "key": "inference-standalone",
-      "command": "cd \"$JIANYANG_REPO_DIR\" && just inference-execute ${profile} ${model_key} standalone"
+      "command": "cd \"$JIANYANG_REPO_DIR\" && just inference-execute ${profile} ${model_key} standalone",
+      "env": {
+        "HF_HOME": "/mnt/model-store/huggingface",
+        "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
+      }
     },
     {
       "name": "Native Spark inference qualification",
@@ -426,6 +430,10 @@
         "mode": "peers",
         "leader_role": "leader",
         "leader_port": 9400
+      },
+      "env": {
+        "HF_HOME": "/mnt/model-store/huggingface",
+        "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
       }
     },
     {
@@ -468,6 +476,10 @@
       "budget": {
         "max_usd": 0,
         "max_duration_s": 120
+      },
+      "env": {
+        "HF_HOME": "/mnt/model-store/huggingface",
+        "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
       }
     }
   ]

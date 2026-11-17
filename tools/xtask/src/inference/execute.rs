@@ -163,14 +163,17 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
     }
     let out = std::path::PathBuf::from(std::env::var("JIANYANG_ARTIFACT_DIR")?);
     fs::create_dir_all(&out)?;
+    println!("Recording native provenance");
     super::provenance::record(&out, &sha)?;
     let fixture = super::artifacts::load(key)?;
     super::numerical::capacity(fixture.files.iter().map(|f| f.size).sum())?;
+    println!("Admitting pinned weights for {key}");
     let model = super::artifacts::admit(key)?;
     let coordinate = format!("{}@{}", fixture.repo, fixture.revision);
     let context = 65536;
     let worker = std::env::var("JIANYANG_ROLE").as_deref() == Ok("worker");
     if !worker {
+        println!("Running native chain and state-handoff checks");
         super::numerical::run(
             &model,
             &coordinate,

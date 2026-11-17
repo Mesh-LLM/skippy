@@ -33,19 +33,33 @@ pub fn admit(key: &str) -> DynResult<PathBuf> {
     fs::create_dir_all(&directory)?;
     let mut paths = Vec::new();
     for file in fixture.files {
-        let text = execution::capture_for(
-            "hf",
-            &[
-                "download".into(),
-                fixture.repo.clone(),
-                "--revision".into(),
-                fixture.revision.clone(),
-                file.path.clone(),
-            ],
-            &[],
-            7200,
-        )?;
-        let path = downloaded_path(&text)?;
+        let args = [
+            "download".into(),
+            fixture.repo.clone(),
+            "--revision".into(),
+            fixture.revision.clone(),
+            file.path.clone(),
+        ];
+        let cached = std::env::var_os("HF_HUB_CACHE").map(|root| {
+            PathBuf::from(root)
+                .join(format!("models--{}", fixture.repo.replace('/', "--")))
+                .join("snapshots")
+                .join(&fixture.revision)
+                .join(&file.path)
+        });
+        println!(
+            "Admitting {}@{}: {}",
+            fixture.repo, fixture.revision, file.path
+        );
+        let path = match cached.filter(|path| path.is_file()) {
+            Some(path) => path,
+            None => {
+                // Stream cold-download progress into durable JY logs. The second
+                // invocation resolves the now-cached path without redownloading.
+                execution::run("hf", &args, &[], 7200)?;
+                downloaded_path(&execution::capture_for("hf", &args, &[], 180)?)?
+            }
+        };
         let metadata = fs::metadata(&path)
             .map_err(|error| format!("downloaded model path {}: {error}", path.display()))?;
         if metadata.len() != file.size || artifact::sha256(&path)? != file.sha256 {
