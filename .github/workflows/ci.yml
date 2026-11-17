@@ -14,6 +14,9 @@ on:
       candidate_sha:
         type: string
         default: ''
+      jy_runners:
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -27,7 +30,7 @@ env:
   SKIPPY_ARTIFACT_SCOPE: ${{ inputs.artifact_scope || 'ci' }}
 jobs:
   plan:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.jy_runners && fromJSON('["self-hosted","jy","Linux","X64"]') || 'ubuntu-24.04' }}
     timeout-minutes: 20
     outputs:
       hosts: ${{ steps.plan.outputs.hosts }}
@@ -38,10 +41,12 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
       - id: plan
+        env:
+          SKIPPY_CI_JY_RUNNERS: ${{ inputs.jy_runners }}
         run: just ci-plan
   quality:
     needs: plan
-    runs-on: [self-hosted, skippy-ephemeral, Linux, X64, native-contracts]
+    runs-on: ${{ inputs.jy_runners && fromJSON('["self-hosted","skippy-ephemeral","jy","Linux","X64","native-contracts"]') || fromJSON('["self-hosted","skippy-ephemeral","Linux","X64","native-contracts"]') }}
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -219,7 +224,7 @@ jobs:
     name: CI
     needs: [plan, quality, host, runtime, product, smoke]
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.jy_runners && fromJSON('["self-hosted","jy","Linux","X64"]') || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0

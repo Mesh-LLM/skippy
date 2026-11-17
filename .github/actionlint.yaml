@@ -1,6 +1,7 @@
 self-hosted-runner:
   labels:
     - skippy-ephemeral
+    - jy
     - native-contracts
     - family-256g
     - cpu

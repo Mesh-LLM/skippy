@@ -9,6 +9,10 @@ protected-main llama upgrade workflow.
 runtimes. CPU work uses GitHub-hosted `ubuntu-24.04`, `ubuntu-24.04-arm`,
 `macos-15` and `windows-2025`. Metal and CUDA rows require the explicit ephemeral
 hardware labels in that manifest. Compilation never counts as device evidence.
+Tagged releases project that same matrix onto the repository's self-hosted `jy`
+fleet: every controller, build, package, smoke, summary, and publication job
+requires the `jy` label, while preserving the exact OS, architecture, and backend
+labels. A release cannot fall back to GitHub-hosted capacity.
 
 ## Build prerequisites
 

@@ -5,7 +5,7 @@ pub(crate) mod matrix;
 mod producers;
 mod smoke;
 use crate::command::DynResult;
-use std::{io::Write, path::Path};
+use std::{env::VarError, io::Write, path::Path};
 
 pub fn run(args: &[String]) -> DynResult<()> {
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
@@ -22,7 +22,7 @@ pub fn run(args: &[String]) -> DynResult<()> {
 }
 fn plan() -> DynResult<()> {
     let matrix = matrix::Matrix::load()?;
-    let (hosts, runtimes) = project_matrix(&matrix)?;
+    let (hosts, runtimes) = project_matrix(&matrix, jy_runners()?)?;
     println!(
         "{}",
         serde_json::json!({"hosts": hosts, "runtimes": runtimes})
@@ -33,12 +33,49 @@ fn plan() -> DynResult<()> {
     }
     Ok(())
 }
-fn project_matrix(matrix: &matrix::Matrix) -> DynResult<(serde_json::Value, serde_json::Value)> {
-    let hosts = serde_json::json!({"include": matrix.hosts});
+fn jy_runners() -> DynResult<bool> {
+    match std::env::var("SKIPPY_CI_JY_RUNNERS") {
+        Ok(value) if value == "true" => Ok(true),
+        Ok(value) if value.is_empty() || value == "false" => Ok(false),
+        Err(VarError::NotPresent) => Ok(false),
+        Ok(value) => {
+            Err(format!("SKIPPY_CI_JY_RUNNERS must be true or false, got {value:?}").into())
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+fn project_matrix(
+    matrix: &matrix::Matrix,
+    use_jy_runners: bool,
+) -> DynResult<(serde_json::Value, serde_json::Value)> {
+    let hosts = matrix
+        .hosts
+        .iter()
+        .map(|host| {
+            let mut value = serde_json::to_value(host)?;
+            if use_jy_runners {
+                value["runner"] = serde_json::to_value(matrix::jy_runner(host, &host.runner))?;
+            }
+            Ok(value)
+        })
+        .collect::<DynResult<Vec<_>>>()?;
+    let hosts = serde_json::json!({"include": hosts});
     let mut runtime_rows = Vec::new();
     for runtime in &matrix.runtimes {
+        let host = matrix.host(&runtime.host)?;
         let mut value = serde_json::to_value(runtime)?;
-        value["host_runner"] = serde_json::to_value(&matrix.host(&runtime.host)?.runner)?;
+        let runtime_runner = if use_jy_runners {
+            matrix::jy_runner(host, &runtime.runner)
+        } else {
+            runtime.runner.clone()
+        };
+        let host_runner = if use_jy_runners {
+            matrix::jy_runner(host, &host.runner)
+        } else {
+            host.runner.clone()
+        };
+        value["runner"] = serde_json::to_value(runtime_runner)?;
+        value["host_runner"] = serde_json::to_value(host_runner)?;
         runtime_rows.push(value);
     }
     let runtimes = serde_json::json!({"include": runtime_rows});
@@ -79,7 +116,7 @@ mod tests {
     fn every_product_uses_its_hosted_target_runner() {
         let matrix: matrix::Matrix =
             serde_json::from_str(include_str!("../../../../ci/targets.json")).unwrap();
-        let (_, runtimes) = project_matrix(&matrix).unwrap();
+        let (_, runtimes) = project_matrix(&matrix, false).unwrap();
         let rows = runtimes["include"].as_array().unwrap();
         assert_eq!(rows.len(), 11);
         for row in rows {
@@ -92,5 +129,30 @@ mod tests {
                 assert_ne!(row["host_runner"], row["runner"]);
             }
         }
+    }
+    #[test]
+    fn release_projection_requires_jy_for_every_runner() {
+        let matrix: matrix::Matrix =
+            serde_json::from_str(include_str!("../../../../ci/targets.json")).unwrap();
+        let (hosts, runtimes) = project_matrix(&matrix, true).unwrap();
+        for row in hosts["include"].as_array().unwrap() {
+            assert_jy_runner(&row["runner"]);
+        }
+        for row in runtimes["include"].as_array().unwrap() {
+            assert_jy_runner(&row["runner"]);
+            assert_jy_runner(&row["host_runner"]);
+        }
+    }
+    fn assert_jy_runner(runner: &serde_json::Value) {
+        let labels = runner.as_array().unwrap();
+        assert!(labels.iter().any(|label| label == "self-hosted"));
+        assert!(labels.iter().any(|label| label == "jy"));
+        assert!(!labels.iter().any(|label| {
+            label.as_str().is_some_and(|label| {
+                label.starts_with("ubuntu-")
+                    || label.starts_with("macos-")
+                    || label.starts_with("windows-")
+            })
+        }));
     }
 }

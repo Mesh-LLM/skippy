@@ -160,6 +160,28 @@ fn expected_runner(host: &Host, variant: &str) -> Vec<String> {
         .map(str::to_owned)
         .collect()
 }
+pub(crate) fn jy_runner(host: &Host, runner: &[String]) -> Vec<String> {
+    let os = match host.os.as_str() {
+        "macos" => "macOS",
+        "linux" => "Linux",
+        _ => "Windows",
+    };
+    let arch = if host.arch == "aarch64" {
+        "ARM64"
+    } else {
+        "X64"
+    };
+    if runner.first().is_some_and(|label| label == "self-hosted") {
+        let mut labels = runner.to_vec();
+        labels.insert(1, "jy".into());
+        labels
+    } else {
+        ["self-hosted", "jy", os, arch]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+    }
+}
 fn safe_id(value: &str) -> bool {
     !value.is_empty()
         && value
