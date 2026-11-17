@@ -1,0 +1,31 @@
+From 230c95a56b7a31b809fc50065b79d03e806f7fe7 Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Tue, 17 Nov 2026 21:46:36 +1100
+Subject: [PATCH] test: bound synthetic MiMo2 KV geometry while retaining full
+ graph coverage
+
+---
+ tests/test-llama-archs.cpp | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/tests/test-llama-archs.cpp b/tests/test-llama-archs.cpp
+index 779763267..7083fed91 100644
+--- a/tests/test-llama-archs.cpp
++++ b/tests/test-llama-archs.cpp
+@@ -387,6 +387,13 @@ static gguf_context_ptr get_gguf_ctx(
+             arch == LLM_ARCH_KOLIBRI1 || arch == LLM_ARCH_LIMITE || arch == LLM_ARCH_GEMMA4 || arch == LLM_ARCH_RICURSIVE) {
+         n_head_kv = 2; // GQA coverage
+     }
++    // Preserve the MiMo2 contract's full residual width, trunk and MTP depth
++    // without inheriting two 2048-wide KV heads in the 4096-wide fixture.
++    // GQA with 128-wide heads exercises the same graph contracts in bounded RAM.
++    if (contract_layers && arch == LLM_ARCH_MIMO2 && n_embd >= 256 && n_embd % 256 == 0) {
++        n_head = n_embd / 128;
++        n_head_kv = 2;
++    }
+     if (arch == LLM_ARCH_BEAM) {
+         n_head    = 4;
+         n_head_kv = 2;
+-- 
+2.54.0 (Apple Git-157)
+

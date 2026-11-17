@@ -481,6 +481,35 @@
         "HF_HOME": "/mnt/model-store/huggingface",
         "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
       }
+    },
+    {
+      "key": "native-graph-contracts",
+      "name": "Native synthetic graph contracts",
+      "group": "Contracts",
+      "target": {
+        "executor": "lab",
+        "selector": {
+          "os": {
+            "family": "linux"
+          },
+          "arch": {
+            "in": [
+              "x86_64"
+            ]
+          },
+          "memory": {
+            "system_gib": {
+              "min": 24
+            }
+          }
+        }
+      },
+      "build": "cd ${repo_dir} && LLAMA_STAGE_BACKEND=cpu LLAMA_STAGE_LINK_MODE=static LLAMA_STAGE_BUILD_TESTS=ON just llama-build",
+      "command": "cd \"$JIANYANG_REPO_DIR\" && just native-mimo2-contract",
+      "budget": {
+        "max_usd": 0,
+        "max_duration_s": 3600
+      }
     }
   ]
 }
