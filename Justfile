@@ -102,7 +102,7 @@ skippy-api-test:
       -DSKIPPY_API_BUILD_TESTS=ON \
       -DSKIPPY_LINK_COMPILE_COMMANDS=ON
     cmake --build "$build_dir" --parallel
-    ctest --test-dir "$build_dir" --output-on-failure --no-tests=error
+    ctest --test-dir "$build_dir" --output-on-failure --no-tests=error --stop-on-failure
 
 llama-check: skippy-ffi-bindgen-check
     #!/usr/bin/env bash

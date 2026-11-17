@@ -133,7 +133,7 @@ cmake -S "$tool_source" -B "$TOOL_BUILD" -G Ninja \
   -DLLVM_DIR="$LLVM_PREFIX/lib/cmake/llvm" \
   -DClang_DIR="$LLVM_PREFIX/lib/cmake/clang"
 cmake --build "$TOOL_BUILD"
-ctest --test-dir "$TOOL_BUILD" --output-on-failure
+ctest --test-dir "$TOOL_BUILD" --output-on-failure --stop-on-failure
 
 EXTRA_ARGS=(--extra-arg -resource-dir --extra-arg "$("$LLVM_PREFIX"/bin/clang -print-resource-dir)")
 if command -v xcrun >/dev/null 2>&1; then
@@ -213,7 +213,7 @@ TRANSFORMED_TREE_TARGETS=(
 # transformed-tree targets below.
 NATIVE_CONFIGURE_ARGS=(-DLLAMA_STAGE_BUILD_TESTS=ON)
 NATIVE_BUILD_ARGS=(--build "$LLAMA_BUILD_DIR" --config "${CMAKE_BUILD_TYPE:-Release}")
-NATIVE_TEST_ARGS=(--test-dir "$LLAMA_BUILD_DIR" --build-config "${CMAKE_BUILD_TYPE:-Release}" --output-on-failure --timeout 900)
+NATIVE_TEST_ARGS=(--test-dir "$LLAMA_BUILD_DIR" --build-config "${CMAKE_BUILD_TYPE:-Release}" --output-on-failure --stop-on-failure --timeout 900)
 if [[ "$FULL_NATIVE_SUITE" == 1 ]]; then
   # The canary deferred its initial test run. Rebuild every executable against
   # the regenerated tree and own the complete, unfiltered native suite here.
