@@ -594,7 +594,7 @@
         }
       },
       "build": "",
-      "command": "set -eu\ncd \"$JIANYANG_REPO_DIR\"\nmkdir -p target/http-download-test\n/usr/bin/time -v hf download unsloth/Qwen3.5-2B-GGUF --revision f6d5376be1edb4d416d56da11e5397a961aca8ae Qwen3.5-2B-Q4_K_M.gguf --local-dir target/http-download-test\nprintf \"aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223  target/http-download-test/Qwen3.5-2B-Q4_K_M.gguf\\n\" | sha256sum -c -\n",
+      "command": "set -eu\ncd \"$JIANYANG_REPO_DIR\"\nmkdir -p target/http-download-test\n/usr/bin/time -v hf download unsloth/Qwen3.5-2B-GGUF --revision f6d5376be1edb4d416d56da11e5397a961aca8ae Qwen3.5-2B-Q4_K_M.gguf --force-download --local-dir target/http-download-test\nprintf \"aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223  target/http-download-test/Qwen3.5-2B-Q4_K_M.gguf\\n\" | sha256sum -c -\n",
       "budget": {
         "max_usd": 0,
         "max_duration_s": 1200
