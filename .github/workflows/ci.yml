@@ -87,7 +87,7 @@ jobs:
       - name: Build Linux CPU llama and run graph contracts once
         if: needs.preflight.outputs.graph_required == 'true'
         run: just llama-check
-      - uses: actions/upload-artifact@b7c566a772e6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: failure()
         with:
           name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-quality-evidence
@@ -125,7 +125,7 @@ jobs:
         env:
           HOST_ID: ${{ matrix.id }}
         run: just ci-host "$HOST_ID"
-      - uses: actions/upload-artifact@b7c566a772e6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-host-${{ matrix.id }}
           path: dist/hosts/${{ matrix.id }}
@@ -184,7 +184,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 14
-      - uses: actions/upload-artifact@b7c566a772e6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: success()
         with:
           name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-product-${{ matrix.id }}
