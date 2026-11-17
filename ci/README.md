@@ -48,10 +48,11 @@ require isolated ephemeral execution. The `unconfined` capability is not itself
 an admission failure; no separate job-account migration is required. Actions
 only orchestrates these jobs, so the 6 GiB runner-container limit does not bound
 model execution. Split jobs reserve both Sparks atomically. This policy does not
-change the existing ordinary CI runner labels or prove live JY configuration.
+prove live JY configuration.
 
 Quality and upstream candidate generation are the toolchain-specific exceptions
-to ordinary hosted CPU work. They request an ephemeral Linux x86_64
+to ordinary hosted CPU work. Quality accepts either 64-bit Linux architecture;
+candidate generation retains its Linux x86_64 lane. Both request a
 `native-contracts` builder with LLVM/Clang 22 development and CMake packages,
 Ninja, lld and `SKIPPY_REWRITER_LLVM_PREFIX` configured. The same generator tools
 must be available on full family builders. A standard hosted image without those
