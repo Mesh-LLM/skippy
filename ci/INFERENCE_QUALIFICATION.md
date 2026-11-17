@@ -110,7 +110,10 @@ it does not modify the official harness. Tokenizer assets use explicit per-model
 file lists, including vocabulary and merges, without CLI wildcard filtering.
 PR uses an explicitly unsafe 120-second,
 four-trajectory smoke with no official-score claim. Nightly uses two 900-second
-measurements; release uses two 1800-second measurements. Context is 65536 for all profiles. Extended runs require valid AIPerf exports.
+measurements; release uses two 1800-second measurements. Context is 65536 for all
+profiles. Streaming and first-turn-prefix cache busting are explicit. Extended
+runs require exactly two complete, valid AIPerf trial exports; every profile
+rejects nonzero request error rates, error summaries and missing error evidence.
 These capacity-limited runs are not full-native-context leaderboard submissions.
 
 Local checks and live template-schema admission must precede a native pilot.
@@ -138,3 +141,20 @@ by JY's flat artifact collector. Its regression test checks retention separately
 Standard JY jobs, including the existing job account permissions, are authorized
 for trusted same-repository candidate dispatch. Activation requires passing CI
 and merging the workflow onto the default branch.
+
+The 2026-11-17 native repair passed all 308 CPU contract tests, including the
+48-layer, three-MTP MiMo2 fixture. Its focused Linux run
+`job_r60cpsab1919a8z` peaked at 2,033,428 KiB RSS after releasing temporary MTP
+planning contexts. The recipe binding was refreshed only after that full battery
+passed; the certified architecture list is unchanged.
+
+At source `a9e1ce8de42af64b779da333c73ff39b175f9b97`, nightly Qwen3.5-0.8B
+passed both 900-second AgentX trials in `job_y68xn4m7cnk2f16`, run
+`run_mcysg2qc4sd5f5f`. The retained exports contain 62 and 63 completed requests,
+zero reported request errors and `submission_valid=true`. This is one extended
+configuration, not a completed nightly ladder.
+
+Cold GGUF downloads use HTTP instead of Xet's chunk cache on shared NFS and
+remain bounded by the native JY lease. Admission and formation-member polling
+share one controller deadline, leaving ten minutes before Actions' six-hour
+limit for cleanup and evidence retention.

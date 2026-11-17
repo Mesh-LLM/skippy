@@ -57,7 +57,10 @@ pub fn admit(key: &str) -> DynResult<PathBuf> {
             None => {
                 // Stream cold-download progress into durable JY logs. The second
                 // invocation resolves the now-cached path without redownloading.
-                execution::run("hf", &args, &[], 7200)?;
+                // Stream directly into the shared NFS cache rather than using
+                // Xet's chunk cache there. Keep the outer five-hour JY lease as
+                // the resource bound, including waits behind another writer.
+                execution::run("hf", &args, &[("HF_HUB_DISABLE_XET", "1".into())], 18000)?;
                 let mut resolve = args.to_vec();
                 resolve.push("--quiet".into());
                 downloaded_path(&execution::capture_for("hf", &resolve, &[], 180)?)?

@@ -49,8 +49,7 @@ pub fn api(method: &str, path: &str, body: Option<&Value>) -> DynResult<Value> {
     serde_json::from_str(body).map_err(Into::into)
 }
 
-fn launch(path: &str, body: &Value) -> DynResult<Value> {
-    let started = Instant::now();
+fn launch(path: &str, body: &Value, deadline: Instant) -> DynResult<Value> {
     let mut body = body.clone();
     let mut attempt = 0;
     loop {
@@ -66,7 +65,7 @@ fn launch(path: &str, body: &Value) -> DynResult<Value> {
                     body["inputs"]["leader_node"] = leader.into();
                     body["inputs"]["worker_node"] = worker.into();
                 }
-                Err(error) if started.elapsed() < Duration::from_secs(1800) => {
+                Err(error) if Instant::now() < deadline => {
                     println!("Waiting for Sparks: {error}");
                     thread::sleep(Duration::from_secs(15));
                     continue;
@@ -77,8 +76,7 @@ fn launch(path: &str, body: &Value) -> DynResult<Value> {
         }
         match api("POST", path, Some(&body)) {
             Err(error)
-                if error.to_string().contains("role_unplaceable")
-                    && started.elapsed() < Duration::from_secs(1800) =>
+                if error.to_string().contains("role_unplaceable") && Instant::now() < deadline =>
             {
                 println!("Waiting for an atomic Spark pair: {error}");
                 thread::sleep(Duration::from_secs(15));
@@ -176,11 +174,15 @@ pub fn run(profile: &str, sha: &str, output: &Path, row: Option<&str>) -> DynRes
     let ledger = output.join("jobs.json");
     let mut ids = Vec::<String>::new();
     write_json_file(&ledger, &ids)?;
+    // Capacity waits and all formation members share one budget. Leave ten
+    // minutes before Actions' six-hour limit for cancellation and evidence.
+    let deadline = Instant::now() + Duration::from_secs(21000);
     let result = (|| {
         for row in &plan.rows {
             let launch = launch(
                 &format!("/v1/repos/skippy/templates/inference-{}/launch", row.mode),
                 &json!({"ref":sha,"inputs":{"profile":profile,"model":row.model.split('/').nth(1),"model_key": row.id.strip_suffix(&format!("-{}", row.mode)).ok_or("invalid row id")?},"idempotency_key":format!("inference-{}-{profile}-{}-{}-{sha}",std::env::var("GITHUB_RUN_ID").unwrap_or_else(|_|"local".into()),std::env::var("GITHUB_RUN_ATTEMPT").unwrap_or_else(|_|"1".into()),row.id)}),
+                deadline,
             )?;
             let handle = launch["job_id"]
                 .as_str()
@@ -190,8 +192,10 @@ pub fn run(profile: &str, sha: &str, output: &Path, row: Option<&str>) -> DynRes
             write_json_file(&ledger, &ids)?;
             write_json_file(&output.join(format!("{}-launch.json", row.id)), &launch)?;
             let id = launched_job(&launch)?;
-            let started = Instant::now();
             loop {
+                if Instant::now() >= deadline {
+                    return Err("JY qualification timed out".into());
+                }
                 let job = api("GET", &format!("/v1/jobs/{id}"), None)?;
                 write_json_file(&output.join(format!("{}-job.json", row.id)), &job)?;
                 match job["status"].as_str().ok_or("job status missing")? {
@@ -221,9 +225,6 @@ pub fn run(profile: &str, sha: &str, output: &Path, row: Option<&str>) -> DynRes
                     }
                     "failed" | "cancelled" | "expired" => {
                         return Err(format!("{} failed: {job}", row.id).into());
-                    }
-                    _ if started.elapsed() > Duration::from_secs(21600) => {
-                        return Err("JY qualification timed out".into());
                     }
                     _ => thread::sleep(Duration::from_secs(15)),
                 }

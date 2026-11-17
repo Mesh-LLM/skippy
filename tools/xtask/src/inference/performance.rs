@@ -93,8 +93,13 @@ pub fn run(
     result?;
     corpus?;
     retained?;
-    if validate_exports(&out.join("agentx"), profile != "pr")? == 0 {
-        return Err("AgentX produced no result exports".into());
+    validate_trials(&out.join("agentx"), profile)
+}
+
+fn validate_trials(directory: &Path, profile: &str) -> DynResult<()> {
+    let expected = if profile == "pr" { 1 } else { 2 };
+    if validate_exports(directory, profile != "pr")? != expected {
+        return Err(format!("AgentX requires {expected} complete trial exports").into());
     }
     Ok(())
 }
@@ -113,7 +118,12 @@ fn validate_exports(directory: &Path, official: bool) -> DynResult<usize> {
             if export["request_count"]["avg"]
                 .as_f64()
                 .is_none_or(|n| n <= 0.0)
-                || export["error_request_count"]["avg"].as_f64().unwrap_or(0.0) > 0.0
+                || export["request_error_rate"]["avg"]
+                    .as_f64()
+                    .is_none_or(|n| n != 0.0)
+                || export["error_summary"]
+                    .as_array()
+                    .is_none_or(|errors| !errors.is_empty())
                 || export["is_complete"] != true
             {
                 return Err("AgentX produced empty, incomplete or failed request evidence".into());
@@ -134,10 +144,41 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         write_json_file(
             &d.path().join("profile_export_aiperf.json"),
-            &serde_json::json!({"metadata":{"submission_valid":false},"is_complete":true,"request_count":{"avg":4}}),
+            &serde_json::json!({"metadata":{"submission_valid":false},"is_complete":true,"request_count":{"avg":4},"request_error_rate":{"avg":0},"error_summary":[]}),
         )
         .unwrap();
         assert!(validate_exports(d.path(), true).is_err());
         assert_eq!(validate_exports(d.path(), false).unwrap(), 1);
+    }
+    #[test]
+    fn complete_valid_runs_still_reject_failed_or_missing_request_evidence() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("profile_export_aiperf.json");
+        let mut export = serde_json::json!({"metadata":{"submission_valid":true},"is_complete":true,"request_count":{"avg":4},"request_error_rate":{"avg":0},"error_summary":[]});
+        write_json_file(&path, &export).unwrap();
+        assert_eq!(validate_exports(d.path(), true).unwrap(), 1);
+        export["request_error_rate"]["avg"] = 25.into();
+        write_json_file(&path, &export).unwrap();
+        assert!(validate_exports(d.path(), true).is_err());
+        export["request_error_rate"]["avg"] = 0.into();
+        export["error_summary"] = serde_json::json!([{"error":"request failed"}]);
+        write_json_file(&path, &export).unwrap();
+        assert!(validate_exports(d.path(), true).is_err());
+        export["error_summary"] = serde_json::Value::Null;
+        write_json_file(&path, &export).unwrap();
+        assert!(validate_exports(d.path(), true).is_err());
+    }
+    #[test]
+    fn extended_profiles_reject_a_partially_successful_multirun() {
+        let d = tempfile::tempdir().unwrap();
+        let export = serde_json::json!({"metadata":{"submission_valid":true},"is_complete":true,"request_count":{"avg":4},"request_error_rate":{"avg":0},"error_summary":[]});
+        write_json_file(&d.path().join("profile_export_aiperf.json"), &export).unwrap();
+        assert!(validate_trials(d.path(), "pr").is_ok());
+        assert!(validate_trials(d.path(), "nightly").is_err());
+        let second = d.path().join("trial-2");
+        std::fs::create_dir(&second).unwrap();
+        write_json_file(&second.join("profile_export_aiperf.json"), &export).unwrap();
+        assert!(validate_trials(d.path(), "nightly").is_ok());
+        assert!(validate_trials(d.path(), "release").is_ok());
     }
 }
