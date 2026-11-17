@@ -819,6 +819,37 @@
         "HF_HOME": "/mnt/model-store/huggingface",
         "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
       }
+    },
+    {
+      "key": "inference-compiler-cache-probe",
+      "name": "Verify compiler cache across fresh workspace paths",
+      "target": {
+        "executor": "lab",
+        "selector": {
+          "os": {
+            "family": "linux"
+          },
+          "arch": {
+            "in": [
+              "aarch64"
+            ]
+          },
+          "accelerator": {
+            "backend": "cuda",
+            "model": {
+              "in": [
+                "NVIDIA GB10"
+              ]
+            }
+          }
+        }
+      },
+      "build": "",
+      "budget": {
+        "max_usd": 0,
+        "max_duration_s": 180
+      },
+      "command": "set -eu\ncd \"$JIANYANG_REPO_DIR\"\nprobe=$(mktemp -d)\nexport SCCACHE_DIR=\"$probe/cache\" SCCACHE_SERVER_PORT=4230 CARGO_INCREMENTAL=0\ntrap 'sccache --stop-server >/dev/null 2>&1 || true; rm -rf \"$probe\"' EXIT\nfor arm in a b; do\n  mkdir -p \"$probe/$arm\"\n  printf 'int answer() { return 42; }\\n' > \"$probe/$arm/probe.cpp\"\n  printf 'pub fn answer() -> u32 { 42 }\\n' > \"$probe/$arm/probe.rs\"\n  export SCCACHE_BASEDIRS=\"$probe/$arm\"\n  sccache --stop-server >/dev/null 2>&1 || true\n  sccache --start-server\n  just with-lld sccache c++ -c \"$probe/$arm/probe.cpp\" -o \"$probe/$arm/probe.o\"\n  just with-lld sccache rustc --crate-name cache_probe --crate-type rlib --emit=dep-info,link --remap-path-prefix=\"$probe/$arm=/skippy\" \"$probe/$arm/probe.rs\" --out-dir \"$probe/$arm\"\n  sccache --show-stats --stats-format=json > \"$JIANYANG_ARTIFACT_DIR/cache-probe-$arm.json\"\n  sccache --stop-server\n done\n"
     }
   ]
 }
