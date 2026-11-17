@@ -67,7 +67,7 @@ jobs:
       labels: [self-hosted, jy-linux-docker, Linux]
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: '4'
-      # Three large graph contracts can exceed the JY container's 6 GiB limit.
+      # Bound native test concurrency to the JY container's 6 GiB limit.
       CTEST_PARALLEL_LEVEL: '2'
       SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
     timeout-minutes: 180
@@ -87,15 +87,47 @@ jobs:
         run: just ci-contracts
       - name: Run Rust and core API tests once
         run: just test
-      - name: Build Linux CPU llama and run graph contracts once
-        if: needs.preflight.outputs.graph_required == 'true'
-        run: just llama-check
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: failure()
         with:
           name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-quality-evidence
           path: |
             target/ci-evidence/**
+            .deps/llama-build/**/Testing/**
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+
+  graph:
+    name: Linux CPU graph contracts
+    needs: [preflight, quality]
+    if: needs.preflight.outputs.graph_required == 'true'
+    runs-on:
+      group: jy-rnr_vfnz8k5p4yrh334
+      labels: [self-hosted, jy-linux-docker, Linux]
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '4'
+      # Three large graph contracts can exceed the JY container's 6 GiB limit.
+      CTEST_PARALLEL_LEVEL: '2'
+      SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        if: runner.environment == 'github-hosted'
+      - uses: ./.github/actions/source
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
+      - name: Build Linux CPU llama and run graph contracts once
+        run: just llama-check
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: failure()
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-graph-evidence
+          path: |
             target/skippy-stage-rewriter-check/report*
             target/skippy-stage-rewriter-check/patch-drift.diff
             target/skippy-stage-rewriter-check/changed-family-selection.json
@@ -197,7 +229,7 @@ jobs:
 
   summary:
     name: CI
-    needs: [preflight, quality, host, runtime]
+    needs: [preflight, quality, graph, host, runtime]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -208,6 +240,7 @@ jobs:
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
         run: |
           jq -e '
-            length == 4
+            length == 5
             and all(.preflight, .quality, .host, .runtime; .result == "success")
+            and (.graph.result == "success" or .graph.result == "skipped")
           ' <<< "$SKIPPY_CI_NEEDS" >/dev/null

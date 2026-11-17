@@ -9,11 +9,13 @@ The only source override is the immutable bundle produced by the protected-main
 llama upgrade workflow.
 
 The hosted preflight projects `targets.json` with `jq`; it does not compile the
-Rust automation binary. A single Linux CPU quality gate owns Rust lint and
-tests, the core/API CTest suite, binding and documentation drift, generated-patch
-replay, and the native graph contracts. Runtime matrix jobs explicitly disable
-those graph suites. They compile one release runtime, compose it with its exact
-host producer, and run packaged inference on the required device.
+Rust automation binary. A Linux CPU quality gate owns Rust lint and tests plus
+the core/API CTest suite. Once that fast gate passes, host builds and a separate
+conditional Linux CPU graph-contract job run in parallel. The graph job owns
+binding and documentation drift, generated-patch replay, and native graph
+contracts. Runtime matrix jobs explicitly disable those graph suites. They
+compile one release runtime, compose it with its exact host producer, and run
+packaged inference on the required device.
 
 Graph-sensitive pull-request inputs include the llama pin and patch queues,
 native C++ facade and FFI, family manifests, native build scripts, and rewriter
@@ -83,27 +85,30 @@ This command sets the path for subsequent Actions steps; locally export the path
 before running `just ci-smoke`. Default `just test` does not download models.
 
 Every package smoke executes the bundled CLI and runtime, submits an actual
-OpenAI completion, checks generated-token usage, and requires observed positive
-GPU layer offload for Metal/CUDA. Shutdown must be graceful. Product artifacts
-include logs and source-bound smoke evidence. A missing device, model or required
-row fails rather than passing as a skip.
+OpenAI completion, checks generated-token usage, and requires a structured GPU
+backend-device selection event for Metal/CUDA. Shutdown must be graceful.
+Product artifacts include logs and source-bound smoke evidence. A missing
+device, model or required row fails rather than passing as a skip.
 
 ## Artifact flow
 
 1. Preflight validates and projects the four hosts and eleven runtimes without
    compiling repository automation.
 2. The Linux CPU quality gate runs common semantic coverage once. Core/API tests
-   configure with `SKIPPY_BUILD_LLAMA=OFF`; graph-shape contracts run only on the
-   canonical patched Linux CPU tree.
-3. `ci host` builds each CLI once, verifies its imports, records its source and
+   configure with `SKIPPY_BUILD_LLAMA=OFF`.
+3. When graph coverage is required, the graph job validates the canonical
+   patched Linux CPU tree while host builds proceed independently. A classified
+   non-graph pull request records an intentional skipped graph job.
+4. `ci host` builds each CLI once, verifies its imports, records its source and
    checksums, and archives executable permissions.
-4. Each runtime lane builds the selected native variant with graph tests disabled,
+5. Each runtime lane builds the selected native variant with graph tests disabled,
    verifies its manifest and dependency closure, downloads the matching host,
    composes the exact product, and runs Qwen3 on the required CPU/Metal/CUDA
    device. Compilation never substitutes for inference evidence.
-5. The stable `CI` summary accepts only successful preflight, quality, host and
-   complete runtime-lane results. Failed, cancelled, absent and skipped required
-   phases all fail the summary.
+6. The stable `CI` summary accepts successful preflight, quality, host and
+   complete runtime-lane results plus either successful graph coverage or its
+   classified path-based skip. Failed, cancelled or absent required phases fail
+   the summary.
 
 Native runtime manifests retain the upstream pin, patch digest, ABI and backend
 metadata. Product provenance hashes the complete file roster. Actions artifacts
