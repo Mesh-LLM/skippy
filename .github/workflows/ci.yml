@@ -53,6 +53,7 @@ jobs:
     runs-on: [self-hosted, skippy-ephemeral, Linux, X64, native-contracts]
     timeout-minutes: 180
     env:
+      SKIPPY_MOLD: /usr/bin/mold
       SKIPPY_REQUIRE_MOLD: '1'
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -64,6 +65,11 @@ jobs:
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
+      - name: Verify mold linker
+        shell: bash
+        run: |
+          /usr/bin/mold --version
+          [[ "$(scripts/cargo-linker --skippy-probe)" == "/usr/bin/mold" ]]
       - run: just ci-contracts
       - run: just lint
       - run: just test

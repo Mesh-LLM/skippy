@@ -49,7 +49,8 @@ to ordinary hosted CPU work. They request an ephemeral Linux x86_64
 `native-contracts` builder with LLVM/Clang 22 development and CMake packages,
 Ninja, mold, lld and `SKIPPY_REWRITER_LLVM_PREFIX` configured. Mold must pass the
 repository's active-target linker probe; quality CI sets `SKIPPY_REQUIRE_MOLD=1`
-so it cannot silently fall back to lld. The same generator tools must be
+and pins `SKIPPY_MOLD=/usr/bin/mold`, so it cannot silently fall back to lld or
+depend on a runner-specific job `PATH`. The same generator tools must be
 available on full family builders. A standard hosted image without those
 development packages cannot run these gates; no job downloads system packages
 to disguise that prerequisite.
