@@ -30,7 +30,8 @@
           },
           "network": {
             "in": [
-              "james-lab"
+              "james-lab",
+              "dan-lab"
             ]
           }
         }
@@ -176,7 +177,8 @@
           },
           "network": {
             "in": [
-              "james-lab"
+              "james-lab",
+              "dan-lab"
             ]
           }
         }
@@ -455,7 +457,8 @@
           },
           "network": {
             "in": [
-              "james-lab"
+              "james-lab",
+              "dan-lab"
             ]
           }
         }
