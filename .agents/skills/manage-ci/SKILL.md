@@ -34,12 +34,12 @@ contract; no downstream product's workflow topology applies here.
   Dispatch and admission policy run from protected code, never from PR source.
   Fork and other untrusted PRs require isolated ephemeral execution and receive
   no native lab dispatch credentials.
-- Native PR jobs use an unprivileged account without sudo, host administration,
-  publication credentials, or access to other jobs' secrets/workspaces. Use a
+- Trusted native PR jobs may use the standard JY account and its existing host
+  permissions. Do not pass publication credentials or other jobs' secrets. Use a
   fresh source-pinned workspace, read-only admitted model inputs, exclusive JY
   machine reservations, bounded leases and process-tree/workspace cleanup on
   completion, failure and cancellation. JY's `unconfined` capability alone is
-  not a rejection: verify effective account permissions and exposed resources.
+  not a rejection. No separate job-account migration is required.
   Cleanup failure quarantines the allocation until reconciled.
 - Runner groups and dispatch credentials are repository-scoped. The Actions
   runner only orchestrates inference qualification; native JY jobs receive

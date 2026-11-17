@@ -55,6 +55,8 @@ jobs:
       - run: just inference-tool-check
   quality:
     needs: plan
+    env:
+      SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
     runs-on: [self-hosted, skippy-ephemeral, Linux, X64, native-contracts]
     timeout-minutes: 180
     steps:

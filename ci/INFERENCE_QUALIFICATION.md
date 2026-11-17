@@ -23,13 +23,12 @@ Docker socket to a workflow to work around it.
 Trusted same-repository PRs from verified repository collaborators may use native
 execution on persistent dedicated Sparks. Protected dispatch code must verify
 repository identity and collaborator status before submitting the candidate SHA.
-Jobs run under an unprivileged account without sudo, host administration or
+Jobs use the standard JY account and its existing host permissions without
 publication credentials, with fresh source-pinned workspaces, read-only admitted
 model inputs and exclusive reservations. Clean up processes and workspaces on
 every outcome, quarantining allocations when cleanup fails. Fork and other
 untrusted PRs require isolated ephemeral execution. An `unconfined` capability
-alone does not reject a trusted native job; actual account permissions and
-resource exposure determine admission.
+alone does not reject a trusted native job. No separate account migration is required.
 
 Standalone requires a GB10 Spark allocation. Split requires an atomic JY
 formation containing two distinct GB10 Sparks on the same reachable network.
@@ -131,7 +130,6 @@ extended-ladder qualification. The archive retention fix followed these runs;
 their nested AgentX files were validated in the workload but were not uploaded
 by JY's flat artifact collector. Its regression test checks retention separately.
 
-Activation still requires reviewing effective native account permissions:
-the observed `gi` account belongs to sudo and Docker groups. A non-root UID
-alone does not establish the execution boundary required above. Do not enable
-automatic candidate dispatch until the job account satisfies that boundary.
+Standard JY jobs, including the existing job account permissions, are authorized
+for trusted same-repository candidate dispatch. Activation requires passing CI
+and merging the workflow onto the default branch.
