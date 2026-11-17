@@ -1,6 +1,6 @@
 # Metal decode optimization work
 
-Status: draft port, 2026-11-17. A standalone M3 Ultra pilot is measured; fresh-process confirmation and vanilla llama.cpp comparison remain pending. See [benchmark evidence](METAL_DECODE_BENCHMARKS.md).
+Status: draft port, 2026-11-17. The standalone M3 Ultra result is confirmed across three process campaigns; the matched vanilla llama.cpp comparison is running. See [benchmark evidence](METAL_DECODE_BENCHMARKS.md).
 
 ## Baseline migration
 

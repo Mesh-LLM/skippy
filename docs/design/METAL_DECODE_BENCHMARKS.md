@@ -1,7 +1,7 @@
 # Native decode benchmark evidence
 
-Status: draft, 2026-11-17. The first standalone comparison is complete;
-confirmation campaigns and the matched vanilla llama.cpp baseline are pending.
+Status: draft, 2026-11-17. Three standalone campaigns per mode are complete and locally re-audited;
+the matched vanilla llama.cpp comparison is running.
 
 ## Matched comparison
 
@@ -17,17 +17,18 @@ PR, with subsequent evidence/documentation edits only. Both use llama.cpp
 Mesh-hosted/Jared native work and subsequent engine changes, ported into the
 standalone repository. These numbers do not isolate each contributor's changes.
 
-| Serving mode | Vanilla llama.cpp | Skippy main TPS | Candidate PR TPS | Candidate vs main |
+| Serving mode | Vanilla llama.cpp | Skippy main TPS | Skippy PR #9 TPS | Candidate vs main |
 |---|---:|---:|---:|---:|
-| Plain, concurrency 1 | Pending | 35.85 | 99.35 | +177.09% |
-| Plain, concurrency 2, aggregate | Pending | 62.58 | 162.19 | +159.18% |
-| DFlash, concurrency 1 | Not tested | 163.73 | 165.52 | +1.10% |
-| DFlash, concurrency 2, aggregate | Not tested | 155.71 | 206.06 | +32.34% |
+| Plain, concurrency 1 | Pending | 35.90 | 98.98 | +175.70% |
+| Plain, concurrency 2, aggregate | Pending | 62.71 | 162.17 | +158.62% |
+| DFlash, concurrency 1 | Not tested | 163.64 | 164.82 | +0.72% |
+| DFlash, concurrency 2, aggregate | Not tested | 155.27 | 206.15 | +32.77% |
 
 These are serving throughput measurements: fixed output tokens divided by
 pooled HTTP batch elapsed time, including prefill. Each concurrency is pooled
-independently. They are one fresh-process campaign with three measured cycles,
-not a cross-hardware claim or a comparison with BaseRT/Splash.
+independently. They pool three fresh-process campaigns with three measured cycles each.
+Single-request DFlash is effectively unchanged. These are not a cross-hardware
+claim or a comparison with BaseRT/Splash.
 
 The target is `unsloth/Qwen3.6-35B-A3B-GGUF`, revision
 `a483e9e6cbd595906af30beda3187c2663a1118c`, file
@@ -51,8 +52,8 @@ There is no model tuning or quantization change between arms.
   source trees. All 21 loaded ggml/llama library paths were checked against
   each arm's own bundle. Model/draft and package hashes were verified.
 - Whole ABBA blocks with competing load or non-nominal thermals are discarded
-  and retried; 100 ms observations cover requests. Plain discarded 43 blocks,
-  DFlash 23. Each completed mode accepted 288 requests including warmup.
+  and retried; 100 ms observations cover requests. Across the three campaigns, plain discarded 146 blocks and
+  DFlash 52. Each mode accepted 864 requests including warmup.
 - All accepted response text hashes match across arms and cycles; every
   response has 128 output tokens and zero prompt-cache hits. Independent
   pooling and artifact audits passed remotely and again on downloaded raw
@@ -74,16 +75,20 @@ and loaded-library paths. Local copies are under the ignored
 
 ## Remaining work
 
-Two further fresh-process campaigns per mode are running in
-`job_a3z1zb6g1w0p9vx`; complete and audit them before treating the pilot as
-established. A same-runtime rollback-depth ablation is running on the separately
-authorized M1 Ultra (`job_r1a6e5jzn1kvhd9`). Its hardware differs, so its numbers
-must not be pooled into the M3 table.
+The two further fresh-process campaigns per mode completed in
+`job_a3z1zb6g1w0p9vx`, run `run_8mb0n0bdpd81mgb`. All four additional raw
+archives passed a second local independent audit. The matched vanilla/main/PR
+comparison is running in `job_4b086x0mh18p2qg` on the same M3, using the same
+upstream pin and compiler build (Apple Clang 21000334). Vanilla supports DFlash
+at this pin; both modes are included. Its cells remain pending until measured.
 
-The large plain gain is consistent with restoring explicit zero-depth recurrent
-rollback: the old native path forced at least two snapshots even for ordinary
-decode. Attribution still requires the ablation; this explanation is not itself
-causal measurement.
+A separately authorized M1 Ultra ablation compared the same retained runtime
+with `SKIPPY_RS_SEQ=2` versus `0` (`job_r1a6e5jzn1kvhd9`, run
+`run_153re0gjqtjqykr`). Disabling snapshots improved plain C1 from 66.04 to
+68.89 TPS (+4.30%) and C2 aggregate from 97.52 to 102.41 TPS (+5.02%), with
+exact text. That different-hardware result is not pooled into the M3 table and
+does not explain the entire plain-decode gain. Sampler output-row capacity and
+other changes still need separate attribution.
 
 Two API tests remain unqualified because the bundled split-certification roster
 still targets ABI 0.1.80 and its old recipe. The candidate is ABI 0.1.85. Do not
