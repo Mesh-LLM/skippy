@@ -1,9 +1,16 @@
 # Skippy continuous integration
 
-`ci.yml` runs the same commands for every pull request, main push and reusable
-invocation. `CI` is the required summary. There is no path planner or lighter PR
-profile. The only source override is the immutable bundle produced by the
-protected-main llama upgrade workflow.
+`ci.yml` runs the same commands for every pull request, main push, manual run and
+reusable invocation. `CI` is the required summary. There is no path planner or
+lighter PR profile. The only source override is the immutable bundle produced by
+the protected-main llama upgrade workflow.
+
+Ad hoc CI is a full run, not a reduced diagnostic profile. Launch it from the
+Actions UI or with `gh workflow run ci.yml --ref main`. The workflow rejects a
+manual source other than protected `main` before it requests any self-hosted
+runner. Pilot runner policies must independently allow only
+`.github/workflows/ci.yml@refs/heads/main`; the in-workflow check does not replace
+that external admission boundary.
 
 `targets.json` is the release matrix: four backend-neutral hosts and eleven
 runtimes. CPU work uses GitHub-hosted `ubuntu-24.04`, `ubuntu-24.04-arm`,

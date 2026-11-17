@@ -3,6 +3,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
   workflow_call:
     inputs:
       artifact_scope:
@@ -33,6 +34,14 @@ jobs:
       hosts: ${{ steps.plan.outputs.hosts }}
       runtimes: ${{ steps.plan.outputs.runtimes }}
     steps:
+      - name: Admit manual source
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::Ad hoc CI must run from the protected main branch."
+            exit 1
+          fi
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
