@@ -46,7 +46,8 @@ model and concurrent baseline contexts, not merely the GGUF file size.
 
 Quality and upstream candidate generation are the toolchain-specific exceptions
 to ordinary hosted CPU work. They request an ephemeral Linux x86_64
-`native-contracts` builder with the container-only `jy-linux-docker` label,
+builder from the repository-scoped `jy-rnr_vfnz8k5p4yrh334` runner group with
+the container-only `jy-linux-docker` label,
 LLVM/Clang 22 development and CMake packages, Ninja, mold, lld and
 `SKIPPY_REWRITER_LLVM_PREFIX` configured. The container-only label prevents a
 native Linux host runner in the same repository-scoped group from satisfying an
