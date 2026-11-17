@@ -131,6 +131,13 @@ Cache hits accelerate execution and never replace the required smoke evidence.
 Cold model startup has a separate five-minute allowance; scored PR requests have
 a 60-second deadline and 64-token output cap. Streaming remains capped at 16 tokens.
 
+At `f87a734fdee03dcec0196078a3873a1b8337d3e4`, all seven short PR
+configurations passed on DGX Sparks with three configurations in parallel.
+The first pass, including cache population, took 21m12s; a second pass took
+8m47s. Placement can change between passes, so the second pass is not a
+controlled measurement with every cache hot on identical hosts. These timings
+cover the inference ladder, excluding unrelated repository CI and its queue.
+
 Local checks and live template-schema admission must precede a native pilot.
 No successful hardware qualification is implied by implementation or schema
 validation. Record pilot job IDs and any failures before enabling required checks.
