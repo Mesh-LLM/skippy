@@ -46,14 +46,16 @@ model and concurrent baseline contexts, not merely the GGUF file size.
 
 Quality and upstream candidate generation are the toolchain-specific exceptions
 to ordinary hosted CPU work. They request an ephemeral Linux x86_64
-`native-contracts` builder with LLVM/Clang 22 development and CMake packages,
-Ninja, mold, lld and `SKIPPY_REWRITER_LLVM_PREFIX` configured. Mold must pass the
-repository's active-target linker probe; quality CI sets `SKIPPY_REQUIRE_MOLD=1`
-and pins `SKIPPY_MOLD=/usr/bin/mold`, so it cannot silently fall back to lld or
-depend on a runner-specific job `PATH`. The same generator tools must be
-available on full family builders. A standard hosted image without those
-development packages cannot run these gates; no job downloads system packages
-to disguise that prerequisite.
+`native-contracts` builder with the container-only `jy-linux-docker` label,
+LLVM/Clang 22 development and CMake packages, Ninja, mold, lld and
+`SKIPPY_REWRITER_LLVM_PREFIX` configured. The container-only label prevents a
+native Linux host runner in the same repository-scoped group from satisfying an
+image-dependent job. Mold must pass the repository's active-target linker probe;
+quality CI sets `SKIPPY_REQUIRE_MOLD=1` and pins `SKIPPY_MOLD=/usr/bin/mold`, so
+it cannot silently fall back to lld or depend on a runner-specific job `PATH`.
+The same generator tools must be available on full family builders. A standard
+hosted image without those development packages cannot run these gates; no job
+downloads system packages to disguise that prerequisite.
 
 Qwen3 dense smoke preparation is explicit: `just automation-run ci model-fetch`
 resolves the immutable public model URL and verifies the family manifest's size

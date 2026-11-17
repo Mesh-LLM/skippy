@@ -50,7 +50,7 @@ jobs:
         run: just ci-plan
   quality:
     needs: plan
-    runs-on: [self-hosted, skippy-ephemeral, Linux, X64, native-contracts]
+    runs-on: [self-hosted, skippy-ephemeral, jy-linux-docker, Linux, X64, native-contracts]
     timeout-minutes: 180
     env:
       SKIPPY_MOLD: /usr/bin/mold
