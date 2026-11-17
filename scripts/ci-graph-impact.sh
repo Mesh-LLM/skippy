@@ -27,7 +27,7 @@ if [[ "$event" == "pull_request" ]] \
       .github/workflows/llama-upgrade.yml | Justfile | Cargo.toml | Cargo.lock | \
       rust-toolchain.toml | .cargo/*)
         required=true
-        reason="graph-input:$changed_file"
+        reason="graph-sensitive-path"
         break
         ;;
       AGENTS.md | CONTRIBUTING.md | LICENSE | NOTICE | README.md | RELEASE.md | \
@@ -36,7 +36,7 @@ if [[ "$event" == "pull_request" ]] \
         ;;
       *)
         required=true
-        reason="unclassified:$changed_file"
+        reason="unclassified-path"
         break
         ;;
     esac
