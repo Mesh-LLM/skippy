@@ -511,6 +511,52 @@
         "max_usd": 0,
         "max_duration_s": 3600
       }
+    },
+    {
+      "key": "inference-cache-inspect",
+      "name": "Inference cache inspection",
+      "target": {
+        "executor": "lab",
+        "selector": {
+          "os": {
+            "family": "linux"
+          },
+          "arch": {
+            "in": [
+              "aarch64"
+            ]
+          },
+          "accelerator": {
+            "backend": "cuda",
+            "model": {
+              "in": [
+                "NVIDIA GB10"
+              ]
+            }
+          },
+          "memory": {
+            "system_gib": {
+              "min": 120
+            }
+          },
+          "network": {
+            "in": [
+              "james-lab",
+              "dan-lab"
+            ]
+          }
+        }
+      },
+      "build": "",
+      "command": "set -eu\ndate -u\nfindmnt -T /mnt/model-store/huggingface\ndf -h /mnt/model-store/huggingface\nfind /mnt/model-store/huggingface/hub -maxdepth 3 -name '*.incomplete' -printf '%p %s bytes %TY-%Tm-%Td %TH:%TM:%TS\\n' | head -40\nps -eo pid,ppid,etime,comm | tail -60\nif command -v lslocks >/dev/null; then lslocks -o PID,COMMAND,TYPE,PATH | head -60; fi",
+      "budget": {
+        "max_usd": 0,
+        "max_duration_s": 120
+      },
+      "env": {
+        "HF_HOME": "/mnt/model-store/huggingface",
+        "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
+      }
     }
   ]
 }
