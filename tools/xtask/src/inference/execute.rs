@@ -170,7 +170,13 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
     let context = if profile == "pr" { 32768 } else { 65536 };
     let worker = std::env::var("JIANYANG_ROLE").as_deref() == Ok("worker");
     if !worker {
-        super::numerical::run(&model, &coordinate, fixture.layers, &out)?;
+        super::numerical::run(
+            &model,
+            &coordinate,
+            fixture.layers,
+            fixture.activation_width,
+            &out,
+        )?;
     }
     let mut args = vec![
         "serve".into(),
@@ -260,6 +266,7 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
                 return Err("split worker server exited".into());
             }
             if get(&control).is_ok_and(|s| s == "qualification-complete") {
+                super::gpu::verify(&out.join("server.log"))?;
                 return Ok(());
             }
             thread::sleep(Duration::from_secs(5));
@@ -267,6 +274,7 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
         return Err("split leader completion timed out".into());
     }
     ready(&mut server, "http://127.0.0.1:9337/v1/models")?;
+    super::gpu::verify(&out.join("server.log"))?;
     score(
         "http://127.0.0.1:9337",
         &coordinate,

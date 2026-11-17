@@ -92,8 +92,9 @@ Admission reserves at least 16 GiB beyond weight bytes and checks available
 unified memory. This floor is not proof every context fits; real allocation
 failures remain failures. Model caches are explicit, hash-verified inputs.
 
-The native workload runs chain parity and state-handoff checks against native
-monolithic execution, then scores three exact-output cases and deterministic
+The native workload runs CPU chain parity and state-handoff checks against native
+monolithic execution (sharing file-backed weights avoids duplicate GPU copies
+for the largest model), then requires positive GPU offload evidence and scores three exact-output cases and deterministic
 repeats through the serving endpoint. These are a small regression set, not a
 comprehensive capability benchmark or an independent numerical implementation.
 

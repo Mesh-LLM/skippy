@@ -1,6 +1,6 @@
 use super::*;
 use crate::execution;
-pub fn run(model: &Path, key: &str, layers: u32, output: &Path) -> DynResult<()> {
+pub fn run(model: &Path, key: &str, layers: u32, width: u32, output: &Path) -> DynResult<()> {
     for command in ["chain", "state-handoff"] {
         let mut args = vec![
             command.into(),
@@ -11,16 +11,21 @@ pub fn run(model: &Path, key: &str, layers: u32, output: &Path) -> DynResult<()>
             "--layer-end".into(),
             layers.to_string(),
             "--n-gpu-layers".into(),
-            "999".into(),
+            "0".into(),
             "--ctx-size".into(),
             "512".into(),
             "--report-out".into(),
             output.join(format!("{command}.json")).display().to_string(),
         ];
         if command == "chain" {
-            args.extend(["--splits".into(), (layers / 2).to_string()]);
+            args.extend([
+                "--splits".into(),
+                format!("{},{}", layers / 3, 2 * layers / 3),
+            ]);
         } else {
             args.extend([
+                "--activation-width".into(),
+                width.to_string(),
                 "--state-layer-start".into(),
                 "0".into(),
                 "--state-layer-end".into(),

@@ -3,6 +3,7 @@ mod admission;
 mod artifacts;
 mod dispatch;
 mod execute;
+mod gpu;
 mod login;
 mod numerical;
 mod performance;

@@ -11,7 +11,8 @@
     ],
     "tokenizer_repo": "Qwen/Qwen3.5-0.8B",
     "tokenizer_revision": "2fc06364715b967f1860aea9cf38778875588b17",
-    "layers": 24
+    "layers": 24,
+    "activation_width": 1024
   },
   "qwen35-2b": {
     "repo": "unsloth/Qwen3.5-2B-GGUF",
@@ -25,7 +26,8 @@
     ],
     "tokenizer_repo": "Qwen/Qwen3.5-2B",
     "tokenizer_revision": "15852e8c16360a2fea060d615a32b45270f8a8fc",
-    "layers": 24
+    "layers": 24,
+    "activation_width": 2048
   },
   "qwen35-4b": {
     "repo": "unsloth/Qwen3.5-4B-GGUF",
@@ -39,7 +41,8 @@
     ],
     "tokenizer_repo": "Qwen/Qwen3.5-4B",
     "tokenizer_revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
-    "layers": 32
+    "layers": 32,
+    "activation_width": 2560
   },
   "qwen35-9b": {
     "repo": "unsloth/Qwen3.5-9B-GGUF",
@@ -53,7 +56,8 @@
     ],
     "tokenizer_repo": "Qwen/Qwen3.5-9B",
     "tokenizer_revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
-    "layers": 32
+    "layers": 32,
+    "activation_width": 4096
   },
   "qwen38-27b": {
     "repo": "unsloth/Qwen3.8-27B-GGUF",
@@ -67,7 +71,8 @@
     ],
     "tokenizer_repo": "Qwen/Qwen3.8-27B",
     "tokenizer_revision": "37561816e66b5b9153b1b64c10968c18c1e6f4a0",
-    "layers": 64
+    "layers": 64,
+    "activation_width": 5120
   },
   "qwen3-coder-30b-a3b": {
     "repo": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
@@ -81,7 +86,8 @@
     ],
     "tokenizer_repo": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
     "tokenizer_revision": "b2cff646eb4bb1d68355c01b18ae02e7cf42d120",
-    "layers": 48
+    "layers": 48,
+    "activation_width": 2048
   },
   "qwen36-35b-a3b": {
     "repo": "unsloth/Qwen3.6-35B-A3B-GGUF",
@@ -95,7 +101,8 @@
     ],
     "tokenizer_repo": "Qwen/Qwen3.6-35B-A3B",
     "tokenizer_revision": "345d467b117d1fd5eda9b879a5988de9ae5f47a7",
-    "layers": 40
+    "layers": 40,
+    "activation_width": 2048
   },
   "qwen38-flash-next": {
     "repo": "unsloth/Qwen3.8-Flash-Next-GGUF",
@@ -124,6 +131,7 @@
     ],
     "tokenizer_repo": "Qwen/Qwen3.8-Flash-Next",
     "tokenizer_revision": "812d96e10a0dd82b69d749e68693698cf6c36daa",
-    "layers": 48
+    "layers": 48,
+    "activation_width": 2560
   }
 }

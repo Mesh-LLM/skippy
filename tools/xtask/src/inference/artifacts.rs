@@ -9,6 +9,7 @@ pub struct Fixture {
     pub tokenizer_repo: String,
     pub tokenizer_revision: String,
     pub layers: u32,
+    pub activation_width: u32,
 }
 #[derive(Deserialize)]
 pub struct File {
