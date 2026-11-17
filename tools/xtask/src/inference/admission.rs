@@ -83,10 +83,17 @@ fn admit_pr(sha: &str) -> DynResult<bool> {
 fn requires_qualification(files: &Value) -> DynResult<bool> {
     let files = files.as_array().ok_or("invalid files response")?;
     // A full first page can omit relevant inputs on subsequent pages.
-    Ok(files.len() >= 100
-        || files
-            .iter()
-            .any(|file| file["filename"].as_str().is_some_and(relevant)))
+    let mut required = files.len() >= 100;
+    for file in files {
+        let path = file["filename"]
+            .as_str()
+            .ok_or("missing changed-file path")?;
+        required |= relevant(path);
+        if let Some(previous) = file.get("previous_filename") {
+            required |= relevant(previous.as_str().ok_or("invalid previous file path")?);
+        }
+    }
+    Ok(required)
 }
 
 fn relevant(path: &str) -> bool {
@@ -128,8 +135,11 @@ mod tests {
         assert!(!requires_qualification(&docs).unwrap());
         let engine = serde_json::json!([{"filename":"crates/skippy-serving/src/lib.rs"}]);
         assert!(requires_qualification(&engine).unwrap());
+        let renamed = serde_json::json!([{"filename":"docs/archived.md","previous_filename":"ci/inference-ladder.json"}]);
+        assert!(requires_qualification(&renamed).unwrap());
         let page = Value::Array(vec![serde_json::json!({"filename":"docs/typo.md"}); 100]);
         assert!(requires_qualification(&page).unwrap());
         assert!(requires_qualification(&Value::Null).is_err());
+        assert!(requires_qualification(&serde_json::json!([{}])).is_err());
     }
 }

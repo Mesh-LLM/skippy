@@ -37,6 +37,11 @@ Compilation never counts as device evidence.
 
 ## Build prerequisites
 
+Build-cache keys stay stable across ordinary source commits and change with the
+toolchain, lockfile and native build recipe. A matching cache avoids repeated
+uploads; Cargo still validates and rebuilds changed source. Caches are not
+qualification evidence.
+
 The hosted setup action installs full-SHA-pinned Just 1.58.0. Both hosted and
 native runners restore Cargo dependencies, debug artifacts and bounded sccache
 compiler results using the shared cache action. Rust follows

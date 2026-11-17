@@ -18,6 +18,7 @@ runs:
           target/debug
           skippy-api-rs/target/debug
           ~/.cache/sccache
-        key: rust-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ matrix.id || 'tools' }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ github.sha }}
+        key: rust-v3-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ matrix.id || 'tools' }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', '.cargo/config.toml', 'Justfile', 'scripts/cargo-linker*', 'scripts/build-llama.sh', 'llama_cpp/upstream.txt', 'llama_cpp/patches/**/*.patch') }}
         restore-keys: |
+          rust-v3-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ matrix.id || 'tools' }}-
           rust-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ matrix.id || 'tools' }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
