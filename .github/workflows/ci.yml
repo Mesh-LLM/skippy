@@ -78,7 +78,7 @@ jobs:
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
-      - name: Lint both Rust workspaces
+      - name: Lint Skippy crates and Rust facade
         run: just lint
       - name: Validate standalone repository contracts
         run: just ci-contracts
