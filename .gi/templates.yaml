@@ -688,7 +688,7 @@
         }
       },
       "build": "",
-      "command": "set -eu\nfindmnt -no TARGET,SOURCE,FSTYPE -T \"$HOME\"\nfindmnt -no TARGET,SOURCE,FSTYPE -T \"$JIANYANG_REPO_DIR\"\nfindmnt -no TARGET,SOURCE,FSTYPE -T /tmp\nfindmnt -no TARGET,SOURCE,FSTYPE -T /mnt/model-store/huggingface\ndf -h \"$HOME\" /tmp /mnt/model-store/huggingface\n",
+      "command": "set -eu\nfindmnt -no TARGET,SOURCE,FSTYPE -T \"$HOME\"\nfindmnt -no TARGET,SOURCE,FSTYPE -T \"$JIANYANG_REPO_DIR\"\nfindmnt -no TARGET,SOURCE,FSTYPE -T /tmp\nfindmnt -no TARGET,SOURCE,FSTYPE -T /mnt/model-store/huggingface\ndf -h \"$HOME\" /tmp /mnt/model-store/huggingface\nif command -v docker >/dev/null; then docker image ls --digests --format '{{.Repository}}@{{.Digest}} {{.ID}}' ghcr.io/mesh-llm/mesh-llm-cuda-runner; fi\n",
       "budget": {
         "max_usd": 0,
         "max_duration_s": 120
