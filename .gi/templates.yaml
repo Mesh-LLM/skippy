@@ -734,7 +734,7 @@
         }
       },
       "build": "",
-      "command": "set -eu\nnvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory --format=csv\nsed -n '/Max locked memory/p' /proc/self/limits\ncg_path=\"$(sed -n 's/^0:://p' /proc/self/cgroup)\"\nfor name in memory.max memory.current memory.swap.max; do\n  file=\"/sys/fs/cgroup$cg_path/$name\"\n  if test -r \"$file\"; then printf '%s: ' \"$name\"; cat \"$file\"; fi\ndone\nfor file in /proc/[0-9]*/comm; do\n  name=\"$(cat \"$file\" 2>/dev/null || true)\"\n  case \"$name\" in\n    skippy*|llama*)\n      pid=\"${file#/proc/}\"; pid=\"${pid%/comm}\"\n      ps -p \"$pid\" -o pid=,ppid=,pgid=,etimes=,comm= || true\n      readlink \"/proc/$pid/cwd\" || true\n      ;;\n  esac\ndone\n",
+      "command": "set -eu\nnvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory --format=csv\nsed -n '/Max locked memory/p' /proc/self/limits\ncg_path=\"$(sed -n 's/^0:://p' /proc/self/cgroup)\"\nfor name in memory.max memory.current memory.swap.max; do\n  file=\"/sys/fs/cgroup$cg_path/$name\"\n  if test -r \"$file\"; then printf '%s: ' \"$name\"; cat \"$file\"; fi\ndone\nfor file in /proc/[0-9]*/comm; do\n  name=\"$(cat \"$file\" 2>/dev/null || true)\"\n  case \"$name\" in\n    skippy*|llama*)\n      pid=\"${file#/proc/}\"; pid=\"${pid%/comm}\"\n      ps -p \"$pid\" -o pid=,ppid=,pgid=,etimes=,comm= || true\n      readlink \"/proc/$pid/cwd\" || true\n      ;;\n  esac\ndone\ngetconf PAGESIZE\ncat /proc/buddyinfo\nif sudo -n true; then printf \"Noninteractive host maintenance is available\\n\"; else printf \"Noninteractive host maintenance is unavailable\\n\"; fi\n",
       "budget": {
         "max_usd": 0,
         "max_duration_s": 120
