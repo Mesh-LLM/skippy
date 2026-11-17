@@ -3,6 +3,6 @@ description: Supply pinned Just, the one missing command on standard hosted imag
 runs:
   using: composite
   steps:
-    - uses: taiki-e/install-action@3d23c1bbdafe696dfccad2664945a04f47d03dc3 # install-action
+    - uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
       with:
-        tool: just@1.58.0
+        just-version: '1.58.0'
