@@ -42,7 +42,7 @@ pub fn admit(key: &str) -> DynResult<PathBuf> {
             &[],
             7200,
         )?;
-        let path = PathBuf::from(text.trim());
+        let path = downloaded_path(&text)?;
         let metadata = fs::metadata(&path)
             .map_err(|error| format!("downloaded model path {}: {error}", path.display()))?;
         if metadata.len() != file.size || artifact::sha256(&path)? != file.sha256 {
@@ -55,9 +55,32 @@ pub fn admit(key: &str) -> DynResult<PathBuf> {
         .next()
         .ok_or_else(|| "empty fixture".into())
 }
+pub fn downloaded_path(text: &str) -> DynResult<PathBuf> {
+    for line in text.lines().rev() {
+        let line = line.trim();
+        let candidate = line.strip_prefix("path:").map(str::trim).unwrap_or(line);
+        if candidate.starts_with('/') && !candidate.contains('\u{1b}') {
+            return Ok(PathBuf::from(candidate));
+        }
+    }
+    Err("hf download returned no absolute artifact path".into())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn download_paths_support_legacy_and_formatted_cli_output() {
+        assert_eq!(
+            downloaded_path("/models/a.gguf\n").unwrap(),
+            PathBuf::from("/models/a.gguf")
+        );
+        assert_eq!(
+            downloaded_path("\u{1b}[32m✓ Downloaded\u{1b}[0m\n  path: /models/a.gguf\n").unwrap(),
+            PathBuf::from("/models/a.gguf")
+        );
+        assert!(downloaded_path("Downloaded successfully").is_err());
+        assert!(downloaded_path("path: relative.gguf").is_err());
+    }
     #[test]
     fn all_ladder_models_have_pinned_base_weights() {
         let ladder: Ladder =

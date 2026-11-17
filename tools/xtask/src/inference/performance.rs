@@ -16,9 +16,7 @@ pub fn run(
             fixture.tokenizer_revision.clone(),
             "--include".into(),
             "*token*".into(),
-            "--include".into(),
             "*config.json".into(),
-            "--include".into(),
             "*.jinja".into(),
         ],
         &[],
@@ -40,7 +38,9 @@ pub fn run(
         "--model".into(),
         key.into(),
         "--tokenizer".into(),
-        tokenizer.trim().into(),
+        super::artifacts::downloaded_path(&tokenizer)?
+            .display()
+            .to_string(),
         "--max-context-length".into(),
         context.to_string(),
         "--endpoint-type".into(),

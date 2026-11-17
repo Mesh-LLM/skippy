@@ -12,6 +12,18 @@ use std::{
 };
 
 struct Server(Child);
+#[cfg(unix)]
+static SERVER_PID: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+#[cfg(unix)]
+extern "C" fn terminate_server_group(signal: libc::c_int) {
+    let pid = SERVER_PID.load(std::sync::atomic::Ordering::Relaxed);
+    unsafe {
+        if pid > 0 {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+        libc::_exit(128 + signal);
+    }
+}
 impl Drop for Server {
     fn drop(&mut self) {
         // All descendants share this process group, including on error paths.
@@ -56,7 +68,20 @@ fn spawn(args: &[String], log: &Path) -> DynResult<Server> {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    Ok(Server(command.spawn()?))
+    let child = command.spawn()?;
+    #[cfg(unix)]
+    unsafe {
+        SERVER_PID.store(child.id() as i32, std::sync::atomic::Ordering::Relaxed);
+        libc::signal(
+            libc::SIGTERM,
+            terminate_server_group as *const () as libc::sighandler_t,
+        );
+        libc::signal(
+            libc::SIGINT,
+            terminate_server_group as *const () as libc::sighandler_t,
+        );
+    }
+    Ok(Server(child))
 }
 fn get(url: &str) -> DynResult<String> {
     execution::capture(

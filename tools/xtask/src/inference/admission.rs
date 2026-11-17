@@ -10,12 +10,18 @@ fn github(path: &str) -> DynResult<Value> {
 pub fn run() -> DynResult<()> {
     let event: Value = serde_json::from_slice(&fs::read(std::env::var("GITHUB_EVENT_PATH")?)?)?;
     let name = std::env::var("GITHUB_EVENT_NAME")?;
-    let (sha, profile) = if name == "workflow_run" {
-        let run = &event["workflow_run"];
-        if run["conclusion"] != "success" {
-            return Err("upstream CI did not pass".into());
-        }
-        let sha = run["head_sha"].as_str().ok_or("missing workflow SHA")?;
+    let (sha, profile) = if matches!(name.as_str(), "workflow_run" | "pull_request_target") {
+        let sha = if name == "workflow_run" {
+            let run = &event["workflow_run"];
+            if run["conclusion"] != "success" {
+                return Err("upstream CI did not pass".into());
+            }
+            run["head_sha"].as_str().ok_or("missing workflow SHA")?
+        } else {
+            event["pull_request"]["head"]["sha"]
+                .as_str()
+                .ok_or("missing PR SHA")?
+        };
         let prs = github(&format!(
             "repos/general-inference/skippy/commits/{sha}/pulls"
         ))?;

@@ -1,8 +1,19 @@
 name: Inference qualification
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'crates/**'
+      - 'llama_cpp/**'
+      - 'tools/**'
+      - 'scripts/**'
+      - 'ci/**'
+      - '.gi/**'
+      - '.github/**'
+      - '.cargo/**'
+      - 'Cargo.*'
+      - 'Justfile'
+      - 'rust-toolchain*'
   schedule:
     - cron: '0 14 * * *'
   workflow_dispatch:
@@ -20,15 +31,15 @@ permissions:
   pull-requests: read
   statuses: write
 concurrency:
-  group: inference-${{ github.event.workflow_run.head_branch || github.ref }}-${{ github.event_name }}
-  cancel-in-progress: ${{ github.event_name == 'workflow_run' }}
+  group: inference-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
 jobs:
   qualification:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 1440
     steps:
-      # Workflow-run controller always comes from protected main, never the PR.
+      # Only protected controller code is executed with credentials. Never check
+      # out PR source here; admission verifies the author before native dispatch.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           ref: main

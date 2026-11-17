@@ -66,7 +66,7 @@ down the entire split formation. Retain nightly and release evidence.
 
 ## Implementation and activation
 
-`inference.yml` is the protected controller: workflow-run dispatch verifies an
+`inference.yml` is the protected controller: pull-request-target dispatch verifies an
 open, current same-repository PR and a write-capable collaborator via GitHub.
 It uses controller source from main, never executes the candidate on that runner,
 and selects inference-related paths. Nightly and manual/reusable release runs
