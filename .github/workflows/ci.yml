@@ -138,7 +138,7 @@ jobs:
   runtime:
     needs: [preflight, quality, host]
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix: ${{ fromJSON(needs.preflight.outputs.runtimes) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 240
