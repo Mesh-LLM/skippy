@@ -20,6 +20,11 @@ fn pr_covers_each_architecture_and_splits_only_large_models() {
         assert_eq!(row.machines, if row.mode == "split" { 2 } else { 1 });
     }
     assert_eq!(plan.performance_claim, "smoke-only");
+    assert!(
+        plan.rows
+            .iter()
+            .all(|row| row.checks == ["gpu-startup", "scored-quality", "streaming-smoke"])
+    );
     assert_eq!(plan.status, "planned-not-executed");
 }
 

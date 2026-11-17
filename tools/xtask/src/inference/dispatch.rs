@@ -53,7 +53,7 @@ fn launch(path: &str, body: &Value, deadline: Instant) -> DynResult<Value> {
     let mut body = body.clone();
     let mut attempt = 0;
     loop {
-        if path.ends_with("inference-split/launch") {
+        if path.ends_with("-split/launch") {
             let inventory = api("GET", "/v1/agents", None)?;
             match super::placement::select(
                 &inventory,
@@ -176,11 +176,15 @@ pub fn run(profile: &str, sha: &str, output: &Path, row: Option<&str>) -> DynRes
     write_json_file(&ledger, &ids)?;
     // Capacity waits and all formation members share one budget. Leave ten
     // minutes before Actions' six-hour limit for cancellation and evidence.
-    let deadline = Instant::now() + Duration::from_secs(21000);
+    let deadline = Instant::now() + Duration::from_secs(if profile == "pr" { 2400 } else { 21000 });
     let result = (|| {
         for row in &plan.rows {
             let launch = launch(
-                &format!("/v1/repos/skippy/templates/inference-{}/launch", row.mode),
+                &format!(
+                    "/v1/repos/skippy/templates/inference-{}{}/launch",
+                    if profile == "pr" { "pr-" } else { "" },
+                    row.mode
+                ),
                 &json!({"ref":sha,"inputs":{"profile":profile,"model":row.model.split('/').nth(1),"model_key": row.id.strip_suffix(&format!("-{}", row.mode)).ok_or("invalid row id")?},"idempotency_key":format!("inference-{}-{profile}-{}-{}-{sha}",std::env::var("GITHUB_RUN_ID").unwrap_or_else(|_|"local".into()),std::env::var("GITHUB_RUN_ATTEMPT").unwrap_or_else(|_|"1".into()),row.id)}),
                 deadline,
             )?;

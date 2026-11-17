@@ -32,8 +32,23 @@ pub fn admit(key: &str) -> DynResult<PathBuf> {
     }
     let directory = PathBuf::from("target/inference-models").join(key);
     fs::create_dir_all(&directory)?;
+    let local = PathBuf::from(std::env::var_os("HOME").ok_or("HOME missing")?)
+        .join(".cache/skippy/inference-models");
+    fs::create_dir_all(&local)?;
     let mut paths = Vec::new();
     for file in fixture.files {
+        let name = Path::new(&file.path)
+            .file_name()
+            .ok_or("model shard filename missing")?;
+        let cached_local = local.join(&file.sha256);
+        let _lock = super::build::lock(&local.join(format!("{}.lock", file.sha256)))?;
+        if cached_local.is_file() && valid_file(&cached_local, &file)? {
+            println!("Verified local model cache HIT: {}", file.path);
+            let admitted = directory.join(name);
+            stage(&cached_local, &admitted)?;
+            paths.push(admitted.canonicalize()?);
+            continue;
+        }
         let args = [
             "download".into(),
             fixture.repo.clone(),
@@ -66,22 +81,23 @@ pub fn admit(key: &str) -> DynResult<PathBuf> {
                 downloaded_path(&execution::capture_for("hf", &resolve, &[], 180)?)?
             }
         };
-        let metadata = fs::metadata(&path)
-            .map_err(|error| format!("downloaded model path {}: {error}", path.display()))?;
-        if metadata.len() != file.size || artifact::sha256(&path)? != file.sha256 {
+        let staged = tempfile::NamedTempFile::new_in(&local)?;
+        fs::copy(&path, staged.path())?;
+        if !valid_file(staged.path(), &file)? {
             return Err("model artifact digest mismatch".into());
         }
-        let name = Path::new(&file.path)
-            .file_name()
-            .ok_or("model shard filename missing")?;
+        staged.persist(&cached_local)?;
         let admitted = directory.join(name);
-        stage(&path, &admitted)?;
+        stage(&cached_local, &admitted)?;
         paths.push(admitted.canonicalize()?);
     }
     paths
         .into_iter()
         .next()
         .ok_or_else(|| "empty fixture".into())
+}
+fn valid_file(path: &Path, file: &File) -> DynResult<bool> {
+    Ok(fs::metadata(path)?.len() == file.size && artifact::sha256(path)? == file.sha256)
 }
 fn stage(source: &Path, destination: &Path) -> DynResult<()> {
     if destination.exists() {

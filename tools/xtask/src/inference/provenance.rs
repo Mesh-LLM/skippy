@@ -3,6 +3,31 @@ use crate::{artifact, execution};
 use serde_json::json;
 use std::fs;
 pub fn record(output: &Path, sha: &str) -> DynResult<()> {
+    let mut identity: serde_json::Value =
+        serde_json::from_slice(&fs::read("target/inference-build.json")?)?;
+    verify(&identity, sha)?;
+    identity["model_manifest_sha256"] =
+        artifact::sha256(Path::new("ci/inference-artifacts.json"))?.into();
+    identity["client_lock_sha256"] =
+        artifact::sha256(Path::new("ci/aiperf-requirements.lock"))?.into();
+    identity["corpus_manifest_sha256"] =
+        artifact::sha256(Path::new("ci/inference-corpus.json"))?.into();
+    identity["harness"] = "aiperf-0.13.0-python-3.12".into();
+    write_json_file(&output.join("provenance.json"), &identity)
+}
+
+pub fn verify(identity: &serde_json::Value, sha: &str) -> DynResult<()> {
+    if identity["stack_commit"] != sha
+        || identity["cli_sha256"] != artifact::sha256(Path::new("target/debug/skippy"))?
+        || identity["correctness_sha256"]
+            != artifact::sha256(Path::new("target/debug/skippy-correctness"))?
+    {
+        return Err("cached inference executable provenance mismatch".into());
+    }
+    Ok(())
+}
+
+pub fn identity(sha: &str) -> DynResult<serde_json::Value> {
     let source = fs::read_to_string("crates/skippy-ffi/src/lib.rs")?;
     let mut version = Vec::new();
     for name in ["MAJOR", "MINOR", "PATCH"] {
@@ -38,18 +63,15 @@ pub fn record(output: &Path, sha: &str) -> DynResult<()> {
         .find(|line| line.starts_with("CMAKE_CUDA_COMPILER:"))
         .and_then(|line| line.split_once('=').map(|(_, value)| value))
         .ok_or("native CUDA compiler missing from build cache")?;
-    write_json_file(
-        &output.join("provenance.json"),
-        &json!({
-            "stack_commit":sha,"native_upstream":fs::read_to_string("llama_cpp/upstream.txt")?.trim(),
-            "native_tree":native.trim(),"native_abi":version,
-            "cli_sha256":artifact::sha256(Path::new("target/debug/skippy"))?,
-            "correctness_sha256":artifact::sha256(Path::new("target/debug/skippy-correctness"))?,
-            "model_manifest_sha256":artifact::sha256(Path::new("ci/inference-artifacts.json"))?,
-            "client_lock_sha256":artifact::sha256(Path::new("ci/aiperf-requirements.lock"))?,
-            "corpus_manifest_sha256":artifact::sha256(Path::new("ci/inference-corpus.json"))?,
-            "harness":"aiperf-0.13.0-python-3.12",
-            "cuda_compiler":execution::capture(compiler,&["--version".into()],&[])?
-        }),
-    )
+    Ok(json!({
+        "stack_commit":sha,"native_upstream":fs::read_to_string("llama_cpp/upstream.txt")?.trim(),
+        "native_tree":native.trim(),"native_abi":version,
+        "cli_sha256":artifact::sha256(Path::new("target/debug/skippy"))?,
+        "correctness_sha256":artifact::sha256(Path::new("target/debug/skippy-correctness"))?,
+        "model_manifest_sha256":artifact::sha256(Path::new("ci/inference-artifacts.json"))?,
+        "client_lock_sha256":artifact::sha256(Path::new("ci/aiperf-requirements.lock"))?,
+        "corpus_manifest_sha256":artifact::sha256(Path::new("ci/inference-corpus.json"))?,
+        "harness":"aiperf-0.13.0-python-3.12",
+        "cuda_compiler":execution::capture(compiler,&["--version".into()],&[])?
+    }))
 }

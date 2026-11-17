@@ -170,9 +170,9 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
     println!("Admitting pinned weights for {key}");
     let model = super::artifacts::admit(key)?;
     let coordinate = format!("{}@{}", fixture.repo, fixture.revision);
-    let context = 65536;
+    let context = if profile == "pr" { 4096 } else { 65536 };
     let worker = std::env::var("JIANYANG_ROLE").as_deref() == Ok("worker");
-    if !worker {
+    if !worker && profile != "pr" {
         println!("Running native chain and state-handoff checks");
         super::numerical::run(
             &model,
@@ -297,10 +297,19 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
         &coordinate,
         &out.join("quality.json"),
     )?;
-    super::performance::run(profile, &coordinate, context, &out, &fixture)?;
+    if profile == "pr" {
+        super::smoke::run(&coordinate, &out)?;
+    } else {
+        super::performance::run(profile, &coordinate, context, &out, &fixture)?;
+    }
+    let correctness_scope = if profile == "pr" {
+        "GPU startup, deterministic endpoint repeats and bounded streaming smoke"
+    } else {
+        "native chain parity, state handoff, deterministic endpoint repeat; not an independent implementation reference"
+    };
     write_json_file(
         &out.join("qualification.json"),
-        &json!({"source_sha":sha,"model":key,"mode":mode,"profile":profile,"status":"passed","performance_claim":plan.performance_claim,"gpu":gpu,"artifact_manifest_sha256":crate::artifact::sha256(Path::new("ci/inference-artifacts.json"))?,"layers":fixture.layers,"correctness_scope":"native chain parity, state handoff, deterministic endpoint repeat; not an independent implementation reference"}),
+        &json!({"source_sha":sha,"model":key,"mode":mode,"profile":profile,"status":"passed","performance_claim":plan.performance_claim,"gpu":gpu,"artifact_manifest_sha256":crate::artifact::sha256(Path::new("ci/inference-artifacts.json"))?,"layers":fixture.layers,"correctness_scope":correctness_scope}),
     )?;
     if mode == "split" {
         let listener = TcpListener::bind("0.0.0.0:9912")?;

@@ -1,6 +1,7 @@
 //! Source-bound qualification planning. A plan is never hardware evidence.
 mod admission;
 mod artifacts;
+mod build;
 mod corpus;
 mod dispatch;
 mod execute;
@@ -11,6 +12,7 @@ mod performance;
 mod placement;
 mod provenance;
 mod retention;
+mod smoke;
 mod tests;
 use crate::command::{DynResult, write_json_file};
 use serde::{Deserialize, Serialize};
@@ -62,6 +64,7 @@ pub fn run(args: &[String]) -> DynResult<()> {
         .collect::<Vec<_>>()
         .as_slice()
     {
+        ["build"] => build::run(),
         ["admit"] => admission::run(),
         ["control-preflight"] => {
             let result = dispatch::api("GET", "/v1/repos/skippy", None)?;
@@ -146,7 +149,11 @@ fn plan<'a>(ladder: &Ladder, profile: &'a str, sha: &'a str) -> DynResult<Plan<'
                 architecture: model.architecture.clone(),
                 mode,
                 machines,
-                checks: ["correctness", "scored-quality", "agentx-performance"],
+                checks: if profile == "pr" {
+                    ["gpu-startup", "scored-quality", "streaming-smoke"]
+                } else {
+                    ["correctness", "scored-quality", "agentx-performance"]
+                },
             });
         }
     }

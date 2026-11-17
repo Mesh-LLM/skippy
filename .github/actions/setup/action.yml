@@ -6,3 +6,13 @@ runs:
     - uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
       with:
         just-version: '1.58.0'
+    - name: Restore Rust dependencies and build outputs
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target/debug
+        key: rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ matrix.id || 'tools' }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ github.sha }}
+        restore-keys: |
+          rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ matrix.id || 'tools' }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-

@@ -46,8 +46,8 @@ executing; insufficient capacity must queue or fail. There is no passing skip.
 ## Evidence and checks
 
 Correctness, scored answer quality and serving performance are separate gates.
-Retain raw outputs and diagnostics for each. A short PR AgentX replay is a
-performance smoke test, not an official AgentX score. Extended qualification
+Retain raw outputs and diagnostics for each. PR checks are bounded endpoint
+smoke tests and make no performance-score claim. Extended qualification
 requires a locked harness/scenario/corpus, declared context and load, consistent
 warmup, repeated measurements and retained request-level timings and errors.
 Do not gate latency on an arbitrary threshold before measuring baseline noise.
@@ -96,7 +96,7 @@ Admission reserves at least 16 GiB beyond weight bytes and checks available
 unified memory. This floor is not proof every context fits; real allocation
 failures remain failures. Model caches are explicit, hash-verified inputs.
 
-The native workload runs CPU chain parity and state-handoff checks against native
+Nightly and release run CPU chain parity and state-handoff checks against native
 monolithic execution (sharing file-backed weights avoids duplicate GPU copies
 for the largest model), then requires positive GPU offload evidence and scores three exact-output cases and deterministic
 repeats through the serving endpoint. These are a small regression set, not a
@@ -108,13 +108,24 @@ main; qualification checks it against the pin before and after replay and retain
 both responses, failing if upstream moves. This guards the upstream resolution;
 it does not modify the official harness. Tokenizer assets use explicit per-model
 file lists, including vocabulary and merges, without CLI wildcard filtering.
-PR uses an explicitly unsafe 120-second,
-four-trajectory smoke with no official-score claim. Nightly uses two 900-second
-measurements; release uses two 1800-second measurements. Context is 65536 for all
-profiles. Streaming and first-turn-prefix cache busting are explicit. Extended
+PR runs a short endpoint smoke at context 4096: real GPU startup, the three
+scored cases with deterministic repeats, and a streamed answer with a 60-second
+request deadline and 16-token output cap. It does not run CPU parity or AgentX.
+Nightly uses two 900-second AgentX measurements; release uses two 1800-second
+measurements, both at context 65536. Streaming and first-turn-prefix cache busting are explicit. Extended
 runs require exactly two complete, valid AIPerf trial exports; every profile
 rejects nonzero request error rates, error summaries and missing error evidence.
 These capacity-limited runs are not full-native-context leaderboard submissions.
+
+Native builds use a host-local executable cache keyed by the immutable source,
+Rust/C++/CUDA/CMake toolchains, backend, architecture and build environment.
+Cached executable hashes are verified before use and retained in provenance;
+invalid entries rebuild. A separate bounded sccache stores Rust and native
+compiler results across commits. Model shards are copied once into host-local
+content-addressed storage, verified by SHA-256 on every admission, then hardlinked
+into each fresh job workspace. Hosted CI caches Cargo dependencies and debug
+build outputs per OS, architecture, job, matrix row and toolchain/lockfile.
+Cache hits accelerate execution and never replace the required smoke evidence.
 
 Local checks and live template-schema admission must precede a native pilot.
 No successful hardware qualification is implied by implementation or schema

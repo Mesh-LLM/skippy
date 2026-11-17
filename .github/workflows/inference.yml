@@ -66,7 +66,7 @@ jobs:
       max-parallel: 3
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 360
+    timeout-minutes: ${{ needs.plan.outputs.profile == 'pr' && 45 || 360 }}
     env:
       EVIDENCE: target/ci-evidence/inference-${{ matrix.id }}
     steps:

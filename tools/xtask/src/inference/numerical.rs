@@ -34,7 +34,14 @@ pub fn run(model: &Path, key: &str, layers: u32, width: u32, output: &Path) -> D
                 "32".into(),
             ]);
         }
-        execution::run("target/debug/skippy-correctness", &args, &[], 1800)?;
+        // These reference checks explicitly use CPU execution. Avoid creating
+        // an unrelated CUDA context before the real GPU server starts.
+        execution::run(
+            "target/debug/skippy-correctness",
+            &args,
+            &[("CUDA_VISIBLE_DEVICES", String::new())],
+            1800,
+        )?;
     }
     Ok(())
 }
