@@ -174,7 +174,7 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
     let coordinate = format!("{}@{}", fixture.repo, fixture.revision);
     let context = if profile == "pr" { 4096 } else { 65536 };
     let worker = std::env::var("JIANYANG_ROLE").as_deref() == Ok("worker");
-    if !worker && profile != "pr" {
+    if !worker && profile != "pr" && std::env::var_os("SKIPPY_SKIP_NUMERICAL").is_none() {
         println!("Running native chain and state-handoff checks");
         super::numerical::run(
             &model,

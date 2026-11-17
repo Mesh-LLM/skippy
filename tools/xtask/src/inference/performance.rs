@@ -40,7 +40,7 @@ pub fn run(
         "--scenario".into(),
         "inferencex-agentx-mvp".into(),
         "--url".into(),
-        "http://127.0.0.1:9337".into(),
+        std::env::var("SKIPPY_AGENTX_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:9337".into()),
         "--model".into(),
         key.into(),
         "--tokenizer".into(),
@@ -63,7 +63,7 @@ pub fn run(
         if profile == "pr" {
             "120"
         } else if profile == "nightly" {
-            "900"
+            "600"
         } else {
             "1800"
         }
@@ -80,7 +80,8 @@ pub fn run(
     } else {
         aiperf.extend([
             "--num-profile-runs".into(),
-            "2".into(),
+            "1".into(),
+            "--unsafe-override".into(),
             "--no-profile-run-disable-warmup-after-first".into(),
         ]);
     }

@@ -930,6 +930,290 @@
         "HF_HOME": "/mnt/model-store/huggingface",
         "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
       }
+    },
+    {
+      "name": "Diagnostic Coder split HTTP capture (not a benchmark score)",
+      "group": "Inference",
+      "target": {
+        "executor": "lab",
+        "selector": {
+          "os": {
+            "family": "linux"
+          },
+          "arch": {
+            "in": [
+              "aarch64"
+            ]
+          },
+          "accelerator": {
+            "backend": "cuda",
+            "model": {
+              "in": [
+                "NVIDIA GB10"
+              ]
+            }
+          },
+          "memory": {
+            "system_gib": {
+              "min": 120
+            }
+          },
+          "network": {
+            "in": [
+              "james-lab",
+              "dan-lab"
+            ]
+          }
+        }
+      },
+      "build": "cd ${repo_dir} && just inference-build",
+      "inputs": [
+        {
+          "key": "profile",
+          "label": "Profile",
+          "kind": "choice",
+          "choices": [
+            {
+              "value": "pr",
+              "label": "pr"
+            },
+            {
+              "value": "nightly",
+              "label": "nightly"
+            },
+            {
+              "value": "release",
+              "label": "release"
+            }
+          ],
+          "default": "pr"
+        },
+        {
+          "key": "model_key",
+          "label": "Model",
+          "kind": "choice",
+          "choices": [
+            {
+              "value": "qwen35-08b",
+              "label": "Qwen/Qwen3.5-0.8B"
+            },
+            {
+              "value": "qwen35-2b",
+              "label": "Qwen/Qwen3.5-2B"
+            },
+            {
+              "value": "qwen35-4b",
+              "label": "Qwen/Qwen3.5-4B"
+            },
+            {
+              "value": "qwen35-9b",
+              "label": "Qwen/Qwen3.5-9B"
+            },
+            {
+              "value": "qwen38-27b",
+              "label": "Qwen/Qwen3.8-27B"
+            },
+            {
+              "value": "qwen3-coder-30b-a3b",
+              "label": "Qwen/Qwen3-Coder-30B-A3B-Instruct"
+            },
+            {
+              "value": "qwen36-35b-a3b",
+              "label": "Qwen/Qwen3.6-35B-A3B"
+            },
+            {
+              "value": "qwen38-flash-next",
+              "label": "Qwen/Qwen3.8-Flash-Next"
+            }
+          ],
+          "default": "qwen35-4b"
+        },
+        {
+          "key": "model",
+          "label": "Model name",
+          "kind": "choice",
+          "choices": [
+            {
+              "value": "Qwen3.5-0.8B",
+              "label": "Qwen/Qwen3.5-0.8B"
+            },
+            {
+              "value": "Qwen3.5-2B",
+              "label": "Qwen/Qwen3.5-2B"
+            },
+            {
+              "value": "Qwen3.5-4B",
+              "label": "Qwen/Qwen3.5-4B"
+            },
+            {
+              "value": "Qwen3.5-9B",
+              "label": "Qwen/Qwen3.5-9B"
+            },
+            {
+              "value": "Qwen3.8-27B",
+              "label": "Qwen/Qwen3.8-27B"
+            },
+            {
+              "value": "Qwen3-Coder-30B-A3B-Instruct",
+              "label": "Qwen/Qwen3-Coder-30B-A3B-Instruct"
+            },
+            {
+              "value": "Qwen3.6-35B-A3B",
+              "label": "Qwen/Qwen3.6-35B-A3B"
+            },
+            {
+              "value": "Qwen3.8-Flash-Next",
+              "label": "Qwen/Qwen3.8-Flash-Next"
+            }
+          ],
+          "default": "Qwen3.5-4B"
+        },
+        {
+          "key": "leader_node",
+          "label": "leader Spark",
+          "kind": "choice",
+          "default": "spark-000137",
+          "choices": [
+            {
+              "value": "spark-000137",
+              "label": "spark-000137"
+            },
+            {
+              "value": "spark-000265",
+              "label": "spark-000265"
+            },
+            {
+              "value": "spark-000280",
+              "label": "spark-000280"
+            },
+            {
+              "value": "spark-000281",
+              "label": "spark-000281"
+            },
+            {
+              "value": "spark-000464",
+              "label": "spark-000464"
+            },
+            {
+              "value": "spark-000468",
+              "label": "spark-000468"
+            },
+            {
+              "value": "spark-000499",
+              "label": "spark-000499"
+            },
+            {
+              "value": "spark-000586",
+              "label": "spark-000586"
+            },
+            {
+              "value": "spark-000907",
+              "label": "spark-000907"
+            },
+            {
+              "value": "spark-000945",
+              "label": "spark-000945"
+            },
+            {
+              "value": "spark-001095",
+              "label": "spark-001095"
+            },
+            {
+              "value": "spark-001272",
+              "label": "spark-001272"
+            }
+          ]
+        },
+        {
+          "key": "worker_node",
+          "label": "worker Spark",
+          "kind": "choice",
+          "default": "spark-000280",
+          "choices": [
+            {
+              "value": "spark-000137",
+              "label": "spark-000137"
+            },
+            {
+              "value": "spark-000265",
+              "label": "spark-000265"
+            },
+            {
+              "value": "spark-000280",
+              "label": "spark-000280"
+            },
+            {
+              "value": "spark-000281",
+              "label": "spark-000281"
+            },
+            {
+              "value": "spark-000464",
+              "label": "spark-000464"
+            },
+            {
+              "value": "spark-000468",
+              "label": "spark-000468"
+            },
+            {
+              "value": "spark-000499",
+              "label": "spark-000499"
+            },
+            {
+              "value": "spark-000586",
+              "label": "spark-000586"
+            },
+            {
+              "value": "spark-000907",
+              "label": "spark-000907"
+            },
+            {
+              "value": "spark-000945",
+              "label": "spark-000945"
+            },
+            {
+              "value": "spark-001095",
+              "label": "spark-001095"
+            },
+            {
+              "value": "spark-001272",
+              "label": "spark-001272"
+            }
+          ]
+        }
+      ],
+      "budget": {
+        "max_usd": 0,
+        "max_duration_s": 1800,
+        "grace_s": 60
+      },
+      "retain": "never",
+      "key": "inference-coder-wire",
+      "command": "set -eu\ncd \"$JIANYANG_REPO_DIR\"\nexport SKIPPY_SKIP_NUMERICAL=1\nif [ \"${JIANYANG_ROLE:-}\" = worker ]; then\n  exec just inference-execute nightly qwen3-coder-30b-a3b split\nfi\nuv tool run --python 3.12 --from mitmproxy==12.3.1 mitmdump --mode reverse:http://127.0.0.1:9337 --listen-host 127.0.0.1 --listen-port 9338 --set stream_large_bodies=1 --set store_streamed_bodies=true --set flow_detail=0 --set termlog_verbosity=error -w \"$JIANYANG_ARTIFACT_DIR/wire-capture.mitm\" > \"$JIANYANG_ARTIFACT_DIR/proxy.log\" 2>&1 &\nproxy=$!\ntrap 'kill \"$proxy\" 2>/dev/null || true; wait \"$proxy\" 2>/dev/null || true' EXIT\nfor attempt in $(seq 1 120); do\n  kill -0 \"$proxy\"\n  code=$(curl -sS --max-time 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:9338/ || true)\n  if [ \"$code\" != 000 ]; then break; fi\n  sleep 1\ndone\nexport SKIPPY_AGENTX_ENDPOINT=http://127.0.0.1:9338\njust inference-execute nightly qwen3-coder-30b-a3b split\n",
+      "roles": [
+        {
+          "name": "leader",
+          "count": 1,
+          "nodes": [
+            "${leader_node}"
+          ]
+        },
+        {
+          "name": "worker",
+          "count": 1,
+          "nodes": [
+            "${worker_node}"
+          ]
+        }
+      ],
+      "rendezvous": {
+        "mode": "peers",
+        "leader_role": "leader",
+        "leader_port": 9400
+      },
+      "env": {
+        "HF_HOME": "/mnt/model-store/huggingface",
+        "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
+      }
     }
   ]
 }
