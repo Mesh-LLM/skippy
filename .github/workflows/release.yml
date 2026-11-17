@@ -14,7 +14,9 @@ env:
   CARGO_PROFILE_BENCH_DEBUG: '0'
 jobs:
   admission:
-    runs-on: [self-hosted, jy, Linux, X64]
+    runs-on:
+      group: jy-rnr_vfnz8k5p4yrh334
+      labels: [self-hosted, Linux, X64]
     timeout-minutes: 20
     outputs:
       source: ${{ steps.admit.outputs.source }}
@@ -37,7 +39,9 @@ jobs:
       jy_runners: true
   publish:
     needs: [admission, validation]
-    runs-on: [self-hosted, jy, Linux, X64]
+    runs-on:
+      group: jy-rnr_vfnz8k5p4yrh334
+      labels: [self-hosted, Linux, X64]
     timeout-minutes: 60
     permissions:
       contents: write

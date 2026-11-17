@@ -160,7 +160,15 @@ fn expected_runner(host: &Host, variant: &str) -> Vec<String> {
         .map(str::to_owned)
         .collect()
 }
-pub(crate) fn jy_runner(host: &Host, runner: &[String]) -> Vec<String> {
+pub(crate) const JY_RUNNER_GROUP: &str = "jy-rnr_vfnz8k5p4yrh334";
+
+#[derive(Serialize)]
+pub(crate) struct RunnerSelection {
+    group: &'static str,
+    labels: Vec<String>,
+}
+
+pub(crate) fn jy_runner(host: &Host, runner: &[String]) -> RunnerSelection {
     let os = match host.os.as_str() {
         "macos" => "macOS",
         "linux" => "Linux",
@@ -171,15 +179,17 @@ pub(crate) fn jy_runner(host: &Host, runner: &[String]) -> Vec<String> {
     } else {
         "X64"
     };
-    if runner.first().is_some_and(|label| label == "self-hosted") {
-        let mut labels = runner.to_vec();
-        labels.insert(1, "jy".into());
-        labels
+    let labels = if runner.first().is_some_and(|label| label == "self-hosted") {
+        runner.to_vec()
     } else {
-        ["self-hosted", "jy", os, arch]
+        ["self-hosted", os, arch]
             .into_iter()
             .map(str::to_owned)
             .collect()
+    };
+    RunnerSelection {
+        group: JY_RUNNER_GROUP,
+        labels,
     }
 }
 fn safe_id(value: &str) -> bool {

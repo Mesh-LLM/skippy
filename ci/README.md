@@ -9,10 +9,10 @@ protected-main llama upgrade workflow.
 runtimes. CPU work uses GitHub-hosted `ubuntu-24.04`, `ubuntu-24.04-arm`,
 `macos-15` and `windows-2025`. Metal and CUDA rows require the explicit ephemeral
 hardware labels in that manifest. Compilation never counts as device evidence.
-Tagged releases project that same matrix onto the repository's self-hosted `jy`
-fleet: every controller, build, package, smoke, summary, and publication job
-requires the `jy` label, while preserving the exact OS, architecture, and backend
-labels. A release cannot fall back to GitHub-hosted capacity.
+Tagged releases project that same matrix onto the repository's self-hosted Jy
+runner group: every controller, build, package, smoke, summary, and publication
+job selects `jy-rnr_vfnz8k5p4yrh334` while preserving the exact OS, architecture,
+and backend labels. A release cannot fall back to GitHub-hosted capacity.
 
 ## Build prerequisites
 
@@ -44,7 +44,8 @@ model and concurrent baseline contexts, not merely the GGUF file size.
 Quality and upstream candidate generation are the toolchain-specific exceptions
 to ordinary hosted CPU work. They request an ephemeral Linux x86_64
 `native-contracts` builder with LLVM/Clang 22 development and CMake packages,
-Ninja, lld and `SKIPPY_REWRITER_LLVM_PREFIX` configured. The same generator tools
+Ninja and lld. CI selects its pinned installation at `/usr/lib/llvm-22` through
+`SKIPPY_REWRITER_LLVM_PREFIX`. The same generator tools
 must be available on full family builders. A standard hosted image without those
 development packages cannot run these gates; no job downloads system packages
 to disguise that prerequisite.

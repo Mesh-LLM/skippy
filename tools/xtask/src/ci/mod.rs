@@ -65,17 +65,17 @@ fn project_matrix(
         let host = matrix.host(&runtime.host)?;
         let mut value = serde_json::to_value(runtime)?;
         let runtime_runner = if use_jy_runners {
-            matrix::jy_runner(host, &runtime.runner)
+            serde_json::to_value(matrix::jy_runner(host, &runtime.runner))?
         } else {
-            runtime.runner.clone()
+            serde_json::to_value(&runtime.runner)?
         };
         let host_runner = if use_jy_runners {
-            matrix::jy_runner(host, &host.runner)
+            serde_json::to_value(matrix::jy_runner(host, &host.runner))?
         } else {
-            host.runner.clone()
+            serde_json::to_value(&host.runner)?
         };
-        value["runner"] = serde_json::to_value(runtime_runner)?;
-        value["host_runner"] = serde_json::to_value(host_runner)?;
+        value["runner"] = runtime_runner;
+        value["host_runner"] = host_runner;
         runtime_rows.push(value);
     }
     let runtimes = serde_json::json!({"include": runtime_rows});
@@ -144,9 +144,9 @@ mod tests {
         }
     }
     fn assert_jy_runner(runner: &serde_json::Value) {
-        let labels = runner.as_array().unwrap();
+        assert_eq!(runner["group"], matrix::JY_RUNNER_GROUP);
+        let labels = runner["labels"].as_array().unwrap();
         assert!(labels.iter().any(|label| label == "self-hosted"));
-        assert!(labels.iter().any(|label| label == "jy"));
         assert!(!labels.iter().any(|label| {
             label.as_str().is_some_and(|label| {
                 label.starts_with("ubuntu-")
