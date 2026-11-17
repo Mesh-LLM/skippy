@@ -18,6 +18,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  statuses: write
 concurrency:
   group: inference-${{ github.event.workflow_run.head_branch || github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'workflow_run' }}
@@ -44,6 +45,19 @@ jobs:
           PROFILE: ${{ steps.admission.outputs.profile }}
           JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
         run: just inference-dispatch "$PROFILE" "$SOURCE_SHA"
+      - name: Publish qualification status on the tested commit
+        if: always() && steps.admission.outputs.source != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.admission.outputs.source }}
+          RESULT: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          state=failure
+          if test "$RESULT" = success; then state=success; fi
+          gh api --method POST "repos/general-inference/skippy/statuses/$SOURCE_SHA" \
+            -f "state=$state" -f context='Inference qualification' \
+            -f "target_url=$RUN_URL" -f 'description=Native JY Spark qualification'
       - name: Cancel outstanding JY jobs and formations
         if: cancelled() || failure()
         env:

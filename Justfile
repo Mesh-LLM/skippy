@@ -136,8 +136,9 @@ inference-cancel ledger="target/ci-evidence/inference/jobs.json":
     @cargo xtool inference cancel "{{ ledger }}"
 
 inference-build:
-    @just build cuda 121
-    @LLAMA_STAGE_BACKEND=cuda LLAMA_STAGE_LINK_MODE=static cargo build --locked -p skippy-correctness
+    @command -v hf uv nvidia-smi
+    @LLAMA_STAGE_BACKEND=cuda LLAMA_STAGE_CUDA_ARCHITECTURES=121 LLAMA_STAGE_LINK_MODE=static just llama-build
+    @LLAMA_STAGE_BACKEND=cuda LLAMA_STAGE_CUDA_ARCHITECTURES=121 LLAMA_STAGE_LINK_MODE=static cargo build --locked -p skippy-cli -p skippy-correctness
 
 inference-tool-check:
     @cargo check --locked -p xtask

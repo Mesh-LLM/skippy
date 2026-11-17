@@ -27,6 +27,8 @@ pub fn run(
     let mut aiperf = vec![
         "tool".into(),
         "run".into(),
+        "--python".into(),
+        "3.12".into(),
         "--from".into(),
         "aiperf==0.13.0".into(),
         "aiperf".into(),
