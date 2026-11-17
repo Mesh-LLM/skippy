@@ -450,7 +450,7 @@ jobs:
         env:
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
   summary:
-    name: CI
+    name: ${{ needs.plan.outputs.profile == 'full' && 'Full qualification' || 'CI' }}
     needs: [plan, inference_contracts, quality, host, runtime, product, smoke]
     if: always()
     runs-on: ubuntu-24.04

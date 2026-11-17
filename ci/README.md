@@ -1,6 +1,9 @@
 # Skippy continuous integration
 
-`ci.yml` has explicit `pr` and `full` profiles, and `CI` is the required summary.
+`ci.yml` has explicit `pr` and `full` profiles. `CI` is the required short-profile
+summary; extended runs report `Full qualification`, so an optional full run on a
+PR commit does not replace its short merge gate. Release callers require the
+full workflow result independently of the check name.
 Pull requests and main pushes use the short profile: repository contracts,
 formatting/Clippy, unit and C API tests, and FFI binding freshness. Relevant trusted
 PRs also run the protected seven-configuration inference smoke workflow.
