@@ -172,10 +172,46 @@ also inherited a zero-rollback override from the plain-only ablation harness,
 forcing host checkpoints instead of production speculative rollback. Both
 cache-off and cache-on C2 produced the same two variants of prompt 2, with the
 same counts. Those data do not qualify production DFlash behavior. A new
-DFlash campaign restores the production defaults; no gate has been waived.
+DFlash campaign restored the production defaults; no gate was waived.
+
+That corrected production DFlash pilot (`job_t2yjbkrj1fthjzs`, run
+`run_174vdj1s14bh7cn`) passed exact text for all 288 accepted requests, rejected
+six blocks, and passed the downloaded raw-data audit. C1 measured 165.20 →
+165.33 TPS (+0.07%); C2 aggregate measured 206.65 → 206.17 TPS (-0.23%).
+These results are effectively flat. The rollback override was unset in both
+arms. Fresh-process V4 confirmation remains outstanding.
 
 The packaged cache runtime additionally passed actual Metal unit/invalidation
 checks on a Dan-lab M4 Mac mini (`job_9trvfmjfdj54tf9`, run
 `run_vv2132wyp91m1d9`): 54,016 exact values including retired-source cases,
 with all loaded ggml paths from its own bundle and a local artifact re-audit.
 This is hardware correctness evidence, not M4 serving throughput.
+
+## Rejected paired-projection experiment
+
+A private Q8_0 candidate combines two independent projections sharing one input
+into one Metal dispatch. It retains their separate weight/output buffers and
+the existing per-row dot-product body. Local M5 Max screens using original
+weight bytes reduced GPU time by 28–31% for a small shared-expert pair and
+4–5% for the tested query/key pair across three ABBA cycles. Outputs were byte
+exact. Batch, distinct-input and overlapping-output cases declined fusion.
+Four full-model state exports also matched exactly with flash attention auto,
+context 8192, and the candidate pipeline observed. These local diagnostics do
+not establish packaged serving performance.
+
+The subsequent source-pinned M5 Pro 48 GB pilot (`job_66qwv9eg4ebffmn`, run
+`run_whb7ey3jx2r11ws`) used one loaded engine and switched the fusion flag
+between matched requests. The same compiled runtime served both arms. The
+direct native iteration API included session creation, prefill, 128 sampled
+tokens and cleanup; HTTP and frontend scheduling were absent. Three warm and
+three measured cycles covered all eight fixed prompts in within-prompt ABBA.
+
+Native C1 throughput measured **66.40 → 65.94 TPS (-0.70%)**, with measured
+cycle changes -0.25%, -0.91% and -0.94%. All tokens matched, 192 full-length
+requests were accepted including warmup, and two whole blocks were rejected.
+The downloaded requests, block selection, load/thermal windows, library paths
+and recomputed rates passed an independent local audit. This is one process
+campaign on a separate hardware/compiler cohort, not a serving-table update.
+The candidate remains excluded from this PR: the kernel win did not produce a
+native decode gain. Pins and audit hashes are in
+[`metal-decode-q8-pair-rejected.json`](evidence/metal-decode-q8-pair-rejected.json).

@@ -1,5 +1,5 @@
 {
-  "scope": "Unpromoted cache plain pilot and isolated convolution attribution; not a combined headline or completed DFlash qualification",
+  "scope": "Unpromoted cache pilots and isolated convolution attribution; no combined headline or completed fresh-process cache confirmation",
   "audits": {
     "plain_cache": {
       "sha256": "63ee8fb663cd677d027d027d2fd668ad45e6cc4b3b1148a8fc1c7ad2a7201be5",
@@ -127,6 +127,68 @@
               1.2715795593551515,
               1.0635018380220407,
               -0.319068961014779
+            ],
+            "all_text_exact": true
+          }
+        ]
+      }
+    },
+    "production_dflash_cache": {
+      "job": "job_t2yjbkrj1fthjzs",
+      "run": "run_174vdj1s14bh7cn",
+      "sha256": "958042733b29acf4cf0095bf7a686738e50c46cb148f2be797913d8fe4290c71",
+      "result": {
+        "status": "PASS_ARTIFACT_AUDIT",
+        "single_campaign": true,
+        "promotion_allowed": false,
+        "accepted_requests": 288,
+        "rejected_blocks": 6,
+        "comparisons": [
+          {
+            "concurrency": 1,
+            "arms": [
+              {
+                "arm": "old",
+                "output_tokens": 6144,
+                "elapsed_s": 37.19015800044872,
+                "tok_s": 165.2049985893007
+              },
+              {
+                "arm": "new",
+                "output_tokens": 6144,
+                "elapsed_s": 37.162603000877425,
+                "tok_s": 165.32749333664646
+              }
+            ],
+            "percent": 0.07414711927107298,
+            "cycle_percent": [
+              0.20850642632082028,
+              0.1968110758600261,
+              -0.183617813577297
+            ],
+            "all_text_exact": true
+          },
+          {
+            "concurrency": 2,
+            "arms": [
+              {
+                "arm": "old",
+                "output_tokens": 6144,
+                "elapsed_s": 29.731798999477178,
+                "tok_s": 206.6474349603951
+              },
+              {
+                "arm": "new",
+                "output_tokens": 6144,
+                "elapsed_s": 29.800968999043107,
+                "tok_s": 206.1677927384603
+              }
+            ],
+            "percent": -0.2321065451534543,
+            "cycle_percent": [
+              -0.35791206749599125,
+              0.1756335748524407,
+              -0.5144040563941688
             ],
             "all_text_exact": true
           }

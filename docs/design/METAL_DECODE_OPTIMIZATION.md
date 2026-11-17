@@ -141,6 +141,27 @@ audits. A measured benefit without correctness or concurrency regressions is
 required before promotion into the core queue.
 
 The first M3 plain pilot measured +2.70% C1 and +0.65% C2 with exact text and
-a local raw-data re-audit. Production DFlash and fresh-process confirmation
-remain outstanding; these observations do not promote the prototype. See the
-benchmark report for the failed DFlash gate and corrected rollback setup.
+a local raw-data re-audit. The corrected production DFlash pilot passed with
+exact text and was effectively flat (+0.07% C1, -0.23% C2). These single-process
+observations do not promote the prototype. See the benchmark report for the
+failed DFlash gate and corrected rollback setup.
+
+The subsequent V4 prototype additionally keys routed-policy overrides and
+bypasses replay while an attention-tuning override is active. Its M1 build
+passed 57,856 exact values, including an actual alternate attention pipeline
+and configuration invalidations. Fresh-process serving confirmation remains
+unfinished, and V4 remains outside this PR.
+
+### Paired dense projections
+
+An untimed, class-split M5 Pro GPU diagnostic placed roughly 80% of captured
+device duration in matrix multiplies: 55% in dense-only groups, 18% in
+routed-only groups and 7.5% in mixed groups. Splitting changes scheduling and
+fusion, so these shares guide experiments rather than describe normal serving
+wall time or explain the main-to-PR gain.
+
+A private paired-Q8 projection candidate preserved weight bytes and per-row
+arithmetic. It passed local kernel/fallback and full-model state checks, but a
+source-pinned native C1 pilot measured -0.70% throughput despite the isolated
+kernel benefit. The code is excluded. See the benchmark report and rejected
+experiment evidence; kernel latency alone is insufficient for promotion.
