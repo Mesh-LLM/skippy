@@ -10,6 +10,12 @@ It predates the shared draft/verification scheduler and native decode work
 qualified in the Mesh-hosted Skippy tree. This branch ports those changes while
 preserving the extraction's newer upstream changes and standalone ownership.
 
+The earlier placement/batching work was already merged into Mesh's `gi` branch
+in PR #33. It was absent from the measured standalone extraction baseline,
+whose core native patch queue ends at 0016 rather than PR #33's 0035. Therefore
+the standalone headline includes this catch-up as well as subsequent changes;
+it does not measure our incremental contribution over Jared's work.
+
 The port includes shared speculative forwards, concurrent sampling, resident
 prefix handling, KV allocation and row attention improvements, gated activation
 fusion, routed vector reuse, decode convolution changes, and tracing. The affine

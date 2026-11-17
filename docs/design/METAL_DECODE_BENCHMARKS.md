@@ -17,6 +17,13 @@ PR, with subsequent evidence/documentation edits only. Both use llama.cpp
 Mesh-hosted/Jared native work and subsequent engine changes, ported into the
 standalone repository. These numbers do not isolate each contributor's changes.
 
+Jared's placement/batching port was already merged into Mesh's `gi` branch as
+[Mesh PR #33](https://github.com/general-inference/mesh-llm/pull/33). The measured
+standalone extraction baseline is a different source line: its core native
+patch queue ends at 0016, while PR #33 contains patches 0017 through 0035 as
+well. This comparison includes bringing that work into standalone Skippy; the
+headline is not an incremental gain over PR #33.
+
 | Serving mode | Skippy main TPS | Skippy PR #9 TPS | Candidate vs main |
 |---|---:|---:|---:|
 | Plain, concurrency 1 | 35.90 | 98.98 | +175.70% |
