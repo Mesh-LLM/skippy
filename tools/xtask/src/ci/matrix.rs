@@ -10,6 +10,8 @@ pub struct Host {
     pub os: String,
     pub arch: String,
     pub runner: Vec<String>,
+    #[serde(default = "enabled")]
+    pub enabled: bool,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -20,6 +22,8 @@ pub struct Runtime {
     pub toolkit: String,
     pub gpu_architectures: String,
     pub runner: Vec<String>,
+    #[serde(default = "enabled")]
+    pub enabled: bool,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -47,6 +51,9 @@ impl Matrix {
             .find(|row| row.id == id)
             .ok_or_else(|| format!("unknown runtime: {id}").into())
     }
+    pub fn active_runtimes(&self) -> impl Iterator<Item = &Runtime> {
+        self.runtimes.iter().filter(|row| row.enabled)
+    }
     fn validate(&self) -> DynResult<()> {
         if self.schema_version != 1 || self.hosts.len() != 4 || self.runtimes.len() != 11 {
             return Err("expected schema 1, four hosts, and eleven runtimes".into());
@@ -64,6 +71,9 @@ impl Matrix {
         let mut variants = BTreeSet::new();
         for runtime in &self.runtimes {
             let host = self.host(&runtime.host)?;
+            if runtime.enabled && !host.enabled {
+                return Err("enabled runtime cannot use a disabled host".into());
+            }
             if !safe_id(&runtime.id) || !ids.insert(&runtime.id) {
                 return Err("invalid runtime identity or runner boundary".into());
             }
@@ -111,6 +121,9 @@ impl Matrix {
         }
         Ok(())
     }
+}
+fn enabled() -> bool {
+    true
 }
 fn valid_host_identity(host: &Host) -> bool {
     matches!(
@@ -224,5 +237,26 @@ mod tests {
             matrix.runtimes[1].runner = wrong.into_iter().map(str::to_owned).collect();
             assert!(matrix.validate().is_err());
         }
+    }
+    #[test]
+    fn disabled_targets_stay_declared_but_are_not_active() {
+        let matrix: Matrix =
+            serde_json::from_str(include_str!("../../../../ci/targets.json")).unwrap();
+        assert_eq!(matrix.runtimes.len(), 11);
+        assert_eq!(matrix.hosts.len(), 4);
+        assert_eq!(matrix.hosts.iter().filter(|row| row.enabled).count(), 3);
+        assert_eq!(matrix.active_runtimes().count(), 8);
+        assert!(
+            matrix
+                .hosts
+                .iter()
+                .filter(|row| row.enabled)
+                .all(|row| row.os != "windows")
+        );
+        assert!(
+            matrix
+                .active_runtimes()
+                .all(|row| !row.id.starts_with("windows-x86_64"))
+        );
     }
 }

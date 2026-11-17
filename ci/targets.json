@@ -30,6 +30,7 @@
     },
     {
       "id": "windows-x86_64",
+      "enabled": false,
       "target": "x86_64-pc-windows-msvc",
       "os": "windows",
       "arch": "x86_64",
@@ -141,6 +142,7 @@
     },
     {
       "id": "windows-x86_64-cpu",
+      "enabled": false,
       "host": "windows-x86_64",
       "backend": "cpu",
       "toolkit": "",
@@ -151,6 +153,7 @@
     },
     {
       "id": "windows-x86_64-cuda12",
+      "enabled": false,
       "host": "windows-x86_64",
       "backend": "cuda",
       "toolkit": "12.9.2",
@@ -165,6 +168,7 @@
     },
     {
       "id": "windows-x86_64-cuda13",
+      "enabled": false,
       "host": "windows-x86_64",
       "backend": "cuda",
       "toolkit": "13.1.2",

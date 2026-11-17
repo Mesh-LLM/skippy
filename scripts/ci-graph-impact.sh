@@ -22,9 +22,11 @@ if [[ "$event" == "pull_request" ]] \
     saw_change=true
     case "$changed_file" in
       llama_cpp/* | skippy_api/* | crates/skippy-ffi/* | ci/llama-canary/* | \
-      scripts/* | tools/xtask/src/automation/native* | tools/xtask/src/automation/rewriter* | \
-      tools/xtask/src/native/* | .github/workflows/ci.yml | \
-      .github/workflows/llama-upgrade.yml | Justfile | Cargo.toml | Cargo.lock | \
+      scripts/build-llama.sh | scripts/prepare-llama.sh | \
+      scripts/check-skippy-generated-family-patch.sh | scripts/check-skippy-public-headers.sh | \
+      scripts/family-certify.sh | scripts/skippy-workload-certify.sh | \
+      tools/xtask/src/automation/native* | tools/xtask/src/automation/rewriter* | \
+      .github/workflows/llama-upgrade.yml | Cargo.toml | Cargo.lock | \
       rust-toolchain.toml | .cargo/*)
         required=true
         reason="graph-sensitive-path"

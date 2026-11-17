@@ -109,7 +109,7 @@ fn prepare(tag: &str, input: &Path) -> DynResult<()> {
         return Err("release output directory must be empty".into());
     }
     let mut assets = BTreeMap::new();
-    for row in &matrix.runtimes {
+    for row in matrix.active_runtimes() {
         let directory = input.join(format!("release-product-{}", row.id));
         let workspace = tempfile::tempdir()?;
         artifacts::unpack(&directory, workspace.path())?;
@@ -142,7 +142,7 @@ fn prepare(tag: &str, input: &Path) -> DynResult<()> {
         source: artifacts::source()?,
         upstream_pin: fs::read_to_string("llama_cpp/upstream.txt")?.trim().into(),
         assets,
-        variants: matrix.runtimes.iter().map(|row| row.id.clone()).collect(),
+        variants: matrix.active_runtimes().map(|row| row.id.clone()).collect(),
     };
     artifacts::write_json(&output.join("release.json"), &release)?;
     fs::write(
@@ -159,8 +159,7 @@ fn verify(directory: &Path) -> DynResult<()> {
     let release: Release = serde_json::from_slice(&fs::read(directory.join("release.json"))?)?;
     let matrix = Matrix::load()?;
     let expected = matrix
-        .runtimes
-        .iter()
+        .active_runtimes()
         .map(|row| row.id.clone())
         .collect::<Vec<_>>();
     if release.schema_version != 1

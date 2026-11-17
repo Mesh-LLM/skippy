@@ -16,21 +16,23 @@ those graph suites. They compile one release runtime, compose it with its exact
 host producer, and run packaged inference on the required device.
 
 Graph-sensitive pull-request inputs include the llama pin and patch queues,
-native C++ facade and FFI, family manifests, native build scripts, rewriter and
-generator code, and workflows or Just recipes that own the gate. A missing base
-or head commit, an invalid diff, or an unknown path runs the graph contracts.
+native C++ facade and FFI, family manifests, native build scripts, and rewriter
+or generator code. CI orchestration, packaging, documentation and ordinary Rust
+changes do not rerun graph shapes. A missing base or head commit, an invalid
+diff, or an unknown path runs the graph contracts.
 
 Ad hoc CI is a full run, not a reduced diagnostic profile. Launch it from the
 Actions UI or with `gh workflow run ci.yml --ref main`. The workflow rejects a
 manual source other than protected `main` before it requests any self-hosted
-runner. Pilot runner policies must independently allow only
-`.github/workflows/ci.yml@refs/heads/main`; the in-workflow check does not replace
-that external admission boundary.
+runner. Pilot runner groups remain scoped to this repository; the in-workflow
+check does not replace that external repository boundary.
 
-`targets.json` is the release matrix: four backend-neutral hosts and eleven
-runtimes. CPU work uses GitHub-hosted `ubuntu-24.04`, `ubuntu-24.04-arm`,
-`macos-15` and `windows-2025`. Metal and CUDA rows require the explicit ephemeral
-hardware labels in that manifest. Compilation never counts as device evidence.
+`targets.json` records four backend-neutral hosts and eleven runtime targets.
+Three hosts and eight runtimes are currently enabled for CI and release. All
+Windows targets stay declared but disabled until Windows infrastructure is
+provisioned. CPU work uses GitHub-hosted `ubuntu-24.04`, `ubuntu-24.04-arm` and
+`macos-15`. Metal and CUDA rows require the explicit ephemeral hardware labels
+in that manifest. Compilation never counts as device evidence.
 
 ## Build prerequisites
 

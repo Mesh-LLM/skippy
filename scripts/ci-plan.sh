@@ -17,8 +17,8 @@ jq -e '
       and (.host as $host | any($matrix.hosts[]; .id == $host)))
 ' "$matrix" >/dev/null
 
-hosts="$(jq -c '{include: .hosts}' "$matrix")"
-runtimes="$(jq -c '{include: .runtimes}' "$matrix")"
+hosts="$(jq -c '{include: [.hosts[] | select(.enabled != false)]}' "$matrix")"
+runtimes="$(jq -c '{include: [.runtimes[] | select(.enabled != false)]}' "$matrix")"
 printf '%s\n' "$(jq -cn --argjson hosts "$hosts" --argjson runtimes "$runtimes" '{hosts: $hosts, runtimes: $runtimes}')"
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
