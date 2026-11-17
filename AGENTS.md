@@ -25,7 +25,10 @@ shared stage machinery. Keep stage parity, state handoff, and graph contracts.
 
 Read `.agents/skills/manage-ci/SKILL.md` before CI work. PR and main use the same
 CI implementation; tagged releases reuse it. Builds have no publication secrets.
-Never execute PR code on persistent privileged hardware runners.
+Trusted same-repository PRs may use persistent JY hardware under an unprivileged
+job account, with fresh source-pinned workspaces and no publication or host
+administration credentials. Fork and other untrusted PRs require isolated
+ephemeral execution. See the CI skill for admission and cleanup requirements.
 
 Default tests are offline and use isolated temporary state. Model and hardware
 qualification is explicit and cannot pass through missing-fixture/device skips.

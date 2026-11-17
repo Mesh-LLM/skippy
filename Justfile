@@ -120,6 +120,33 @@ llama-check: skippy-ffi-bindgen-check skippy-llama-api-test
 ci-plan:
     @cargo xtool ci plan
 
+inference-plan profile source output="target/ci-evidence/inference-plan.json":
+    @cargo xtool inference plan "{{ profile }}" "{{ source }}" "{{ output }}"
+
+inference-contracts:
+    @cargo test --locked -p xtask inference::
+
+inference-dispatch profile source output="target/ci-evidence/inference":
+    @cargo xtool inference dispatch "{{ profile }}" "{{ source }}" "{{ output }}"
+
+inference-execute profile model mode:
+    @cargo xtool inference execute "{{ profile }}" "{{ model }}" "{{ mode }}"
+
+inference-cancel ledger="target/ci-evidence/inference/jobs.json":
+    @cargo xtool inference cancel "{{ ledger }}"
+
+inference-build:
+    @just build cuda 121
+    @LLAMA_STAGE_BACKEND=cuda LLAMA_STAGE_LINK_MODE=static cargo build --locked -p skippy-correctness
+
+inference-tool-check:
+    @cargo check --locked -p xtask
+    @cargo clippy --locked -p xtask --all-targets -- -D warnings
+    @cargo test --locked -p xtask
+
+inference-format:
+    @rustfmt --edition 2024 tools/xtask/src/inference.rs tools/xtask/src/inference/tests.rs
+
 ci-contracts:
     @cargo xtool ci contracts
 

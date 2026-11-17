@@ -4,6 +4,7 @@ mod ci;
 mod command;
 mod execution;
 mod fixture_paths;
+mod inference;
 mod native;
 mod release;
 mod upgrade;
@@ -26,6 +27,7 @@ fn run(args: &[String]) -> command::DynResult<()> {
         "automation" => automation::run(args),
         "artifact" => artifact::run(args),
         "ci" => ci::run(args),
+        "inference" => inference::run(args),
         "release" => release::run(args),
         "upgrade" => upgrade::run(args),
         "--help" | "-h" => help(),
@@ -34,6 +36,6 @@ fn run(args: &[String]) -> command::DynResult<()> {
 }
 
 fn help() -> command::DynResult<()> {
-    println!("cargo xtool {{native|automation|artifact|ci|release}} COMMAND [OPTIONS]");
+    println!("cargo xtool {{native|automation|artifact|ci|inference|release}} COMMAND [OPTIONS]");
     Ok(())
 }

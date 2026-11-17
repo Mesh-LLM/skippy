@@ -27,9 +27,25 @@ contract; no downstream product's workflow topology applies here.
 - Ordinary tests are offline. Model admission is explicit and digest-bound.
   GPU qualification requires a real matching device; missing fixtures, devices,
   capacity, or evidence fail or queue, never become passing skips.
-- PR hardware runs require isolated ephemeral runners. Runner groups must be
-  limited to this repository, with no release credentials or privileged network
-  access. Never execute PR source on a persistent privileged machine.
+- Trusted same-repository PRs from repository collaborators may run as native
+  JY jobs on persistent dedicated lab hardware, including DGX Sparks. Admission
+  must verify the source repository and contributor's collaborator status using
+  GitHub; a branch name or same-repository check alone is not a trust decision.
+  Dispatch and admission policy run from protected code, never from PR source.
+  Fork and other untrusted PRs require isolated ephemeral execution and receive
+  no native lab dispatch credentials.
+- Native PR jobs use an unprivileged account without sudo, host administration,
+  publication credentials, or access to other jobs' secrets/workspaces. Use a
+  fresh source-pinned workspace, read-only admitted model inputs, exclusive JY
+  machine reservations, bounded leases and process-tree/workspace cleanup on
+  completion, failure and cancellation. JY's `unconfined` capability alone is
+  not a rejection: verify effective account permissions and exposed resources.
+  Cleanup failure quarantines the allocation until reconciled.
+- Runner groups and dispatch credentials are repository-scoped. The Actions
+  runner only orchestrates inference qualification; native JY jobs receive
+  explicit model-sized resource budgets rather than the 6 GiB Actions-container
+  limit. Split runs reserve both machines atomically. Publisher credentials
+  remain separate from all build and inference jobs.
 - Pin third-party actions by full commit SHA. Default permissions are read-only.
   Only the release publisher receives contents write; only the upgrade publisher
   receives a scoped App credential. Do not expose publisher secrets to builds.

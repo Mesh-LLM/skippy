@@ -34,8 +34,13 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       artifact_scope: release
+  inference:
+    needs: admission
+    uses: ./.github/workflows/inference.yml
+    secrets:
+      JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
   publish:
-    needs: [admission, validation]
+    needs: [admission, validation, inference]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:

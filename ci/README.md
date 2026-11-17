@@ -27,15 +27,28 @@ workflow syntax check. If a hosted image lacks native development inputs,
 provide a reviewed preprovisioned ephemeral image with the same command contract
 before enabling the required check. Do not turn a missing tool into a skip.
 
-Hardware runners must be created for one job and destroyed afterwards. Their
-runner group is repository-scoped; it must not provide persistent host state,
-publication credentials, credentialed checkout, or privileged network access to
-PR code. Required labels are `self-hosted`, `skippy-ephemeral`, the standard
+The ordinary hardware runner jobs below use runners created for one job and
+destroyed afterwards. Their runner group is repository-scoped; it must not
+provide persistent host state, publication credentials, credentialed checkout,
+or privileged network access to PR code. Required labels are `self-hosted`, `skippy-ephemeral`, the standard
 OS/architecture label, and `metal`, `cuda12` or `cuda13`. CUDA images carry the
 exact toolkit from `targets.json` and a compatible driver/device. Toolkit-only
 machines are insufficient. The large family battery additionally requests
 `family-256g`; provision memory and device capacity for the largest admitted
 model and concurrent baseline contexts, not merely the GGUF file size.
+
+The JY inference ladder additionally permits trusted same-repository PRs from
+verified repository collaborators to use native jobs on persistent dedicated
+Sparks. Protected dispatch code verifies trust before sending a pinned source
+SHA. Jobs use an unprivileged account without sudo or host/publisher credentials,
+fresh workspaces, read-only admitted models, exclusive machine reservations and
+bounded leases. Clean up job processes and workspaces after every outcome;
+quarantine an allocation whose cleanup fails. Fork and other untrusted PRs still
+require isolated ephemeral execution. The `unconfined` capability is not itself
+an admission failure; verify the actual account and resource exposure. Actions
+only orchestrates these jobs, so the 6 GiB runner-container limit does not bound
+model execution. Split jobs reserve both Sparks atomically. This policy does not
+change the existing ordinary CI runner labels or prove live JY configuration.
 
 Quality and upstream candidate generation are the toolchain-specific exceptions
 to ordinary hosted CPU work. They request an ephemeral Linux x86_64
