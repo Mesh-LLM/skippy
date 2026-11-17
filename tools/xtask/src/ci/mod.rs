@@ -85,11 +85,11 @@ mod tests {
     }
     #[test]
     fn every_product_uses_its_hosted_target_runner() {
-        let matrix: matrix::Matrix =
-            serde_json::from_str(include_str!("../../../../ci/targets.json")).unwrap();
+        let matrix =
+            matrix::Matrix::from_json(include_str!("../../../../ci/targets.json")).unwrap();
         let (_, runtimes) = project_matrix(&matrix).unwrap();
         let rows = runtimes["include"].as_array().unwrap();
-        assert_eq!(rows.len(), 11);
+        assert_eq!(rows.len(), 8);
         for row in rows {
             let host = matrix.host(row["host"].as_str().unwrap()).unwrap();
             assert_eq!(

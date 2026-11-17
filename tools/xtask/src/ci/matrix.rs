@@ -25,14 +25,25 @@ pub struct Runtime {
 #[serde(deny_unknown_fields)]
 pub struct Matrix {
     pub schema_version: u32,
+    #[serde(default)]
+    enabled_hosts: Option<Vec<String>>,
     pub hosts: Vec<Host>,
     pub runtimes: Vec<Runtime>,
 }
 
 impl Matrix {
     pub fn load() -> DynResult<Self> {
-        let matrix: Self = serde_json::from_slice(&std::fs::read("ci/targets.json")?)?;
+        Self::from_json(&std::fs::read_to_string("ci/targets.json")?)
+    }
+    pub(crate) fn from_json(text: &str) -> DynResult<Self> {
+        let mut matrix: Self = serde_json::from_str(text)?;
         matrix.validate()?;
+        if let Some(enabled) = &matrix.enabled_hosts {
+            matrix.hosts.retain(|host| enabled.contains(&host.id));
+            matrix
+                .runtimes
+                .retain(|runtime| enabled.contains(&runtime.host));
+        }
         Ok(matrix)
     }
     pub fn host(&self, id: &str) -> DynResult<&Host> {
@@ -59,6 +70,17 @@ impl Matrix {
                 || !valid_host_identity(host)
             {
                 return Err("invalid host identity or runner boundary".into());
+            }
+        }
+        if let Some(enabled) = &self.enabled_hosts {
+            let selected = enabled.iter().collect::<BTreeSet<_>>();
+            if selected.is_empty()
+                || selected.len() != enabled.len()
+                || selected
+                    .iter()
+                    .any(|id| !self.hosts.iter().any(|host| &host.id == *id))
+            {
+                return Err("enabled_hosts must select unique, defined hosts".into());
             }
         }
         let mut variants = BTreeSet::new();
@@ -195,6 +217,39 @@ pub fn require_host(host: &Host) -> DynResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn windows_definitions_are_retained_but_not_activated() {
+        let text = include_str!("../../../../ci/targets.json");
+        let raw: Matrix = serde_json::from_str(text).unwrap();
+        assert_eq!(raw.hosts.len(), 4);
+        assert_eq!(raw.runtimes.len(), 11);
+        let active = Matrix::from_json(text).unwrap();
+        assert_eq!(active.hosts.len(), 3);
+        assert_eq!(active.runtimes.len(), 8);
+        assert!(active.hosts.iter().all(|host| host.os != "windows"));
+        assert!(
+            active
+                .runtimes
+                .iter()
+                .all(|runtime| !runtime.host.starts_with("windows"))
+        );
+        let mut restored = raw;
+        restored.enabled_hosts = None;
+        restored.validate().unwrap();
+    }
+    #[test]
+    fn enabled_selection_rejects_empty_unknown_and_duplicate_hosts() {
+        for enabled in [
+            vec![],
+            vec!["unknown"],
+            vec!["linux-x86_64", "linux-x86_64"],
+        ] {
+            let mut matrix: Matrix =
+                serde_json::from_str(include_str!("../../../../ci/targets.json")).unwrap();
+            matrix.enabled_hosts = Some(enabled.into_iter().map(str::to_owned).collect());
+            assert!(matrix.validate().is_err());
+        }
+    }
     #[test]
     fn rejects_missing_or_duplicate_runtime() {
         let mut matrix: Matrix =

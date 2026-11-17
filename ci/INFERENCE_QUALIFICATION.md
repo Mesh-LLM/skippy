@@ -141,6 +141,9 @@ by JY's flat artifact collector. Its regression test checks retention separately
 Standard JY jobs, including the existing job account permissions, are authorized
 for trusted same-repository candidate dispatch. Activation requires passing CI
 and merging the workflow onto the default branch.
+The wider product CI and release roster currently excludes Windows through
+`ci/targets.json`'s explicit `enabled_hosts` policy; its definitions are retained
+for re-enablement. Disabled Windows rows are not qualified or published.
 
 The 2026-11-17 native repair passed all 308 CPU contract tests, including the
 48-layer, three-MTP MiMo2 fixture. Its focused Linux run

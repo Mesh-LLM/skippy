@@ -5,9 +5,12 @@ invocation. `CI` is the required summary. There is no path planner or lighter PR
 profile. The only source override is the immutable bundle produced by the
 protected-main llama upgrade workflow.
 
-`targets.json` is the release matrix: four backend-neutral hosts and eleven
-runtimes. CPU work uses GitHub-hosted `ubuntu-24.04`, `ubuntu-24.04-arm`,
-`macos-15` and `windows-2025`. Metal and CUDA rows require the explicit ephemeral
+`targets.json` defines four backend-neutral hosts and eleven runtimes.
+`enabled_hosts` currently activates Linux and macOS only: three hosts and eight
+runtimes. Windows qualification and publication are temporarily deferred at the
+maintainer's request. Re-enable its retained definitions by adding
+`windows-x86_64` to `enabled_hosts`. CPU work uses GitHub-hosted
+`ubuntu-24.04`, `ubuntu-24.04-arm` and `macos-15`. Metal and CUDA rows require the explicit ephemeral
 hardware labels in that manifest. Compilation never counts as device evidence.
 
 ## Build prerequisites
@@ -119,7 +122,7 @@ and label are fixture compatibility data, not a downstream product dependency.
 ## Bring-up evidence
 
 Before requiring CI, execute a complete PR and main run and prove the summary
-rejects a failed row. Then exercise a prerelease tag, verify all eleven bundles,
+rejects a failed row. Then exercise a prerelease tag, verify all enabled bundles,
 private authenticated downloads, clean installation and CPU/Metal/CUDA serving.
 Exercise partial draft upload recovery and published-release overwrite refusal.
 Only after source regeneration, both full candidate passes and exact-commit PR

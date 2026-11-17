@@ -17,7 +17,10 @@ contract; no downstream product's workflow topology applies here.
 - `.github/workflows/llama-upgrade.yml` keeps control on protected main, prepares
   an immutable candidate, certifies it, independently repeats certification,
   and opens an ordinary PR. Failed or incomplete qualification cannot publish.
-- `ci/targets.json` owns the four host targets and eleven runtime variants.
+- `ci/targets.json` owns four host definitions and eleven runtime definitions.
+  `enabled_hosts` selects the active CI and release roster. Windows is temporarily
+  deferred; the active roster has three hosts and eight runtimes. Do not publish
+  artifacts for disabled hosts or describe those hosts as qualified.
   Keep CLI builds backend-neutral and build each host once. Package by copying
   exact verified producer outputs; consumers must not rebuild missing inputs.
 - Keep policy and orchestration in typed Rust under `tools/xtask`. Just recipes

@@ -1,5 +1,10 @@
 {
   "schema_version": 1,
+  "enabled_hosts": [
+    "darwin-aarch64",
+    "linux-x86_64",
+    "linux-aarch64"
+  ],
   "hosts": [
     {
       "id": "darwin-aarch64",
