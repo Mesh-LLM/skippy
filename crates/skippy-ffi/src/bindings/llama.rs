@@ -616,9 +616,10 @@ unsafe extern "C" {
     pub fn llama_vocab_mask(vocab: *const llama_vocab) -> llama_token;
 }
 #[repr(C)]
+#[repr(align(8))]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct llama_sampler {
-    pub _address: u8,
+    pub _bindgen_opaque_blob: [u64; 2usize],
 }
 unsafe extern "C" {
     pub fn llama_log_set(log_callback: ggml_log_callback, user_data: *mut ::std::os::raw::c_void);
