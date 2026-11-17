@@ -10,6 +10,16 @@ and four split runs (twelve rows). The inventory's explicit `split` flag records
 this selection. `just inference-contracts` checks this contract
 offline. Planning does not load weights or produce qualification evidence.
 
+The protected PR workflow always reports the `Inference qualification` status.
+It checks the current PR's changed-file list before dispatch: serving and build
+inputs require all seven smoke configurations; a complete list containing only
+unrelated files reports that model tests were not required. A full first page is
+treated conservatively as relevant. Required runs never accept skipped model
+jobs, and admission failures report failure on the PR head. This permits the
+status to be required without leaving documentation-only PRs waiting forever.
+Enable that branch requirement only after this workflow has landed on protected
+main and its live pilot has passed.
+
 ## Execution boundary
 
 Reuse the Pilot GitHub App, signed workflow-job webhooks and JY-managed runner

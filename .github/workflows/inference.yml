@@ -2,18 +2,6 @@ name: Inference qualification
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - 'crates/**'
-      - 'llama_cpp/**'
-      - 'tools/**'
-      - 'scripts/**'
-      - 'ci/**'
-      - '.gi/**'
-      - '.github/**'
-      - '.cargo/**'
-      - 'Cargo.*'
-      - 'Justfile'
-      - 'rust-toolchain*'
   schedule:
     - cron: '0 14 * * *'
   workflow_dispatch:
@@ -39,6 +27,7 @@ jobs:
     timeout-minutes: 20
     outputs:
       source: ${{ steps.admission.outputs.source }}
+      required: ${{ steps.admission.outputs.required }}
       profile: ${{ steps.admission.outputs.profile }}
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
@@ -55,12 +44,14 @@ jobs:
           QUALIFICATION_PROFILE: ${{ inputs.profile || 'release' }}
         run: just automation-run inference admit
       - id: matrix
+        if: steps.admission.outputs.required == 'true'
         env:
           SOURCE_SHA: ${{ steps.admission.outputs.source }}
           PROFILE: ${{ steps.admission.outputs.profile }}
         run: just automation-run inference matrix "$PROFILE" "$SOURCE_SHA"
   qualification:
     needs: plan
+    if: needs.plan.outputs.required == 'true'
     strategy:
       fail-fast: false
       max-parallel: 3
@@ -103,21 +94,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Publish qualification status on the tested commit
-        if: needs.plan.outputs.source != ''
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Publish the source-bound conditional qualification gate
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ needs.plan.outputs.source }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source || github.event.pull_request.head.sha || github.sha }}
+          PLAN: ${{ needs.plan.result }}
+          REQUIRED: ${{ needs.plan.outputs.required }}
           RESULT: ${{ needs.qualification.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          state=failure
-          if test "$RESULT" = success; then state=success; fi
-          gh api --method POST "repos/general-inference/skippy/statuses/$SOURCE_SHA" \
-            -f "state=$state" -f context='Inference qualification' \
-            -f "target_url=$RUN_URL" -f 'description=Native JY Spark qualification'
-      - name: Require all planned configurations
-        env:
-          PLAN: ${{ needs.plan.result }}
-          RESULT: ${{ needs.qualification.result }}
-        run: test "$PLAN" = success && test "$RESULT" = success
+        run: just automation-run inference summary

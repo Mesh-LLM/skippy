@@ -1,9 +1,17 @@
 # Skippy continuous integration
 
-`ci.yml` runs the same commands for every pull request, main push and reusable
-invocation. `CI` is the required summary. There is no path planner or lighter PR
-profile. The only source override is the immutable bundle produced by the
-protected-main llama upgrade workflow.
+`ci.yml` has explicit `pr` and `full` profiles, and `CI` is the required summary.
+Pull requests and main pushes use the short profile: repository contracts,
+formatting/Clippy, unit and C API tests, and FFI binding freshness. Relevant trusted
+PRs also run the protected seven-configuration inference smoke workflow.
+Its separate `Inference qualification` status explicitly reports when no serving
+inputs changed; required smoke jobs cannot pass by being skipped.
+The 308-test native family battery and complete host/runtime/package/smoke matrix
+run nightly and for releases. Reusable candidate validation defaults to `full`;
+release publication explicitly requests it. Manual dispatch selects either
+profile, defaulting to `full`. Both nightly workflows run at 14:00 UTC.
+The only source override is the immutable bundle produced by the protected-main
+llama upgrade workflow.
 
 `targets.json` defines four backend-neutral hosts and eleven runtimes.
 `enabled_hosts` currently activates Linux and macOS only: three hosts and eight
@@ -17,15 +25,18 @@ Hardware build and smoke jobs declare literal groups and labels in the workflow:
 JY cannot resolve a runner group hidden behind a matrix expression. Shared
 composite actions retain one implementation of each contract. The runtime and
 smoke aggregate gates require every active manifest row, rejecting missing,
-skipped, cancelled or failed jobs before packaging or the final CI summary.
-Host and runtime producers start after planning, in parallel with quality; the
-final CI gate still requires quality and every producer and smoke result.
+skipped, cancelled or failed jobs in full qualification. The PR summary instead
+requires those extended stages to be explicitly skipped; skipped unit or quality
+checks still fail, and no GPU package qualification is claimed by a short run.
+In full qualification, host and runtime producers start after planning alongside
+quality; the final gate requires every producer and smoke result.
 Compilation never counts as device evidence.
 
 ## Build prerequisites
 
-The hosted setup action installs full-SHA-pinned Just 1.58.0 and restores Cargo
-dependencies and build outputs. Rust follows
+The hosted setup action installs full-SHA-pinned Just 1.58.0. Both hosted and
+native runners restore Cargo dependencies, debug artifacts and bounded sccache
+compiler results using the shared cache action. Rust follows
 `rust-toolchain.toml`. Build agents must already provide Git, CMake, Ninja, a
 native C/C++ toolchain, curl, and the platform linker selected by `scripts/`.
 Linux runtime packaging also needs patchelf. Native binding/generator checks

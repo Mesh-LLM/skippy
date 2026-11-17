@@ -8,9 +8,14 @@ description: Maintain standalone Skippy CI, native hardware qualification, llama
 Read this file before inspecting or changing CI. This is the standalone Skippy
 contract; no downstream product's workflow topology applies here.
 
-- `.github/workflows/ci.yml` is the single implementation for pull requests,
-  main pushes, and reusable validation. Every invocation runs the same quality,
-  host, native-runtime, packaging, and hardware-smoke contracts.
+- `.github/workflows/ci.yml` is the single implementation with explicit `pr`
+  and `full` profiles. Pull requests and main pushes run formatting, Clippy,
+  unit/API tests, FFI freshness and repository contracts. The separate protected
+  inference workflow runs the seven short serving configurations for relevant
+  trusted PRs. Nightly, release and reusable candidate validation use `full`,
+  adding the complete native battery, host/runtime producers, packaging and
+  hardware smoke. A short summary accepts only its explicitly skipped extended
+  stages; a full summary requires every stage to succeed.
 - `.github/workflows/release.yml` starts only on version-tag pushes and calls
   that CI implementation. A release never edits source, bumps versions, moves
   a tag, or publishes an incomplete artifact matrix.
@@ -54,6 +59,8 @@ contract; no downstream product's workflow topology applies here.
   receives a scoped App credential. Do not expose publisher secrets to builds.
 - Cache keys bind source recipe, lockfile, toolchain, platform, and backend.
   Caches are accelerators, not artifact correctness or qualification evidence.
+  Restore Cargo and compiler caches on native runners as well as hosted runners;
+  image-provided tooling does not make fresh containers retain compiler outputs.
 - Cancel superseded PR validation only. Release and upgrade concurrency must
   retain evidence and never cancel another release or an independent CI run.
 - A stable `CI` summary rejects failed, cancelled, or missing required jobs.

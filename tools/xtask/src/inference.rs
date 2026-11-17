@@ -13,6 +13,7 @@ mod placement;
 mod provenance;
 mod retention;
 mod smoke;
+mod summary;
 mod tests;
 use crate::command::{DynResult, write_json_file};
 use serde::{Deserialize, Serialize};
@@ -66,6 +67,7 @@ pub fn run(args: &[String]) -> DynResult<()> {
     {
         ["build"] => build::run(),
         ["admit"] => admission::run(),
+        ["summary"] => summary::run(),
         ["control-preflight"] => {
             let result = dispatch::api("GET", "/v1/repos/skippy", None)?;
             println!("JY repository access verified: {}", result["slug"]);

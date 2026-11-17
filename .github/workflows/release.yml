@@ -34,6 +34,7 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       artifact_scope: release
+      profile: full
   inference:
     needs: admission
     permissions:

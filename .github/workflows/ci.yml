@@ -3,8 +3,20 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Short checks or complete native/package qualification
+        type: choice
+        options: [pr, full]
+        default: full
   workflow_call:
     inputs:
+      profile:
+        type: string
+        default: full
       artifact_scope:
         type: string
         default: ci
@@ -29,7 +41,10 @@ jobs:
   plan:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      SKIPPY_CI_PROFILE: ${{ inputs.profile || (github.event_name == 'schedule' && 'full' || 'pr') }}
     outputs:
+      profile: ${{ steps.plan.outputs.profile }}
       hosts: ${{ steps.plan.outputs.hosts }}
       runtimes: ${{ steps.plan.outputs.runtimes }}
     steps:
@@ -61,28 +76,33 @@ jobs:
     runs-on:
       group: jy-rnr_vfnz8k5p4yrh334
       labels: [self-hosted, skippy-ephemeral, Linux, native-contracts]
-    timeout-minutes: 180
+    timeout-minutes: ${{ needs.plan.outputs.profile == 'pr' && 30 || 180 }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
         if: runner.environment == 'github-hosted'
+      - uses: ./.github/actions/cache
+        if: runner.environment == 'self-hosted'
       - uses: ./.github/actions/source
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
       - run: just ci-contracts
       - run: just llama-prepare
+      - run: just skippy-ffi-bindgen-check
       - run: just lint
       - run: just test
       - run: just llama-check
+        if: needs.plan.outputs.profile == 'full'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
           name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-quality-evidence
           path: |
             target/ci-evidence/**
+            target/skippy-llama-api-build/Testing/**
             target/skippy-stage-rewriter-check/report*
             target/skippy-stage-rewriter-check/patch-drift.diff
             target/skippy-stage-rewriter-check/changed-family-selection.json
@@ -94,6 +114,7 @@ jobs:
           retention-days: 7
   host:
     needs: plan
+    if: needs.plan.outputs.profile == 'full'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.hosts) }}
@@ -122,6 +143,7 @@ jobs:
           retention-days: 7
   runtime_darwin_aarch64_cpu:
     needs: plan
+    if: needs.plan.outputs.profile == 'full'
     runs-on: macos-15
     timeout-minutes: 240
     steps:
@@ -135,6 +157,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_darwin_aarch64_metal:
     needs: plan
+    if: needs.plan.outputs.profile == 'full'
     runs-on:
       group: jy-rnr_h7x5s2yx9gtkz3c
       labels: ["self-hosted", "skippy-ephemeral", "macOS", "ARM64", "metal"]
@@ -150,6 +173,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_x86_64_cpu:
     needs: plan
+    if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
@@ -163,6 +187,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_x86_64_cuda12:
     needs: plan
+    if: needs.plan.outputs.profile == 'full'
     runs-on:
       group: jy-rnr_btc4xhvks1eer0j
       labels: ["self-hosted", "skippy-ephemeral", "Linux", "X64", "cuda12"]
@@ -178,6 +203,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_x86_64_cuda13:
     needs: plan
+    if: needs.plan.outputs.profile == 'full'
     runs-on:
       group: jy-rnr_p0zx3thw895vrka
       labels: ["self-hosted", "skippy-ephemeral", "Linux", "X64", "cuda13"]
@@ -193,6 +219,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_aarch64_cpu:
     needs: plan
+    if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 240
     steps:
@@ -206,6 +233,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_aarch64_cuda12:
     needs: plan
+    if: needs.plan.outputs.profile == 'full'
     runs-on:
       group: jy-rnr_pg90ves41xbxvwy
       labels: ["self-hosted", "skippy-ephemeral", "Linux", "ARM64", "cuda12"]
@@ -221,6 +249,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_aarch64_cuda13:
     needs: plan
+    if: needs.plan.outputs.profile == 'full'
     runs-on:
       group: jy-rnr_8gvzbe9b9d79y0k
       labels: ["self-hosted", "skippy-ephemeral", "Linux", "ARM64", "cuda13"]
@@ -236,7 +265,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime:
     needs: [runtime_darwin_aarch64_cpu, runtime_darwin_aarch64_metal, runtime_linux_x86_64_cpu, runtime_linux_x86_64_cuda12, runtime_linux_x86_64_cuda13, runtime_linux_aarch64_cpu, runtime_linux_aarch64_cuda12, runtime_linux_aarch64_cuda13]
-    if: always()
+    if: always() && (contains(needs.*.result, 'success') || contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -249,6 +278,7 @@ jobs:
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
   product:
     needs: [plan, host, runtime]
+    if: needs.plan.outputs.profile == 'full'
     strategy:
       fail-fast: false
       max-parallel: 4
@@ -286,6 +316,7 @@ jobs:
           retention-days: 7
   smoke_darwin_aarch64_cpu:
     needs: [plan, product]
+    if: needs.plan.outputs.profile == 'full'
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -299,6 +330,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_darwin_aarch64_metal:
     needs: [plan, product]
+    if: needs.plan.outputs.profile == 'full'
     runs-on:
       group: jy-rnr_h7x5s2yx9gtkz3c
       labels: ["self-hosted", "skippy-ephemeral", "macOS", "ARM64", "metal"]
@@ -314,6 +346,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_x86_64_cpu:
     needs: [plan, product]
+    if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -327,6 +360,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_x86_64_cuda12:
     needs: [plan, product]
+    if: needs.plan.outputs.profile == 'full'
     runs-on:
       group: jy-rnr_btc4xhvks1eer0j
       labels: ["self-hosted", "skippy-ephemeral", "Linux", "X64", "cuda12"]
@@ -342,6 +376,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_x86_64_cuda13:
     needs: [plan, product]
+    if: needs.plan.outputs.profile == 'full'
     runs-on:
       group: jy-rnr_p0zx3thw895vrka
       labels: ["self-hosted", "skippy-ephemeral", "Linux", "X64", "cuda13"]
@@ -357,6 +392,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_aarch64_cpu:
     needs: [plan, product]
+    if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     steps:
@@ -370,6 +406,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_aarch64_cuda12:
     needs: [plan, product]
+    if: needs.plan.outputs.profile == 'full'
     runs-on:
       group: jy-rnr_pg90ves41xbxvwy
       labels: ["self-hosted", "skippy-ephemeral", "Linux", "ARM64", "cuda12"]
@@ -385,6 +422,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_aarch64_cuda13:
     needs: [plan, product]
+    if: needs.plan.outputs.profile == 'full'
     runs-on:
       group: jy-rnr_8gvzbe9b9d79y0k
       labels: ["self-hosted", "skippy-ephemeral", "Linux", "ARM64", "cuda13"]
@@ -400,7 +438,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke:
     needs: [smoke_darwin_aarch64_cpu, smoke_darwin_aarch64_metal, smoke_linux_x86_64_cpu, smoke_linux_x86_64_cuda12, smoke_linux_x86_64_cuda13, smoke_linux_aarch64_cpu, smoke_linux_aarch64_cuda12, smoke_linux_aarch64_cuda13]
-    if: always()
+    if: always() && (contains(needs.*.result, 'success') || contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -424,4 +462,5 @@ jobs:
       - uses: ./.github/actions/setup
       - run: just ci-summary
         env:
+          SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}

@@ -22,42 +22,6 @@ pub fn run() -> DynResult<()> {
                 .as_str()
                 .ok_or("missing PR SHA")?
         };
-        let prs = github(&format!(
-            "repos/general-inference/skippy/commits/{sha}/pulls"
-        ))?;
-        let pr = prs
-            .as_array()
-            .and_then(|p| {
-                p.iter()
-                    .find(|p| p["head"]["sha"] == sha && p["state"] == "open")
-            })
-            .ok_or("no current open PR for tested SHA")?;
-        if pr["head"]["repo"]["full_name"] != "general-inference/skippy" {
-            return Err("fork PR needs isolated execution".into());
-        }
-        let author = pr["user"]["login"].as_str().ok_or("missing PR author")?;
-        let permission = github(&format!(
-            "repos/general-inference/skippy/collaborators/{author}/permission"
-        ))?;
-        if !matches!(
-            permission["permission"].as_str(),
-            Some("admin" | "write" | "maintain")
-        ) {
-            return Err("PR author is not a trusted collaborator".into());
-        }
-        let number = pr["number"].as_u64().ok_or("missing PR number")?;
-        let files = github(&format!(
-            "repos/general-inference/skippy/pulls/{number}/files?per_page=100"
-        ))?;
-        // Fail broad rather than miss dependencies or a paginated file list.
-        let relevant = files
-            .as_array()
-            .ok_or("invalid files response")?
-            .iter()
-            .any(|f| f["filename"].as_str().is_some_and(relevant));
-        if !relevant && files.as_array().is_some_and(|f| f.len() < 100) {
-            return Err("PR does not touch inference inputs".into());
-        }
         (sha.to_owned(), "pr".to_owned())
     } else {
         let sha = std::env::var("GITHUB_SHA")?;
@@ -68,15 +32,63 @@ pub fn run() -> DynResult<()> {
         };
         (sha, profile)
     };
+    let required = if matches!(name.as_str(), "workflow_run" | "pull_request_target") {
+        admit_pr(&sha)?
+    } else {
+        true
+    };
     let ladder: Ladder =
         serde_json::from_str(include_str!("../../../../ci/inference-ladder.json"))?;
     plan(&ladder, &profile, &sha)?;
     let mut file = fs::OpenOptions::new()
         .append(true)
         .open(std::env::var("GITHUB_OUTPUT")?)?;
-    writeln!(file, "source={sha}\nprofile={profile}")?;
+    writeln!(file, "source={sha}\nprofile={profile}\nrequired={required}")?;
     Ok(())
 }
+fn admit_pr(sha: &str) -> DynResult<bool> {
+    let prs = github(&format!(
+        "repos/general-inference/skippy/commits/{sha}/pulls"
+    ))?;
+    let pr = prs
+        .as_array()
+        .and_then(|p| {
+            p.iter()
+                .find(|p| p["head"]["sha"] == sha && p["state"] == "open")
+        })
+        .ok_or("no current open PR for tested SHA")?;
+    let number = pr["number"].as_u64().ok_or("missing PR number")?;
+    let files = github(&format!(
+        "repos/general-inference/skippy/pulls/{number}/files?per_page=100"
+    ))?;
+    if !requires_qualification(&files)? {
+        return Ok(false);
+    }
+    if pr["head"]["repo"]["full_name"] != "general-inference/skippy" {
+        return Err("fork PR needs isolated execution".into());
+    }
+    let author = pr["user"]["login"].as_str().ok_or("missing PR author")?;
+    let permission = github(&format!(
+        "repos/general-inference/skippy/collaborators/{author}/permission"
+    ))?;
+    if !matches!(
+        permission["permission"].as_str(),
+        Some("admin" | "write" | "maintain")
+    ) {
+        return Err("PR author is not a trusted collaborator".into());
+    }
+    Ok(true)
+}
+
+fn requires_qualification(files: &Value) -> DynResult<bool> {
+    let files = files.as_array().ok_or("invalid files response")?;
+    // A full first page can omit relevant inputs on subsequent pages.
+    Ok(files.len() >= 100
+        || files
+            .iter()
+            .any(|file| file["filename"].as_str().is_some_and(relevant)))
+}
+
 fn relevant(path: &str) -> bool {
     [
         "crates/",
@@ -109,5 +121,15 @@ mod tests {
             assert!(relevant(p));
         }
         assert!(!relevant("docs/typo.md"));
+    }
+    #[test]
+    fn only_complete_irrelevant_file_lists_can_omit_model_tests() {
+        let docs = serde_json::json!([{"filename":"docs/typo.md"}]);
+        assert!(!requires_qualification(&docs).unwrap());
+        let engine = serde_json::json!([{"filename":"crates/skippy-serving/src/lib.rs"}]);
+        assert!(requires_qualification(&engine).unwrap());
+        let page = Value::Array(vec![serde_json::json!({"filename":"docs/typo.md"}); 100]);
+        assert!(requires_qualification(&page).unwrap());
+        assert!(requires_qualification(&Value::Null).is_err());
     }
 }
