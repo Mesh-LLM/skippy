@@ -85,6 +85,7 @@
         "skippy-ephemeral",
         "Linux",
         "X64",
+        "runtime-image",
         "cuda12"
       ]
     },
@@ -99,6 +100,7 @@
         "skippy-ephemeral",
         "Linux",
         "X64",
+        "runtime-image",
         "cuda13"
       ]
     },
@@ -123,6 +125,7 @@
         "skippy-ephemeral",
         "Linux",
         "ARM64",
+        "runtime-image",
         "cuda12"
       ]
     },
@@ -137,6 +140,7 @@
         "skippy-ephemeral",
         "Linux",
         "ARM64",
+        "runtime-image",
         "cuda13"
       ]
     },
@@ -163,6 +167,7 @@
         "skippy-ephemeral",
         "Windows",
         "X64",
+        "runtime-image",
         "cuda12"
       ]
     },
@@ -178,6 +183,7 @@
         "skippy-ephemeral",
         "Windows",
         "X64",
+        "runtime-image",
         "cuda13"
       ]
     }

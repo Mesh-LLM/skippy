@@ -55,8 +55,10 @@ Hardware runners must be created for one job and destroyed afterwards. Their
 runner group is repository-scoped; it must not provide persistent host state,
 publication credentials, credentialed checkout, or privileged network access to
 PR code. Required labels are `self-hosted`, `skippy-ephemeral`, the standard
-OS/architecture label, and `metal`, `cuda12` or `cuda13`. CUDA images carry the
-exact toolkit from `targets.json` and a compatible driver/device. Toolkit-only
+OS/architecture label, and `metal`, `cuda12` or `cuda13`. CUDA runtime-image
+configs also carry `runtime-image`, preventing a family-certification runner
+with the same backend from satisfying an exact-toolkit build. CUDA images carry
+the exact toolkit from `targets.json` and a compatible driver/device. Toolkit-only
 machines are insufficient. The large family battery additionally requests
 `family-256g`; provision memory and device capacity for the largest admitted
 model and concurrent baseline contexts, not merely the GGUF file size.

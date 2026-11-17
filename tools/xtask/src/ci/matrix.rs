@@ -168,10 +168,15 @@ fn expected_runner(host: &Host, variant: &str) -> Vec<String> {
     } else {
         "X64"
     };
-    ["self-hosted", "skippy-ephemeral", os, arch, variant]
+    let mut runner = ["self-hosted", "skippy-ephemeral", os, arch]
         .into_iter()
         .map(str::to_owned)
-        .collect()
+        .collect::<Vec<_>>();
+    if variant.starts_with("cuda") {
+        runner.push("runtime-image".into());
+    }
+    runner.push(variant.into());
+    runner
 }
 fn safe_id(value: &str) -> bool {
     !value.is_empty()
