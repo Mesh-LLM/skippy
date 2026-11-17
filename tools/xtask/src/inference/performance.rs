@@ -33,6 +33,8 @@ pub fn run(
         "aiperf==0.13.0".into(),
         "aiperf".into(),
         "profile".into(),
+        "--ui".into(),
+        "simple".into(),
         "--scenario".into(),
         "inferencex-agentx-mvp".into(),
         "--url".into(),
@@ -79,7 +81,13 @@ pub fn run(
             "--no-profile-run-disable-warmup-after-first".into(),
         ]);
     }
-    execution::run("uv", &aiperf, &[], 15000)?;
+    let result = execution::run("uv", &aiperf, &[], 15000);
+    let retained = super::retention::archive(&out.join("agentx"), out);
+    if let Err(error) = &retained {
+        eprintln!("AgentX evidence retention failed: {error}");
+    }
+    result?;
+    retained?;
     if validate_exports(&out.join("agentx"), profile != "pr")? == 0 {
         return Err("AgentX produced no result exports".into());
     }

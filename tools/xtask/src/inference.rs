@@ -9,6 +9,7 @@ mod numerical;
 mod performance;
 mod placement;
 mod provenance;
+mod retention;
 mod tests;
 use crate::command::{DynResult, write_json_file};
 use serde::{Deserialize, Serialize};

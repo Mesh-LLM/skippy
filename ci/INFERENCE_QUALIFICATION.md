@@ -79,6 +79,8 @@ identity. The controller signs a challenge, caches a short-lived session for at
 most 30 minutes and renews it during long runs. No admin key is given to Actions
 or model jobs. The controller records launches and terminal snapshots under
 `target/ci-evidence/inference`; JY retains native logs and artifact directories.
+Native artifacts include flat AgentX profile summaries and `agentx.tar.gz` with
+the complete nested request evidence, including when the client fails.
 
 `.gi/templates.yaml` defines standalone native jobs and atomic two-Spark
 formations. The controller chooses an idle pair from the registered Spark inventory, excluding
@@ -111,3 +113,25 @@ Local checks and live template-schema admission must precede a native pilot.
 No successful hardware qualification is implied by implementation or schema
 validation. Record pilot job IDs and any failures before enabling required checks.
 The schedule becomes active only when this workflow lands on the default branch.
+
+## Verified bring-up
+
+At source `4f82589ef774b26b6ac1e550c0b2e33ecb7976b7`, both PR-profile
+pilots completed successfully on 2026-11-17:
+
+| Configuration | JY job / formation | Result run |
+| --- | --- | --- |
+| Qwen3.5-4B standalone, Spark 000945 | `job_55bt0pvrgs7sdjr` | `run_b7sd2xddvw9q1pp` |
+| Qwen3-Coder-30B-A3B split, Sparks 000137 + 000281 | `frm_q9bm9qy60g9w43p` | `run_j0h6577r5mjqzv2` (leader), `run_jce4kg43p2vc9q9` (worker) |
+
+Both qualification receipts report `passed`, including native parity/state
+handoff, positive GPU offload, scored endpoint repeats and AgentX smoke.
+Both split members terminated successfully. These pilots do not establish
+extended-ladder qualification. The archive retention fix followed these runs;
+their nested AgentX files were validated in the workload but were not uploaded
+by JY's flat artifact collector. Its regression test checks retention separately.
+
+Activation still requires reviewing effective native account permissions:
+the observed `gi` account belongs to sudo and Docker groups. A non-root UID
+alone does not establish the execution boundary required above. Do not enable
+automatic candidate dispatch until the job account satisfies that boundary.
