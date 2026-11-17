@@ -29,6 +29,8 @@ pub fn admit(key: &str) -> DynResult<PathBuf> {
     if fixture.revision.len() != 40 || fixture.files.is_empty() {
         return Err("unpinned fixture".into());
     }
+    let directory = PathBuf::from("target/inference-models").join(key);
+    fs::create_dir_all(&directory)?;
     let mut paths = Vec::new();
     for file in fixture.files {
         let text = execution::capture_for(
@@ -38,7 +40,7 @@ pub fn admit(key: &str) -> DynResult<PathBuf> {
                 fixture.repo.clone(),
                 "--revision".into(),
                 fixture.revision.clone(),
-                file.path,
+                file.path.clone(),
             ],
             &[],
             7200,
@@ -49,12 +51,28 @@ pub fn admit(key: &str) -> DynResult<PathBuf> {
         if metadata.len() != file.size || artifact::sha256(&path)? != file.sha256 {
             return Err("model artifact digest mismatch".into());
         }
-        paths.push(path);
+        let name = Path::new(&file.path)
+            .file_name()
+            .ok_or("model shard filename missing")?;
+        let admitted = directory.join(name);
+        stage(&path, &admitted)?;
+        paths.push(admitted.canonicalize()?);
     }
     paths
         .into_iter()
         .next()
         .ok_or_else(|| "empty fixture".into())
+}
+fn stage(source: &Path, destination: &Path) -> DynResult<()> {
+    if destination.exists() {
+        fs::remove_file(destination)?;
+    }
+    // Preserve shard filenames without exposing nonstandard cache symlinks to
+    // the serving loader. Hard links avoid copying weights on the same volume.
+    if fs::hard_link(source.canonicalize()?, destination).is_err() {
+        fs::copy(source, destination)?;
+    }
+    Ok(())
 }
 pub fn downloaded_path(text: &str) -> DynResult<PathBuf> {
     for line in text.lines().rev() {
@@ -69,6 +87,20 @@ pub fn downloaded_path(text: &str) -> DynResult<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[cfg(unix)]
+    fn admitted_shards_are_regular_files_despite_external_cache_links() {
+        let root = tempfile::tempdir().unwrap();
+        let blob = root.path().join("shared-blob");
+        fs::write(&blob, b"admitted bytes").unwrap();
+        let snapshot = root.path().join("snapshot.gguf");
+        std::os::unix::fs::symlink(&blob, &snapshot).unwrap();
+        let admitted = root.path().join("model-00001-of-00002.gguf");
+        stage(&snapshot, &admitted).unwrap();
+        assert!(fs::symlink_metadata(&admitted).unwrap().is_file());
+        assert_eq!(fs::read(admitted).unwrap(), b"admitted bytes");
+        assert!(blob.exists());
+    }
     #[test]
     fn download_paths_support_legacy_and_formatted_cli_output() {
         assert_eq!(

@@ -92,6 +92,9 @@ llama-build: llama-prepare
 skippy-ffi-bindgen-check: llama-prepare
     @SKIPPY_FFI_BINDGEN=check SKIPPY_FFI_BINDGEN_SELFTEST=1 cargo check -p skippy-ffi
 
+skippy-ffi-bindgen: llama-prepare
+    @SKIPPY_FFI_BINDGEN=regen cargo check --locked -p skippy-ffi
+
 skippy-llama-api-test: llama-prepare
     #!/usr/bin/env bash
     set -euo pipefail

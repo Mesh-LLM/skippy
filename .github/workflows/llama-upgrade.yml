@@ -28,6 +28,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     env:
       SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
+      LIBCLANG_PATH: /usr/lib/llvm-22/lib
     permissions:
       contents: read
       pull-requests: read
