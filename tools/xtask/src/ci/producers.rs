@@ -17,20 +17,12 @@ pub fn host(id: &str) -> DynResult<()> {
         artifacts::binary(Path::new("target/release"), &host.os),
         &binary,
     )?;
-    run(
-        "just",
-        &strings(&[
-            "automation-run",
-            "native",
-            "verify-host-dependencies",
-            &binary.to_string_lossy(),
-            "--bind-sha256",
-            "--report",
-            &directory.path().join("host-imports.json").to_string_lossy(),
-        ]),
-        &[],
-        180,
-    )?;
+    crate::native::verify_host(&strings(&[
+        &binary.to_string_lossy(),
+        "--bind-sha256",
+        "--report",
+        &directory.path().join("host-imports.json").to_string_lossy(),
+    ]))?;
     artifacts::receipt(directory.path(), "host", &host.target, "")?;
     let output = Path::new("dist/hosts").join(id);
     fs::create_dir_all(&output)?;
