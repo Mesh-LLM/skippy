@@ -52,8 +52,10 @@ LLVM/Clang 22 development and CMake packages, Ninja, mold, lld and
 `SKIPPY_REWRITER_LLVM_PREFIX` configured. The container-only label prevents a
 native Linux host runner in the same repository-scoped group from satisfying an
 image-dependent job. Mold must pass the repository's active-target linker probe;
-quality CI sets `SKIPPY_REQUIRE_MOLD=1` and pins `SKIPPY_MOLD=/usr/bin/mold`, so
-it cannot silently fall back to lld or depend on a runner-specific job `PATH`.
+quality CI sets `SKIPPY_REQUIRE_MOLD=1` and pins `SKIPPY_MOLD=mold`, matching
+GCC's `-fuse-ld=mold` contract, so it cannot silently fall back to lld. The
+preceding `/usr/bin/mold --version` check also verifies the GitOps-managed binary
+at its fixed image path rather than depending on a runner-specific job `PATH`.
 The same generator tools must be available on full family builders. A standard
 hosted image without those development packages cannot run these gates; no job
 downloads system packages to disguise that prerequisite.
