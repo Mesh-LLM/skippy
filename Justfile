@@ -152,6 +152,9 @@ inference-format:
     @rustfmt --edition 2024 tools/xtask/src/inference.rs tools/xtask/src/inference/tests.rs
 
 # Linux diagnostic: retain all MiMo2 graph assertions and report peak memory.
+native-contract-build: llama-prepare
+    @LLAMA_STAGE_BACKEND=cpu LLAMA_STAGE_LINK_MODE=static LLAMA_STAGE_BUILD_TESTS=ON scripts/build-llama.sh --build-only
+
 native-mimo2-contract:
     #!/usr/bin/env bash
     set -euo pipefail
