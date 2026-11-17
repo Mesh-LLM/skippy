@@ -48,7 +48,7 @@ pub fn run(
         "--endpoint-type".into(),
         "chat".into(),
         "--public-dataset".into(),
-        "semianalysis-cc-traces-weka-062126-256-k".into(),
+        "semianalysis_cc_traces_weka_062126_256k".into(),
         "--concurrency".into(),
         "1".into(),
         "--use-server-token-count".into(),

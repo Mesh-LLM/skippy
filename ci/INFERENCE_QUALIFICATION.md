@@ -104,8 +104,7 @@ comprehensive capability benchmark or an independent numerical implementation.
 Performance uses AIPerf 0.13.0 on Python 3.12, the date-named 2026-06-21 256k trace variant,
 seed 42 and concurrency one. PR uses an explicitly unsafe 120-second,
 four-trajectory smoke with no official-score claim. Nightly uses two 900-second
-measurements; release uses two 1800-second measurements. Context is 32768 for PR
-and 65536 for extended runs. Extended runs require valid AIPerf exports.
+measurements; release uses two 1800-second measurements. Context is 65536 for all profiles. Extended runs require valid AIPerf exports.
 These capacity-limited runs are not full-native-context leaderboard submissions.
 
 Local checks and live template-schema admission must precede a native pilot.

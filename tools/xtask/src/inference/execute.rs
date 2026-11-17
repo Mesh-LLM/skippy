@@ -168,7 +168,7 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
     super::numerical::capacity(fixture.files.iter().map(|f| f.size).sum())?;
     let model = super::artifacts::admit(key)?;
     let coordinate = format!("{}@{}", fixture.repo, fixture.revision);
-    let context = if profile == "pr" { 32768 } else { 65536 };
+    let context = 65536;
     let worker = std::env::var("JIANYANG_ROLE").as_deref() == Ok("worker");
     if !worker {
         super::numerical::run(
@@ -179,20 +179,15 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
             &out,
         )?;
     }
-    let mut args = vec![
-        "--debug".into(),
-        "serve".into(),
-        "--speculative-strategy".into(),
-        "disabled".into(),
-        "--ctx-size".into(),
-        context.to_string(),
-        "--generation-concurrency".into(),
-        "1".into(),
-        "--n-gpu-layers".into(),
-        "999".into(),
-        "--bind-addr".into(),
-        "0.0.0.0:9337".into(),
-    ];
+    let mut args = vec!["--debug".into(), "serve".into()];
+    if !worker {
+        args.extend([
+            "--speculative-strategy".into(),
+            "disabled".into(),
+            "--generation-concurrency".into(),
+            "1".into(),
+        ]);
+    }
     let control;
     if mode == "split" {
         let peers: Vec<Value> = serde_json::from_str(&std::env::var("JIANYANG_PEERS")?)?;
@@ -252,10 +247,25 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
         ]);
         if worker {
             args.push("--worker-only".into());
+        } else {
+            let endpoint = format!("{follower}:9401").parse()?;
+            let until = Instant::now() + Duration::from_secs(900);
+            while std::net::TcpStream::connect_timeout(&endpoint, Duration::from_secs(1)).is_err() {
+                if Instant::now() > until {
+                    return Err("split worker listener did not become ready".into());
+                }
+                thread::sleep(Duration::from_secs(1));
+            }
         }
     } else {
         control = String::new();
         args.extend([
+            "--ctx-size".into(),
+            context.to_string(),
+            "--n-gpu-layers".into(),
+            "999".into(),
+            "--bind-addr".into(),
+            "127.0.0.1:9337".into(),
             "--model-path".into(),
             model.display().to_string(),
             "--model-id".into(),
