@@ -230,8 +230,23 @@ else
   compile_result=fail
 fi
 
+run_native_tests() {
+  if [[ "${CTEST_PARALLEL_LEVEL:-1}" == 1 ]]; then
+    ctest "${NATIVE_TEST_ARGS[@]}"
+    return
+  fi
+
+  # Each production-sized graph fits the bounded CI runner alone, but not
+  # while overlapping another graph. Run every other test concurrently, then
+  # let CTest admit these contracts and their fixtures exactly once, serially.
+  local high_memory_tests='^skippy_(generate_contract|graph_contract)_(qwen4exp|nemotron)$'
+  local high_memory_contracts='^skippy_graph_contract_(qwen4exp|nemotron)$'
+  ctest "${NATIVE_TEST_ARGS[@]}" -E "$high_memory_tests"
+  CTEST_PARALLEL_LEVEL=1 ctest "${NATIVE_TEST_ARGS[@]}" -R "$high_memory_contracts"
+}
+
 if [[ "$compile_result" == pass ]] && \
-  ctest "${NATIVE_TEST_ARGS[@]}" 2>&1 \
+  run_native_tests 2>&1 \
     | tee "$ARTIFACT_ROOT/noalloc-graph-verifier.log"; then
   graph_verify_result=pass
 else
