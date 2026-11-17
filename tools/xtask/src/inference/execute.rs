@@ -184,6 +184,8 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
         "disabled".into(),
         "--ctx-size".into(),
         context.to_string(),
+        "--generation-concurrency".into(),
+        "1".into(),
         "--n-gpu-layers".into(),
         "999".into(),
         "--bind-addr".into(),
