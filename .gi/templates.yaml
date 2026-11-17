@@ -744,6 +744,54 @@
         "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
       },
       "priority": 100
+    },
+    {
+      "key": "inference-reclaim-idle-memory",
+      "name": "Reclaim idle Spark memory after CUDA initialization failure",
+      "target": {
+        "executor": "lab",
+        "selector": {
+          "os": {
+            "family": "linux"
+          },
+          "arch": {
+            "in": [
+              "aarch64"
+            ]
+          },
+          "accelerator": {
+            "backend": "cuda",
+            "model": {
+              "in": [
+                "NVIDIA GB10"
+              ]
+            }
+          },
+          "memory": {
+            "system_gib": {
+              "min": 120
+            }
+          },
+          "network": {
+            "in": [
+              "james-lab",
+              "dan-lab"
+            ]
+          }
+        }
+      },
+      "build": "",
+      "command": "set -eu\nclients=\"$(nvidia-smi --query-compute-apps=pid --format=csv,noheader,nounits)\"\nif test -n \"$clients\"; then\n  printf 'Refusing memory maintenance while GPU clients are present\\n'\n  exit 1\nfi\ndate -u\ngetconf PAGESIZE\ncat /proc/buddyinfo\nsudo -n true\nsync\nsudo -n sh -c 'echo 3 > /proc/sys/vm/drop_caches; echo 1 > /proc/sys/vm/compact_memory'\ncat /proc/buddyinfo\ndate -u\n",
+      "budget": {
+        "max_usd": 0,
+        "max_duration_s": 300,
+        "grace_s": 60
+      },
+      "env": {
+        "HF_HOME": "/mnt/model-store/huggingface",
+        "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
+      },
+      "priority": 99
     }
   ]
 }
