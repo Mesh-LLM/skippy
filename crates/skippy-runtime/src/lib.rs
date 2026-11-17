@@ -10,7 +10,7 @@ pub mod clef;
 mod config;
 pub mod decision;
 mod devices;
-mod dflash;
+pub mod dflash;
 mod error;
 mod gguf_writer;
 mod kv_pages;
@@ -20,9 +20,12 @@ mod media;
 mod native;
 mod native_mtp;
 mod native_test_evidence;
+pub mod native_timing;
+pub mod native_tracing;
 mod ngram;
 pub mod package;
 mod path_cstring;
+mod resident_prefix;
 mod runtime_event_reporter;
 mod runtime_events;
 mod session;
@@ -32,6 +35,7 @@ mod stage_planning;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 mod types;
+pub mod verification_batch;
 mod vocabulary;
 
 pub use activation::{
@@ -50,7 +54,7 @@ pub use decision::{
     DecisionError, DecisionModel, DecisionOutput, DecisionQuestion, DecisionQuestionKind,
     DecisionRequest, DecisionValue,
 };
-pub use devices::{BackendDevice, BackendDeviceType, backend_devices};
+pub use devices::{BackendDevice, BackendDeviceType, backend_devices, backend_devices_untraced};
 pub use dflash::{
     DFLASH_BORROWED_TARGET_TENSOR, DFlashDraftInfo, DFlashDraftOptions, DFlashDraftStats,
     DFlashFeatureEncoding, DFlashFeatureRows, DFlashHealth, DFlashProposal, DFlashVariant,

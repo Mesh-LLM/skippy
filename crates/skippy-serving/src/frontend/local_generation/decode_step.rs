@@ -32,6 +32,10 @@ impl StageOpenAiBackend {
     ) -> InferenceResult<TokenControl> {
         let decode_step = state.decoded_tokens;
         let token_timer = PhaseTimer::start();
+        let decoding = state
+            .emit_token_debug
+            .then(|| self.enter_openai_phase(&token_timer))
+            .flatten();
         let decode_call_timer = PhaseTimer::start();
         let (
             predicted,
@@ -96,6 +100,12 @@ impl StageOpenAiBackend {
             )
         };
         state.current = predicted;
+        if let Some(dflash) = state.dflash.as_mut() {
+            dflash.finish_serial_compute(
+                self.generation_limit.generation_load(),
+                token_runtime_lock_hold_ms * 1000.0 / token_batch_size.max(1) as f64,
+            );
+        }
         if native_mtp_draft
             .as_ref()
             .is_some_and(|draft: &NativeMtpDraft| {
@@ -173,6 +183,7 @@ impl StageOpenAiBackend {
         if let Some(committed_token_ids) = state.linear_context_tokens.as_mut() {
             committed_token_ids.push(state.current);
         }
+        drop(decoding);
         if state.emit_token_debug {
             let mut token_attrs = self.openai_attrs(request.ids);
             token_attrs.insert("llama_stage.decode_step".to_string(), json!(decode_step));

@@ -1,7 +1,7 @@
-From d802598907817eff6477559076e42fc349107ad0 Mon Sep 17 00:00:00 2001
+From dbb839f56cad5abb60cc0f3106eaf0d5fa1aadfd Mon Sep 17 00:00:00 2001
 From: Mesh-LLM CI <ci@mesh-llm.local>
 Date: Fri, 6 Nov 2026 10:37:22 -0800
-Subject: [PATCH 27/32] models: expose glm5-next stage graph semantics
+Subject: [PATCH] models: expose glm5-next stage graph semantics
 
 ---
  src/CMakeLists.txt                          |  12 ++
@@ -13,10 +13,10 @@ Subject: [PATCH 27/32] models: expose glm5-next stage graph semantics
  6 files changed, 214 insertions(+), 12 deletions(-)
 
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index db89cc245..ec73d02c2 100644
+index 9d7022c1a..d5b7fc043 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -302,6 +302,17 @@ if (LLAMA_STAGE_BUILD_TESTS)
+@@ -309,6 +309,17 @@ if (LLAMA_STAGE_BUILD_TESTS)
      add_test(NAME skippy_qwen3moe_mtp COMMAND skippy-profile-residency
          "${QWEN3MOE_MTP_FIXTURE_DIR}/dense-mtp.gguf")
      set_tests_properties(skippy_qwen3moe_mtp PROPERTIES FIXTURES_REQUIRED qwen3moe-mtp-model)
@@ -34,14 +34,14 @@ index db89cc245..ec73d02c2 100644
      set(MULTIDEPTH_MTP_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/multidepth-mtp-models")
      file(MAKE_DIRECTORY "${MULTIDEPTH_MTP_FIXTURE_DIR}")
      add_test(NAME skippy_generate_multidepth_mtp COMMAND skippy-model-fixture-generator
-@@ -483,6 +494,7 @@ if (LLAMA_STAGE_BUILD_TESTS)
+@@ -490,6 +501,7 @@ if (LLAMA_STAGE_BUILD_TESTS)
      add_skippy_verify_rollback_test(qwen4exp qwen4exp-moe.gguf)
      # lfm2's fixture slides its attention window, so it checkpoints every window.
      add_skippy_verify_rollback_test(lfm2 lfm2-dense.gguf sliding-window)
 +    add_skippy_verify_rollback_test(glm5-next glm5-next-moe.gguf)
-     add_executable(skippy-sampling-history skippy/tests/sampling_history.cpp)
-     target_include_directories(skippy-sampling-history PRIVATE .)
-     target_compile_features(skippy-sampling-history PRIVATE cxx_std_17)
+     add_executable(skippy-backend-sample-capacity skippy/tests/backend_sample_capacity.cpp)
+     target_include_directories(skippy-backend-sample-capacity PRIVATE .)
+     target_compile_features(skippy-backend-sample-capacity PRIVATE cxx_std_17)
 diff --git a/src/models/glm5-next.cpp b/src/models/glm5-next.cpp
 index 844a327b3..d55b52e1f 100644
 --- a/src/models/glm5-next.cpp
@@ -405,3 +405,6 @@ index 6efc704fc..779763267 100644
              saver.add_tensors_from_model();
              saver.save(path);
              require_fixture_written(path);
+-- 
+2.54.0 (Apple Git-157)
+
