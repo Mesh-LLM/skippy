@@ -73,7 +73,7 @@ format:
     @cargo fmt --all
     @cargo fmt --manifest-path skippy-api-rs/Cargo.toml --all
 
-lint:
+lint: llama-prepare
     @cargo fmt --all --check
     @cargo clippy --workspace --all-targets -- -D warnings
     @cargo fmt --manifest-path skippy-api-rs/Cargo.toml --all --check
