@@ -34,12 +34,16 @@ concurrency:
   group: inference-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
 jobs:
-  qualification:
+  plan:
     runs-on: ubuntu-24.04
-    timeout-minutes: 1440
+    timeout-minutes: 20
+    outputs:
+      source: ${{ steps.admission.outputs.source }}
+      profile: ${{ steps.admission.outputs.profile }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      # Only protected controller code is executed with credentials. Never check
-      # out PR source here; admission verifies the author before native dispatch.
+      # Credentialed controller source always comes from protected main.
+      # Candidate source is never checked out or executed by this workflow.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           ref: main
@@ -50,18 +54,61 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           QUALIFICATION_PROFILE: ${{ inputs.profile || 'release' }}
         run: just automation-run inference admit
-      - name: Dispatch and await native Spark qualification
+      - id: matrix
         env:
           SOURCE_SHA: ${{ steps.admission.outputs.source }}
           PROFILE: ${{ steps.admission.outputs.profile }}
+        run: just automation-run inference matrix "$PROFILE" "$SOURCE_SHA"
+  qualification:
+    needs: plan
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      EVIDENCE: target/ci-evidence/inference-${{ matrix.id }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Dispatch and await native Spark qualification
+        env:
+          SOURCE_SHA: ${{ needs.plan.outputs.source }}
+          PROFILE: ${{ needs.plan.outputs.profile }}
+          CONFIGURATION: ${{ matrix.id }}
           JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
-        run: just inference-dispatch "$PROFILE" "$SOURCE_SHA"
+        run: just automation-run inference dispatch "$PROFILE" "$SOURCE_SHA" "$EVIDENCE" "$CONFIGURATION"
+      - name: Cancel outstanding JY jobs and formations
+        if: cancelled() || failure()
+        env:
+          JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
+        run: |
+          if test -f "$EVIDENCE/jobs.json"; then
+            just inference-cancel "$EVIDENCE/jobs.json"
+          fi
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: inference-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE }}
+          if-no-files-found: error
+          retention-days: 30
+  summary:
+    needs: [plan, qualification]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
       - name: Publish qualification status on the tested commit
-        if: always() && steps.admission.outputs.source != ''
+        if: needs.plan.outputs.source != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ steps.admission.outputs.source }}
-          RESULT: ${{ job.status }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source }}
+          RESULT: ${{ needs.qualification.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           state=failure
@@ -69,18 +116,8 @@ jobs:
           gh api --method POST "repos/general-inference/skippy/statuses/$SOURCE_SHA" \
             -f "state=$state" -f context='Inference qualification' \
             -f "target_url=$RUN_URL" -f 'description=Native JY Spark qualification'
-      - name: Cancel outstanding JY jobs and formations
-        if: cancelled() || failure()
+      - name: Require all planned configurations
         env:
-          JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
-        run: |
-          if test -f target/ci-evidence/inference/jobs.json; then
-            just inference-cancel
-          fi
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        if: always()
-        with:
-          name: inference-${{ github.run_id }}-${{ github.run_attempt }}
-          path: target/ci-evidence/inference
-          if-no-files-found: error
-          retention-days: 30
+          PLAN: ${{ needs.plan.result }}
+          RESULT: ${{ needs.qualification.result }}
+        run: test "$PLAN" = success && test "$RESULT" = success

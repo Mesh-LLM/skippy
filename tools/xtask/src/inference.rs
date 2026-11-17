@@ -7,6 +7,8 @@ mod gpu;
 mod login;
 mod numerical;
 mod performance;
+mod placement;
+mod provenance;
 mod tests;
 use crate::command::{DynResult, write_json_file};
 use serde::{Deserialize, Serialize};
@@ -64,7 +66,22 @@ pub fn run(args: &[String]) -> DynResult<()> {
             println!("JY repository access verified: {}", result["slug"]);
             Ok(())
         }
-        ["dispatch", profile, sha, output] => dispatch::run(profile, sha, Path::new(output)),
+        ["dispatch", profile, sha, output] => dispatch::run(profile, sha, Path::new(output), None),
+        ["dispatch", profile, sha, output, row] => {
+            dispatch::run(profile, sha, Path::new(output), Some(row))
+        }
+        ["matrix", profile, sha] => {
+            use std::io::Write;
+            let ladder: Ladder =
+                serde_json::from_str(include_str!("../../../ci/inference-ladder.json"))?;
+            let plan = plan(&ladder, profile, sha)?;
+            let value = serde_json::json!({"include":plan.rows});
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .open(std::env::var("GITHUB_OUTPUT")?)?;
+            writeln!(file, "matrix={value}")?;
+            Ok(())
+        }
         ["cancel", ledger] => dispatch::cancel(Path::new(ledger)),
         ["execute", profile, key, mode] => execute::run(profile, key, mode),
         ["plan", profile, sha, output] => {

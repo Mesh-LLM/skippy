@@ -50,7 +50,15 @@ fn summary() -> DynResult<()> {
 }
 fn validate_summary(needs: &serde_json::Value) -> DynResult<()> {
     let jobs = needs.as_object().ok_or("needs must be an object")?;
-    let required = ["plan", "quality", "host", "runtime", "product", "smoke"];
+    let required = [
+        "plan",
+        "inference_contracts",
+        "quality",
+        "host",
+        "runtime",
+        "product",
+        "smoke",
+    ];
     if jobs.len() != required.len()
         || required.iter().any(|job| {
             jobs.get(*job)
@@ -58,7 +66,7 @@ fn validate_summary(needs: &serde_json::Value) -> DynResult<()> {
         })
     {
         return Err(
-            "CI requires successful plan, quality, all hosts, runtimes, and product smokes".into(),
+            "CI requires successful plan, inference contracts, quality, all hosts, runtimes, and product smokes".into(),
         );
     }
     Ok(())
@@ -68,7 +76,7 @@ mod tests {
     use super::*;
     #[test]
     fn skipped_and_missing_jobs_fail_summary() {
-        let mut jobs = serde_json::json!({"plan":{"result":"success"},"quality":{"result":"success"},"host":{"result":"success"},"runtime":{"result":"success"},"product":{"result":"success"},"smoke":{"result":"success"}});
+        let mut jobs = serde_json::json!({"plan":{"result":"success"},"inference_contracts":{"result":"success"},"quality":{"result":"success"},"host":{"result":"success"},"runtime":{"result":"success"},"product":{"result":"success"},"smoke":{"result":"success"}});
         validate_summary(&jobs).unwrap();
         jobs["product"]["result"] = "skipped".into();
         assert!(validate_summary(&jobs).is_err());

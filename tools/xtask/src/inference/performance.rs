@@ -27,6 +27,8 @@ pub fn run(
         "run".into(),
         "--python".into(),
         "3.12".into(),
+        "--constraints".into(),
+        "ci/aiperf-requirements.lock".into(),
         "--from".into(),
         "aiperf==0.13.0".into(),
         "aiperf".into(),
@@ -71,7 +73,11 @@ pub fn run(
             "4".into(),
         ]);
     } else {
-        aiperf.extend(["--num-profile-runs".into(), "2".into()]);
+        aiperf.extend([
+            "--num-profile-runs".into(),
+            "2".into(),
+            "--no-profile-run-disable-warmup-after-first".into(),
+        ]);
     }
     execution::run("uv", &aiperf, &[], 15000)?;
     if validate_exports(&out.join("agentx"), profile != "pr")? == 0 {

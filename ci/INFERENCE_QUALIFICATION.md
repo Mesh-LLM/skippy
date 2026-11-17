@@ -13,7 +13,9 @@ offline. Planning does not load weights or produce qualification evidence.
 ## Execution boundary
 
 Reuse the Pilot GitHub App, signed workflow-job webhooks and JY-managed runner
-integration. The Actions job is an orchestrator only. Model loading, serving,
+integration. The Actions jobs orchestrate at most three configurations concurrently. Each hosted
+job is bounded to six hours; model execution runs in native JY jobs with five-hour
+leases. Model loading, serving,
 correctness checks and AgentX run in native JY jobs, outside the Actions
 container's 6 GiB limit. Do not raise the limit globally or expose the host
 Docker socket to a workflow to work around it.
@@ -79,8 +81,9 @@ or model jobs. The controller records launches and terminal snapshots under
 `target/ci-evidence/inference`; JY retains native logs and artifact directories.
 
 `.gi/templates.yaml` defines standalone native jobs and atomic two-Spark
-formations. Split placement is explicitly pinned to spark-000137 and spark-000265
-because the current formation renderer does not apply job hardware selectors.
+formations. The controller chooses an idle pair from the registered Spark inventory, excluding
+its own runner and active native work, then passes explicit per-role node names
+because the formation renderer does not apply job hardware selectors.
 Each native member independently verifies Linux/aarch64 and an actual GB10.
 The process supervisor bounds foreground commands; serving process groups are
 terminated on normal and error paths. JY leases bound abrupt termination.

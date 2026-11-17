@@ -132,6 +132,6 @@
     "tokenizer_repo": "Qwen/Qwen3.8-Flash-Next",
     "tokenizer_revision": "812d96e10a0dd82b69d749e68693698cf6c36daa",
     "layers": 48,
-    "activation_width": 2560
+    "activation_width": 10240
   }
 }

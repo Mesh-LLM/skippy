@@ -140,7 +140,7 @@
       ],
       "budget": {
         "max_usd": 0,
-        "max_duration_s": 21600,
+        "max_duration_s": 18000,
         "grace_s": 60
       },
       "retain": "never",
@@ -282,11 +282,123 @@
             }
           ],
           "default": "Qwen3.5-4B"
+        },
+        {
+          "key": "leader_node",
+          "label": "leader Spark",
+          "kind": "choice",
+          "default": "spark-000137",
+          "choices": [
+            {
+              "value": "spark-000137",
+              "label": "spark-000137"
+            },
+            {
+              "value": "spark-000265",
+              "label": "spark-000265"
+            },
+            {
+              "value": "spark-000280",
+              "label": "spark-000280"
+            },
+            {
+              "value": "spark-000281",
+              "label": "spark-000281"
+            },
+            {
+              "value": "spark-000464",
+              "label": "spark-000464"
+            },
+            {
+              "value": "spark-000468",
+              "label": "spark-000468"
+            },
+            {
+              "value": "spark-000499",
+              "label": "spark-000499"
+            },
+            {
+              "value": "spark-000586",
+              "label": "spark-000586"
+            },
+            {
+              "value": "spark-000907",
+              "label": "spark-000907"
+            },
+            {
+              "value": "spark-000945",
+              "label": "spark-000945"
+            },
+            {
+              "value": "spark-001095",
+              "label": "spark-001095"
+            },
+            {
+              "value": "spark-001272",
+              "label": "spark-001272"
+            }
+          ]
+        },
+        {
+          "key": "worker_node",
+          "label": "worker Spark",
+          "kind": "choice",
+          "default": "spark-000280",
+          "choices": [
+            {
+              "value": "spark-000137",
+              "label": "spark-000137"
+            },
+            {
+              "value": "spark-000265",
+              "label": "spark-000265"
+            },
+            {
+              "value": "spark-000280",
+              "label": "spark-000280"
+            },
+            {
+              "value": "spark-000281",
+              "label": "spark-000281"
+            },
+            {
+              "value": "spark-000464",
+              "label": "spark-000464"
+            },
+            {
+              "value": "spark-000468",
+              "label": "spark-000468"
+            },
+            {
+              "value": "spark-000499",
+              "label": "spark-000499"
+            },
+            {
+              "value": "spark-000586",
+              "label": "spark-000586"
+            },
+            {
+              "value": "spark-000907",
+              "label": "spark-000907"
+            },
+            {
+              "value": "spark-000945",
+              "label": "spark-000945"
+            },
+            {
+              "value": "spark-001095",
+              "label": "spark-001095"
+            },
+            {
+              "value": "spark-001272",
+              "label": "spark-001272"
+            }
+          ]
         }
       ],
       "budget": {
         "max_usd": 0,
-        "max_duration_s": 21600,
+        "max_duration_s": 18000,
         "grace_s": 60
       },
       "retain": "never",
@@ -297,14 +409,14 @@
           "name": "leader",
           "count": 1,
           "nodes": [
-            "spark-000137"
+            "${leader_node}"
           ]
         },
         {
           "name": "worker",
           "count": 1,
           "nodes": [
-            "spark-000265"
+            "${worker_node}"
           ]
         }
       ],

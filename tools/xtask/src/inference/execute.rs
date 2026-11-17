@@ -163,6 +163,7 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
     }
     let out = std::path::PathBuf::from(std::env::var("JIANYANG_ARTIFACT_DIR")?);
     fs::create_dir_all(&out)?;
+    super::provenance::record(&out, &sha)?;
     let fixture = super::artifacts::load(key)?;
     super::numerical::capacity(fixture.files.iter().map(|f| f.size).sum())?;
     let model = super::artifacts::admit(key)?;
@@ -179,6 +180,7 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
         )?;
     }
     let mut args = vec![
+        "--debug".into(),
         "serve".into(),
         "--speculative-strategy".into(),
         "disabled".into(),
