@@ -137,6 +137,15 @@ local audit. This single campaign does not demonstrate a material gain from
 sampler row capacity. Neither ablation explains the full main-to-PR improvement;
 further attribution remains necessary.
 
+A same-CLI M1 convolution-launch ablation changes only channels per threadgroup
+from one to 32, retaining the same shader math and all other native settings
+(`job_ekbcxzxfy3bz7e6`, run `run_79ex575fm5mqtd6`). C1 measured 68.21 → 68.79
+TPS (+0.86%); C2 aggregate measured 101.28 → 101.95 TPS (+0.67%). The latter's
+three cycle changes were +1.27%, +1.06%, and -0.32%. All 288 accepted requests
+have exact text, 35 blocks were rejected, and the raw archive passed a second
+local audit. This is another small isolated contribution, not an explanation
+of the full main-to-PR gain.
+
 Two API tests remain unqualified because the bundled split-certification roster
 still targets ABI 0.1.80 and its old recipe. The candidate is ABI 0.1.85. Do not
 relabel the roster or claim full API/family certification from these serving
@@ -145,3 +154,28 @@ measurements. Broader rollout qualification remains outstanding.
 Cached Metal dispatch prototypes, including serialized/deduplicated signatures
 and in-place snapshots, remain outside this PR. Their correctness/profile
 results do not contribute to any TPS number above.
+
+## Unpromoted cached-encoding pilot
+
+A separately built V3 cache runtime (`8b0e6bc6a60ae587e9beb75123b84c4f08bd9d2a`,
+native tree `03ebbc56f70519b50ec66db1234a96f4a38791c9`) uses the same CLI and
+runtime in both arms, changing only the cache switch. One M3 plain campaign
+measured C1 99.27 → 101.95 TPS (+2.70%; cycles +2.33%, +2.88%, +2.89%) and
+C2 aggregate 162.33 → 163.39 TPS (+0.65%; cycles +0.64%, +0.70%, +0.61%).
+All 288 accepted responses match exactly; 10 blocks were rejected, and the
+downloaded raw archive passed the independent audit again locally.
+
+These are preliminary, single-campaign observations, excluded from this PR's
+product code and confirmed headline. Job `job_n8hpce6fspce5my`, run
+`run_p3kv0ya7ys4enht`, later failed its DFlash exact-text gate. That DFlash arm
+also inherited a zero-rollback override from the plain-only ablation harness,
+forcing host checkpoints instead of production speculative rollback. Both
+cache-off and cache-on C2 produced the same two variants of prompt 2, with the
+same counts. Those data do not qualify production DFlash behavior. A new
+DFlash campaign restores the production defaults; no gate has been waived.
+
+The packaged cache runtime additionally passed actual Metal unit/invalidation
+checks on a Dan-lab M4 Mac mini (`job_9trvfmjfdj54tf9`, run
+`run_vv2132wyp91m1d9`): 54,016 exact values including retired-source cases,
+with all loaded ggml paths from its own bundle and a local artifact re-audit.
+This is hardware correctness evidence, not M4 serving throughput.

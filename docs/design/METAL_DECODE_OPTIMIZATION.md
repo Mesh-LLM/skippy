@@ -1,6 +1,6 @@
 # Metal decode optimization work
 
-Status: draft port, 2026-11-17. The standalone M3 Ultra result is confirmed across three process campaigns; the matched vanilla llama.cpp comparison is running. See [benchmark evidence](METAL_DECODE_BENCHMARKS.md).
+Status: draft port, 2026-11-17. The standalone M3 Ultra result is confirmed across three process campaigns; the three-way vanilla comparison is complete as a fixed-budget observation, with cross-engine text drift documented separately. See [benchmark evidence](METAL_DECODE_BENCHMARKS.md).
 
 ## Baseline migration
 
@@ -57,8 +57,8 @@ and are not a published benchmark report.
   workspace run and passed both in the focused serial rerun and the serial
   workspace run. Do not report an unconditional parallel workspace pass.
 - A pristine standalone baseline checkout and its runtime/release CLI have been
-  built separately. Matched standalone serving benchmarks remain required before
-  promotion.
+  built separately. The confirmed Skippy serving results and qualified vanilla
+  observations are recorded in the benchmark report.
 - An untimed serving smoke loaded the original 35B GGUF, returned the expected
   one-word response, and completed two concurrent 64-token requests with prompt
   caching disabled. The owned server then shut down cleanly. Other validation
@@ -109,35 +109,38 @@ from warmed pipeline compilation and GPU execution time.
 
 ### Isolated dispatch-plan prototype
 
-The default-off prototype records ordinary Metal encoder operations and keys
-replay on exact graph, tensor, allocation, fusion, partition, and row-density
-state. Metal resources remain owned through command-buffer completion. Storage
-is bounded; capture/debug paths use normal encoding. It is not promoted into
-the retained core queue.
+The current default-off prototype remains outside this PR. Its native tree is
+`03ebbc56f70519b50ec66db1234a96f4a38791c9`, packaged from standalone snapshot
+`8b0e6bc6a60ae587e9beb75123b84c4f08bd9d2a`. It records ordinary Metal encoder
+operations and compares live graph/tensor metadata against an in-place snapshot
+before replay. It still resolves current Metal buffer identities, offsets and
+usage and recomputes row-list density on every hit. A first pass validates node
+and source identities before dereferencing saved source metadata, including
+when old leaf metadata has been unmapped. Storage is bounded, resources remain
+owned through command-buffer completion, and capture/debug paths encode normally.
 
-The final prototype native tree is
-`403bb3bb5d30ddd0eafc2508ace76298b5f95cba`. Its unit checks cover 49,152 exact
-values under input/metadata/allocation changes and 3,072 exact values across
-row-list classifications. The packaged full-model check recorded 2,452 hits
-and 266 misses, with all four exported state comparisons byte exact, including
-rollback and delayed peer repair. These establish correctness coverage, not
-TPS improvement.
+The M3 build passed 49,152 exact ordinary-op values under invalidation cases,
+3,072 exact row-list values across dense/general transitions, and 1,792 exact
+values with retired source metadata, changed buffer usage and ignored debug
+names. The tests require actual hits and misses. These checks establish
+correctness coverage, not a serving speedup.
 
-Local timing stopped during warmup because other applications were active; no
-measured batches completed. The authorized M3 Ultra campaign builds the
-standalone baseline, retained port, and opt-in prototype separately. It must
-verify the original model and draft hashes, perform same-device ordinary versus
-replay state checks, then compare both retained versus baseline and prototype
-versus retained in separate plain/DFlash campaigns at concurrency one and two.
-Within-prompt ABBA, fixed output budgets, raw responses, load/thermal exclusions,
-loaded-library identity, and an independent artifact audit are required before
-quoting a new result. The retained port now has a standalone pilot result; the cache prototype still has no measured TPS result.
+On the local M5 model-state probe, in-place snapshots reduce thread CPU time
+spent validating the key by 84.43% versus the deduplicated serialized-key
+prototype, across ABBA runs with 2,718 calls and four exact state exports per
+process. This is time in one CPU component, not end-to-end TPS. The earlier
+serialized-key deduplication reduced final signature storage by 45.7%; that is
+also not a serving-throughput claim.
 
-An isolated follow-up, native commit
-`c464911fbf612b58edbc6c8bddb379515834934b`, deduplicates live tensor metadata
-within each cache signature while preserving every graph/source identity and
-row classification. The same unit/invalidation and model-state checks pass:
-49,152 ordinary-op values, 3,072 row-layout values, four exact state exports,
-and unchanged 2,452 hits/266 misses. On that local probe, summed final signature
-storage falls from 50,279,312 to 27,285,872 bytes (45.7%). This is a data-volume
-observation, not a CPU-time or TPS result; it is separate from the M3 pilot.
+The separately built M3 runtime uses the same compiler as the retained serving
+producer. Its serving comparison uses the same CLI and native runtime
+in both arms, with only the cache switch changed, original target/draft hashes,
+plain and DFlash modes, C1/C2, fixed output budgets, within-prompt ABBA, exact
+response hashes, whole-block load/thermal exclusions, and independent raw-data
+audits. A measured benefit without correctness or concurrency regressions is
+required before promotion into the core queue.
+
+The first M3 plain pilot measured +2.70% C1 and +0.65% C2 with exact text and
+a local raw-data re-audit. Production DFlash and fresh-process confirmation
+remain outstanding; these observations do not promote the prototype. See the
+benchmark report for the failed DFlash gate and corrected rollback setup.
