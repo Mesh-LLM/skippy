@@ -792,6 +792,33 @@
         "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
       },
       "priority": 99
+    },
+    {
+      "key": "inference-linux-storage-inspect",
+      "name": "Inspect Linux runner storage and cached images",
+      "target": {
+        "executor": "lab",
+        "selector": {
+          "os": {
+            "family": "linux"
+          },
+          "capabilities": {
+            "required": [
+              "docker"
+            ]
+          }
+        }
+      },
+      "build": "",
+      "command": "set -eu\ndf -h \"$HOME\" /tmp\ndocker system df\ndocker image ls --digests --format '{{.Repository}}@{{.Digest}} {{.ID}} {{.Size}}'\ndocker ps -a --format '{{.ID}} {{.Image}} {{.Status}}'\nfind \"$HOME/.config/jianyang\" -maxdepth 2 -type d -name 'run_*' -print | head -n 30\n",
+      "budget": {
+        "max_usd": 0,
+        "max_duration_s": 120
+      },
+      "env": {
+        "HF_HOME": "/mnt/model-store/huggingface",
+        "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
+      }
     }
   ]
 }
