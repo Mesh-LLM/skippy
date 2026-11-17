@@ -557,6 +557,53 @@
         "HF_HOME": "/mnt/model-store/huggingface",
         "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
       }
+    },
+    {
+      "key": "inference-http-download",
+      "name": "Pinned HTTP cold-download diagnostic",
+      "target": {
+        "executor": "lab",
+        "selector": {
+          "os": {
+            "family": "linux"
+          },
+          "arch": {
+            "in": [
+              "aarch64"
+            ]
+          },
+          "accelerator": {
+            "backend": "cuda",
+            "model": {
+              "in": [
+                "NVIDIA GB10"
+              ]
+            }
+          },
+          "memory": {
+            "system_gib": {
+              "min": 120
+            }
+          },
+          "network": {
+            "in": [
+              "james-lab",
+              "dan-lab"
+            ]
+          }
+        }
+      },
+      "build": "",
+      "command": "set -eu\ncd \"$JIANYANG_REPO_DIR\"\nmkdir -p target/http-download-test\n/usr/bin/time -v hf download unsloth/Qwen3.5-2B-GGUF --revision f6d5376be1edb4d416d56da11e5397a961aca8ae Qwen3.5-2B-Q4_K_M.gguf --local-dir target/http-download-test\nprintf \"aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223  target/http-download-test/Qwen3.5-2B-Q4_K_M.gguf\\n\" | sha256sum -c -\n",
+      "budget": {
+        "max_usd": 0,
+        "max_duration_s": 1200
+      },
+      "env": {
+        "HF_HOME": "/mnt/model-store/huggingface",
+        "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub",
+        "HF_HUB_DISABLE_XET": "1"
+      }
     }
   ]
 }
