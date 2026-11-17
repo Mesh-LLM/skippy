@@ -59,6 +59,7 @@ jobs:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
       - run: just ci-contracts
+      - run: just llama-prepare
       - run: just lint
       - run: just test
       - run: just llama-check
