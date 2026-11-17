@@ -1,5 +1,35 @@
 use super::*;
 use serde_json::Value;
+pub fn select(
+    agents: &Value,
+    runner: &str,
+    attempt: usize,
+    source: &str,
+) -> DynResult<(String, String)> {
+    if let Ok(pair) = pair(agents, runner, attempt) {
+        return Ok(pair);
+    }
+    // JY queues the atomic reservation. Permit queueing behind this source's
+    // qualification work so successive standalone rows cannot starve split rows.
+    let prefix = format!("-{}", source.get(..12).ok_or("invalid source SHA")?);
+    let mut inventory = agents.clone();
+    for agent in inventory["agents"]
+        .as_array_mut()
+        .ok_or("agent inventory missing")?
+    {
+        let owned = agent["active_runs"].as_array().is_some_and(|runs| {
+            runs.iter().all(|run| {
+                run["job_name"].as_str().is_some_and(|name| {
+                    name.starts_with("skippy-inference-") && name.contains(&prefix)
+                })
+            })
+        });
+        if owned {
+            agent["active_runs"] = serde_json::json!([]);
+        }
+    }
+    pair(&inventory, runner, attempt)
+}
 pub fn pair(agents: &Value, runner: &str, attempt: usize) -> DynResult<(String, String)> {
     let candidates: Vec<(String, String)> = agents["agents"]
         .as_array()
@@ -51,6 +81,18 @@ mod tests {
     use serde_json::json;
     fn agent(id: &str, node: &str) -> Value {
         json!({"id":id,"node":node,"online":true,"enabled":true,"drain":false,"network":"james-lab","host":{"gpu":"NVIDIA GB10"},"active_runs":[]})
+    }
+    #[test]
+    fn split_can_queue_behind_its_source_but_not_another_campaign() {
+        let source = "a".repeat(40);
+        let mut owned = agent("agt_a", "spark-000280");
+        owned["active_runs"] = json!([{"job_name":"skippy-inference-standalone-aaaaaaaaaaaa"}]);
+        let idle = agent("agt_b", "spark-000468");
+        let inventory = json!({"agents":[owned.clone(),idle.clone()]});
+        assert!(select(&inventory, "", 0, &source).is_ok());
+        assert!(select(&inventory, "", 0, &"b".repeat(40)).is_err());
+        owned["active_runs"] = json!([{"job_name":"other-campaign-aaaaaaaaaaaa"}]);
+        assert!(select(&json!({"agents":[owned,idle]}), "", 0, &source).is_err());
     }
     #[test]
     fn placement_uses_either_lab_but_never_crosses_networks() {

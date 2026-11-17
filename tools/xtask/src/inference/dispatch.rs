@@ -56,10 +56,11 @@ fn launch(path: &str, body: &Value) -> DynResult<Value> {
     loop {
         if path.ends_with("inference-split/launch") {
             let inventory = api("GET", "/v1/agents", None)?;
-            match super::placement::pair(
+            match super::placement::select(
                 &inventory,
                 &std::env::var("RUNNER_NAME").unwrap_or_default(),
                 attempt,
+                body["ref"].as_str().ok_or("missing source SHA")?,
             ) {
                 Ok((leader, worker)) => {
                     body["inputs"]["leader_node"] = leader.into();
@@ -87,39 +88,77 @@ fn launch(path: &str, body: &Value) -> DynResult<Value> {
     }
 }
 
+fn terminal(value: &Value) -> bool {
+    matches!(
+        value["status"].as_str(),
+        Some("succeeded" | "failed" | "cancelled" | "expired")
+    )
+}
+fn valid_id(id: &str) -> DynResult<()> {
+    if id.is_empty() || !id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_') {
+        return Err("invalid JY resource id".into());
+    }
+    Ok(())
+}
+fn cancel_path(id: &str) -> DynResult<Option<String>> {
+    valid_id(id)?;
+    let formation = if id.starts_with("frm_") {
+        id.to_owned()
+    } else {
+        let job = api("GET", &format!("/v1/jobs/{id}"), None)?;
+        if let Some(formation) = job["formation_id"].as_str() {
+            formation.to_owned()
+        } else {
+            return Ok((!terminal(&job)).then(|| format!("/v1/jobs/{id}/cancel")));
+        }
+    };
+    valid_id(&formation)?;
+    let group = api("GET", &format!("/v1/formations/{formation}"), None)?;
+    let finished = group["members"]
+        .as_array()
+        .is_some_and(|members| !members.is_empty() && members.iter().all(terminal));
+    Ok((!finished).then(|| format!("/v1/formations/{formation}/cancel")))
+}
 pub fn cancel(ledger: &Path) -> DynResult<()> {
     let ids: Vec<String> = serde_json::from_slice(&fs::read(ledger)?)?;
     let mut errors = Vec::new();
     for id in ids {
-        if !id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_') {
-            return Err("invalid job id".into());
-        }
-        let job = api("GET", &format!("/v1/jobs/{id}"), None)?;
-        if matches!(
-            job["status"].as_str(),
-            Some("succeeded" | "failed" | "cancelled" | "expired")
-        ) {
-            continue;
-        }
-        let path = if let Some(formation) = job["formation_id"].as_str() {
-            if !formation
-                .bytes()
-                .all(|c| c.is_ascii_alphanumeric() || c == b'_')
-            {
-                return Err("invalid formation id".into());
-            }
-            format!("/v1/formations/{formation}/cancel")
-        } else {
-            format!("/v1/jobs/{id}/cancel")
-        };
-        if let Err(e) = api("POST", &path, None) {
-            errors.push(e.to_string());
+        let result = cancel_path(&id).and_then(|path| match path {
+            Some(path) => api("POST", &path, None).map(|_| ()),
+            None => Ok(()),
+        });
+        if let Err(error) = result
+            && !error.to_string().contains("already_terminal")
+        {
+            errors.push(error.to_string());
         }
     }
     if !errors.is_empty() {
         return Err(errors.join("\n").into());
     }
     Ok(())
+}
+fn leader(formation: &Value) -> DynResult<String> {
+    let id = formation["members"]
+        .as_array()
+        .and_then(|members| members.iter().find(|member| member["role"] == "leader"))
+        .and_then(|member| member["job_id"].as_str())
+        .ok_or("JY formation leader missing")?;
+    valid_id(id)?;
+    Ok(id.to_owned())
+}
+fn launched_job(launch: &Value) -> DynResult<String> {
+    let id = launch["job_id"]
+        .as_str()
+        .ok_or("JY launch returned no job_id")?;
+    valid_id(id)?;
+    if id.starts_with("frm_") {
+        // Deduplicated formation launches return the formation handle, whereas
+        // fresh launches return the leader job. Normalize before polling/cleanup.
+        leader(&api("GET", &format!("/v1/formations/{id}"), None)?)
+    } else {
+        Ok(id.to_owned())
+    }
 }
 
 pub fn run(profile: &str, sha: &str, output: &Path, row: Option<&str>) -> DynResult<()> {
@@ -143,13 +182,14 @@ pub fn run(profile: &str, sha: &str, output: &Path, row: Option<&str>) -> DynRes
                 &format!("/v1/repos/skippy/templates/inference-{}/launch", row.mode),
                 &json!({"ref":sha,"inputs":{"profile":profile,"model":row.model.split('/').nth(1),"model_key": row.id.strip_suffix(&format!("-{}", row.mode)).ok_or("invalid row id")?},"idempotency_key":format!("inference-{}-{profile}-{}-{}-{sha}",std::env::var("GITHUB_RUN_ID").unwrap_or_else(|_|"local".into()),std::env::var("GITHUB_RUN_ATTEMPT").unwrap_or_else(|_|"1".into()),row.id)}),
             )?;
-            let id = launch["job_id"]
+            let handle = launch["job_id"]
                 .as_str()
-                .ok_or("JY launch returned no job_id")?
-                .to_owned();
-            ids.push(id.clone());
+                .ok_or("JY launch returned no handle")?;
+            valid_id(handle)?;
+            ids.push(handle.to_owned());
             write_json_file(&ledger, &ids)?;
             write_json_file(&output.join(format!("{}-launch.json", row.id)), &launch)?;
+            let id = launched_job(&launch)?;
             let started = Instant::now();
             loop {
                 let job = api("GET", &format!("/v1/jobs/{id}"), None)?;
@@ -195,4 +235,17 @@ pub fn run(profile: &str, sha: &str, output: &Path, row: Option<&str>) -> DynRes
         let _ = cancel(&ledger);
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn deduplicated_formations_resolve_the_leader_not_the_first_member() {
+        let formation = json!({"members":[{"role":"worker","job_id":"job_worker"},{"role":"leader","job_id":"job_leader"}]});
+        assert_eq!(leader(&formation).unwrap(), "job_leader");
+        assert!(leader(&json!({"members":[]})).is_err());
+        assert!(!terminal(&json!({"status":"running"})));
+        assert!(terminal(&json!({"status":"succeeded"})));
+    }
 }
