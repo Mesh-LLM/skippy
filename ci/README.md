@@ -1,47 +1,51 @@
 # Skippy continuous integration
 
-`ci.yml` is the single implementation for every pull request, main push, manual
-run and reusable invocation. `CI` is the required summary. Pull requests may skip
-only the native graph-contract step when every changed path is classified as
-independent of graph construction. Unclassified paths fail closed to running the
-step. Main, tags, manual runs and reusable release/upgrade calls always run it.
-The only source override is the immutable bundle produced by the protected-main
+`ci.yml` has explicit `pr` and `full` profiles. `CI` is the required short-profile
+summary; extended runs report `Full qualification`, so an optional full run on a
+PR commit does not replace its short merge gate. Release callers require the
+full workflow result independently of the check name.
+Pull requests and main pushes use the short profile: repository contracts,
+formatting/Clippy, unit and C API tests, and FFI binding freshness. Relevant trusted
+PRs also run the protected seven-configuration inference smoke workflow.
+Its separate `Inference qualification` status explicitly reports when no serving
+inputs changed; required smoke jobs cannot pass by being skipped.
+The 308-test native family battery and complete host/runtime/package/smoke matrix
+run nightly and for releases. Reusable candidate validation defaults to `full`;
+release publication explicitly requests it. Manual dispatch from protected main selects either
+profile, defaulting to `full`. Both nightly workflows run at 14:00 UTC.
+Full runs can build CUDA for the assigned GPU; release validation explicitly
+selects the complete architecture lists from `targets.json`. The only source override is the immutable bundle produced by the protected-main
 llama upgrade workflow.
 
-The ephemeral JY preflight projects `targets.json` with `jq`; it does not compile the
-Rust automation binary. A Linux CPU quality gate owns Rust lint and tests plus
-the core/API CTest suite. Once that fast gate passes, host builds and a separate
-conditional Linux CPU graph-contract job run in parallel. The graph job owns
-binding and documentation drift, generated-patch replay, and native graph
-contracts. Runtime matrix jobs explicitly disable those graph suites. They
-compile one release runtime, compose it with its exact host producer, and run
-packaged inference on the required device. Ordinary CI compiles CUDA only for
-the compute capabilities reported by its assigned runner. Release validation
-uses the same jobs with the complete architecture lists from `targets.json`.
-
-Graph-sensitive pull-request inputs include the llama pin and patch queues,
-native C++ facade and FFI, family manifests, native build scripts, and rewriter
-or generator code. CI orchestration, packaging, documentation and ordinary Rust
-changes do not rerun graph shapes. A missing base or head commit, an invalid
-diff, or an unknown path runs the graph contracts.
-
-Ad hoc CI is a full run, not a reduced diagnostic profile. Launch it from the
-Actions UI or with `gh workflow run ci.yml --ref main`. Select `release` CUDA
-architecture mode to rehearse the complete release architecture lists. The
-workflow rejects a manual source other than protected `main`. Pilot runner
-groups remain scoped to this repository; the in-workflow check does not replace
-that external repository boundary.
-
-`targets.json` records four backend-neutral hosts and eleven runtime targets.
-Three hosts and eight runtimes are currently enabled for CI and release. All
-Windows targets stay declared but disabled until Windows infrastructure is
-provisioned. Preflight, CLI, CPU, Metal and CUDA work uses eligible ephemeral JY
-runners. Metal and CUDA rows require the explicit hardware labels in that
-manifest. Compilation never counts as device evidence.
+`targets.json` defines four backend-neutral hosts and eleven runtimes.
+`enabled_hosts` currently activates Linux and macOS only: three hosts and eight
+runtimes. Windows qualification and publication are temporarily deferred at the
+maintainer's request. Re-enable its retained definitions by enabling
+its host/runtime definitions and adding `windows-x86_64` to `enabled_hosts`. CPU work uses GitHub-hosted
+`ubuntu-24.04`, `ubuntu-24.04-arm` and `macos-15`. Metal and CUDA rows require the explicit ephemeral
+hardware labels and JY runner group in that manifest. JY uses the requested group
+to attribute queued Actions jobs and place capacity; labels alone are insufficient.
+Hardware build and smoke jobs declare literal groups and labels in the workflow:
+JY cannot resolve a runner group hidden behind a matrix expression. Shared
+composite actions retain one implementation of each contract. The runtime and
+smoke aggregate gates require every active manifest row, rejecting missing,
+skipped, cancelled or failed jobs in full qualification. The PR summary instead
+requires those extended stages to be explicitly skipped; skipped unit or quality
+checks still fail, and no GPU package qualification is claimed by a short run.
+In full qualification, host and runtime producers start after planning alongside
+quality; the final gate requires every producer and smoke result.
+Compilation never counts as device evidence.
 
 ## Build prerequisites
 
-The hosted setup action installs only full-SHA-pinned Just 1.58.0. Rust follows
+Build-cache keys stay stable across ordinary source commits and change with the
+toolchain, lockfile and native build recipe. A matching cache avoids repeated
+uploads; Cargo still validates and rebuilds changed source. Caches are not
+qualification evidence.
+
+The hosted setup action installs full-SHA-pinned Just 1.58.0. Both hosted and
+native runners restore Cargo dependencies, debug artifacts and bounded sccache
+compiler results using the shared cache action. Rust follows
 `rust-toolchain.toml`. Build agents must already provide Git, CMake, Ninja, a
 native C/C++ toolchain, curl, and the platform linker selected by `scripts/`.
 Linux runtime packaging also needs patchelf. Native binding/generator checks
@@ -56,30 +60,38 @@ workflow syntax check. If a hosted image lacks native development inputs,
 provide a reviewed preprovisioned ephemeral image with the same command contract
 before enabling the required check. Do not turn a missing tool into a skip.
 
-Hardware runners must be created for one job and destroyed afterwards. Their
-runner group is repository-scoped; it must not provide persistent host state,
-publication credentials, credentialed checkout, or privileged network access to
-PR code. Required labels are `self-hosted`, `skippy-ephemeral`, the standard
-OS/architecture label, and `metal`, `cuda12` or `cuda13`. CUDA runtime-image
-configs also carry `runtime-image`, preventing a family-certification runner
-with the same backend from satisfying an exact-toolkit build. CUDA images carry
-the exact toolkit from `targets.json` and a compatible driver/device. Toolkit-only
+The ordinary hardware runner jobs below use runners created for one job and
+destroyed afterwards. Their runner group is repository-scoped; it must not
+provide persistent host state, publication credentials, credentialed checkout,
+or privileged network access to PR code. Required labels are `self-hosted`, `skippy-ephemeral`, the standard
+OS/architecture label, and `metal`, `cuda12` or `cuda13`. CUDA runtime rows also require `runtime-image`, isolating exact-toolkit images
+from family-certification runners. CUDA images carry the
+exact toolkit from `targets.json` and a compatible driver/device. Toolkit-only
 machines are insufficient. The large family battery additionally requests
 `family-256g`; provision memory and device capacity for the largest admitted
 model and concurrent baseline contexts, not merely the GGUF file size.
 
-Preflight, quality, x86_64 CLI/CPU work and upstream candidate generation request
-available ephemeral Linux
-builder from the repository-scoped `jy-rnr_vfnz8k5p4yrh334` runner group with
-the container-only `jy-linux-docker` label and the `MeshLLM (latest) · CPU`
-environment, LLVM/Clang 22 development and CMake packages, Ninja and lld, with
-`SKIPPY_REWRITER_LLVM_PREFIX` configured. The container-only label prevents a
-native Linux host runner in the same repository-scoped group from satisfying an
-image-dependent job. Mold remains an optional linker acceleration when the
-runner image provides it and the active-target probe succeeds; it is not a CI
-prerequisite. The same generator tools must be available on full family
-builders. A standard hosted image without those development packages cannot run
-these gates; no job downloads system packages to disguise that prerequisite.
+The JY inference ladder additionally permits trusted same-repository PRs from
+verified repository collaborators to use native jobs on persistent dedicated
+Sparks. Protected dispatch code verifies trust before sending a pinned source
+SHA. Jobs use the standard JY account and its existing host permissions without publisher credentials,
+fresh workspaces, read-only admitted models, exclusive machine reservations and
+bounded leases. Clean up job processes and workspaces after every outcome;
+quarantine an allocation whose cleanup fails. Fork and other untrusted PRs still
+require isolated ephemeral execution. The `unconfined` capability is not itself
+an admission failure; no separate job-account migration is required. Actions
+only orchestrates these jobs, so the 6 GiB runner-container limit does not bound
+model execution. Split jobs reserve both Sparks atomically. This policy does not
+prove live JY configuration.
+
+Quality and upstream candidate generation are the toolchain-specific exceptions
+to ordinary hosted CPU work. Quality accepts either 64-bit Linux architecture;
+candidate generation retains its Linux x86_64 lane. Both request a
+`native-contracts` builder with LLVM/Clang 22 development and CMake packages,
+Ninja, lld and `SKIPPY_REWRITER_LLVM_PREFIX` configured. The same generator tools
+must be available on full family builders. A standard hosted image without those
+development packages cannot run these gates; no job downloads system packages
+to disguise that prerequisite.
 
 Qwen3 dense smoke preparation is explicit: `just automation-run ci model-fetch`
 resolves the immutable public model URL and verifies the family manifest's size
@@ -88,31 +100,24 @@ This command sets the path for subsequent Actions steps; locally export the path
 before running `just ci-smoke`. Default `just test` does not download models.
 
 Every package smoke executes the bundled CLI and runtime, submits an actual
-OpenAI completion, checks generated-token usage, and requires a structured GPU
-backend-device selection event for Metal/CUDA. Shutdown must be graceful.
-Product artifacts include logs and source-bound smoke evidence. A missing
-device, model or required row fails rather than passing as a skip.
+OpenAI completion, checks generated-token usage, and requires observed positive
+GPU layer offload for Metal/CUDA. Shutdown must be graceful. Product artifacts
+include logs and source-bound smoke evidence. A missing device, model or required
+row fails rather than passing as a skip.
 
 ## Artifact flow
 
-1. Preflight validates and projects the four hosts and eleven runtimes without
-   compiling repository automation.
-2. The Linux CPU quality gate runs common semantic coverage once. Core/API tests
-   configure with `SKIPPY_BUILD_LLAMA=OFF`.
-3. When graph coverage is required, the graph job validates the canonical
-   patched Linux CPU tree while host builds proceed independently. A classified
-   non-graph pull request records an intentional skipped graph job.
-4. `ci host` builds each CLI once, verifies its imports, records its source and
+1. `ci host` builds each CLI once, verifies its imports, records its source and
    checksums, and archives executable permissions.
-5. Each runtime lane builds the selected native variant with graph tests disabled,
-   verifies its manifest and dependency closure, downloads the matching host,
-   composes the exact product, and runs Qwen3 on the required CPU/Metal/CUDA
-   device. Ordinary CUDA lanes compile the assigned runner's detected compute
-   capabilities. Release lanes compile and verify the complete checked-in
-   architecture list. Compilation never substitutes for inference evidence.
-6. The stable `CI` summary accepts successful preflight, quality, host and
-   complete runtime-lane results plus either successful graph coverage or its
-   classified path-based skip. Failed, cancelled or absent required phases fail
+2. `ci runtime` builds the selected native variant and verifies its manifest and
+   dependency closure. The artifact is bound to the source, target and variant.
+3. `ci package` verifies and composes those producer archives without compiling,
+   then runs the bundled CLI on the target's hosted CPU machine. CUDA bundle
+   startup is therefore checked without depending on a hardware runner's driver.
+4. `ci smoke` receives that exact archive, admits the pinned model and runs the
+   packaged server on its required CPU/Metal/CUDA device.
+5. `ci summary` accepts only successful plan, quality, host, runtime and product
+   and smoke jobs. Failed, cancelled, absent and skipped required jobs all fail
    the summary.
 
 Native runtime manifests retain the upstream pin, patch digest, ABI and backend
@@ -148,7 +153,7 @@ and label are fixture compatibility data, not a downstream product dependency.
 ## Bring-up evidence
 
 Before requiring CI, execute a complete PR and main run and prove the summary
-rejects a failed row. Then exercise a prerelease tag, verify all eleven bundles,
+rejects a failed row. Then exercise a prerelease tag, verify all enabled bundles,
 private authenticated downloads, clean installation and CPU/Metal/CUDA serving.
 Exercise partial draft upload recovery and published-release overwrite refusal.
 Only after source regeneration, both full candidate passes and exact-commit PR

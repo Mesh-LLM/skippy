@@ -8,3 +8,4 @@ self-hosted-runner:
     - metal
     - cuda12
     - cuda13
+    - runtime-image

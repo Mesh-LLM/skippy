@@ -217,11 +217,10 @@ impl BindingGenerator {
             ],
             |builder| {
                 builder
-                    // Skippy only passes sampler pointers through the public
-                    // llama API. Keep the private sampler implementation out
-                    // of the generated ABI so bindgen does not expand it
-                    // differently across Clang targets.
-                    .opaque_type("llama_sampler")
+                    // Only sampler pointers cross this surface. Libclang versions
+                    // disagree about traversing its internal callback vtable.
+                    .blocklist_type("llama_sampler")
+                    .raw_line("pub enum llama_sampler {}")
                     .allowlist_function(
                         "^(llama_model_quantize|llama_model_quantize_default_params|\
                          llama_perf_context|llama_model_is_recurrent|llama_model_is_hybrid|\

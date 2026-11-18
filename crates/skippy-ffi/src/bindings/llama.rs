@@ -3,6 +3,7 @@
 #![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
 #![allow(unpredictable_function_pointer_comparisons)]
+pub enum llama_sampler {}
 
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -614,12 +615,6 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn llama_vocab_mask(vocab: *const llama_vocab) -> llama_token;
-}
-#[repr(C)]
-#[repr(align(8))]
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct llama_sampler {
-    pub _bindgen_opaque_blob: [u64; 2usize],
 }
 unsafe extern "C" {
     pub fn llama_log_set(log_callback: ggml_log_callback, user_data: *mut ::std::os::raw::c_void);
