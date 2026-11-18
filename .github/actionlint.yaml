@@ -1,9 +1,11 @@
 self-hosted-runner:
   labels:
     - skippy-ephemeral
+    - jy-linux-docker
     - native-contracts
     - family-256g
     - cpu
     - metal
     - cuda12
     - cuda13
+    - runtime-image

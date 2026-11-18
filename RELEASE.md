@@ -19,21 +19,24 @@ never changes versions or pushes source. Tags created with an ordinary workflow
 App if tag creation is automated.
 
 `release.yml` checks the tag against the committed Cargo version and main
-ancestry, then calls the same `ci.yml` used by PRs and main. It requires all four
-hosts and eleven complete bundles:
+ancestry, then calls the same `ci.yml` used by PRs and main in release CUDA
+architecture mode. It requires all three enabled hosts and eight complete
+bundles. Windows targets remain declared but disabled until infrastructure is
+available:
 
 | Platform | Bundles |
 | --- | --- |
 | macOS arm64 | CPU, Metal |
 | Linux x86_64 | CPU, CUDA 12, CUDA 13 |
 | Linux arm64 | CPU, CUDA 12, CUDA 13 |
-| Windows x86_64 | CPU, CUDA 12, CUDA 13 |
 
 Each `skippy-<tag>-<variant>.tar.gz` contains the backend-neutral CLI, its verified
 native runtime under `native-runtimes/`, licenses and provenance. SHA-256 sidecars
 and `release.json` bind the complete roster and source. Native manifests include
-ABI and llama recipe identities. No public registry or package-manager
-publication happens as a side effect.
+ABI and llama recipe identities. CUDA release products compile and advertise the
+complete architecture lists from `ci/targets.json`; release preparation rejects
+native-only CUDA products. Only Skippy-owned `skippy-*` assets are published. No
+public registry or package-manager publication happens as a side effect.
 
 The publisher uploads to a source-bound draft, downloads every asset, checks all
 hashes and the exact roster, then publishes. A partial draft may be resumed only

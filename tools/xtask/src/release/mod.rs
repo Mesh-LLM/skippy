@@ -1,7 +1,7 @@
 //! Tag admission and immutable release inventory. Publication remains workflow-owned.
 mod upgrade_publication;
 use crate::{
-    ci::{artifacts, execution, matrix::Matrix},
+    ci::{artifacts, execution, matrix::Matrix, producers},
     command::DynResult,
 };
 use serde::{Deserialize, Serialize};
@@ -109,12 +109,16 @@ fn prepare(tag: &str, input: &Path) -> DynResult<()> {
         return Err("release output directory must be empty".into());
     }
     let mut assets = BTreeMap::new();
-    for row in &matrix.runtimes {
+    for row in matrix.active_runtimes() {
         let directory = input.join(format!("release-product-{}", row.id));
         let workspace = tempfile::tempdir()?;
         artifacts::unpack(&directory, workspace.path())?;
         let host = matrix.host(&row.host)?;
         artifacts::verify(workspace.path(), "product", &host.target, &row.id)?;
+        let runtime = workspace.path().join("native-runtimes").join(&row.id);
+        let expected_cuda_architectures =
+            (row.backend == "cuda").then_some(row.gpu_architectures.as_str());
+        producers::validate_native_identity(&runtime, host, row, expected_cuda_architectures)?;
         let evidence: serde_json::Value =
             serde_json::from_slice(&fs::read(directory.join("evidence/smoke.json"))?)?;
         if evidence["source"] != artifacts::source()?
@@ -142,7 +146,7 @@ fn prepare(tag: &str, input: &Path) -> DynResult<()> {
         source: artifacts::source()?,
         upstream_pin: fs::read_to_string("llama_cpp/upstream.txt")?.trim().into(),
         assets,
-        variants: matrix.runtimes.iter().map(|row| row.id.clone()).collect(),
+        variants: matrix.active_runtimes().map(|row| row.id.clone()).collect(),
     };
     artifacts::write_json(&output.join("release.json"), &release)?;
     fs::write(
@@ -159,8 +163,7 @@ fn verify(directory: &Path) -> DynResult<()> {
     let release: Release = serde_json::from_slice(&fs::read(directory.join("release.json"))?)?;
     let matrix = Matrix::load()?;
     let expected = matrix
-        .runtimes
-        .iter()
+        .active_runtimes()
         .map(|row| row.id.clone())
         .collect::<Vec<_>>();
     if release.schema_version != 1

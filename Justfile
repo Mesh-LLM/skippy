@@ -88,13 +88,13 @@ format:
     @cargo fmt --all
     @cargo fmt --manifest-path skippy-api-rs/Cargo.toml --all
 
-lint:
+lint: llama-prepare
     @cargo fmt --all --check
     @cargo clippy --workspace --all-targets -- -D warnings
     @cargo fmt --manifest-path skippy-api-rs/Cargo.toml --all --check
     @cargo clippy --manifest-path skippy-api-rs/Cargo.toml --workspace --all-targets -- -D warnings
 
-test: skippy-llama-api-test
+test: skippy-api-test
     @cargo test --workspace --no-default-features
     @cargo test --manifest-path skippy-api-rs/Cargo.toml --workspace
 
@@ -107,19 +107,22 @@ llama-build: llama-prepare
 skippy-ffi-bindgen-check: llama-prepare
     @SKIPPY_FFI_BINDGEN=check SKIPPY_FFI_BINDGEN_SELFTEST=1 cargo check -p skippy-ffi
 
-skippy-llama-api-test: llama-prepare
+skippy-ffi-bindgen: llama-prepare
+    @SKIPPY_FFI_BINDGEN=regen cargo check --locked -p skippy-ffi
+
+skippy-api-test:
     #!/usr/bin/env bash
     set -euo pipefail
-    build_dir="${SKIPPY_LLAMA_API_BUILD_DIR:-target/skippy-llama-api-build}"
+    build_dir="${SKIPPY_API_BUILD_DIR:-${SKIPPY_LLAMA_API_BUILD_DIR:-target/skippy-api-build}}"
     cmake -S skippy_api -B "$build_dir" -G Ninja \
       -DCMAKE_BUILD_TYPE=Debug \
+      -DSKIPPY_BUILD_LLAMA=OFF \
       -DSKIPPY_API_BUILD_TESTS=ON \
-      -DSKIPPY_LINK_COMPILE_COMMANDS=ON \
-      -DSKIPPY_LLAMA_SOURCE_DIR="{{ absolute_path(llama_dir) }}"
+      -DSKIPPY_LINK_COMPILE_COMMANDS=ON
     cmake --build "$build_dir" --parallel
-    ctest --test-dir "$build_dir" --output-on-failure --no-tests=error
+    ctest --test-dir "$build_dir" --output-on-failure --no-tests=error --stop-on-failure
 
-llama-check: skippy-ffi-bindgen-check skippy-llama-api-test
+llama-check: skippy-ffi-bindgen-check
     #!/usr/bin/env bash
     set -euo pipefail
     scripts/check-skippy-public-headers.sh
@@ -135,8 +138,54 @@ llama-check: skippy-ffi-bindgen-check skippy-llama-api-test
 ci-plan:
     @cargo xtool ci plan
 
+inference-plan profile source output="target/ci-evidence/inference-plan.json":
+    @cargo xtool inference plan "{{ profile }}" "{{ source }}" "{{ output }}"
+
+inference-contracts:
+    @cargo test --locked -p xtask inference::
+
+inference-dispatch profile source output="target/ci-evidence/inference":
+    @cargo xtool inference dispatch "{{ profile }}" "{{ source }}" "{{ output }}"
+
+inference-execute profile model mode:
+    @cargo xtool inference execute "{{ profile }}" "{{ model }}" "{{ mode }}"
+
+inference-cancel ledger="target/ci-evidence/inference/jobs.json":
+    @cargo xtool inference cancel "{{ ledger }}"
+
+inference-build:
+    @cargo xtool inference build
+
+inference-build-uncached:
+    @command -v hf uv nvidia-smi
+    @SCCACHE_BASEDIRS="$PWD" LLAMA_STAGE_BACKEND=cuda LLAMA_STAGE_CUDA_ARCHITECTURES=121 LLAMA_STAGE_LINK_MODE=static just llama-build
+    @LLAMA_STAGE_BACKEND=cuda LLAMA_STAGE_CUDA_ARCHITECTURES=121 LLAMA_STAGE_LINK_MODE=static cargo build --locked -p skippy-cli -p skippy-correctness
+
+inference-tool-check:
+    @cargo check --locked -p xtask
+    @cargo clippy --locked -p xtask --all-targets -- -D warnings
+    @cargo test --locked -p xtask
+
+inference-format:
+    @rustfmt --edition 2024 tools/xtask/src/inference.rs tools/xtask/src/inference/tests.rs
+
+# Linux diagnostic: retain all MiMo2 graph assertions and report peak memory.
+native-contract-build: llama-prepare
+    @LLAMA_STAGE_BACKEND=cpu LLAMA_STAGE_LINK_MODE=static LLAMA_STAGE_BUILD_TESTS=ON scripts/build-llama.sh --build-only
+
+native-mimo2-contract:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export LLAMA_STAGE_BACKEND=cpu LLAMA_STAGE_LINK_MODE=static LLAMA_STAGE_BUILD_TESTS=ON
+    build_dir="$(scripts/build-llama.sh --print-build-dir)"
+    ctest --test-dir "$build_dir" -R '^skippy_generate_contract_mimo2$' --output-on-failure --no-tests=error
+    /usr/bin/time -v ctest --test-dir "$build_dir" -R '^skippy_graph_contract_mimo2$' --output-on-failure --no-tests=error
+
 ci-contracts:
     @cargo xtool ci contracts
+
+ci-summary:
+    @cargo xtool ci summary
 
 ci-host host:
     @cargo xtool ci host "{{ host }}"
@@ -150,10 +199,7 @@ ci-package runtime host_dir runtime_dir:
 ci-smoke runtime product_dir:
     @cargo xtool ci smoke "{{ runtime }}" "{{ product_dir }}"
 
-ci-summary:
-    @cargo xtool ci summary
-
-ci: ci-contracts lint test llama-check ci-plan
+ci: lint ci-contracts test llama-check
 
 check-release tag:
     @cargo xtool release validate "{{ tag }}"

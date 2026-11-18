@@ -34,6 +34,8 @@ mod l2_serving;
 pub mod lifecycle;
 mod output_tokens;
 mod records;
+#[cfg(test)]
+mod resident_prefill_tests;
 mod resident_prefix;
 
 pub use lifecycle::{KvLifecycleEvent, KvLifecycleObserver};
