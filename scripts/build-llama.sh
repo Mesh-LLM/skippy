@@ -585,15 +585,15 @@ fi
 if [[ "$BUILD_ONLY" == "1" ]]; then
   echo "native tests deferred to caller (--build-only)"
 elif [[ "$LLAMA_STAGE_UPSTREAM_TESTS" == "ON" ]]; then
-  ctest --test-dir "$LLAMA_BUILD_DIR" --build-config "${CMAKE_BUILD_TYPE:-Release}" --output-on-failure --timeout 900
+  ctest --test-dir "$LLAMA_BUILD_DIR" --build-config "${CMAKE_BUILD_TYPE:-Release}" --output-on-failure --stop-on-failure --timeout 900
 elif [[ "$LLAMA_STAGE_FULL_REPLAY" == "ON" ]]; then
   REPLAY_FIXTURE_DIR="$LLAMA_BUILD_DIR/tests/test-models"
   mkdir -p "$REPLAY_FIXTURE_DIR"
   "$LLAMA_BUILD_DIR/bin/skippy-model-fixture-generator" --arch gemma --seed 1 --out "$REPLAY_FIXTURE_DIR"
   "$LLAMA_BUILD_DIR/bin/skippy-model-fixture-generator" --arch qwen2moe --seed 1 --out "$REPLAY_FIXTURE_DIR"
-  ctest --test-dir "$LLAMA_BUILD_DIR" --build-config "${CMAKE_BUILD_TYPE:-Release}" --output-on-failure --timeout 900 --fixture-exclude-any '^generate-models$' -R '^(skippy_|test-skippy-)'
+  ctest --test-dir "$LLAMA_BUILD_DIR" --build-config "${CMAKE_BUILD_TYPE:-Release}" --output-on-failure --stop-on-failure --timeout 900 --fixture-exclude-any '^generate-models$' -R '^(skippy_|test-skippy-)'
 elif [[ "$LLAMA_STAGE_BUILD_TESTS" == "ON" ]]; then
-  ctest --test-dir "$LLAMA_BUILD_DIR" --build-config "${CMAKE_BUILD_TYPE:-Release}" --output-on-failure --timeout 900 -R '^skippy_'
+  ctest --test-dir "$LLAMA_BUILD_DIR" --build-config "${CMAKE_BUILD_TYPE:-Release}" --output-on-failure --stop-on-failure --timeout 900 -R '^skippy_'
 fi
 
 printf '%s\n' "$CURRENT_BUILD_STAMP" > "$BUILD_STAMP"

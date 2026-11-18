@@ -17,6 +17,9 @@ runs:
       if: runner.environment == 'github-hosted'
     - uses: ./.github/actions/cache
       if: runner.environment == 'self-hosted'
+    - uses: ./.github/actions/sccache
+      with:
+        scope: ${{ inputs.runtime_id }}-${{ env.SKIPPY_CUDA_ARCHITECTURE_MODE }}
     - uses: ./.github/actions/source
       with:
         artifact: ${{ inputs.candidate_artifact }}
