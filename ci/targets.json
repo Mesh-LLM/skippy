@@ -3,33 +3,48 @@
   "hosts": [
     {
       "id": "darwin-aarch64",
+      "display_name": "macOS ARM64",
       "target": "aarch64-apple-darwin",
       "os": "macos",
       "arch": "aarch64",
       "runner": [
-        "macos-15"
+        "self-hosted",
+        "skippy-ephemeral",
+        "macOS",
+        "ARM64"
       ]
     },
     {
       "id": "linux-x86_64",
+      "display_name": "Linux x86_64",
       "target": "x86_64-unknown-linux-gnu",
       "os": "linux",
       "arch": "x86_64",
       "runner": [
-        "ubuntu-24.04"
+        "self-hosted",
+        "jy-linux-docker",
+        "Linux",
+        "X64"
       ]
     },
     {
       "id": "linux-aarch64",
+      "display_name": "Linux ARM64",
       "target": "aarch64-unknown-linux-gnu",
       "os": "linux",
       "arch": "aarch64",
       "runner": [
-        "ubuntu-24.04-arm"
+        "self-hosted",
+        "skippy-ephemeral",
+        "Linux",
+        "ARM64",
+        "runtime-image"
       ]
     },
     {
       "id": "windows-x86_64",
+      "display_name": "Windows x86_64",
+      "enabled": false,
       "target": "x86_64-pc-windows-msvc",
       "os": "windows",
       "arch": "x86_64",
@@ -41,16 +56,21 @@
   "runtimes": [
     {
       "id": "darwin-aarch64-cpu",
+      "display_name": "macOS ARM64, CPU",
       "host": "darwin-aarch64",
       "backend": "cpu",
       "toolkit": "",
       "gpu_architectures": "",
       "runner": [
-        "macos-15"
+        "self-hosted",
+        "skippy-ephemeral",
+        "macOS",
+        "ARM64"
       ]
     },
     {
       "id": "darwin-aarch64-metal",
+      "display_name": "macOS ARM64, Metal",
       "host": "darwin-aarch64",
       "backend": "metal",
       "toolkit": "",
@@ -65,16 +85,21 @@
     },
     {
       "id": "linux-x86_64-cpu",
+      "display_name": "Linux x86_64, CPU",
       "host": "linux-x86_64",
       "backend": "cpu",
       "toolkit": "",
       "gpu_architectures": "",
       "runner": [
-        "ubuntu-24.04"
+        "self-hosted",
+        "jy-linux-docker",
+        "Linux",
+        "X64"
       ]
     },
     {
       "id": "linux-x86_64-cuda12",
+      "display_name": "Linux x86_64, CUDA 12.9.2",
       "host": "linux-x86_64",
       "backend": "cuda",
       "toolkit": "12.9.2",
@@ -84,11 +109,13 @@
         "skippy-ephemeral",
         "Linux",
         "X64",
+        "runtime-image",
         "cuda12"
       ]
     },
     {
       "id": "linux-x86_64-cuda13",
+      "display_name": "Linux x86_64, CUDA 13.1.2",
       "host": "linux-x86_64",
       "backend": "cuda",
       "toolkit": "13.1.2",
@@ -98,49 +125,61 @@
         "skippy-ephemeral",
         "Linux",
         "X64",
+        "runtime-image",
         "cuda13"
       ]
     },
     {
       "id": "linux-aarch64-cpu",
+      "display_name": "Linux ARM64, CPU",
       "host": "linux-aarch64",
       "backend": "cpu",
       "toolkit": "",
       "gpu_architectures": "",
       "runner": [
-        "ubuntu-24.04-arm"
+        "self-hosted",
+        "skippy-ephemeral",
+        "Linux",
+        "ARM64",
+        "runtime-image"
       ]
     },
     {
       "id": "linux-aarch64-cuda12",
+      "display_name": "Linux ARM64, CUDA 12.9.2",
       "host": "linux-aarch64",
       "backend": "cuda",
       "toolkit": "12.9.2",
-      "gpu_architectures": "61;75;80;86;87;89;90",
+      "gpu_architectures": "61;75;80;86;87;89;90;120;121",
       "runner": [
         "self-hosted",
         "skippy-ephemeral",
         "Linux",
         "ARM64",
+        "runtime-image",
         "cuda12"
       ]
     },
     {
       "id": "linux-aarch64-cuda13",
+      "display_name": "Linux ARM64, CUDA 13.1.2",
       "host": "linux-aarch64",
       "backend": "cuda",
       "toolkit": "13.1.2",
-      "gpu_architectures": "75;80;86;87;89;90;110",
+      "gpu_architectures": "75;80;86;87;89;90;110;120;121",
       "runner": [
         "self-hosted",
         "skippy-ephemeral",
         "Linux",
         "ARM64",
+        "runtime-image",
         "cuda13"
       ]
     },
     {
       "id": "windows-x86_64-cpu",
+      "display_name": "Windows x86_64, CPU",
+      "enabled": false,
       "host": "windows-x86_64",
       "backend": "cpu",
       "toolkit": "",
@@ -151,6 +190,8 @@
     },
     {
       "id": "windows-x86_64-cuda12",
+      "display_name": "Windows x86_64, CUDA 12.9.2",
+      "enabled": false,
       "host": "windows-x86_64",
       "backend": "cuda",
       "toolkit": "12.9.2",
@@ -160,11 +201,14 @@
         "skippy-ephemeral",
         "Windows",
         "X64",
+        "runtime-image",
         "cuda12"
       ]
     },
     {
       "id": "windows-x86_64-cuda13",
+      "display_name": "Windows x86_64, CUDA 13.1.2",
+      "enabled": false,
       "host": "windows-x86_64",
       "backend": "cuda",
       "toolkit": "13.1.2",
@@ -174,6 +218,7 @@
         "skippy-ephemeral",
         "Windows",
         "X64",
+        "runtime-image",
         "cuda13"
       ]
     }

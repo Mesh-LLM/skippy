@@ -6,20 +6,26 @@ use std::collections::BTreeSet;
 #[serde(deny_unknown_fields)]
 pub struct Host {
     pub id: String,
+    pub display_name: String,
     pub target: String,
     pub os: String,
     pub arch: String,
     pub runner: Vec<String>,
+    #[serde(default = "enabled")]
+    pub enabled: bool,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Runtime {
     pub id: String,
+    pub display_name: String,
     pub host: String,
     pub backend: String,
     pub toolkit: String,
     pub gpu_architectures: String,
     pub runner: Vec<String>,
+    #[serde(default = "enabled")]
+    pub enabled: bool,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -47,6 +53,9 @@ impl Matrix {
             .find(|row| row.id == id)
             .ok_or_else(|| format!("unknown runtime: {id}").into())
     }
+    pub fn active_runtimes(&self) -> impl Iterator<Item = &Runtime> {
+        self.runtimes.iter().filter(|row| row.enabled)
+    }
     fn validate(&self) -> DynResult<()> {
         if self.schema_version != 1 || self.hosts.len() != 4 || self.runtimes.len() != 11 {
             return Err("expected schema 1, four hosts, and eleven runtimes".into());
@@ -54,8 +63,9 @@ impl Matrix {
         let mut ids = BTreeSet::new();
         for host in &self.hosts {
             if !safe_id(&host.id)
+                || host.display_name.trim().is_empty()
                 || !ids.insert(&host.id)
-                || host.runner != [hosted_runner(&host.id)?]
+                || host.runner != expected_host_runner(&host.id)?
                 || !valid_host_identity(host)
             {
                 return Err("invalid host identity or runner boundary".into());
@@ -64,7 +74,13 @@ impl Matrix {
         let mut variants = BTreeSet::new();
         for runtime in &self.runtimes {
             let host = self.host(&runtime.host)?;
-            if !safe_id(&runtime.id) || !ids.insert(&runtime.id) {
+            if runtime.enabled && !host.enabled {
+                return Err("enabled runtime cannot use a disabled host".into());
+            }
+            if !safe_id(&runtime.id)
+                || runtime.display_name.trim().is_empty()
+                || !ids.insert(&runtime.id)
+            {
                 return Err("invalid runtime identity or runner boundary".into());
             }
             let variant = match runtime.backend.as_str() {
@@ -112,6 +128,9 @@ impl Matrix {
         Ok(())
     }
 }
+fn enabled() -> bool {
+    true
+}
 fn valid_host_identity(host: &Host) -> bool {
     matches!(
         (
@@ -155,10 +174,15 @@ fn expected_runner(host: &Host, variant: &str) -> Vec<String> {
     } else {
         "X64"
     };
-    ["self-hosted", "skippy-ephemeral", os, arch, variant]
+    let mut runner = ["self-hosted", "skippy-ephemeral", os, arch]
         .into_iter()
         .map(str::to_owned)
-        .collect()
+        .collect::<Vec<_>>();
+    if variant.starts_with("cuda") {
+        runner.push("runtime-image".into());
+    }
+    runner.push(variant.into());
+    runner
 }
 fn safe_id(value: &str) -> bool {
     !value.is_empty()
@@ -167,14 +191,21 @@ fn safe_id(value: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
 }
 
-fn hosted_runner(id: &str) -> DynResult<&'static str> {
-    match id {
-        "darwin-aarch64" => Ok("macos-15"),
-        "linux-x86_64" => Ok("ubuntu-24.04"),
-        "linux-aarch64" => Ok("ubuntu-24.04-arm"),
-        "windows-x86_64" => Ok("windows-2025"),
-        _ => Err("unknown host identity".into()),
-    }
+fn expected_host_runner(id: &str) -> DynResult<Vec<String>> {
+    let runner = match id {
+        "darwin-aarch64" => vec!["self-hosted", "skippy-ephemeral", "macOS", "ARM64"],
+        "linux-x86_64" => vec!["self-hosted", "jy-linux-docker", "Linux", "X64"],
+        "linux-aarch64" => vec![
+            "self-hosted",
+            "skippy-ephemeral",
+            "Linux",
+            "ARM64",
+            "runtime-image",
+        ],
+        "windows-x86_64" => vec!["windows-2025"],
+        _ => return Err("unknown host identity".into()),
+    };
+    Ok(runner.into_iter().map(str::to_owned).collect())
 }
 
 pub fn require_host(host: &Host) -> DynResult<()> {
@@ -224,5 +255,26 @@ mod tests {
             matrix.runtimes[1].runner = wrong.into_iter().map(str::to_owned).collect();
             assert!(matrix.validate().is_err());
         }
+    }
+    #[test]
+    fn disabled_targets_stay_declared_but_are_not_active() {
+        let matrix: Matrix =
+            serde_json::from_str(include_str!("../../../../ci/targets.json")).unwrap();
+        assert_eq!(matrix.runtimes.len(), 11);
+        assert_eq!(matrix.hosts.len(), 4);
+        assert_eq!(matrix.hosts.iter().filter(|row| row.enabled).count(), 3);
+        assert_eq!(matrix.active_runtimes().count(), 8);
+        assert!(
+            matrix
+                .hosts
+                .iter()
+                .filter(|row| row.enabled)
+                .all(|row| row.os != "windows")
+        );
+        assert!(
+            matrix
+                .active_runtimes()
+                .all(|row| !row.id.starts_with("windows-x86_64"))
+        );
     }
 }

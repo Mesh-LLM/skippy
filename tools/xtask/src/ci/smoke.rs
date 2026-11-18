@@ -22,19 +22,18 @@ struct InferenceProbe {
     result: mpsc::Receiver<Result<serde_json::Value, String>>,
     response: Option<serde_json::Value>,
     gpu_required: bool,
-    offloaded: bool,
+    gpu_selected: bool,
 }
 impl ReadinessProbe for InferenceProbe {
     type Rejection = String;
     fn line(&mut self, line: ObservedLine<'_>) -> ProbeDecision<String> {
-        let text = String::from_utf8_lossy(line.bytes);
-        if let Some(after) = text.split("offloaded ").nth(1) {
-            self.offloaded |= after
-                .split('/')
-                .next()
-                .and_then(|count| count.parse::<usize>().ok())
-                .is_some_and(|count| count > 0)
-                && after.contains("GPU");
+        if let Ok(event) = serde_json::from_slice::<serde_json::Value>(line.bytes)
+            && event["type"] == "backend_device_selected"
+            && event["data"]["detail"]
+                .as_str()
+                .is_some_and(|device| device.starts_with("CUDA") || device.starts_with("MTL"))
+        {
+            self.gpu_selected = true;
         }
         ProbeDecision::Pending
     }
@@ -47,7 +46,7 @@ impl ReadinessProbe for InferenceProbe {
             }
             Err(_) => {}
         }
-        if self.response.is_some() && (!self.gpu_required || self.offloaded) {
+        if self.response.is_some() && (!self.gpu_required || self.gpu_selected) {
             ProbeDecision::Candidate
         } else {
             ProbeDecision::Pending
@@ -136,7 +135,7 @@ fn supervise(
             result: receiver,
             response: None,
             gpu_required,
-            offloaded: false,
+            gpu_selected: false,
         };
         let result = process_supervision::supervise_with_probe(
             spec,
@@ -278,4 +277,31 @@ pub fn prepare_model() -> DynResult<()> {
         )?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn structured_gpu_device_event_admits_gpu_evidence() {
+        let (_sender, receiver) = mpsc::channel();
+        let mut probe = InferenceProbe {
+            result: receiver,
+            response: None,
+            gpu_required: true,
+            gpu_selected: false,
+        };
+        let line = br#"{"data":{"detail":"MTL0"},"type":"backend_device_selected"}"#;
+
+        assert!(matches!(
+            probe.line(ObservedLine {
+                stream: process_supervision::Stream::Stdout,
+                bytes: line,
+                ending: process_supervision::LineEnding::Lf,
+            }),
+            ProbeDecision::Pending
+        ));
+        assert!(probe.gpu_selected);
+    }
 }

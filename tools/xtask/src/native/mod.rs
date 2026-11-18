@@ -8,12 +8,16 @@ mod package_version;
 mod runtime_manifest_writer;
 use crate::command::DynResult;
 
+pub(crate) fn verify_host(args: &[String]) -> DynResult<()> {
+    imports::verify_host(args)
+}
+
 pub(crate) fn run(args: &[String]) -> DynResult<()> {
     let (command, args) = args.split_first().ok_or("missing native command")?;
     match command.as_str() {
         "runtime-manifest-write" => runtime_manifest_writer::run(args),
         "package-source-version" => source_version(args),
-        "verify-host-dependencies" => imports::verify_host(args),
+        "verify-host-dependencies" => verify_host(args),
         "linux-runtime-deps" => dependencies::run(args, "elf"),
         "windows-runtime-deps" => dependencies::run(args, "pe"),
         "deduplicate-linux-libraries" => library_aliases::run(args),
