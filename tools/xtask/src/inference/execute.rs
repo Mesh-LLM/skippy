@@ -1,4 +1,6 @@
 //! Native JY workload; never invoked inside the Actions orchestration container.
+mod split_plan;
+
 use super::*;
 use crate::execution;
 use serde_json::{Value, json};
@@ -199,74 +201,19 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
         ]);
     }
     let control;
+    let mut split_certification = None;
     if mode == "split" {
-        let peers: Vec<Value> = serde_json::from_str(&std::env::var("JIANYANG_PEERS")?)?;
-        if peers.len() != 2 || peers[0]["node"] == peers[1]["node"] {
-            return Err("split requires two distinct reserved machines".into());
-        }
-        let host = |role: &str| -> DynResult<String> {
-            Ok(peers
-                .iter()
-                .find(|p| p["role"] == role)
-                .and_then(|p| p["host"].as_str())
-                .ok_or("formation peer missing")?
-                .parse::<std::net::IpAddr>()?
-                .to_string())
-        };
-        let leader = host("leader")?;
-        let follower = host("worker")?;
-        control = format!("http://{leader}:9912");
-        let temp = tempfile::tempdir()?;
-        let plan_dir = temp.path().join("plan");
-        execution::run(
-            "target/debug/skippy",
-            &vec![
-                "plan-split".into(),
-                "--model-path".into(),
-                model.display().to_string(),
-                "--model-id".into(),
-                coordinate.clone(),
-                "--worker".into(),
-                format!("{leader}:9400"),
-                "--worker".into(),
-                format!("{follower}:9401"),
-                "--ctx-size".into(),
-                context.to_string(),
-                "--n-gpu-layers".into(),
-                "999".into(),
-                "--output-dir".into(),
-                plan_dir.display().to_string(),
-            ],
-            &[],
-            900,
-        )?;
-        let local = out.join("stage.json");
-        fs::copy(
-            plan_dir.join(if worker {
-                "stage-1.json"
-            } else {
-                "stage-0.json"
-            }),
-            &local,
-        )?;
-        args.extend([
-            "--config".into(),
-            local.display().to_string(),
-            "--stage-transport".into(),
-            "binary".into(),
-        ]);
-        if worker {
-            args.push("--worker-only".into());
-        } else {
-            let endpoint = format!("{follower}:9401").parse()?;
-            let until = Instant::now() + Duration::from_secs(900);
-            while std::net::TcpStream::connect_timeout(&endpoint, Duration::from_secs(1)).is_err() {
-                if Instant::now() > until {
-                    return Err("split worker listener did not become ready".into());
-                }
-                thread::sleep(Duration::from_secs(1));
-            }
-        }
+        let prepared = split_plan::prepare(split_plan::Request {
+            model: &model,
+            coordinate: &coordinate,
+            profile,
+            context,
+            output: &out,
+            worker,
+        })?;
+        control = prepared.control;
+        split_certification = Some(prepared.certification);
+        args.extend(prepared.args);
     } else {
         control = String::new();
         args.extend([
@@ -317,7 +264,7 @@ pub fn run(profile: &str, key: &str, mode: &str) -> DynResult<()> {
     };
     write_json_file(
         &out.join("qualification.json"),
-        &json!({"source_sha":sha,"model":key,"mode":mode,"profile":profile,"status":"passed","performance_claim":plan.performance_claim,"gpu":gpu,"artifact_manifest_sha256":crate::artifact::sha256(Path::new("ci/inference-artifacts.json"))?,"layers":fixture.layers,"correctness_scope":correctness_scope}),
+        &json!({"source_sha":sha,"model":key,"mode":mode,"profile":profile,"status":"passed","performance_claim":plan.performance_claim,"gpu":gpu,"artifact_manifest_sha256":crate::artifact::sha256(Path::new("ci/inference-artifacts.json"))?,"layers":fixture.layers,"correctness_scope":correctness_scope,"split_certification":split_certification}),
     )?;
     if mode == "split" {
         let listener = TcpListener::bind("0.0.0.0:9912")?;
