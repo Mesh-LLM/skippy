@@ -39,6 +39,8 @@ mod output_tokens;
 mod record_worker;
 mod records;
 mod resident_offload;
+#[cfg(test)]
+mod resident_prefill_tests;
 mod tier_metrics;
 use record_worker::ExactStateRecordWorker;
 mod resident_prefix;

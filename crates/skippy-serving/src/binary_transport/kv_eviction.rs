@@ -113,7 +113,7 @@ pub(in crate::binary_transport) fn evict_binary_resident_prefix_for_decode(
         })?;
     }
     let eviction = (if let Some(target_tokens) = plan.target_tokens {
-        kv.evict_resident_prefix_for_tokens(runtime, session_id, target_tokens)
+        kv.evict_resident_prefix_for_prefill(runtime, session_id, target_tokens)
     } else {
         kv.evict_resident_prefix_for_decode_batch(runtime, session_id)
     })

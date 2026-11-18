@@ -1,0 +1,49 @@
+name: Runtime qualification
+description: Run the shared runtime contract for one admitted runtime.
+inputs:
+  runtime_id:
+    description: Runtime from ci/targets.json
+    required: true
+  candidate_artifact:
+    description: Protected candidate source artifact
+    default: ''
+  candidate_sha:
+    description: Immutable candidate source revision
+    default: ''
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup
+      if: runner.environment == 'github-hosted'
+    - uses: ./.github/actions/cache
+      if: runner.environment == 'self-hosted'
+    - uses: ./.github/actions/sccache
+      with:
+        scope: ${{ inputs.runtime_id }}-${{ env.SKIPPY_CUDA_ARCHITECTURE_MODE }}
+    - uses: ./.github/actions/source
+      with:
+        artifact: ${{ inputs.candidate_artifact }}
+        sha: ${{ inputs.candidate_sha }}
+    - name: Build native runtime
+      shell: bash
+      env:
+        RUNTIME_ID: ${{ inputs.runtime_id }}
+      run: just ci-runtime "$RUNTIME_ID"
+    - name: Retain native failure diagnostics
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      if: failure()
+      with:
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-runtime-${{ inputs.runtime_id }}-diagnostics
+        path: |
+          .deps/llama-build/**/CMakeCache.txt
+          .deps/llama-build/**/CMakeFiles/CMakeConfigureLog.yaml
+          .deps/llama-build/**/Testing/**
+        include-hidden-files: true
+        if-no-files-found: ignore
+        retention-days: 14
+    - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-runtime-${{ inputs.runtime_id }}
+        path: dist/runtimes/${{ inputs.runtime_id }}
+        if-no-files-found: error
+        retention-days: 7

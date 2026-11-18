@@ -545,6 +545,37 @@ impl KvStageIntegration {
             evicted_tokens: decision.evicted_tokens,
         })
     }
+
+    /// Admit the remaining prefill against physical KV occupancy. Nested
+    /// checkpoints can share cells, so summing their logical depths does not
+    /// establish that deleting those checkpoints actually released space.
+    pub fn evict_resident_prefix_for_prefill(
+        &self,
+        runtime: &mut RuntimeState,
+        session_id: &str,
+        remaining_tokens: u64,
+    ) -> Result<ResidentPrefixEviction> {
+        if runtime.kv_pool_tokens() == 0 {
+            return self.evict_resident_prefix_for_tokens(runtime, session_id, remaining_tokens);
+        }
+        // Prefill reserves its actual remaining tokens without an additional
+        // decode-batch watermark, allowing prompts that fill the context.
+        let decision =
+            self.admit_resident_capacity(runtime, session_id, remaining_tokens, 0, 0, None)?;
+        anyhow::ensure!(
+            decision.admitted,
+            "insufficient physical KV capacity before prefill: session={session_id} used={} request={} capacity={} deficit={}",
+            decision.physical_used_tokens,
+            decision.request_tokens,
+            decision.capacity_tokens,
+            decision.admission_deficit_tokens
+        );
+        Ok(ResidentPrefixEviction {
+            target_tokens: decision.required_eviction_tokens,
+            evicted_entries: decision.evicted_entries,
+            evicted_tokens: decision.evicted_tokens,
+        })
+    }
 }
 
 fn evict_one_resident(
