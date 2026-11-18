@@ -25,6 +25,15 @@ See the [CLI guide](crates/skippy-cli/README.md) for runtime management, model
 downloads, single-model serving, and explicit split-worker commands. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow.
 
+## Sponsors
+
+Skippy is developed and sponsored by
+[General Inference](https://generalinference.xyz).
+
+<a href="https://generalinference.xyz">
+  <img src="docs-site/public/general-inference-logo.png" alt="General Inference" width="360">
+</a>
+
 ## Source layout
 
 | Path | Ownership |

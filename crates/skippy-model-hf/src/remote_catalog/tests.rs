@@ -16,12 +16,12 @@ fn refresh_backoff_suppresses_then_clears() {
     assert!(!refresh_in_backoff(), "backoff cleared after success");
 }
 
-/// Hits the network: verifies that the live skippy/catalog dataset
+/// Hits the network: verifies that the live meshllm/catalog dataset
 /// downloads successfully with the patched hf-hub (redirect Content-Length
 /// no longer mistaken for the file size). Run with:
 ///   cargo test -p skippy-model-hf refresh_catalog_live -- --ignored --nocapture
 #[test]
-#[ignore = "network: downloads the live skippy/catalog dataset"]
+#[ignore = "network: downloads the live meshllm/catalog dataset"]
 #[serial]
 fn refresh_catalog_live() {
     refresh_catalog().expect("live catalog refresh should succeed");
@@ -91,6 +91,21 @@ fn catalog_cache_dir_uses_hf_home() {
     // Just verify it returns a path (env-dependent)
     let dir = catalog_cache_dir();
     assert!(!dir.as_os_str().is_empty());
+}
+
+#[test]
+fn meshllm_catalog_is_the_default() {
+    let repository = selected_model_catalog(None);
+
+    assert_eq!(repository.full_name(), "meshllm/catalog");
+}
+
+#[test]
+fn configured_catalog_overrides_the_default() {
+    let configured = crate::repository_settings::HubRepository::parse("example/models").unwrap();
+    let repository = selected_model_catalog(Some(configured));
+
+    assert_eq!(repository.full_name(), "example/models");
 }
 
 fn test_variant(curated_name: &str, repo: &str, package_repos: &[&str]) -> CatalogVariant {
