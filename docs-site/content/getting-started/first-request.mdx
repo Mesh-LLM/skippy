@@ -1,9 +1,9 @@
 ---
-title: First API request
+title: Making inference requests
 description: Call Skippy through OpenAI-compatible or Anthropic-compatible APIs.
 ---
 
-# First API request
+# Making inference requests
 
 Skippy exposes OpenAI-compatible and Anthropic Messages APIs on the same
 address and model lifecycle.
@@ -36,3 +36,103 @@ curl http://127.0.0.1:9337/v1/messages \
 Use `skippy serve --model ... --prompt` when you want an interactive prompt and
 the HTTP API in the same process. Use `skippy prompt --endpoint URL` to connect
 to an already-running server.
+
+## Deterministic caching
+
+Skippy can reuse the model state produced for a shared prompt prefix. This
+avoids recomputing repeated system prompts, tool definitions, documents, and
+conversation history.
+
+`prompt_cache_key` is a stable identifier chosen by your application. It places
+related requests in the same cache namespace. A key can isolate tenants or
+agent configurations, keep compatible requests together, and deliberately
+start a fresh namespace when a prompt or toolset changes.
+
+The key does not identify the cached prompt and does not guarantee a hit.
+Requests must still use a compatible model and runtime and share an identical
+leading token sequence. Reuse ends at the first token that differs.
+
+You can omit `prompt_cache_key` for normal prefix caching. Requests without one
+use the default cache namespace and can still reuse matching prefixes.
+
+### OpenAI-compatible requests
+
+Add `prompt_cache_key` to a chat completion request:
+
+```json
+{
+  "model": "Qwen3-0.6B-Q4_K_M",
+  "prompt_cache_key": "support-agent:v1",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a support agent. Follow the company support policy."
+    },
+    {
+      "role": "user",
+      "content": "How do I reset my password?"
+    }
+  ]
+}
+```
+
+A later request can use the same key and system prompt with a different user
+message:
+
+```json
+{
+  "model": "Qwen3-0.6B-Q4_K_M",
+  "prompt_cache_key": "support-agent:v1",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a support agent. Follow the company support policy."
+    },
+    {
+      "role": "user",
+      "content": "How do I update my email address?"
+    }
+  ]
+}
+```
+
+Skippy can reuse the matching system-prompt prefix and prefill only the changed
+tail.
+
+### Anthropic-compatible requests
+
+The Anthropic-compatible API accepts the same top-level field:
+
+```json
+{
+  "model": "Qwen3-0.6B-Q4_K_M",
+  "prompt_cache_key": "support-agent:v1",
+  "max_tokens": 256,
+  "system": "You are a support agent. Follow the company support policy.",
+  "messages": [
+    {
+      "role": "user",
+      "content": "How do I reset my password?"
+    }
+  ]
+}
+```
+
+Anthropic `cache_control` controls retention behavior. It does not select the
+cache namespace or replace `prompt_cache_key`.
+
+### Choose a stable key
+
+| Use case | Example |
+| --- | --- |
+| One agent configuration | `support-agent:v1` |
+| Tenant and agent isolation | `tenant-42:support-agent:v1` |
+| Versioned tool definitions | `research-agent:tools-v3` |
+| Default shared namespace | Omit `prompt_cache_key` |
+
+Change the key when the isolation boundary or stable prompt configuration
+changes. Do not use a unique request ID, timestamp, or random value because a
+new value prevents reuse from earlier requests. Do not include secrets in the
+key.
+
+Skippy trims surrounding whitespace and treats an empty key as absent.

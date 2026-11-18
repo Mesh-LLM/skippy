@@ -1,4 +1,4 @@
 export default {
   index: "Install and run",
-  "first-request": "First API request",
+  "first-request": "Making inference requests",
 };
