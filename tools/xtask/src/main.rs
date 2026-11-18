@@ -1,5 +1,6 @@
 mod artifact;
 mod automation;
+mod cache_parity;
 mod cache_qualification;
 mod ci;
 mod command;
@@ -27,6 +28,7 @@ fn run(args: &[String]) -> command::DynResult<()> {
     match domain.as_str() {
         "native" => native::run(args),
         "automation" => automation::run(args),
+        "cache-parity" => cache_parity::run(args),
         "cache-qualification" => cache_qualification::run(args),
         "artifact" => artifact::run(args),
         "ci" => ci::run(args),
@@ -40,7 +42,7 @@ fn run(args: &[String]) -> command::DynResult<()> {
 
 fn help() -> command::DynResult<()> {
     println!(
-        "cargo xtool {{native|automation|artifact|cache-qualification|ci|inference|release}} COMMAND [OPTIONS]"
+        "cargo xtool {{native|automation|artifact|cache-parity|cache-qualification|ci|inference|release}} COMMAND [OPTIONS]"
     );
     Ok(())
 }

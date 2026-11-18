@@ -336,6 +336,11 @@ impl StageOpenAiBackend {
         };
 
         let mut output = collector.finish(prompt_token_ids.len(), cache_stats)?;
+        output.cache_disk_payload_bytes_read_total = self
+            .kv
+            .as_ref()
+            .and_then(|kv| kv.l3.as_ref())
+            .map(|tier| tier.activity().bytes_read);
         let mut summary_attrs = self.openai_attrs(&ids);
         summary_attrs.insert(
             "llama_stage.prompt_token_count".to_string(),

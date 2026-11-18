@@ -54,7 +54,7 @@ fn only_known_documentation_paths_can_skip_the_gpu_gate() {
     for path in [
         "Cargo.lock",
         "Justfile",
-        "crates/skippy-model-artifact/src/kv_fixtures/models.json",
+        "ci/cache-qualification/workload.schema.json",
         "crates/skippy-serving/src/cache.rs",
         "llama_cpp/patches/0001.patch",
         "unexpected.new",

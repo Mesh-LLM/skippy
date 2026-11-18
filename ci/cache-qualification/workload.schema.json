@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Skippy cache parity workload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "bursts"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "design": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cache", "workload"],
+      "properties": {
+        "cache": { "enum": ["cold_prefill", "warm_l1", "l2_restore", "post_restart_l3"] },
+        "workload": { "enum": ["exact_replay", "divergent_tail", "growing_conversation"] }
+      }
+    },
+    "bursts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 32,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["request", "request_sha256"],
+          "properties": {
+            "request": { "type": "string", "minLength": 1 },
+            "request_sha256": { "$ref": "parity.schema.json#/$defs/sha256" },
+            "seed": { "$ref": "#/$defs/input" },
+            "eviction": { "$ref": "#/$defs/input" },
+            "expected_content": { "type": ["string", "null"] },
+            "prompt_tokens": { "type": ["integer", "null"], "minimum": 1, "maximum": 4294967295 }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request", "request_sha256"],
+      "properties": {
+        "request": { "type": "string", "minLength": 1 },
+        "request_sha256": { "$ref": "parity.schema.json#/$defs/sha256" }
+      }
+    }
+  }
+}
