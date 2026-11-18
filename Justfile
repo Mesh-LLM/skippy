@@ -73,13 +73,13 @@ format:
     @cargo fmt --all
     @cargo fmt --manifest-path skippy-api-rs/Cargo.toml --all
 
-lint:
+lint: llama-prepare
     @cargo fmt --all --check
     @cargo clippy --workspace --all-targets -- -D warnings
     @cargo fmt --manifest-path skippy-api-rs/Cargo.toml --all --check
     @cargo clippy --manifest-path skippy-api-rs/Cargo.toml --workspace --all-targets -- -D warnings
 
-test: skippy-llama-api-test
+test: skippy-api-test
     @cargo test --workspace --no-default-features
     @cargo test --manifest-path skippy-api-rs/Cargo.toml --workspace
 
@@ -95,19 +95,19 @@ skippy-ffi-bindgen-check: llama-prepare
 skippy-ffi-bindgen: llama-prepare
     @SKIPPY_FFI_BINDGEN=regen cargo check --locked -p skippy-ffi
 
-skippy-llama-api-test: llama-prepare
+skippy-api-test:
     #!/usr/bin/env bash
     set -euo pipefail
-    build_dir="${SKIPPY_LLAMA_API_BUILD_DIR:-target/skippy-llama-api-build}"
+    build_dir="${SKIPPY_API_BUILD_DIR:-${SKIPPY_LLAMA_API_BUILD_DIR:-target/skippy-api-build}}"
     cmake -S skippy_api -B "$build_dir" -G Ninja \
       -DCMAKE_BUILD_TYPE=Debug \
+      -DSKIPPY_BUILD_LLAMA=OFF \
       -DSKIPPY_API_BUILD_TESTS=ON \
-      -DSKIPPY_LINK_COMPILE_COMMANDS=ON \
-      -DSKIPPY_LLAMA_SOURCE_DIR="{{ absolute_path(llama_dir) }}"
+      -DSKIPPY_LINK_COMPILE_COMMANDS=ON
     cmake --build "$build_dir" --parallel
-    ctest --test-dir "$build_dir" --output-on-failure --no-tests=error
+    ctest --test-dir "$build_dir" --output-on-failure --no-tests=error --stop-on-failure
 
-llama-check: skippy-ffi-bindgen-check skippy-llama-api-test
+llama-check: skippy-ffi-bindgen-check
     #!/usr/bin/env bash
     set -euo pipefail
     scripts/check-skippy-public-headers.sh
@@ -181,10 +181,7 @@ ci-package runtime host_dir runtime_dir:
 ci-smoke runtime product_dir:
     @cargo xtool ci smoke "{{ runtime }}" "{{ product_dir }}"
 
-ci-summary:
-    @cargo xtool ci summary
-
-ci: ci-contracts lint test llama-check ci-plan
+ci: lint ci-contracts test llama-check
 
 check-release tag:
     @cargo xtool release validate "{{ tag }}"

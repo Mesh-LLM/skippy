@@ -3,7 +3,7 @@ pub(crate) use crate::execution;
 mod contracts;
 mod gates;
 pub(crate) mod matrix;
-mod producers;
+pub(crate) mod producers;
 mod profile;
 mod smoke;
 use crate::command::DynResult;

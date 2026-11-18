@@ -32,7 +32,9 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    runs-on: [self-hosted, skippy-ephemeral, Linux, X64, native-contracts]
+    runs-on:
+      group: jy-rnr_vfnz8k5p4yrh334
+      labels: [self-hosted, jy-linux-docker, Linux, X64]
     timeout-minutes: 180
     outputs:
       changed: ${{ steps.resolve.outputs.changed }}

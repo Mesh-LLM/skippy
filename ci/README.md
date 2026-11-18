@@ -11,16 +11,17 @@ Its separate `Inference qualification` status explicitly reports when no serving
 inputs changed; required smoke jobs cannot pass by being skipped.
 The 308-test native family battery and complete host/runtime/package/smoke matrix
 run nightly and for releases. Reusable candidate validation defaults to `full`;
-release publication explicitly requests it. Manual dispatch selects either
+release publication explicitly requests it. Manual dispatch from protected main selects either
 profile, defaulting to `full`. Both nightly workflows run at 14:00 UTC.
-The only source override is the immutable bundle produced by the protected-main
+Full runs can build CUDA for the assigned GPU; release validation explicitly
+selects the complete architecture lists from `targets.json`. The only source override is the immutable bundle produced by the protected-main
 llama upgrade workflow.
 
 `targets.json` defines four backend-neutral hosts and eleven runtimes.
 `enabled_hosts` currently activates Linux and macOS only: three hosts and eight
 runtimes. Windows qualification and publication are temporarily deferred at the
-maintainer's request. Re-enable its retained definitions by adding
-`windows-x86_64` to `enabled_hosts`. CPU work uses GitHub-hosted
+maintainer's request. Re-enable its retained definitions by enabling
+its host/runtime definitions and adding `windows-x86_64` to `enabled_hosts`. CPU work uses GitHub-hosted
 `ubuntu-24.04`, `ubuntu-24.04-arm` and `macos-15`. Metal and CUDA rows require the explicit ephemeral
 hardware labels and JY runner group in that manifest. JY uses the requested group
 to attribute queued Actions jobs and place capacity; labels alone are insufficient.
@@ -63,7 +64,8 @@ The ordinary hardware runner jobs below use runners created for one job and
 destroyed afterwards. Their runner group is repository-scoped; it must not
 provide persistent host state, publication credentials, credentialed checkout,
 or privileged network access to PR code. Required labels are `self-hosted`, `skippy-ephemeral`, the standard
-OS/architecture label, and `metal`, `cuda12` or `cuda13`. CUDA images carry the
+OS/architecture label, and `metal`, `cuda12` or `cuda13`. CUDA runtime rows also require `runtime-image`, isolating exact-toolkit images
+from family-certification runners. CUDA images carry the
 exact toolkit from `targets.json` and a compatible driver/device. Toolkit-only
 machines are insufficient. The large family battery additionally requests
 `family-256g`; provision memory and device capacity for the largest admitted
