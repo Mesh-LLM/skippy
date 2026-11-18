@@ -7,6 +7,21 @@ fn github(path: &str) -> DynResult<Value> {
     let output = execution::capture("gh", &["api".into(), path.into()], &[("GH_TOKEN", token)])?;
     Ok(serde_json::from_str(&output)?)
 }
+
+fn changed_files(number: u64) -> DynResult<Value> {
+    let token = std::env::var("GH_TOKEN")?;
+    let output = execution::capture(
+        "gh",
+        &[
+            "api".into(),
+            format!("repos/general-inference/skippy/pulls/{number}/files?per_page=100"),
+            "--paginate".into(),
+            "--slurp".into(),
+        ],
+        &[("GH_TOKEN", token)],
+    )?;
+    Ok(serde_json::from_str(&output)?)
+}
 pub fn run() -> DynResult<()> {
     let event: Value = serde_json::from_slice(&fs::read(std::env::var("GITHUB_EVENT_PATH")?)?)?;
     let name = std::env::var("GITHUB_EVENT_NAME")?;
@@ -58,10 +73,7 @@ fn admit_pr(sha: &str) -> DynResult<bool> {
         })
         .ok_or("no current open PR for tested SHA")?;
     let number = pr["number"].as_u64().ok_or("missing PR number")?;
-    let files = github(&format!(
-        "repos/general-inference/skippy/pulls/{number}/files?per_page=100"
-    ))?;
-    if !requires_qualification(&files)? {
+    if !changes::requires_qualification(&changed_files(number)?)? {
         return Ok(false);
     }
     if pr["head"]["repo"]["full_name"] != "general-inference/skippy" {
@@ -78,68 +90,4 @@ fn admit_pr(sha: &str) -> DynResult<bool> {
         return Err("PR author is not a trusted collaborator".into());
     }
     Ok(true)
-}
-
-fn requires_qualification(files: &Value) -> DynResult<bool> {
-    let files = files.as_array().ok_or("invalid files response")?;
-    // A full first page can omit relevant inputs on subsequent pages.
-    let mut required = files.len() >= 100;
-    for file in files {
-        let path = file["filename"]
-            .as_str()
-            .ok_or("missing changed-file path")?;
-        required |= relevant(path);
-        if let Some(previous) = file.get("previous_filename") {
-            required |= relevant(previous.as_str().ok_or("invalid previous file path")?);
-        }
-    }
-    Ok(required)
-}
-
-fn relevant(path: &str) -> bool {
-    [
-        "crates/",
-        "llama_cpp/",
-        "tools/",
-        "scripts/",
-        "ci/",
-        ".gi/",
-        ".github/",
-        "Cargo.",
-        "Justfile",
-        "rust-toolchain",
-        ".cargo/",
-    ]
-    .iter()
-    .any(|p| path.starts_with(p))
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn triggers_cover_dependencies_and_native_inputs() {
-        for p in [
-            "Cargo.lock",
-            "crates/skippy-serving/src/lib.rs",
-            "llama_cpp/patches/a.patch",
-            ".gi/templates.yaml",
-            "Justfile",
-        ] {
-            assert!(relevant(p));
-        }
-        assert!(!relevant("docs/typo.md"));
-    }
-    #[test]
-    fn only_complete_irrelevant_file_lists_can_omit_model_tests() {
-        let docs = serde_json::json!([{"filename":"docs/typo.md"}]);
-        assert!(!requires_qualification(&docs).unwrap());
-        let engine = serde_json::json!([{"filename":"crates/skippy-serving/src/lib.rs"}]);
-        assert!(requires_qualification(&engine).unwrap());
-        let renamed = serde_json::json!([{"filename":"docs/archived.md","previous_filename":"ci/inference-ladder.json"}]);
-        assert!(requires_qualification(&renamed).unwrap());
-        let page = Value::Array(vec![serde_json::json!({"filename":"docs/typo.md"}); 100]);
-        assert!(requires_qualification(&page).unwrap());
-        assert!(requires_qualification(&Value::Null).is_err());
-        assert!(requires_qualification(&serde_json::json!([{}])).is_err());
-    }
 }

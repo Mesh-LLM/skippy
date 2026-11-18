@@ -59,6 +59,9 @@ prefix_cache_ram = "4GiB"
 kv_cache_disk = "32GiB"
 ```
 
+On unified-memory systems, keep `prefix_cache_ram = "off"` and allocate cache
+memory to L1. See [Unified-memory systems](/kv-caching/#unified-memory-systems).
+
 Legacy `SKIPPY_KV_CACHE=off` and `SKIPPY_PREFIX_CACHE=off` remain emergency
 kill switches. Unset them before explicitly enabling prefix caching.
 
