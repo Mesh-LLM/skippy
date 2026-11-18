@@ -56,6 +56,8 @@ native runners restore Cargo dependencies, debug artifacts and bounded sccache
 compiler results using the shared cache action. Rust follows
 `rust-toolchain.toml`. Build agents must already provide Git, CMake, Ninja, a
 native C/C++ toolchain, curl, and the platform linker selected by `scripts/`.
+Core, CLI and runtime compilation jobs print their final sccache statistics so
+cache hits, misses and backend errors remain visible in the Actions log.
 Linux runtime packaging also needs patchelf. Native binding/generator checks
 need libclang and LLVM/Clang development headers and CMake packages; set
 `SKIPPY_REWRITER_LLVM_PREFIX` to their installation. Native API quality checks

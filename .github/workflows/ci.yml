@@ -139,6 +139,9 @@ jobs:
       - run: just test
       - run: just llama-check
         if: needs.plan.outputs.profile == 'full'
+      - name: Report compiler cache
+        if: always()
+        run: '"$SCCACHE" --show-stats'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
@@ -182,6 +185,9 @@ jobs:
         env:
           HOST_ID: ${{ matrix.id }}
         run: just ci-host "$HOST_ID"
+      - name: Report compiler cache
+        if: always()
+        run: '"$SCCACHE" --show-stats'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-host-${{ matrix.id }}

@@ -29,6 +29,10 @@ runs:
       env:
         RUNTIME_ID: ${{ inputs.runtime_id }}
       run: just ci-runtime "$RUNTIME_ID"
+    - name: Report compiler cache
+      if: always()
+      shell: bash
+      run: '"$SCCACHE" --show-stats'
     - name: Retain native failure diagnostics
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       if: failure()
