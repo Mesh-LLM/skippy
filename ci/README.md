@@ -39,6 +39,12 @@ provisioned. Preflight, CLI, CPU, Metal and CUDA work uses eligible ephemeral JY
 runners. Metal and CUDA rows require the explicit hardware labels in that
 manifest. Compilation never counts as device evidence.
 
+Tagged releases additionally bind admission, every reusable CI matrix row, the
+CI summary and publication to the repository-scoped
+`jy-rnr_vfnz8k5p4yrh334` runner group. Matrix projection preserves every exact
+OS, architecture, backend and `runtime-image` label, so release work cannot fall
+back to GitHub-hosted capacity or a different JY runtime environment.
+
 ## Build prerequisites
 
 The hosted setup action installs only full-SHA-pinned Just 1.58.0. Rust follows

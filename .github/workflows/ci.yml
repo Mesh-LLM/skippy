@@ -24,6 +24,9 @@ on:
       cuda_architecture_mode:
         type: string
         default: native
+      jy_runners:
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -76,6 +79,8 @@ jobs:
           persist-credentials: false
       - id: plan
         name: Validate and project the release matrix
+        env:
+          SKIPPY_CI_JY_RUNNERS: ${{ inputs.jy_runners || false }}
         run: scripts/ci-plan.sh
       - id: graph
         name: Classify native graph impact
@@ -287,7 +292,7 @@ jobs:
     name: CI
     needs: [preflight, quality, graph, host, runtime]
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.jy_runners && fromJSON('{"group":"jy-rnr_vfnz8k5p4yrh334","labels":["self-hosted","Linux","X64"]}') || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: Require every CI phase

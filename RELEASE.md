@@ -20,7 +20,9 @@ App if tag creation is automated.
 
 `release.yml` checks the tag against the committed Cargo version and main
 ancestry, then calls the same `ci.yml` used by PRs and main in release CUDA
-architecture mode. It requires all three enabled hosts and eight complete
+architecture mode. Admission, qualification and publication are constrained to
+the repository-scoped JY runner group while retaining each job's exact platform
+and backend labels. It requires all three enabled hosts and eight complete
 bundles. Windows targets remain declared but disabled until infrastructure is
 available:
 
