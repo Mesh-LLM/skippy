@@ -1,0 +1,83 @@
+---
+title: Option reference
+description: The supported Skippy serving-settings groups and their purpose.
+---
+
+# Option reference
+
+The CLI flag uses kebab case and the TOML key uses snake case. This page groups
+the public surface; run `skippy serve --help` for the exact accepted values and
+current defaults.
+
+## `[model]`
+
+Model source and loading: `model`, `model_path`, `model_id`, `quant`,
+`checkpoint_imatrix`, `mmproj`, `mmap`, `mlock`, and hash-cache policy.
+
+## `[execution]`
+
+Backend execution and batching: `n_gpu_layers`, device selection, CPU threads,
+batch size, microbatch size, NUMA policy, and tensor split controls.
+
+## `[kv]`
+
+Live context state: `ctx_size`, key/value cache precision, KV offload, Flash
+Attention, and unified-pool constraints.
+
+## `[cache]`
+
+Prompt reuse and durable tiers: prefix-cache mode, codec, budgets, entry and
+token limits, RAM tier, disk tier, disk directory, and minimum-free reserve.
+
+## `[scheduling]`
+
+Generation lanes and prefill behavior: concurrency, continuous batching,
+prefill chunk size, and scheduler bounds.
+
+## `[sampling]`
+
+Request defaults: temperature, top-k, top-p, min-p, typical-p, repetition
+penalties, seed, stop sequences, logit bias, and sampler order.
+
+## `[chat]`
+
+Chat templates, system prompt, reasoning controls, grammar, JSON schema, and
+tool-call behavior.
+
+## `[speculative]`
+
+Native MTP, draft-model, n-gram, DFlash, and adaptive speculation controls.
+Explicit strategies must be compatible with the admitted target model.
+
+## `[media]`
+
+Multimodal projector and media limits.
+
+## `[api]`
+
+Public bind address, response limits, compatibility guardrails, prompt mode,
+and context compaction.
+
+## `[distributed]`
+
+Prepared stage plan, ordered topology, binary stage transport, worker-only
+mode, activation codec, flow control, and downstream timeouts.
+
+## `[runtime]`
+
+Native runtime bundle roots, cache location, release selection, and selection
+policy.
+
+## `[diagnostics]`
+
+Human/JSON output, debug logs, metrics export, telemetry level, and startup
+timeout.
+
+## `[network]`
+
+Wire-delay, bandwidth, jitter, and stall simulation for controlled distributed
+experiments.
+
+The repository's canonical field-by-field table is
+`docs/SERVING_SETTINGS.md`. Keep that source and this public index consistent
+when adding or retiring a serving option.

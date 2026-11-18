@@ -1,0 +1,59 @@
+---
+title: Serving configuration
+description: Configure Skippy through TOML, environment variables, and CLI options.
+---
+
+# Serving configuration
+
+Every supported operator control is available through `skippy serve --help`.
+Use `--settings serve.toml` for a complete serving configuration.
+
+Settings resolve in this order:
+
+1. Explicit command-line options.
+2. `SKIPPY_SERVE_<OPTION_NAME>` environment variables.
+3. Values in the serving settings file.
+4. Admitted model/stage policy and built-in defaults.
+
+```toml
+version = 1
+
+[model]
+model = "Qwen3-0.6B-Q4_K_M"
+mmap = true
+
+[execution]
+n_gpu_layers = -1
+threads = 4
+batch_size = 512
+
+[kv]
+ctx_size = 8192
+kv_cache_type_k = "f16"
+kv_cache_type_v = "f16"
+
+[cache]
+prefix_cache = "auto"
+kv_cache_disk = "off"
+
+[scheduling]
+generation_concurrency = 2
+continuous_batching = true
+
+[api]
+bind_addr = "127.0.0.1:9337"
+default_max_tokens = 2048
+```
+
+Run with an override and inspect the resolved launch:
+
+```console
+skippy serve --settings serve.toml --temperature 0.2
+skippy serve --settings serve.toml --print-effective-config
+```
+
+Paths in a settings file are relative to that file. Paths supplied on the CLI
+remain relative to the working directory. Unknown keys, wrong sections, invalid
+values, and conflicting model sources are errors.
+
+Continue to the [option reference](/configuration/reference/).

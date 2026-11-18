@@ -1,0 +1,55 @@
+---
+title: Pipeline parallelism
+description: Plan and run an explicit ordered model split.
+---
+
+# Pipeline parallelism
+
+Skippy can divide a model into contiguous stages when one device cannot host
+the complete workload. It does not discover peers or automatically form a
+cluster: the operator supplies an ordered set of worker addresses and one
+verified model.
+
+```text
+client → stage 0 → stage 1 → … → final stage
+       ← tokens  ← replies ← … ← results
+```
+
+Stage zero owns tokenization, sampling, sessions, and the public OpenAI and
+Anthropic APIs. Downstream stages own admitted tensor closures and expose only
+the internal binary activation transport.
+
+## Create a plan
+
+```console
+skippy plan-split \
+  --model-path /models/model.gguf \
+  --model-id local-model \
+  --worker 127.0.0.1:9400 \
+  --worker 127.0.0.1:9401 \
+  --output-dir split-plan
+```
+
+`plan-split` admits every native stage before writing files. The generated
+`stage-N.json` files are serving inputs; `admissions.json` is diagnostic
+evidence, not a configuration file.
+
+## Start downstream first
+
+```console
+skippy serve \
+  --config split-plan/stage-1.json \
+  --stage-transport binary \
+  --worker-only
+
+skippy serve \
+  --config split-plan/stage-0.json \
+  --stage-transport binary
+```
+
+```console
+skippy prompt --endpoint http://127.0.0.1:9337/v1 --model local-model
+```
+
+Regenerate the plan whenever the topology, model, runtime, or stage boundaries
+change. Do not hand-edit admitted stage files.

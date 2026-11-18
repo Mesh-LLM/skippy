@@ -1,0 +1,38 @@
+---
+title: First API request
+description: Call Skippy through OpenAI-compatible or Anthropic-compatible APIs.
+---
+
+# First API request
+
+Skippy exposes OpenAI-compatible and Anthropic Messages APIs on the same
+address and model lifecycle.
+
+## OpenAI chat completions
+
+```console
+curl http://127.0.0.1:9337/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "Qwen3-0.6B-Q4_K_M",
+    "messages": [{"role": "user", "content": "Reply with OK"}],
+    "max_tokens": 32
+  }'
+```
+
+## Anthropic Messages
+
+```console
+curl http://127.0.0.1:9337/v1/messages \
+  -H 'Content-Type: application/json' \
+  -H 'anthropic-version: 2023-06-01' \
+  -d '{
+    "model": "Qwen3-0.6B-Q4_K_M",
+    "messages": [{"role": "user", "content": "Reply with OK"}],
+    "max_tokens": 32
+  }'
+```
+
+Use `skippy serve --model ... --prompt` when you want an interactive prompt and
+the HTTP API in the same process. Use `skippy prompt --endpoint URL` to connect
+to an already-running server.

@@ -1,0 +1,32 @@
+---
+title: Documentation contributions
+description: Keep public Skippy guidance correct, searchable, and standalone.
+---
+
+# Documentation contributions
+
+Public pages live under `docs-site/content`. Internal designs, experiments,
+qualification ledgers, and extraction history stay under their existing
+repository paths and are not automatically published.
+
+## Content rules
+
+- Describe standalone Skippy commands and configuration only.
+- Treat the CLI source, serving-settings catalog, package-format crate, and
+  current architecture documents as factual authorities.
+- Use old MeshLLM documentation only as editorial source material.
+- Do not publish secrets, private model coordinates, or unsupported hardware
+  claims.
+- Keep examples copyable and state when values are illustrative.
+
+## Build locally
+
+```console
+just docs-install
+just docs-dev
+just docs-build
+```
+
+The production build statically exports every page, then Pagefind indexes the
+HTML. Check the generated search index, internal links, desktop navigation, and
+the mobile sidebar before opening a pull request.

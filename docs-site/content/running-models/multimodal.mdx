@@ -1,0 +1,21 @@
+---
+title: Multimodal models
+description: Serve a GGUF with an associated projector sidecar.
+---
+
+# Multimodal models
+
+Multimodal GGUFs require a matching projector (`mmproj`) sidecar. Catalog
+downloads include the catalog-declared projector when one is available.
+
+Select an explicit local projector when needed:
+
+```console
+skippy serve \
+  --model /models/vision-model.gguf \
+  --mmproj /models/mmproj-model-f16.gguf
+```
+
+The projector must match the model family and source revision. Treat the model
+and projector as one verified input set rather than mixing similarly named
+files from different repositories.

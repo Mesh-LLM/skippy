@@ -1,0 +1,58 @@
+---
+title: Contribute to Skippy
+description: Build, test, and change Skippy without weakening its contracts.
+---
+
+# Contribute to Skippy
+
+## Contribution workflow
+
+- Start by opening a GitHub issue to discuss the proposed change. Once the
+  approach is agreed, submit a pull request linked to that issue.
+- Submit pull requests from a fork unless you are a core contributor.
+- AI-assisted and AI-generated pull requests are welcome. Contributors remain
+  responsible for understanding, testing, and explaining the submitted
+  changes.
+- Before merging, changes are benchmarked against the current `main` branch.
+  This protects inference performance, output correctness, KV-cache behavior,
+  memory use, and other critical serving characteristics from regressions.
+- By submitting a contribution, you agree that it will be licensed under the
+  Apache License 2.0.
+
+## Repository layout
+
+| Path | Ownership |
+| --- | --- |
+| `crates/` | CLI, model tooling, runtime, serving, protocol, topology, caching, and metrics |
+| `skippy-api-rs/` | Separate Rust facade workspace |
+| `skippy_api/` | C++ facade |
+| `llama_cpp/` | Pinned upstream metadata and ordered patch queues |
+| `tools/xtask/` | Typed repository automation |
+| `docs/` | Operator guides, contracts, designs, and qualification records |
+
+## Use Just
+
+```console
+just format
+just lint
+just test
+```
+
+Run Cargo commands serially in each checkout. For changed Rust crates, run
+formatting, a focused check, warning-denying all-target Clippy, and full tests,
+including integration and documentation tests.
+
+## Preserve contracts
+
+- Keep ABI declarations, bindings, version constants, generated docs, and
+  certification recipes consistent.
+- Keep ordered core, model-support, and generated llama patch queues
+  authoritative.
+- Put model-specific behavior in model builders rather than family-name
+  branches in shared stage machinery.
+- Preserve wire and hash compatibility deliberately.
+- Default tests are offline; hardware qualification must fail or queue when a
+  required fixture or device is absent.
+
+Read the repository `CONTRIBUTING.md` and the closest `AGENTS.md` before making
+changes.

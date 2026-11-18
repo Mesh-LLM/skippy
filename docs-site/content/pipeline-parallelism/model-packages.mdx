@@ -1,0 +1,49 @@
+---
+title: Model packages
+description: Understand package-v2 identity, artifacts, and validation.
+---
+
+# Model packages
+
+A package-v2 repository binds an immutable source-model identity to verified
+GGUF artifacts. Stage ownership is not encoded by filenames or fixed layer
+ranges: the planner selects an exact tensor closure, then package admission
+resolves those tensor IDs to declared storage.
+
+```text
+model-package.json
+shared/
+  metadata.gguf
+  common.gguf
+layers/
+  layer-00000.gguf
+  layer-00001-part00.gguf
+projectors/
+  projector-00000.gguf
+```
+
+The artifact catalog is authoritative. Paths are physical containers, not
+stage-selection rules. Each entry has a stable ID, safe relative path, exact
+byte size, and SHA-256 digest.
+
+## Create and verify a package
+
+```console
+skippy models package unsloth/Qwen3-8B-GGUF:Q4_K_M
+skippy models package unsloth/Qwen3-8B-GGUF:Q4_K_M --confirm --follow
+skippy models certify owner/Qwen3-8B-Q4_K_M-layers --package-only
+```
+
+Publishing requires explicit catalog and package-bucket settings. Certification
+verifies package structure and can add runtime smoke evidence; it does not turn
+an unverified source into an authenticity claim.
+
+## Admission checks
+
+Before starting a stage, consumers verify the manifest version, package
+identity, artifact sizes and digests, metadata carrier, tensor catalog,
+requested tensor closure, sidecars, and native ABI compatibility. Unknown
+schema versions and incompatible ABI requirements fail closed.
+
+For the implementation contract, see `docs/design/SKIPPY_PACKAGE_V2_SCHEMA.md`
+in the repository.

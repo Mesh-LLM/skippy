@@ -10,9 +10,29 @@ runtimes. CPU work uses GitHub-hosted `ubuntu-24.04`, `ubuntu-24.04-arm`,
 `macos-15` and `windows-2025`. Metal and CUDA rows require the explicit ephemeral
 hardware labels in that manifest. Compilation never counts as device evidence.
 
+The plan job also builds the Nextra documentation with `just docs-build` and
+retains the complete `docs-site/out` static artifact. A docs build or Pagefind
+indexing failure therefore fails the same required `CI` summary as an invalid
+matrix plan. Builds receive no publication credentials.
+
+For a version tag, the release workflow downloads that exact
+`release-docs-site` artifact after validation and GitHub release publication,
+then deploys it to `skippy.sh` with `just docs-publish`. The publication job
+does not rebuild the site. It installs the lockfile-pinned `cf` CLI and exposes
+`CLOUDFLARE_API_TOKEN` only to the deploy step.
+
+Configure `SKIPPY_DOCS_CLOUDFLARE_API_TOKEN` as a GitHub Actions repository
+secret before the first tagged release. Create it from Cloudflare's **Edit
+Cloudflare Workers** token template and scope it to the account that owns the
+`skippy-docs` Worker and `skippy.sh` zone. The workflow maps it to the
+`CLOUDFLARE_API_TOKEN` environment variable expected by `cf`. Pull requests,
+main builds, and the shared release validation workflow do not receive this
+secret.
+
 ## Build prerequisites
 
-The hosted setup action installs only full-SHA-pinned Just 1.58.0. Rust follows
+The hosted setup action installs only full-SHA-pinned Just 1.58.0. The plan job
+additionally selects Node.js 22.23.0 for the documentation build. Rust follows
 `rust-toolchain.toml`. Build agents must already provide Git, CMake, Ninja, a
 native C/C++ toolchain, curl, and the platform linker selected by `scripts/`.
 Linux runtime packaging also needs patchelf. Native binding/generator checks

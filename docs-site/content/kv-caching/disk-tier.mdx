@@ -1,0 +1,49 @@
+---
+title: Durable disk tier
+description: Persist reusable prompt state across process restarts.
+---
+
+# Durable disk tier
+
+The disk tier stores verified prompt state below the in-process prefix cache.
+It is disabled by default and must be enabled deliberately.
+
+```toml
+[cache]
+prefix_cache = "on"
+kv_cache_disk = "32GiB"
+kv_cache_disk_dir = "/var/lib/skippy/kv-cache"
+kv_cache_min_free = "16GiB"
+```
+
+Or override one run from the CLI:
+
+```console
+skippy serve \
+  --model Qwen3-0.6B-Q4_K_M \
+  --kv-cache-disk 32GiB \
+  --kv-cache-disk-dir /var/lib/skippy/kv-cache \
+  --kv-cache-min-free 16GiB
+```
+
+Use `auto` instead of a fixed size for an automatically bounded disk budget,
+or `off` to disable the tier.
+
+## Failure policy
+
+Invalid cache configuration fails startup so a typo cannot silently change the
+operator's retention policy. Once a valid configuration is running, storage
+unavailability fails open for inference: Skippy logs the problem and serves
+with cold prefill rather than making the model unavailable.
+
+`prefix_cache_ram` enables an optional host-RAM tier and requires an active
+disk tier:
+
+```toml
+[cache]
+prefix_cache_ram = "4GiB"
+kv_cache_disk = "32GiB"
+```
+
+Legacy `SKIPPY_KV_CACHE=off` and `SKIPPY_PREFIX_CACHE=off` remain emergency
+kill switches. Unset them before explicitly enabling prefix caching.

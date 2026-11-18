@@ -1,0 +1,61 @@
+---
+title: "Skippy: a distributed AI inference engine"
+description: Run local and distributed inference with Skippy.
+---
+
+# Introducing Skippy
+
+Skippy is an AI inference engine for local and distributed workloads. It is the
+inference engine that powers [Mesh LLM](https://meshllm.cloud).
+
+Built on `llama.cpp`, Skippy adds production-focused model and runtime
+management, OpenAI- and Anthropic-compatible APIs, explicit pipeline
+parallelism, multi-tier KV caching, memory-aware scheduling, and
+hardware-specific optimizations.
+
+Skippy supports CPU inference and GPU acceleration through Metal, CUDA, ROCm,
+and Vulkan. Run it on a single machine or divide one verified model across an
+ordered set of workers. A single CLI and configuration model takes you from
+local inference to multi-machine serving.
+
+## Serve your first model
+
+Build the development product and start a recommended model:
+
+```console
+just build
+./target/debug/skippy models recommended
+./target/debug/skippy serve --model Qwen3-0.6B-Q4_K_M --prompt
+```
+
+The prompt and HTTP API are available together. From another terminal:
+
+```console
+curl http://127.0.0.1:9337/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"Qwen3-0.6B-Q4_K_M","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+## Learn
+
+- [Install and verify Skippy](/getting-started/)
+- [Run local, Hugging Face, and multimodal models](/running-models/)
+- [Split a model across explicit stages](/pipeline-parallelism/)
+- [Tune prompt-prefix and KV storage](/kv-caching/)
+- [Review every serving setting](/configuration/)
+- [Contribute safely](/contributing/)
+
+## Developed by
+
+<a
+  className="skippy-developer__logo-link"
+  href="https://generalinference.xyz"
+>
+  <img
+    className="skippy-developer__logo"
+    src="/general-inference-logo.png"
+    alt="General Inference"
+    width="804"
+    height="224"
+  />
+</a>

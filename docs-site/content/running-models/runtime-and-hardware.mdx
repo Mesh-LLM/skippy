@@ -1,0 +1,31 @@
+---
+title: Runtime and hardware
+description: Select and inspect CPU, Metal, CUDA, ROCm, and Vulkan runtimes.
+---
+
+# Runtime and hardware
+
+Native runtime bundles are selected by host, architecture, backend, toolkit,
+and Skippy ABI. Inspect what is installed before changing a serving plan:
+
+```console
+skippy doctor
+skippy runtime list
+skippy runtime list --available
+```
+
+Install the recommended compatible runtime, or name a backend explicitly:
+
+```console
+skippy runtime install
+skippy runtime install metal
+```
+
+Skippy release lanes cover CPU, Metal, CUDA, ROCm, and Vulkan variants where
+published for the target. A backend build is not evidence that the model fits:
+context size, live KV precision, concurrency, runtime workspaces, and other
+processes all consume memory.
+
+When a model fails to fit, first reduce context or concurrency, choose a smaller
+quantization, or select a smaller model. Use [pipeline parallelism](/pipeline-parallelism/)
+when the verified model must be divided across explicit workers.

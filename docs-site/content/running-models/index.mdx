@@ -1,0 +1,53 @@
+---
+title: Run models
+description: Resolve local files, Hugging Face references, and managed downloads.
+---
+
+# Run models
+
+`--model` accepts a short catalog name, a Hugging Face repository reference,
+or an existing local model path.
+
+```console
+skippy serve --model Qwen3-0.6B-Q4_K_M
+skippy serve --model unsloth/Qwen3-8B-GGUF:Q4_K_M
+skippy serve --model /models/qwen3-8b-q4_k_m.gguf
+```
+
+Remote GGUF files and supported SafeTensors checkpoints resolve to an immutable
+revision and are cached before loading. Serving the same exact reference reuses
+the Hugging Face cache.
+
+## Discover and manage models
+
+```console
+skippy models recommended
+skippy models search qwen --limit 10
+skippy models show unsloth/Qwen3-8B-GGUF:Q4_K_M
+skippy models download unsloth/Qwen3-8B-GGUF:Q4_K_M
+skippy models installed
+skippy models updates --check
+skippy models cleanup --unused-since 30d
+```
+
+Destructive model operations preview their target by default. Review the
+selection before adding `--yes`.
+
+## Automatic resource planning
+
+For a local GGUF, Skippy sizes one unified KV pool from model metadata, weight
+footprint, and available device memory, then chooses context and concurrency
+defaults. Override those decisions only when you have a measured reason:
+
+```console
+skippy serve \
+  --model unsloth/Qwen3-8B-GGUF:Q4_K_M \
+  --ctx-size 32768 \
+  --generation-concurrency 2
+```
+
+Inspect the resolved launch before model load with:
+
+```console
+skippy serve --settings serve.toml --print-effective-config
+```

@@ -4,6 +4,21 @@ export MACOSX_DEPLOYMENT_TARGET := if macos_target == "" { trim(read(justfile_di
 
 default: build
 
+docs-install:
+    @npm ci --prefix docs-site
+
+docs-dev:
+    @npm --prefix docs-site run dev
+
+docs-build:
+    @npm --prefix docs-site run build
+
+docs-deploy:
+    @npm --prefix docs-site run deploy
+
+docs-publish:
+    @npm --prefix docs-site run deploy:prebuilt
+
 automation-run *args:
     @cargo xtool {{ args }}
 

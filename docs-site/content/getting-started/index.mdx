@@ -1,0 +1,49 @@
+---
+title: Install and run Skippy
+description: Build Skippy, inspect the runtime, and serve a first model.
+---
+
+# Install and run Skippy
+
+## Build from source
+
+Skippy uses Just for repository builds. From the repository root:
+
+```console
+just build
+./target/debug/skippy --version
+./target/debug/skippy doctor
+```
+
+`just build` produces the CLI and a verified adjacent native runtime. The CLI
+automatically discovers `target/debug/native-runtimes` from that build.
+
+## Use a private release bundle
+
+Private release assets require an authorized GitHub login:
+
+```console
+gh release download --repo general-inference/skippy
+```
+
+Verify and extract the bundle before use. A source checkout may require a newer
+native ABI than the latest release; use `--runtime-bundle /path/to/bundle` when
+you need to select a compatible local bundle explicitly.
+
+## Serve a model
+
+```console
+skippy models recommended
+skippy serve --model Qwen3-0.6B-Q4_K_M
+```
+
+Wait for the ready message or, in JSONL mode, the `ready` event before sending
+requests. The default public address is `http://127.0.0.1:9337`.
+
+## Confirm the model
+
+```console
+curl http://127.0.0.1:9337/v1/models
+```
+
+Next: [send your first request](/getting-started/first-request/).

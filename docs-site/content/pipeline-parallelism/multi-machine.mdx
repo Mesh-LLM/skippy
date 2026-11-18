@@ -1,0 +1,39 @@
+---
+title: Multi-machine stages
+description: Place generated stage plans on explicit remote workers.
+---
+
+# Multi-machine stages
+
+Use addresses reachable from every participating machine:
+
+```console
+skippy plan-split \
+  --model-path /models/model.gguf \
+  --model-id local-model \
+  --worker 10.0.0.10:9400 \
+  --worker 10.0.0.11:9401 \
+  --output-dir remote-plan
+```
+
+Place each generated `stage-N.json` on its worker with the exact verified model
+files recorded by that plan. Start the final stage first and stage zero last.
+For shutdown, stop stage zero first and wait for it to exit before stopping
+downstream workers.
+
+## Network boundary
+
+The binary stage transport is an internal protocol, not public ingress. Put
+worker listeners on a private, authenticated network boundary and expose only
+stage zero's public API. A process is not ready merely because it spawned;
+stage zero should receive traffic only after all downstream stages have passed
+their readiness checks.
+
+## Operational invariants
+
+- Every stage uses the same admitted model identity and compatible runtime.
+- Worker order is part of the plan.
+- Exact model bytes must remain available at the paths recorded by the plan.
+- Activation width, tensor ownership, and state handoff come from admission,
+  not filename conventions.
+- Change the topology by creating a new plan, not by editing JSON.
