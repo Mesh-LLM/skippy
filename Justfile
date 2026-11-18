@@ -128,8 +128,8 @@ cache-parity-verify plan evidence raw_dir:
 cache-parity-verify-diagnostic plan evidence raw_dir:
     @cargo xtool cache-parity verify-diagnostic {{ quote(plan) }} {{ quote(evidence) }} {{ quote(raw_dir) }}
 
-cache-parity-verify-tier-a-inputs plan evidence raw_dir metal_correctness cuda_correctness output:
-    @cargo xtool cache-parity verify-tier-a-inputs {{ quote(plan) }} {{ quote(evidence) }} {{ quote(raw_dir) }} {{ quote(metal_correctness) }} {{ quote(cuda_correctness) }} {{ quote(output) }}
+cache-parity-verify-inputs plan evidence raw_dir metal_correctness cuda_correctness output:
+    @cargo xtool cache-parity verify-inputs {{ quote(plan) }} {{ quote(evidence) }} {{ quote(raw_dir) }} {{ quote(metal_correctness) }} {{ quote(cuda_correctness) }} {{ quote(output) }}
 
 cache-parity-summarize-trial raw:
     @cargo xtool cache-parity summarize-trial "{{ raw }}"

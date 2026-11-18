@@ -3,7 +3,7 @@ use crate::kv_integration::StagePrefixCachePayload;
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use skippy_model_artifact::gguf::scan_gguf_compact_meta;
-use skippy_model_artifact::support::{PHASE_ONE_MANIFEST, Sidecar};
+use skippy_model_artifact::kv_fixtures::{KV_FIXTURE_MANIFEST, Sidecar};
 use std::{collections::BTreeSet, fs, path::Path};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -68,7 +68,7 @@ pub(super) struct Fixture {
 impl Fixture {
     pub(super) fn load(family: Family) -> Result<Self> {
         let manifest: Manifest =
-            serde_json::from_str(PHASE_ONE_MANIFEST).context("read cache fixture manifest")?;
+            serde_json::from_str(KV_FIXTURE_MANIFEST).context("read cache fixture manifest")?;
         manifest.validate()?;
         manifest
             .models
@@ -174,10 +174,10 @@ fn hex(value: &str, length: usize) -> bool {
 #[test]
 fn cache_fixture_manifest_has_one_pinned_model_per_family() {
     Fixture::load(Family::DenseAttention).unwrap();
-    let mut manifest: Manifest = serde_json::from_str(PHASE_ONE_MANIFEST).unwrap();
+    let mut manifest: Manifest = serde_json::from_str(KV_FIXTURE_MANIFEST).unwrap();
     manifest.models[0].revision = "main".into();
     assert!(manifest.validate().is_err());
-    let mut manifest: Manifest = serde_json::from_str(PHASE_ONE_MANIFEST).unwrap();
+    let mut manifest: Manifest = serde_json::from_str(KV_FIXTURE_MANIFEST).unwrap();
     manifest.models[0].family = manifest.models[1].family;
     assert!(manifest.validate().is_err());
 }

@@ -1,5 +1,5 @@
 name: KV cache correctness
-description: Run the four pinned model families on the selected backend.
+description: Run the four pinned KV architecture fixtures on the selected backend.
 inputs:
   backend:
     description: Cache qualification profile
@@ -48,7 +48,7 @@ runs:
       with:
         path: target/cache-qualification-reference/llama-server
         key: kv-reference-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.backend }}-${{ steps.reference.outputs.toolchain }}-${{ hashFiles('llama_cpp/upstream.txt', 'Justfile', 'tools/xtask/src/cache_qualification/prepare.rs') }}
-    - name: Run the four-family cache matrix
+    - name: Run the cache correctness matrix
       shell: bash
       env:
         BACKEND: ${{ inputs.backend }}

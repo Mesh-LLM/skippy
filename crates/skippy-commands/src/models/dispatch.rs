@@ -51,7 +51,6 @@ pub(super) async fn dispatch_models_command(command: &ModelsCommand) -> Result<(
         ModelsCommand::Recommended { json } | ModelsCommand::List { json } => {
             run_model_recommended(*json)?
         }
-        ModelsCommand::Support { sha256, json } => super::support::run(sha256.as_deref(), *json)?,
         ModelsCommand::Installed { json } => run_model_installed(*json)?,
         ModelsCommand::Cleanup {
             unused_since,

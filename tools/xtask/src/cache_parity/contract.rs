@@ -1,6 +1,6 @@
 use super::{DynResult, identity::Checkout};
 use serde::{Deserialize, Serialize};
-use skippy_model_artifact::support::PhaseOneManifest;
+use skippy_model_artifact::kv_fixtures::KvFixtureManifest;
 use std::collections::BTreeSet;
 
 pub(super) const VERSION: u32 = 2;
@@ -176,7 +176,7 @@ pub(super) fn is_digest(value: &str, length: usize) -> bool {
 impl Plan {
     pub(super) fn validate(
         &self,
-        manifest: &PhaseOneManifest,
+        manifest: &KvFixtureManifest,
         checkout: &Checkout,
     ) -> DynResult<()> {
         if self.schema_version != VERSION || !is_digest(&self.agentx_corpus_sha256, 64) {
@@ -240,7 +240,7 @@ impl Plan {
         Ok(())
     }
 
-    fn validate_cells(&self, manifest: &PhaseOneManifest) -> DynResult<()> {
+    fn validate_cells(&self, manifest: &KvFixtureManifest) -> DynResult<()> {
         let mut keys = BTreeSet::new();
         for row in &self.cells {
             let fixture = manifest

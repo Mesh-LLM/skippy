@@ -66,7 +66,7 @@ pub(super) fn run(
         .plan
         .validate(&read_manifest(&manifest)?, &checkout)?;
     if !checkout.source_tree_clean {
-        return Err("source checkout changed while verifying Tier A inputs".into());
+        return Err("source checkout changed while verifying cache qualification inputs".into());
     }
     let parent = output
         .parent()

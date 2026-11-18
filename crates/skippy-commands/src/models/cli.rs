@@ -79,15 +79,6 @@ pub enum ModelsCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Show qualification requirements from the bundled model support manifests.
-    Support {
-        /// Look up a Phase 1 artifact by its exact SHA-256 digest.
-        #[arg(long)]
-        sha256: Option<String>,
-        /// Emit JSON output.
-        #[arg(long)]
-        json: bool,
-    },
     /// List installed local models from the HF cache.
     Installed {
         /// Emit JSON output.
@@ -226,7 +217,6 @@ impl ModelsCommand {
         match self {
             Self::Package { json, .. }
             | Self::Recommended { json }
-            | Self::Support { json, .. }
             | Self::Installed { json }
             | Self::Cleanup { json, .. }
             | Self::Prune { json, .. }
@@ -243,7 +233,6 @@ impl ModelsCommand {
         match self {
             Self::Package { json, .. }
             | Self::Recommended { json }
-            | Self::Support { json, .. }
             | Self::Installed { json }
             | Self::Cleanup { json, .. }
             | Self::Prune { json, .. }

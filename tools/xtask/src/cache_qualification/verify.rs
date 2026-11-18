@@ -4,7 +4,7 @@ use super::{
 };
 use crate::command::DynResult;
 use serde::Serialize;
-use skippy_model_artifact::support::{PhaseOneManifest, valid_sha256};
+use skippy_model_artifact::kv_fixtures::{KvFixtureManifest, valid_sha256};
 use std::{
     collections::BTreeSet,
     fs,
@@ -150,7 +150,7 @@ fn validate_summary(
     backend: Backend,
     source: &str,
     manifest_sha256: &str,
-    phase_one: &PhaseOneManifest,
+    phase_one: &KvFixtureManifest,
     summary: &Summary,
 ) -> DynResult<()> {
     if source.len() != 40
@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn parity_join_checks_the_reference_digest_and_preserves_test_binary_identity() {
-        let model = PhaseOneManifest::bundled().unwrap().models.remove(0);
+        let model = KvFixtureManifest::bundled().unwrap().models.remove(0);
         let candidate = "a".repeat(64);
         let reference = "b".repeat(64);
         let mut report = super::super::Report {
@@ -237,7 +237,7 @@ mod tests {
     fn matrix_admission_requires_a_clean_pinned_source_and_unique_matching_cells() {
         let source = "1".repeat(40);
         let digest = "a".repeat(64);
-        let manifest = PhaseOneManifest::bundled().unwrap();
+        let manifest = KvFixtureManifest::bundled().unwrap();
         let mut summary = Summary {
             schema_version: SUMMARY_VERSION,
             source_head: source.clone(),

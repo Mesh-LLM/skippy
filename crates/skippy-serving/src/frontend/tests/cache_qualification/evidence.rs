@@ -7,7 +7,7 @@ use super::{
 use crate::kv_integration::StagePrefixCachePayload;
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
-use skippy_model_artifact::support::valid_sha256;
+use skippy_model_artifact::kv_fixtures::valid_sha256;
 use std::collections::BTreeMap;
 
 // Compare normalized logits from the unfiltered softmax at each decode step.

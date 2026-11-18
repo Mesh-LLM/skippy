@@ -5,15 +5,15 @@ use super::{
     identity::Checkout,
 };
 use crate::cache_qualification::read_manifest;
-use skippy_model_artifact::support::PhaseOneManifest;
+use skippy_model_artifact::kv_fixtures::KvFixtureManifest;
 
 fn verify(plan: &Plan, plan_sha: String, evidence: &Evidence) -> DynResult<Summary> {
     decision::verify(plan, &plan_sha, evidence, |_, _, _| Ok(String::new()))
 }
 
-fn fixture_plan() -> (PhaseOneManifest, Plan) {
+fn fixture_plan() -> (KvFixtureManifest, Plan) {
     let manifest = read_manifest(include_str!(
-        "../../../../crates/skippy-model-artifact/src/support/phase-one.json"
+        "../../../../crates/skippy-model-artifact/src/kv_fixtures/models.json"
     ))
     .unwrap();
     let host = |os: &str, arch: &str| Host {

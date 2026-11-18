@@ -4,10 +4,10 @@
 
 Run the explicit qualification case on arm64 macOS with the pinned
 [Qwen3-4B Q4_K_M GGUF](https://huggingface.co/unsloth/Qwen3-4B-GGUF/blob/22c9fc8a8c7700b76a1789366280a6a5a1ad1120/Qwen3-4B-Q4_K_M.gguf).
-The [fixture manifest](../crates/skippy-model-artifact/src/support/phase-one.json) pins the GGUF
-and embedded chat template for all four families. Set `SKIPPY_CACHE_QUAL_FAMILY`
+The [fixture manifest](../crates/skippy-model-artifact/src/kv_fixtures/models.json)
+pins the GGUF and embedded chat template for each KV architecture case. Set `SKIPPY_CACHE_QUAL_FAMILY`
 to `dense-attention` (the default), `hybrid-dense`, `attention-moe`, or
-`hybrid-moe`, and supply that family's matching GGUF. Use `llama-server` built
+`hybrid-moe`, and supply the matching GGUF. Use `llama-server` built
 from the exact upstream commit in `llama_cpp/upstream.txt` and a Skippy native
 build from the repository's pinned recipe. Build both executables for the
 same backend.
@@ -85,7 +85,7 @@ from the captured outputs and cache observations.
 just cache-correctness-verify metal /absolute/report-directory/result.json
 ```
 
-### Run all four model families
+### Run all four KV architecture cases
 
 ```sh
 SKIPPY_CACHE_QUAL_FIXTURE_DIR=/absolute/read-only-model-directory \
@@ -114,7 +114,7 @@ source. It verifies the fixture manifest, then checks each report digest and
 recomputes its decision. Dirty worktree results can still be used for
 diagnostics.
 
-The main CI workflow runs all four families on isolated Metal and Linux Arm64
+The main CI workflow runs all four KV architecture cases on isolated Metal and Linux Arm64
 CUDA runners for source-changing pull requests, merge groups, and pushes to
 `main`. Full CI always requires both jobs, including nightly, release and llama
 upgrade runs. The jobs use `hf download` with each fixture's pinned revision

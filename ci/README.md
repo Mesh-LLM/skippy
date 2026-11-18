@@ -8,7 +8,7 @@ and main pushes are excluded from `ci.yml`; all other pull requests and main
 pushes use the short profile for repository contracts, formatting/Clippy, unit
 and C API tests, and FFI binding freshness. Relevant trusted PRs also run the
 protected seven-configuration inference smoke workflow.
-CI also runs the four-family KV correctness matrix in parallel on Metal and
+CI also runs the four-fixture KV correctness matrix in parallel on Metal and
 Linux Arm64 CUDA for source-changing pull requests, merge groups, and main
 pushes. Full CI always includes both jobs. The required summary consumes their
 results, and the two hardware jobs start after planning. See the
@@ -140,8 +140,8 @@ GPU layer offload for Metal/CUDA. Shutdown must be graceful. Product artifacts
 include logs and source-bound smoke evidence. A missing device, model or required
 row fails rather than passing as a skip.
 
-The [KV cache correctness jobs](../docs/CACHE_CORRECTNESS_GATE.md#run-all-four-model-families)
-use the runners' Hugging Face cache and retain all four family results on Metal
+The [KV cache correctness jobs](../docs/CACHE_CORRECTNESS_GATE.md#run-all-four-kv-architecture-cases)
+use the runners' Hugging Face cache and retain all four fixture results on Metal
 and CUDA.
 The [cache parity verifier](cache-qualification/PARITY.md) evaluates measured
 candidate and baseline trials against the Phase 1 performance thresholds.

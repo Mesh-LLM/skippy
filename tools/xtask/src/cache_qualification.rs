@@ -7,14 +7,14 @@ use crate::{
     huggingface,
 };
 use serde::{Deserialize, Serialize};
-use skippy_model_artifact::support::{PhaseOneFixture, PhaseOneManifest, valid_sha256};
+use skippy_model_artifact::kv_fixtures::{KvFixture, KvFixtureManifest, valid_sha256};
 use std::{
     collections::BTreeMap,
     env, fs,
     path::{Path, PathBuf},
 };
 
-pub(crate) const MANIFEST: &str = "crates/skippy-model-artifact/src/support/phase-one.json";
+pub(crate) const MANIFEST: &str = "crates/skippy-model-artifact/src/kv_fixtures/models.json";
 const CONVERSATIONS: [&str; 3] = ["first_follow_up", "second_follow_up", "divergent_tail"];
 const STRUCTURED: [&str; 3] = ["json_schema", "named_tool", "long_retrieval"];
 const CELL_TIMEOUT_SECONDS: u64 = 1800;
@@ -72,8 +72,8 @@ impl Backend {
     }
 }
 
-pub(crate) fn read_manifest(body: &str) -> DynResult<PhaseOneManifest> {
-    let manifest = PhaseOneManifest::parse(body).map_err(|error| format!("{error:#}"))?;
+pub(crate) fn read_manifest(body: &str) -> DynResult<KvFixtureManifest> {
+    let manifest = KvFixtureManifest::parse(body).map_err(|error| format!("{error:#}"))?;
     if manifest
         .models
         .iter()
@@ -96,7 +96,7 @@ enum Fixtures {
 }
 
 impl Fixtures {
-    fn resolve(&self, model: &PhaseOneFixture) -> DynResult<PathBuf> {
+    fn resolve(&self, model: &KvFixture) -> DynResult<PathBuf> {
         let path = match self {
             Self::Directory(directory) => directory.join(&model.file),
             Self::HuggingFace => {
@@ -156,7 +156,7 @@ struct Report {
     schema_version: u32,
     status: Status,
     backend: String,
-    fixture: PhaseOneFixture,
+    fixture: KvFixture,
     model_sha256: Option<String>,
     skippy_binary_sha256: Option<String>,
     reference: Option<ReferenceIdentity>,
@@ -258,7 +258,7 @@ pub fn run(args: &[String]) -> DynResult<()> {
     Ok(())
 }
 
-fn run_cell(backend: Backend, output: &Path, model: &PhaseOneFixture, inputs: &Inputs) -> Cell {
+fn run_cell(backend: Backend, output: &Path, model: &KvFixture, inputs: &Inputs) -> Cell {
     let fixture = match inputs.fixtures.resolve(model) {
         Ok(path) => path,
         Err(error) => return failure(model, None, None, error.to_string()),
@@ -313,7 +313,7 @@ fn run_cell(backend: Backend, output: &Path, model: &PhaseOneFixture, inputs: &I
 
 fn assess_report(
     backend: Backend,
-    model: &PhaseOneFixture,
+    model: &KvFixture,
     child: DynResult<()>,
     evidence: Option<serde_json::Result<Report>>,
 ) -> DynResult<()> {
@@ -359,7 +359,7 @@ fn all_scenarios_pass(results: &BTreeMap<String, ScenarioReport>, names: &[&str]
 }
 
 fn failure(
-    model: &PhaseOneFixture,
+    model: &KvFixture,
     report: Option<PathBuf>,
     report_sha256: Option<String>,
     error: String,

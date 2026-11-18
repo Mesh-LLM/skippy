@@ -1,23 +1,22 @@
-//! Source-owned model identities and the qualification required to publish them.
+//! Pinned model fixtures for KV cache correctness and parity tests.
 
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use skippy_model_ref::gguf_matches_quant_selector;
 use std::collections::BTreeSet;
 
-pub const PHASE_ONE_MANIFEST: &str = include_str!("support/phase-one.json");
-const ARCHITECTURE_PROFILES: &str = include_str!("support/architecture-profiles.json");
+pub const KV_FIXTURE_MANIFEST: &str = include_str!("kv_fixtures/models.json");
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum PhaseOneFamily {
+pub enum KvArchitectureCase {
     DenseAttention,
     HybridDense,
     AttentionMoe,
     HybridMoe,
 }
 
-impl PhaseOneFamily {
+impl KvArchitectureCase {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::DenseAttention => "dense-attention",
@@ -29,14 +28,14 @@ impl PhaseOneFamily {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum PhaseOneQuantization {
+pub enum KvFixtureQuantization {
     #[serde(rename = "Q4_K_M")]
     Q4Km,
     #[serde(rename = "UD-Q4_K_M")]
     UdQ4Km,
 }
 
-impl PhaseOneQuantization {
+impl KvFixtureQuantization {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Q4Km => "Q4_K_M",
@@ -55,12 +54,12 @@ pub struct Sidecar {
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct PhaseOneFixture {
-    pub family: PhaseOneFamily,
+pub struct KvFixture {
+    pub family: KvArchitectureCase,
     pub repo: String,
     pub revision: String,
     pub file: String,
-    pub quantization: PhaseOneQuantization,
+    pub quantization: KvFixtureQuantization,
     pub size_bytes: u64,
     pub sha256: String,
     pub chat_template_sha256: String,
@@ -72,19 +71,18 @@ pub struct PhaseOneFixture {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct PhaseOneManifest {
+pub struct KvFixtureManifest {
     schema_version: u32,
-    pub models: Vec<PhaseOneFixture>,
+    pub models: Vec<KvFixture>,
 }
 
-impl PhaseOneManifest {
+impl KvFixtureManifest {
     pub fn bundled() -> Result<Self> {
-        Self::parse(PHASE_ONE_MANIFEST)
+        Self::parse(KV_FIXTURE_MANIFEST)
     }
 
     pub fn parse(json: &str) -> Result<Self> {
-        let manifest: Self =
-            serde_json::from_str(json).context("parse Phase 1 model identities")?;
+        let manifest: Self = serde_json::from_str(json).context("parse KV fixture identities")?;
         let mut families = BTreeSet::new();
         let mut coordinates = BTreeSet::new();
         let mut digests = BTreeSet::new();
@@ -92,22 +90,25 @@ impl PhaseOneManifest {
             model
                 .validate()
                 .with_context(|| format!("validate {} fixture", model.family.as_str()))?;
-            ensure!(families.insert(model.family), "duplicate Phase 1 family");
+            ensure!(
+                families.insert(model.family),
+                "duplicate KV architecture case"
+            );
             ensure!(
                 coordinates.insert((&model.repo, &model.revision, &model.file))
                     && digests.insert(&model.sha256),
-                "duplicate Phase 1 artifact identity"
+                "duplicate KV fixture artifact identity"
             );
         }
         ensure!(
             manifest.schema_version == 2 && families.len() == 4,
-            "Phase 1 requires one fixture for each of the four families"
+            "KV qualification requires one fixture per architecture case"
         );
         Ok(manifest)
     }
 }
 
-impl PhaseOneFixture {
+impl KvFixture {
     fn validate(&self) -> Result<()> {
         let (owner, repo) = self
             .repo
@@ -122,7 +123,7 @@ impl PhaseOneFixture {
                 && self
                     .file
                     .ends_with(&format!("-{}.gguf", self.quantization.as_str()))
-                && (!matches!(self.quantization, PhaseOneQuantization::Q4Km)
+                && (!matches!(self.quantization, KvFixtureQuantization::Q4Km)
                     || !self.file.ends_with("-UD-Q4_K_M.gguf"))
                 && gguf_matches_quant_selector(&self.file, self.quantization.as_str()),
             "GGUF filename must match the declared quantization"
@@ -150,46 +151,6 @@ impl PhaseOneFixture {
         }
         Ok(())
     }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ArchitectureTrack {
-    TierB,
-    Experimental,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ArchitectureProfile {
-    pub architecture: String,
-    pub canary_fixture: String,
-    pub track: ArchitectureTrack,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-}
-
-pub fn bundled_architecture_profiles() -> Result<Vec<ArchitectureProfile>> {
-    let profiles: Vec<ArchitectureProfile> = serde_json::from_str(ARCHITECTURE_PROFILES)?;
-    let mut architectures = BTreeSet::new();
-    for profile in &profiles {
-        ensure!(
-            identifier(&profile.architecture)
-                && identifier(&profile.canary_fixture)
-                && architectures.insert(&profile.architecture),
-            "invalid or duplicate model support architecture"
-        );
-        if profile.track == ArchitectureTrack::Experimental {
-            ensure!(
-                profile
-                    .note
-                    .as_ref()
-                    .is_some_and(|note| !note.trim().is_empty()),
-                "experimental architecture needs an explanation"
-            );
-        }
-    }
-    Ok(profiles)
 }
 
 pub fn valid_sha256(value: &str) -> bool {

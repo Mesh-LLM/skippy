@@ -26,7 +26,7 @@ pub(crate) fn run(args: &[String]) -> DynResult<()> {
         {
             verify(plan, evidence, raw, command == "verify")
         }
-        [command, plan, evidence, raw, metal, cuda, output] if command == "verify-tier-a-inputs" => {
+        [command, plan, evidence, raw, metal, cuda, output] if command == "verify-inputs" => {
             admission::run(Path::new(plan), Path::new(evidence), Path::new(raw), Path::new(metal), Path::new(cuda), Path::new(output))
         }
         [command, address, request, output] if command == "capture-request" => {
@@ -52,7 +52,7 @@ pub(crate) fn run(args: &[String]) -> DynResult<()> {
             Ok(())
         }
         _ => Err(
-            "cache-parity {plan-identity|verify|verify-diagnostic|verify-tier-a-inputs|summarize-trial|capture-request|capture-pairs|capture-trace|make-workload|export-trace} [ARGUMENTS]"
+            "cache-parity {plan-identity|verify|verify-diagnostic|verify-inputs|summarize-trial|capture-request|capture-pairs|capture-trace|make-workload|export-trace} [ARGUMENTS]"
                 .into(),
         ),
     }

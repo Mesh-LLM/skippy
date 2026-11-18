@@ -18,7 +18,7 @@ or outside the checkout. For a development worktree, use
 
 The verifier checks each measurement file against the SHA-256 of the exact
 plan bytes. See the [JSON schema](parity.schema.json) and
-[model manifest](../../crates/skippy-model-artifact/src/support/phase-one.json).
+[model manifest](../../crates/skippy-model-artifact/src/kv_fixtures/models.json).
 
 The plan identifies the candidate source commit, ordered native patch queue,
 cache format, harness, replay scorer and AgentX corpus,
@@ -302,10 +302,10 @@ Official AgentX exports are still required. Release integration still
 needs to bind candidate executable and runtime bytes to the verified plan
 and use the admitted evidence during publication.
 
-### Verify Tier A inputs together
+### Verify cache qualification inputs together
 
 ```sh
-just cache-parity-verify-tier-a-inputs ./plan.json ./evidence.json ./raw ./metal-correctness ./cuda-correctness ./verified-inputs.json
+just cache-parity-verify-inputs ./plan.json ./evidence.json ./raw ./metal-correctness ./cuda-correctness ./verified-inputs.json
 ```
 
 Run from the exact clean source checkout used by the plan. The command
@@ -314,6 +314,6 @@ and cache reports for all four fixtures on both backends. Use the same
 llama.cpp executable per backend for correctness and parity. The receipt
 records the identity of that reference, the parity candidate, and the
 correctness test executable. It also pins the matched reports, fixture
-manifest, source, and cache format. Public model support still requires
-official AgentX evidence and binding the release binaries and native runtime
+manifest, source, and cache format. Release admission still requires official
+AgentX evidence and a binding from the release binaries and native runtime
 artifacts to the verified inputs.

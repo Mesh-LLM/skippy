@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn batch_admits_only_all_four_distinct_safe_fixture_paths() {
-    let body = include_str!("../../../../crates/skippy-model-artifact/src/support/phase-one.json");
+    let body = include_str!("../../../../crates/skippy-model-artifact/src/kv_fixtures/models.json");
     assert!(read_manifest(body).is_ok());
     assert!(read_manifest(&body.replace("hybrid-moe", "attention-moe")).is_err());
     assert!(read_manifest(&body.replace("Qwen3-4B-Q4_K_M.gguf", "../model.gguf")).is_err());
@@ -10,14 +10,14 @@ fn batch_admits_only_all_four_distinct_safe_fixture_paths() {
 
 #[test]
 fn a_passing_child_cannot_hide_missing_or_mismatched_evidence() {
-    let manifest = PhaseOneManifest::bundled().unwrap();
+    let manifest = KvFixtureManifest::bundled().unwrap();
     let model = &manifest.models[0];
     assert!(assess_report(Backend::Metal, model, Ok(()), None).is_err());
     let report = |status, backend: &str| Report {
         schema_version: 9,
         status,
         backend: backend.into(),
-        fixture: PhaseOneManifest::bundled().unwrap().models.remove(0),
+        fixture: KvFixtureManifest::bundled().unwrap().models.remove(0),
         model_sha256: Some(model.sha256.clone()),
         skippy_binary_sha256: Some("f".repeat(64)),
         reference: None,
