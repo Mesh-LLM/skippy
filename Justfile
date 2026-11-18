@@ -169,6 +169,9 @@ native-mimo2-contract:
 ci-contracts:
     @cargo xtool ci contracts
 
+ci-summary:
+    @cargo xtool ci summary
+
 ci-host host:
     @cargo xtool ci host "{{ host }}"
 
