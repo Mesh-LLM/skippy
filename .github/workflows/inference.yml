@@ -23,6 +23,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
 jobs:
   plan:
+    name: Plan · Inference qualification
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
@@ -50,7 +51,7 @@ jobs:
           PROFILE: ${{ steps.admission.outputs.profile }}
         run: just automation-run inference matrix "$PROFILE" "$SOURCE_SHA"
   qualification:
-    name: qualification (${{ matrix.id }})
+    name: Qualify · ${{ matrix.id }}
     needs: plan
     if: needs.plan.outputs.required == 'true'
     strategy:
@@ -90,6 +91,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   summary:
+    name: Inference qualification summary
     needs: [plan, qualification]
     if: always()
     runs-on: ubuntu-24.04
@@ -111,6 +113,7 @@ jobs:
         run: just automation-run inference summary
 
   report:
+    name: Report · PR inference results
     needs: [plan, qualification, summary]
     if: always() && github.event_name == 'pull_request_target'
     runs-on: ubuntu-24.04

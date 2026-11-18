@@ -135,8 +135,7 @@ fn render(
     let complete = rows.is_some_and(|jobs| {
         plan.rows.iter().all(|row| {
             jobs.iter().any(|job| {
-                job["name"] == format!("qualification ({})", row.id)
-                    && job["conclusion"] == "success"
+                job["name"] == format!("Qualify · {}", row.id) && job["conclusion"] == "success"
             })
         })
     });
@@ -162,7 +161,7 @@ fn render(
         "\n| Configuration | Outcome | Actions | JY record |\n| --- | --- | --- | --- |\n",
     );
     for row in &plan.rows {
-        let name = format!("qualification ({})", row.id);
+        let name = format!("Qualify · {}", row.id);
         let job = jobs.iter().find(|j| j["name"] == name);
         let outcome = match job.and_then(|j| j["conclusion"].as_str()) {
             Some("success") => "Passed",

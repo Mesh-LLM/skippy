@@ -14,7 +14,7 @@ env:
   CARGO_PROFILE_BENCH_DEBUG: '0'
 jobs:
   admission:
-    name: Validate release tag
+    name: Validate · Release tag
     runs-on:
       group: jy-rnr_vfnz8k5p4yrh334
       labels: [self-hosted, jy-linux-docker, Linux, X64]
@@ -33,7 +33,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: just check-release "$RELEASE_TAG"
   validation:
-    name: Full release qualification
+    name: Qualify · Release artifacts
     needs: admission
     uses: ./.github/workflows/ci.yml
     with:
@@ -42,7 +42,7 @@ jobs:
       cuda_architecture_mode: release
       jy_runners: true
   inference:
-    name: Qualify inference
+    name: Qualify · Release inference
     needs: admission
     permissions:
       contents: read
@@ -52,7 +52,7 @@ jobs:
     secrets:
       JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
   publish:
-    name: Publish verified release
+    name: Publish · Release
     needs: [admission, validation, inference]
     runs-on:
       group: jy-rnr_vfnz8k5p4yrh334

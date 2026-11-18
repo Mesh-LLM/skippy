@@ -89,7 +89,7 @@ jobs:
           SKIPPY_CI_JY_RUNNERS: ${{ inputs.jy_runners || false }}
         run: just ci-plan
   inference_contracts:
-    name: Validate inference tooling
+    name: Validate · Inference tooling
     needs: plan
     runs-on: ${{ inputs.jy_runners && fromJSON('{"group":"jy-rnr_vfnz8k5p4yrh334","labels":["self-hosted","jy-linux-docker","Linux","X64"]}') || 'ubuntu-24.04' }}
     timeout-minutes: 20
@@ -104,7 +104,7 @@ jobs:
           sha: ${{ inputs.candidate_sha }}
       - run: just inference-tool-check
   quality:
-    name: Lint & test core (Linux CPU)
+    name: Lint & test · Core · Linux CPU
     needs: plan
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: '4'
@@ -159,7 +159,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
   host:
-    name: Build & test CLI (${{ matrix.display_name }})
+    name: Build Skippy · ${{ matrix.display_name }}
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     strategy:
@@ -195,7 +195,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   runtime_darwin_aarch64_cpu:
-    name: Build & test Runtime (macOS ARM64, CPU)
+    name: Build · macOS · CPU
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on: ${{ inputs.jy_runners && fromJSON('{"group":"jy-rnr_h7x5s2yx9gtkz3c","labels":["self-hosted","skippy-ephemeral","macOS","ARM64"]}') || 'macos-15' }}
@@ -210,7 +210,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_darwin_aarch64_metal:
-    name: Build & test Runtime (macOS ARM64, Metal)
+    name: Build · macOS · Metal
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -227,7 +227,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_x86_64_cpu:
-    name: Build & test Runtime (Linux x86_64, CPU)
+    name: Build · Linux x64 · CPU
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on: ${{ inputs.jy_runners && fromJSON('{"group":"jy-rnr_vfnz8k5p4yrh334","labels":["self-hosted","jy-linux-docker","Linux","X64"]}') || 'ubuntu-24.04' }}
@@ -242,7 +242,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_x86_64_cuda12:
-    name: Build & test Runtime (Linux x86_64, CUDA 12)
+    name: Build · Linux x64 · CUDA 12
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -259,7 +259,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_x86_64_cuda13:
-    name: Build & test Runtime (Linux x86_64, CUDA 13)
+    name: Build · Linux x64 · CUDA 13
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -276,7 +276,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_aarch64_cpu:
-    name: Build & test Runtime (Linux ARM64, CPU)
+    name: Build · Linux ARM64 · CPU
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on: ${{ inputs.jy_runners && fromJSON('{"group":"jy-rnr_8gvzbe9b9d79y0k","labels":["self-hosted","skippy-ephemeral","Linux","ARM64","runtime-image"]}') || 'ubuntu-24.04-arm' }}
@@ -291,7 +291,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_aarch64_cuda12:
-    name: Build & test Runtime (Linux ARM64, CUDA 12)
+    name: Build · Linux ARM64 · CUDA 12
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -308,7 +308,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_aarch64_cuda13:
-    name: Build & test Runtime (Linux ARM64, CUDA 13)
+    name: Build · Linux ARM64 · CUDA 13
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -325,7 +325,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime:
-    name: Verify runtime builds
+    name: Runtime build summary
     needs: [plan, runtime_darwin_aarch64_cpu, runtime_darwin_aarch64_metal, runtime_linux_x86_64_cpu, runtime_linux_x86_64_cuda12, runtime_linux_x86_64_cuda13, runtime_linux_aarch64_cpu, runtime_linux_aarch64_cuda12, runtime_linux_aarch64_cuda13]
     if: always() && needs.plan.outputs.profile == 'full'
     runs-on: ${{ inputs.jy_runners && fromJSON('{"group":"jy-rnr_vfnz8k5p4yrh334","labels":["self-hosted","jy-linux-docker","Linux","X64"]}') || 'ubuntu-24.04' }}
@@ -339,7 +339,7 @@ jobs:
         env:
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
   product:
-    name: Package product (${{ matrix.display_name }})
+    name: Package · ${{ matrix.display_name }}
     needs: [plan, host, runtime]
     if: needs.plan.outputs.profile == 'full'
     strategy:
@@ -378,7 +378,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   smoke_darwin_aarch64_cpu:
-    name: Test packaged Runtime (macOS ARM64, CPU)
+    name: Test · macOS · CPU
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on: ${{ inputs.jy_runners && fromJSON('{"group":"jy-rnr_h7x5s2yx9gtkz3c","labels":["self-hosted","skippy-ephemeral","macOS","ARM64"]}') || 'macos-15' }}
@@ -393,7 +393,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_darwin_aarch64_metal:
-    name: Test packaged Runtime (macOS ARM64, Metal)
+    name: Test · macOS · Metal
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -410,7 +410,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_x86_64_cpu:
-    name: Test packaged Runtime (Linux x86_64, CPU)
+    name: Test · Linux x64 · CPU
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on: ${{ inputs.jy_runners && fromJSON('{"group":"jy-rnr_vfnz8k5p4yrh334","labels":["self-hosted","jy-linux-docker","Linux","X64"]}') || 'ubuntu-24.04' }}
@@ -425,7 +425,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_x86_64_cuda12:
-    name: Test packaged Runtime (Linux x86_64, CUDA 12)
+    name: Test · Linux x64 · CUDA 12
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -442,7 +442,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_x86_64_cuda13:
-    name: Test packaged Runtime (Linux x86_64, CUDA 13)
+    name: Test · Linux x64 · CUDA 13
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -459,7 +459,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_aarch64_cpu:
-    name: Test packaged Runtime (Linux ARM64, CPU)
+    name: Test · Linux ARM64 · CPU
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on: ${{ inputs.jy_runners && fromJSON('{"group":"jy-rnr_8gvzbe9b9d79y0k","labels":["self-hosted","skippy-ephemeral","Linux","ARM64","runtime-image"]}') || 'ubuntu-24.04-arm' }}
@@ -474,7 +474,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_aarch64_cuda12:
-    name: Test packaged Runtime (Linux ARM64, CUDA 12)
+    name: Test · Linux ARM64 · CUDA 12
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -491,7 +491,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_aarch64_cuda13:
-    name: Test packaged Runtime (Linux ARM64, CUDA 13)
+    name: Test · Linux ARM64 · CUDA 13
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -508,7 +508,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke:
-    name: Verify packaged runtime tests
+    name: Runtime test summary
     needs: [plan, smoke_darwin_aarch64_cpu, smoke_darwin_aarch64_metal, smoke_linux_x86_64_cpu, smoke_linux_x86_64_cuda12, smoke_linux_x86_64_cuda13, smoke_linux_aarch64_cpu, smoke_linux_aarch64_cuda12, smoke_linux_aarch64_cuda13]
     if: always() && needs.plan.outputs.profile == 'full'
     runs-on: ${{ inputs.jy_runners && fromJSON('{"group":"jy-rnr_vfnz8k5p4yrh334","labels":["self-hosted","jy-linux-docker","Linux","X64"]}') || 'ubuntu-24.04' }}

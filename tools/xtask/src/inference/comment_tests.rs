@@ -26,7 +26,7 @@ fn reports_each_configuration_without_turning_missing_work_into_a_pass() {
         .enumerate()
         .map(|(index, (row, state))| {
             json!({
-                "id":index + 1,"name":format!("qualification ({})",row.id),"conclusion":state
+                "id":index + 1,"name":format!("Qualify · {}",row.id),"conclusion":state
             })
         })
         .collect();
