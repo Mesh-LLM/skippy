@@ -117,12 +117,14 @@ diagnostics.
 The main CI workflow runs all four KV architecture cases on isolated Metal and Linux Arm64
 CUDA runners for source-changing pull requests, merge groups, and pushes to
 `main`. Full CI always requires both jobs, including nightly, release and llama
-upgrade runs. The jobs use `hf download` with each fixture's pinned revision
-and reuse the runners' default Hugging Face cache on the NAS. The jobs run in
-parallel, build once per job for all four models, and
-cache the pinned llama.cpp reference by backend and toolchain. They retain
-summaries, cell reports, and logs. A failing model, missing fixture, absent GPU,
-or incomplete required job fails the CI summary.
+upgrade runs. Each backend builds one source-bound bundle containing the Skippy
+test and pinned llama.cpp reference. Four independent jobs consume that bundle,
+one for each fixture. Each job uses `hf download` at the pinned revision with
+the runner's default Hugging Face cache on the NAS. It runs the full sequence
+for that model and retains its report and logs. The final summary checks each
+report's source, fixture manifest and digest, then publishes the existing
+per-backend `batch-result.json` and model reports. A failed model, missing
+fixture, absent GPU, or incomplete required job fails the CI summary.
 
 ## State handoff batch
 

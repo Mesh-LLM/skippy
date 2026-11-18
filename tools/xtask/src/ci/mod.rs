@@ -7,7 +7,7 @@ pub(crate) mod matrix;
 pub(crate) mod producers;
 mod profile;
 mod smoke;
-use crate::command::DynResult;
+use crate::{cache_qualification, command::DynResult};
 use std::{io::Write, path::Path};
 
 pub fn run(args: &[String]) -> DynResult<()> {
@@ -30,15 +30,24 @@ fn plan() -> DynResult<()> {
     let matrix = matrix::Matrix::load()?;
     let (hosts, runtimes) = project_matrix(&matrix)?;
     let cache_correctness = kv_scope::required(profile);
+    let manifest = std::fs::read_to_string(cache_qualification::MANIFEST)?;
+    let fixtures = cache_qualification::read_manifest(&manifest)?;
+    let cache_fixtures = serde_json::json!(
+        fixtures
+            .models
+            .iter()
+            .map(|model| model.family.as_str())
+            .collect::<Vec<_>>()
+    );
     println!(
         "{}",
-        serde_json::json!({"profile":profile.name(),"hosts": hosts, "runtimes": runtimes,"cache_correctness":cache_correctness})
+        serde_json::json!({"profile":profile.name(),"hosts": hosts, "runtimes": runtimes,"cache_correctness":cache_correctness,"cache_fixtures":cache_fixtures})
     );
     if let Some(path) = std::env::var_os("GITHUB_OUTPUT") {
         let mut file = std::fs::OpenOptions::new().append(true).open(path)?;
         writeln!(
             file,
-            "profile={}\nhosts={hosts}\nruntimes={runtimes}\ncache_correctness={cache_correctness}",
+            "profile={}\nhosts={hosts}\nruntimes={runtimes}\ncache_correctness={cache_correctness}\ncache_fixtures={cache_fixtures}",
             profile.name()
         )?;
     }

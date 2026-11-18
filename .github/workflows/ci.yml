@@ -66,6 +66,7 @@ jobs:
       hosts: ${{ steps.plan.outputs.hosts }}
       runtimes: ${{ steps.plan.outputs.runtimes }}
       cache_correctness: ${{ steps.plan.outputs.cache_correctness }}
+      cache_fixtures: ${{ steps.plan.outputs.cache_fixtures }}
     steps:
       - name: Validate CUDA architecture mode
         shell: bash
@@ -494,10 +495,50 @@ jobs:
       - run: just automation-run ci smoke-summary
         env:
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
-  cache_correctness_metal:
-    name: Cache correctness (Metal)
+  cache_build_metal:
+    name: Build cache tests (Metal)
     needs: plan
     if: needs.plan.outputs.cache_correctness == 'true'
+    runs-on:
+      group: jy-rnr_h7x5s2yx9gtkz3c
+      labels: [self-hosted, skippy-ephemeral, macOS, ARM64, metal]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/ci-cache-build
+        with:
+          backend: metal
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  cache_build_cuda:
+    name: Build cache tests (CUDA)
+    needs: plan
+    if: needs.plan.outputs.cache_correctness == 'true'
+    runs-on:
+      group: jy-rnr_8gvzbe9b9d79y0k
+      labels: [self-hosted, skippy-ephemeral, Linux, ARM64, runtime-image, cuda13]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/ci-cache-build
+        with:
+          backend: cuda-arm64
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  cache_correctness_metal:
+    name: Cache correctness (Metal / ${{ matrix.fixture }})
+    needs: [plan, cache_build_metal]
+    if: needs.plan.outputs.cache_correctness == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        fixture: ${{ fromJSON(needs.plan.outputs.cache_fixtures) }}
     runs-on:
       group: jy-rnr_h7x5s2yx9gtkz3c
       labels: [self-hosted, skippy-ephemeral, macOS, ARM64, metal]
@@ -510,12 +551,17 @@ jobs:
       - uses: ./.github/actions/ci-cache-correctness
         with:
           backend: metal
+          fixture: ${{ matrix.fixture }}
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   cache_correctness_cuda:
-    name: Cache correctness (CUDA)
-    needs: plan
+    name: Cache correctness (CUDA / ${{ matrix.fixture }})
+    needs: [plan, cache_build_cuda]
     if: needs.plan.outputs.cache_correctness == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        fixture: ${{ fromJSON(needs.plan.outputs.cache_fixtures) }}
     runs-on:
       group: jy-rnr_8gvzbe9b9d79y0k
       labels: [self-hosted, skippy-ephemeral, Linux, ARM64, runtime-image, cuda13]
@@ -528,6 +574,7 @@ jobs:
       - uses: ./.github/actions/ci-cache-correctness
         with:
           backend: cuda-arm64
+          fixture: ${{ matrix.fixture }}
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   summary:
@@ -541,7 +588,41 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
+      - uses: ./.github/actions/source
+        if: needs.plan.outputs.cache_correctness == 'true'
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: needs.plan.outputs.cache_correctness == 'true'
+        id: cache_shards
+        with:
+          pattern: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-kv-shard-*
+          path: target/cache-qualification-shards
+      - name: Assemble Metal evidence
+        if: steps.cache_shards.outcome == 'success'
+        run: just cache-correctness-assemble metal target/cache-qualification-shards target/cache-qualification-metal
+      - name: Assemble CUDA evidence
+        if: always() && steps.cache_shards.outcome == 'success'
+        run: just cache-correctness-assemble cuda-arm64 target/cache-qualification-shards target/cache-qualification-cuda
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always() && steps.cache_shards.outcome == 'success'
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-cache-correctness-metal
+          path: target/cache-qualification-metal
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always() && steps.cache_shards.outcome == 'success'
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-cache-correctness-cuda-arm64
+          path: target/cache-qualification-cuda
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
       - run: just ci-summary
+        if: always()
         env:
           SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}

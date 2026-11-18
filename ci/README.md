@@ -8,10 +8,11 @@ and main pushes are excluded from `ci.yml`; all other pull requests and main
 pushes use the short profile for repository contracts, formatting/Clippy, unit
 and C API tests, and FFI binding freshness. Relevant trusted PRs also run the
 protected seven-configuration inference smoke workflow.
-CI also runs the four-fixture KV correctness matrix in parallel on Metal and
-Linux Arm64 CUDA for source-changing pull requests, merge groups, and main
-pushes. Full CI always includes both jobs. The required summary consumes their
-results, and the two hardware jobs start after planning. See the
+CI also runs KV correctness on Metal and Linux Arm64 CUDA for source-changing
+pull requests, merge groups, and main pushes. Full CI always includes it.
+After planning, one job per backend builds the test and reference executables.
+Each successful build releases four independent model jobs. The required CI
+summary expects all eight model results. See the
 [cache correctness gate](../docs/CACHE_CORRECTNESS_GATE.md) for fixture setup.
 Its separate `Inference qualification` status explicitly reports when no serving
 inputs changed; required smoke jobs cannot pass by being skipped.

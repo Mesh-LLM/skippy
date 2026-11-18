@@ -18,8 +18,11 @@ pub(crate) const MANIFEST: &str = "crates/skippy-model-artifact/src/kv_fixtures/
 const CONVERSATIONS: [&str; 3] = ["first_follow_up", "second_follow_up", "divergent_tail"];
 const STRUCTURED: [&str; 3] = ["json_schema", "named_tool", "long_retrieval"];
 const CELL_TIMEOUT_SECONDS: u64 = 1800;
+const TEST_CASE: &str = "frontend::tests::cache_qualification::cross_tier";
 
+mod bundle;
 mod prepare;
+mod shards;
 pub(crate) mod verify;
 
 const SUMMARY_VERSION: u32 = 2;
@@ -87,7 +90,12 @@ pub(crate) fn read_manifest(body: &str) -> DynResult<KvFixtureManifest> {
 struct Inputs {
     fixtures: Fixtures,
     reference: PathBuf,
-    native_build: PathBuf,
+    runner: TestRunner,
+}
+
+enum TestRunner {
+    Cargo(PathBuf),
+    Binary(PathBuf),
 }
 
 enum Fixtures {
@@ -125,13 +133,18 @@ impl Inputs {
                 Path::is_dir,
             )?)
         };
-        if prepare_builds {
-            return prepare::build(backend, output, fixtures);
-        }
+        let builds = if prepare_builds {
+            prepare::build(backend, output)?
+        } else {
+            prepare::Builds {
+                reference: existing_input("SKIPPY_CACHE_QUAL_LLAMA_SERVER", Path::is_file)?,
+                native_build: existing_input("LLAMA_STAGE_BUILD_DIR", Path::is_dir)?,
+            }
+        };
         Ok(Self {
             fixtures,
-            reference: existing_input("SKIPPY_CACHE_QUAL_LLAMA_SERVER", Path::is_file)?,
-            native_build: existing_input("LLAMA_STAGE_BUILD_DIR", Path::is_dir)?,
+            reference: builds.reference,
+            runner: TestRunner::Cargo(builds.native_build),
         })
     }
 }
@@ -200,6 +213,24 @@ struct Summary {
 
 pub fn run(args: &[String]) -> DynResult<()> {
     let (backend, output, prepare_builds, download) = match args {
+        [command, backend, output] if command == "build-shards" => {
+            return bundle::build(Backend::parse(backend)?, Path::new(output));
+        }
+        [command, backend, family, bundle, output] if command == "shard" => {
+            return shards::run(
+                Backend::parse(backend)?,
+                family,
+                Path::new(bundle),
+                Path::new(output),
+            );
+        }
+        [command, backend, directory, output] if command == "assemble" => {
+            return shards::assemble(
+                Backend::parse(backend)?,
+                Path::new(directory),
+                Path::new(output),
+            );
+        }
         [command, backend, source, directory] if command == "verify" => {
             return verify::run(Backend::parse(backend)?, source, Path::new(directory));
         }
@@ -210,7 +241,7 @@ pub fn run(args: &[String]) -> DynResult<()> {
         }
         _ => {
             return Err(
-                "usage: cache-qualification {metal|cuda|cuda-arm64} FRESH_REPORT_DIR [--build [--hf]] | verify {metal|cuda|cuda-arm64} SOURCE_SHA REPORT_DIR".into(),
+                "usage: cache-qualification BACKEND FRESH_REPORT_DIR [--build [--hf]] | build-shards BACKEND FRESH_ARTIFACT_DIR | shard BACKEND CASE ARTIFACT_DIR FRESH_REPORT_DIR | assemble BACKEND SHARDS_DIR FRESH_REPORT_DIR | verify BACKEND SOURCE_SHA REPORT_DIR".into(),
             );
         }
     };
@@ -230,18 +261,29 @@ pub fn run(args: &[String]) -> DynResult<()> {
             Err(error) => failure(model, None, None, error.to_string()),
         })
         .collect::<Vec<_>>();
+    let end = verify::Source::capture(&output)?;
+    write_summary(backend, &output, start, end, &manifest_bytes, cells)
+}
+
+fn write_summary(
+    backend: Backend,
+    output: &Path,
+    start: verify::Source,
+    end: verify::Source,
+    manifest: &str,
+    cells: Vec<Cell>,
+) -> DynResult<()> {
     let status = if cells.iter().all(|row| row.status == Status::Pass) {
         Status::Pass
     } else {
         Status::Fail
     };
-    let end = verify::Source::capture(&output)?;
     let source_tree_clean = start.clean && end.clean && start.head == end.head;
     let summary = Summary {
         schema_version: SUMMARY_VERSION,
         source_head: start.head,
         source_tree_clean,
-        fixture_manifest_sha256: artifact::digest(manifest_bytes.as_bytes())?,
+        fixture_manifest_sha256: artifact::digest(manifest.as_bytes())?,
         profile: backend.profile().into(),
         status,
         cells,
@@ -266,31 +308,43 @@ fn run_cell(backend: Backend, output: &Path, model: &KvFixture, inputs: &Inputs)
     let family = model.family.as_str();
     let directory = output.join(family);
     let relative_report = PathBuf::from(family).join("result.json");
-    let result = execution::run(
-        "just",
-        &strings(&[backend.recipe()]),
-        &[
-            ("SKIPPY_CACHE_QUAL_BACKEND", backend.name().into()),
-            ("SKIPPY_CACHE_QUAL_FAMILY", family.into()),
-            (
-                "SKIPPY_CACHE_QUAL_MODEL",
-                fixture.to_string_lossy().into_owned(),
-            ),
-            (
-                "SKIPPY_CACHE_QUAL_LLAMA_SERVER",
-                inputs.reference.to_string_lossy().into_owned(),
-            ),
-            (
-                "SKIPPY_CACHE_QUAL_REPORT_DIR",
-                directory.to_string_lossy().into_owned(),
-            ),
-            (
+    let mut environment = vec![
+        ("SKIPPY_CACHE_QUAL_BACKEND", backend.name().into()),
+        ("LLAMA_STAGE_BACKEND", backend.runtime_backend().into()),
+        ("SKIPPY_CACHE_QUAL_FAMILY", family.into()),
+        (
+            "SKIPPY_CACHE_QUAL_MODEL",
+            fixture.to_string_lossy().into_owned(),
+        ),
+        (
+            "SKIPPY_CACHE_QUAL_LLAMA_SERVER",
+            inputs.reference.to_string_lossy().into_owned(),
+        ),
+        (
+            "SKIPPY_CACHE_QUAL_REPORT_DIR",
+            directory.to_string_lossy().into_owned(),
+        ),
+    ];
+    let result = match &inputs.runner {
+        TestRunner::Cargo(native_build) => {
+            environment.push((
                 "LLAMA_STAGE_BUILD_DIR",
-                inputs.native_build.to_string_lossy().into_owned(),
-            ),
-        ],
-        CELL_TIMEOUT_SECONDS,
-    );
+                native_build.to_string_lossy().into_owned(),
+            ));
+            execution::run(
+                "just",
+                &strings(&[backend.recipe()]),
+                &environment,
+                CELL_TIMEOUT_SECONDS,
+            )
+        }
+        TestRunner::Binary(binary) => execution::run(
+            &binary.to_string_lossy(),
+            &strings(&[TEST_CASE, "--ignored", "--exact", "--nocapture"]),
+            &environment,
+            CELL_TIMEOUT_SECONDS,
+        ),
+    };
     let path = output.join(&relative_report);
     let bytes = fs::read(&path).ok();
     let report_sha256 = match bytes.as_deref().map(artifact::digest).transpose() {

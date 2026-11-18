@@ -111,6 +111,15 @@ cache-correctness-cuda:
 cache-correctness-matrix backend output *options:
     @cargo xtool cache-qualification "{{ backend }}" "{{ output }}" {{ options }}
 
+cache-correctness-build-shards backend artifact:
+    @cargo xtool cache-qualification build-shards {{ quote(backend) }} {{ quote(artifact) }}
+
+cache-correctness-shard backend case artifact output:
+    @cargo xtool cache-qualification shard {{ quote(backend) }} {{ quote(case) }} {{ quote(artifact) }} {{ quote(output) }}
+
+cache-correctness-assemble backend shards output:
+    @cargo xtool cache-qualification assemble {{ quote(backend) }} {{ quote(shards) }} {{ quote(output) }}
+
 [unix]
 cache-correctness-verify backend report:
     @SKIPPY_CACHE_QUAL_BACKEND={{ quote(backend) }} SKIPPY_CACHE_QUAL_VERIFY_REPORT={{ quote(report) }} just with-lld cargo test --locked -p skippy-serving --features dynamic-native-runtime --lib frontend::tests::cache_qualification::verify_report -- --ignored --exact --nocapture
