@@ -44,7 +44,7 @@ jobs:
     name: Plan & validate CI
     runs-on:
       group: jy-rnr_vfnz8k5p4yrh334
-      labels: [self-hosted, jy-linux-docker, Linux, X64]
+      labels: [self-hosted, jy-linux-docker, Linux]
     timeout-minutes: 5
     outputs:
       hosts: ${{ steps.plan.outputs.hosts }}
