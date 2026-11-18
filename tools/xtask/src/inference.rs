@@ -2,6 +2,7 @@
 mod admission;
 mod artifacts;
 mod build;
+mod changes;
 mod comment;
 mod corpus;
 mod dispatch;

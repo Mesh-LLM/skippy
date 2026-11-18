@@ -10,6 +10,14 @@ and C API tests, and FFI binding freshness. Relevant trusted PRs also run the
 protected seven-configuration inference smoke workflow.
 Its separate `Inference qualification` status explicitly reports when no serving
 inputs changed; required smoke jobs cannot pass by being skipped.
+PR admission checks every changed-file page and both paths of a rename. Serving
+crates, native sources and patches, build dependencies, and the inference harness
+and its configuration require qualification. Documentation (including nested
+READMEs and docs directories), PR/issue templates, and unrelated CI/release
+automation do not dispatch native jobs. The controller still publishes the
+source-bound status for these PRs. An unreadable or potentially truncated file
+list fails admission. Scheduled, manual, and release qualification remain explicit
+and do not use the PR path filter.
 The 308-test native family battery and complete host/runtime/package/smoke matrix
 run nightly and for releases. Reusable candidate validation defaults to `full`;
 release publication explicitly requests it. Manual dispatch from protected main selects either
