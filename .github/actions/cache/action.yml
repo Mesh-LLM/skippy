@@ -13,12 +13,11 @@ runs:
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: |
-          ~/.cargo/registry
-          ~/.cargo/git
+          ${{ env.CARGO_HOME || '~/.cargo' }}/registry
+          ${{ env.CARGO_HOME || '~/.cargo' }}/git
           target/debug
           skippy-api-rs/target/debug
           ~/.cache/sccache
-        key: rust-v3-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ matrix.id || 'tools' }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', '.cargo/config.toml', 'Justfile', 'scripts/cargo-linker*', 'scripts/build-llama.sh', 'llama_cpp/upstream.txt', 'llama_cpp/patches/**/*.patch') }}
+        key: rust-v4-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ matrix.id || 'tools' }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'system' }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', '.cargo/config.toml', 'Justfile', 'scripts/cargo-linker*', 'scripts/build-llama.sh', 'llama_cpp/upstream.txt', 'llama_cpp/patches/**/*.patch') }}
         restore-keys: |
-          rust-v3-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ matrix.id || 'tools' }}-
-          rust-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ matrix.id || 'tools' }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
+          rust-v4-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ matrix.id || 'tools' }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'system' }}-

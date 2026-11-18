@@ -45,13 +45,27 @@ In full qualification, host and runtime producers start after planning alongside
 quality; the final gate requires every producer and smoke result.
 Compilation never counts as device evidence.
 
-The CPU-only `quality` job runs on GitHub-hosted `ubuntu-26.04`, keeping lab
-capacity available for device qualification. This image supplies LLVM/Clang 22;
-the job verifies the compiler and development CMake packages before running the
-existing checks. Missing prerequisites fail the job without installing packages
-or skipping checks. Cargo and CMake compilation use two workers to fit standard
-private-repository hosted capacity. Metal/CUDA runtime and model inference jobs
-retain their dedicated lab routing.
+The CPU-only `quality` job runs on GitHub-hosted `ubuntu-24.04` in the public CPU
+toolchain container from `Mesh-LLM/mesh-llm-runner-images`, keeping lab capacity
+available for device qualification. Its immutable image is
+`ghcr.io/mesh-llm/mesh-llm-cuda-runner@sha256:2da4291a5021d6e99771c4d0f15ee3e90278c6de6fe59f0824a39433d9bab2ca`,
+from [the November 17 promotion](https://github.com/Mesh-LLM/mesh-llm-runner-images/actions/runs/44047250262).
+The container supplies the selected Clang 19 compiler and GCC 14 C++ library,
+plus separate LLVM/Clang 22 development inputs at `/usr/lib/llvm-22`. Keep the
+image's compiler selection on `PATH`; the rewriter uses the explicit LLVM 22
+prefix. The job verifies the compiler and development CMake packages before
+running the existing checks. Missing prerequisites fail without installing
+system packages or skipping checks. This is the build toolchain image;
+`Mesh-LLM/mesh-packaging` publishes application runtime images.
+
+The job pulls with its read-only `GITHUB_TOKEN` (`contents: read`,
+`packages: read`). The GHCR package must grant Actions read access to
+`general-inference/skippy`; this repository permission is an external
+prerequisite, including for reusable release validation. No publication
+credential is supplied. Cargo and CMake compilation use two workers to fit
+standard private-repository hosted capacity. Cargo and sccache cache identities
+include the image digest; registry caches honor the image's `CARGO_HOME`.
+Metal/CUDA runtime and model inference jobs retain their dedicated lab routing.
 
 `docs.yml` runs one documentation job when `docs-site/**` changes. On a pull
 request it installs the lockfile, builds Nextra, generates the Pagefind index and
