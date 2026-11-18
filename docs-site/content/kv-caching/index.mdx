@@ -73,6 +73,18 @@ Supported explicit live K/V values are `f16`, `q8_0`, and `q4_0`. Quantized V
 requires compatible Flash Attention and model geometry. An incompatible
 explicit choice fails rather than silently changing precision.
 
+## Unified-memory systems
+
+On unified-memory systems, **keep L2 disabled and allocate cache memory to L1**.
+Both tiers use the same physical memory pool. L2 competes with L1 for capacity
+and adds cache management and rewarm overhead without providing a separate
+memory tier.
+
+L2 is disabled by default. To disable it explicitly, use
+`--prefix-cache-ram off` or set `prefix_cache_ram = "off"` in `[cache]`.
+Adjust L1 retention with `--prefix-cache-budget`, `--prefix-cache-exact-budget`,
+and `--prefix-cache-max-entries`.
+
 ## Observe cache behavior
 
 OpenAI responses report reused tokens as
@@ -85,7 +97,9 @@ status, matched prefix tokens, suffix prefill tokens, and restore source.
 | --- | --- |
 | `prefix_cache` | Select `auto`, `on`, `off`, or record-only mode |
 | `prefix_cache_budget` | Set the resident retention target |
+| `prefix_cache_exact_budget` | Set the exact-state retention ceiling; one snapshot may exceed it |
 | `prefix_cache_max_entries` | Limit retained prefix entries |
+| `prefix_cache_ram` | Enable the optional L2 host-RAM tier; defaults to `off` |
 | `prefix_cache_min_tokens` | Avoid recording prefixes below a token threshold |
 | `prefix_cache_stride_tokens` | Set shared-prefix checkpoint spacing |
 | `kv_cache_type_k`, `kv_cache_type_v` | Choose live key/value precision |

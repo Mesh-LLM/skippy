@@ -96,10 +96,40 @@ receive this secret.
 
 ## Build prerequisites
 
-Build-cache keys stay stable across ordinary source commits and change with the
-toolchain, lockfile and native build recipe. A matching cache avoids repeated
-uploads; Cargo still validates and rebuilds changed source. Caches are not
-qualification evidence.
+Cargo download caches are shared by jobs with compatible dependency sets on the
+same OS and keyed by both workspace lockfiles. Tools, quality, host producers and
+upgrade builders have separate download scopes so a tools-only first writer
+cannot freeze an incomplete product dependency cache. Cargo build snapshots have
+a compatibility prefix binding the OS, architecture, job role/backend, profile
+debug/incremental settings, toolchain, both lockfiles and native build recipe,
+followed by the actual checked-out source SHA. A new revision restores
+the latest compatible snapshot and saves updated outputs after success. A rerun
+of the same revision can reuse the exact snapshot without another upload. Snapshot
+retention and eviction follow the repository's Actions cache settings. Cargo still
+validates and rebuilds changed source; caches are not qualification evidence.
+
+Small command-runner jobs cache only `target/debug`. Quality additionally caches
+the Rust facade's debug outputs; host producers cache `target/release` as well as
+their command runner. Candidate admission uses a separate
+`target/ci-admission/debug` cache before source restoration, then build caches
+are selected from the admitted checkout. Cache paths exclude native build trees,
+packages and qualification evidence. Dependency downloads are separate from
+compiled outputs, and the GitHub-backed sccache is not redundantly archived as a
+local disk cache.
+
+Native jobs separately cache prepared llama.cpp sources by upstream pin, complete
+ordered patch queues and preparation recipe, and whisper.cpp sources by their
+pin and preparation recipe. Existing preparation commands still validate or
+reapply the selected inputs on every run. Explicit source overrides bypass the
+corresponding source cache. Smoke jobs cache the immutable Qwen fixture using its
+admission manifest and fetch recipe; model admission always verifies its size and
+SHA-256, even after a cache hit. A supplied `SKIPPY_CI_MODEL` bypasses that cache.
+
+The upgrade candidate and both supported-family passes restore command-runner
+and compiler caches. Family passes may also reuse prepared sources. Each pass
+still requires absent `target/llama-upgrade/native`,
+`target/llama-upgrade/cargo` and evidence directories, builds independently and
+executes the full qualification battery; those directories are never cached.
 
 The hosted setup action installs full-SHA-pinned Just 1.58.0. The documentation
 job additionally selects Node.js 22.23.0. Both hosted and native runners restore
