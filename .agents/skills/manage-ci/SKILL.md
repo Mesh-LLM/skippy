@@ -35,6 +35,11 @@ contract; no downstream product's workflow topology applies here.
 - Ordinary tests are offline. Model admission is explicit and digest-bound.
   GPU qualification requires a real matching device; missing fixtures, devices,
   capacity, or evidence fail or queue, never become passing skips.
+- Split admission unit tests use explicit recipe-bound fixtures; a native source
+  change does not renew the bundled certification roster. PR split smoke opts
+  into experimental planning and retains the actual admission status. It still
+  requires stage/frontier validation and all GPU/response checks. Nightly and
+  release keep certified admission; PR smoke never renews release certificates.
 - Trusted same-repository PRs from repository collaborators may run as native
   JY jobs on persistent dedicated lab hardware, including DGX Sparks. Admission
   must verify the source repository and contributor's collaborator status using
@@ -57,6 +62,9 @@ contract; no downstream product's workflow topology applies here.
 - Pin third-party actions by full commit SHA. Default permissions are read-only.
   Only the release publisher receives contents write; only the upgrade publisher
   receives a scoped App credential. Do not expose publisher secrets to builds.
+- The protected inference results-comment job alone receives pull-requests write
+  permission for PR comments, plus read-only contents/actions. It receives no
+  native dispatch credential and never executes candidate code.
 - Cache keys bind source recipe, lockfile, toolchain, platform, and backend.
   Caches are accelerators, not artifact correctness or qualification evidence.
   Restore Cargo and compiler caches on native runners as well as hosted runners;
