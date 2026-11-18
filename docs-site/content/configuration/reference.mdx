@@ -9,59 +9,97 @@ The CLI flag uses kebab case and the TOML key uses snake case. This page groups
 the public surface; run `skippy serve --help` for the exact accepted values and
 current defaults.
 
+Use this reference after choosing a serving behavior. Start with automatic
+defaults, inspect them with `--print-effective-config`, then override only the
+controls supported by a measurement or deployment requirement.
+
 ## `[model]`
 
-Model source and loading: `model`, `model_path`, `model_id`, `quant`,
-`checkpoint_imatrix`, `mmproj`, `mmap`, `mlock`, and hash-cache policy.
+| TOML key | Purpose |
+| --- | --- |
+| `model`, `model_path` | Select a catalog, Hugging Face, or local source |
+| `model_id` | Set the public model identifier where supported |
+| `quant`, `checkpoint_imatrix` | Configure supported on-load checkpoint quantization |
+| `mmproj` | Select a multimodal projector |
+| `mmap`, `mlock` | Control model weight mapping and page locking |
 
 ## `[execution]`
 
-Backend execution and batching: `n_gpu_layers`, device selection, CPU threads,
-batch size, microbatch size, NUMA policy, and tensor split controls.
+| TOML key | Purpose |
+| --- | --- |
+| `device` | Select a backend device reported by `skippy doctor` |
+| `n_gpu_layers` | Control GPU layer placement |
+| `threads`, `threads_batch` | Set CPU threads for generation and prompt processing |
+| `batch_size`, `microbatch_size` | Set native batch token limits |
+| `split_mode`, `main_gpu` | Configure supported multi-GPU placement |
 
 ## `[kv]`
 
-Live context state: `ctx_size`, key/value cache precision, KV offload, Flash
-Attention, and unified-pool constraints.
+| TOML key | Purpose |
+| --- | --- |
+| `ctx_size` | Set the live context capacity |
+| `kv_cache_type_k`, `kv_cache_type_v` | Select `f16`, `q8_0`, or `q4_0` live KV precision |
+| `kv_cache_offload` | Offload supported KV work to the backend |
+| `flash_attention` | Select automatic, enabled, or disabled Flash Attention |
+| `cache_idle_slots` | Limit retained idle sessions |
 
 ## `[cache]`
 
-Prompt reuse and durable tiers: prefix-cache mode, codec, budgets, entry and
-token limits, RAM tier, disk tier, disk directory, and minimum-free reserve.
+| TOML key | Purpose |
+| --- | --- |
+| `prefix_cache` | Select `auto`, `on`, `off`, or `record` |
+| `prefix_cache_budget` | Set the resident retention target |
+| `prefix_cache_max_entries`, `prefix_cache_min_tokens` | Bound retained entries and minimum useful prefixes |
+| `prefix_cache_ram` | Enable the optional host-RAM tier above disk |
+| `kv_cache_disk`, `kv_cache_disk_dir` | Enable and locate durable prompt state |
+| `kv_cache_min_free` | Reserve free space on the cache volume |
 
 ## `[scheduling]`
 
-Generation lanes and prefill behavior: concurrency, continuous batching,
-prefill chunk size, and scheduler bounds.
+| TOML key | Purpose |
+| --- | --- |
+| `generation_concurrency` | Set active generation lanes |
+| `continuous_batching` | Serve concurrent lanes in the iteration scheduler |
+| `generation_queue_capacity` | Bound queued requests |
+| `generation_admission_timeout_secs` | Bound queue wait time |
+| `prefill_chunk_size`, `prefill_chunk_policy` | Configure chunked prefill |
 
 ## `[sampling]`
 
-Request defaults: temperature, top-k, top-p, min-p, typical-p, repetition
-penalties, seed, stop sequences, logit bias, and sampler order.
+Request defaults include `temperature`, `top_k`, `top_p`, `min_p`, `typical_p`,
+repetition penalties, `seed`, `stop`, `logit_bias`, sampler order, and
+`request_max_tokens`. Explicit request values override these defaults.
 
 ## `[chat]`
 
-Chat templates, system prompt, reasoning controls, grammar, JSON schema, and
-tool-call behavior.
+Chat behavior includes `chat_template`, `system_prompt`, reasoning controls,
+`grammar`, `json_schema`, Jinja rendering, and request-template policy. Treat
+`allow_request_chat_template` as a trust decision for every caller that can
+reach the server.
 
 ## `[speculative]`
 
 Native MTP, draft-model, n-gram, DFlash, and adaptive speculation controls.
-Explicit strategies must be compatible with the admitted target model.
+Start with `speculative_strategy = "auto"`; explicit strategies must be
+compatible with the admitted target model and runtime.
 
 ## `[media]`
 
-Multimodal projector and media limits.
+Multimodal projector and request media limits. Model loading uses `mmproj` in
+`[model]`; `[media]` controls request-side media policy.
 
 ## `[api]`
 
 Public bind address, response limits, compatibility guardrails, prompt mode,
-and context compaction.
+and context compaction. Common controls include `bind_addr`,
+`default_max_tokens`, `guardrails`, `compact`, `compact_trigger_percent`, and
+`compact_target_percent`.
 
 ## `[distributed]`
 
 Prepared stage plan, ordered topology, binary stage transport, worker-only
-mode, activation codec, flow control, and downstream timeouts.
+mode, activation codec, flow control, and downstream timeouts. Split identity
+and tensor closure remain owned by the generated stage plan.
 
 ## `[runtime]`
 

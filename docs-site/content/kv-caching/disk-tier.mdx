@@ -6,7 +6,14 @@ description: Persist reusable prompt state across process restarts.
 # Durable disk tier
 
 The disk tier stores verified prompt state below the in-process prefix cache.
-It is disabled by default and must be enabled deliberately.
+It lets reusable prefixes survive process restarts and extends retention beyond
+the resident cache. It is disabled by default and must be enabled deliberately.
+
+Use it when repeated prompts are valuable across restarts or do not fit in the
+resident retention budget. Keep it off when local storage latency, capacity, or
+data-retention policy makes durable prompt state undesirable.
+
+## Enable the disk tier
 
 ```toml
 [cache]
@@ -29,6 +36,13 @@ skippy serve \
 Use `auto` instead of a fixed size for an automatically bounded disk budget,
 or `off` to disable the tier.
 
+## How the tiers interact
+
+Skippy checks compatible resident state first, then optional host-RAM and disk
+state. Restored disk entries are verified before use. New reusable state is
+recorded according to the prefix-cache policy and retained within the configured
+soft budgets and free-space reserve.
+
 ## Failure policy
 
 Invalid cache configuration fails startup so a typo cannot silently change the
@@ -47,3 +61,15 @@ kv_cache_disk = "32GiB"
 
 Legacy `SKIPPY_KV_CACHE=off` and `SKIPPY_PREFIX_CACHE=off` remain emergency
 kill switches. Unset them before explicitly enabling prefix caching.
+
+## Disk-tier reference
+
+| Setting | Values | Purpose |
+| --- | --- | --- |
+| `kv_cache_disk` | `off`, `auto`, or IEC size | Enable and bound durable storage |
+| `kv_cache_disk_dir` | Local directory | Choose the cache root |
+| `kv_cache_min_free` | IEC size | Reserve free space on the volume |
+| `prefix_cache_ram` | `off` or IEC size | Add the host-RAM tier above disk |
+
+Invalid startup configuration is fatal. Runtime storage failure is not:
+inference continues with cold prefill and Skippy reports the cache error.

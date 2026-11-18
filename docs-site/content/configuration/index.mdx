@@ -5,15 +5,15 @@ description: Configure Skippy through TOML, environment variables, and CLI optio
 
 # Serving configuration
 
-Every supported operator control is available through `skippy serve --help`.
-Use `--settings serve.toml` for a complete serving configuration.
+Serving configuration defines how Skippy loads a model, allocates resources,
+schedules requests, exposes APIs, and records reusable state. Every supported
+operator control is available through `skippy serve --help`.
 
-Settings resolve in this order:
+Use CLI options for temporary overrides and experiments. Use environment
+variables for process-level deployment settings. Use `--settings serve.toml`
+for a complete, reviewable serving configuration.
 
-1. Explicit command-line options.
-2. `SKIPPY_SERVE_<OPTION_NAME>` environment variables.
-3. Values in the serving settings file.
-4. Admitted model/stage policy and built-in defaults.
+## Create a settings file
 
 ```toml
 version = 1
@@ -52,8 +52,30 @@ skippy serve --settings serve.toml --temperature 0.2
 skippy serve --settings serve.toml --print-effective-config
 ```
 
+## How settings resolve
+
+Settings resolve in this order:
+
+1. Explicit command-line options.
+2. `SKIPPY_SERVE_<OPTION_NAME>` environment variables.
+3. Values in the serving settings file.
+4. Admitted model/stage policy and built-in defaults.
+
 Paths in a settings file are relative to that file. Paths supplied on the CLI
 remain relative to the working directory. Unknown keys, wrong sections, invalid
 values, and conflicting model sources are errors.
+
+Environment variables use the CLI representation and the
+`SKIPPY_SERVE_<OPTION_NAME>` form. For example,
+`SKIPPY_SERVE_THREADS=8` sets `[execution].threads`; `--threads 4` overrides it.
+
+## Configuration surfaces
+
+| Surface | Best for | Example |
+| --- | --- | --- |
+| CLI | One run or a measured override | `--temperature 0.2` |
+| Environment | Deployment-level process settings | `SKIPPY_SERVE_THREADS=8` |
+| TOML | Versioned complete serving policy | `--settings serve.toml` |
+| Admitted stage plan | Planner-owned split identity and tensor closure | `--config stage-0.json` |
 
 Continue to the [option reference](/configuration/reference/).

@@ -5,9 +5,13 @@ description: Reuse prompt state and tune live KV representation.
 
 # Prompt and KV caching
 
-Skippy can restore model state for an exact or shared token prefix and avoid
-recomputing all repeated prefill work. This improves time to first token for
-stable system prompts, tool schemas, long documents, and multi-turn chats.
+The live KV cache stores attention state for generations currently in progress.
+The prefix cache retains reusable model state after a prefill so a later request
+with the same token prefix can skip repeated work.
+
+Use prefix caching for stable system prompts, tool schemas, long documents,
+and multi-turn conversations. It improves time to first token when requests
+share enough leading tokens to make restoration cheaper than recomputation.
 
 Applications continue to send the complete prompt or conversation. Skippy does
 not perform fuzzy or semantic prompt matching. Reuse ends at the first token
@@ -44,6 +48,17 @@ Use `record` to populate state without serving hits. `off` disables lookup and
 recording. Exact-state snapshots are indivisible, so one snapshot may exceed a
 configured soft retention target.
 
+## How prefix matching works
+
+Skippy renders and tokenizes the full request, finds the longest compatible
+retained token prefix, restores its admitted model state, then prefills only the
+unmatched suffix. Cache compatibility includes the model and runtime state
+needed to resume inference, not only the prompt text.
+
+A stable application cache key creates a deterministic namespace for related
+requests, but it does not replace prefix comparison. Requests must still carry
+the complete content and matching tokens. See the request guide for examples.
+
 ## Choose live KV precision
 
 ```toml
@@ -63,6 +78,19 @@ explicit choice fails rather than silently changing precision.
 OpenAI responses report reused tokens as
 `usage.prompt_tokens_details.cached_tokens`. Skippy telemetry also reports hit
 status, matched prefix tokens, suffix prefill tokens, and restore source.
+
+## Cache reference
+
+| Setting | Purpose |
+| --- | --- |
+| `prefix_cache` | Select `auto`, `on`, `off`, or record-only mode |
+| `prefix_cache_budget` | Set the resident retention target |
+| `prefix_cache_max_entries` | Limit retained prefix entries |
+| `prefix_cache_min_tokens` | Avoid recording prefixes below a token threshold |
+| `prefix_cache_stride_tokens` | Set shared-prefix checkpoint spacing |
+| `kv_cache_type_k`, `kv_cache_type_v` | Choose live key/value precision |
+| `kv_cache_offload` | Place supported live KV work on the backend |
+| `flash_attention` | Select the compatible attention implementation |
 
 For cache namespaces in OpenAI-compatible and Anthropic-compatible requests,
 see [Deterministic caching](/getting-started/first-request/#deterministic-caching).

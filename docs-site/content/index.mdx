@@ -36,6 +36,17 @@ curl http://127.0.0.1:9337/v1/chat/completions \
   -d '{"model":"Qwen3-0.6B-Q4_K_M","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
+## How Skippy serves a request
+
+Skippy resolves the model and a compatible native runtime, plans memory for
+weights and live context state, and opens one serving lifecycle for both API
+styles. Each request is tokenized, admitted by the scheduler, evaluated by the
+local runtime or ordered pipeline stages, and sampled by stage zero.
+
+The same lifecycle owns model identity, prefix-cache compatibility, runtime
+selection, request limits, and telemetry. That keeps local and distributed
+serving behavior consistent even when the model is divided across machines.
+
 ## Learn
 
 - [Install and verify Skippy](/getting-started/)
