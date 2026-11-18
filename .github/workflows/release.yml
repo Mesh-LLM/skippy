@@ -36,6 +36,12 @@ jobs:
       artifact_scope: release
       profile: full
       cuda_architecture_mode: release
+  documentation_validation:
+    needs: admission
+    uses: ./.github/workflows/docs.yml
+    with:
+      artifact_scope: release
+      source_ref: ${{ needs.admission.outputs.source }}
   inference:
     needs: admission
     permissions:
@@ -111,7 +117,7 @@ jobs:
           PRERELEASE: ${{ needs.admission.outputs.prerelease }}
         run: gh release edit "$RELEASE_TAG" --draft=false --prerelease="$PRERELEASE"
   documentation:
-    needs: [admission, validation, publish]
+    needs: [admission, validation, documentation_validation, publish]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

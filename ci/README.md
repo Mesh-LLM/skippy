@@ -3,10 +3,11 @@
 `ci.yml` has explicit `pr` and `full` profiles. `CI` is the required short-profile
 summary; extended runs report `Full qualification`, so an optional full run on a
 PR commit does not replace its short merge gate. Release callers require the
-full workflow result independently of the check name.
-Pull requests and main pushes use the short profile: repository contracts,
-formatting/Clippy, unit and C API tests, and FFI binding freshness. Relevant trusted
-PRs also run the protected seven-configuration inference smoke workflow.
+full workflow result independently of the check name. Docs-only pull requests
+and main pushes are excluded from `ci.yml`; all other pull requests and main
+pushes use the short profile for repository contracts, formatting/Clippy, unit
+and C API tests, and FFI binding freshness. Relevant trusted PRs also run the
+protected seven-configuration inference smoke workflow.
 Its separate `Inference qualification` status explicitly reports when no serving
 inputs changed; required smoke jobs cannot pass by being skipped.
 The 308-test native family battery and complete host/runtime/package/smoke matrix
@@ -36,10 +37,17 @@ In full qualification, host and runtime producers start after planning alongside
 quality; the final gate requires every producer and smoke result.
 Compilation never counts as device evidence.
 
-The plan job also builds the Nextra documentation with `just docs-build` and
-retains the complete `docs-site/out` static artifact. A docs build or Pagefind
-indexing failure therefore fails the same required `CI` summary as an invalid
-matrix plan. Builds receive no publication credentials.
+`docs.yml` runs one documentation job when `docs-site/**` changes. On a pull
+request it installs the lockfile, builds Nextra, generates the Pagefind index and
+retains `docs-site/out`, but receives no publication credentials and does not
+deploy. The pull-request job reports the required `CI` check because GitHub
+leaves a path-filtered required workflow pending unless another job supplies
+that check. After the change reaches protected `main`, the same workflow builds
+and deploys the output to `beta.skippy.sh` with `just docs-publish-beta`.
+
+Mixed source and documentation changes run both documentation validation and
+the normal short CI workflow. Release validation calls `docs.yml` directly to
+create the exact `release-docs-site` artifact.
 
 For a version tag, the release workflow downloads that exact
 `release-docs-site` artifact after validation and GitHub release publication,
@@ -48,12 +56,13 @@ does not rebuild the site. It installs the lockfile-pinned `cf` CLI and exposes
 `CLOUDFLARE_API_TOKEN` only to the deploy step.
 
 Configure `SKIPPY_DOCS_CLOUDFLARE_API_TOKEN` as a GitHub Actions repository
-secret before the first tagged release. Create it from Cloudflare's **Edit
-Cloudflare Workers** token template and scope it to the account that owns the
-`skippy-docs` Worker and `skippy.sh` zone. The workflow maps it to the
-`CLOUDFLARE_API_TOKEN` environment variable expected by `cf`. Pull requests,
-main builds, and the shared release validation workflow do not receive this
-secret.
+secret. Create it from Cloudflare's **Edit Cloudflare Workers** token template
+and scope it to the account that owns the `skippy-docs`, `skippy-docs-beta`,
+`skippy.sh` and `beta.skippy.sh` resources. The workflow maps it to the
+`CLOUDFLARE_API_TOKEN` environment variable expected by `cf` only in the
+protected-main beta deploy step and the tagged-release production deploy step.
+Pull requests, documentation builds and shared release validation do not
+receive this secret.
 
 ## Build prerequisites
 
@@ -62,9 +71,9 @@ toolchain, lockfile and native build recipe. A matching cache avoids repeated
 uploads; Cargo still validates and rebuilds changed source. Caches are not
 qualification evidence.
 
-The hosted setup action installs full-SHA-pinned Just 1.58.0. The plan job
-additionally selects Node.js 22.23.0 for the documentation build. Both hosted
-and native runners restore Cargo dependencies, debug artifacts and bounded
+The hosted setup action installs full-SHA-pinned Just 1.58.0. The documentation
+job additionally selects Node.js 22.23.0. Both hosted and native runners restore
+Cargo dependencies, debug artifacts and bounded
 sccache compiler results using the shared cache action. Rust follows
 `rust-toolchain.toml`. Build agents must already provide Git, CMake, Ninja, a
 native C/C++ toolchain, curl, and the platform linker selected by `scripts/`.
@@ -136,9 +145,10 @@ row fails rather than passing as a skip.
    startup is therefore checked without depending on a hardware runner's driver.
 4. `ci smoke` receives that exact archive, admits the pinned model and runs the
    packaged server on its required CPU/Metal/CUDA device.
-5. `ci summary` accepts only successful plan, quality, host, runtime and product
-   and smoke jobs. Failed, cancelled, absent and skipped required jobs all fail
-   the summary.
+5. `ci summary` requires plan, inference contracts and quality in short CI. Full
+   CI also requires every host, runtime, product and smoke result. Failed,
+   cancelled, absent and unexpectedly skipped required jobs all fail the
+   summary. Docs-only changes do not start this workflow.
 
 Native runtime manifests retain the upstream pin, patch digest, ABI and backend
 metadata. Product provenance hashes the complete file roster. Actions artifacts

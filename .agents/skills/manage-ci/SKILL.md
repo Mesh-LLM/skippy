@@ -9,16 +9,23 @@ Read this file before inspecting or changing CI. This is the standalone Skippy
 contract; no downstream product's workflow topology applies here.
 
 - `.github/workflows/ci.yml` is the single implementation with explicit `pr`
-  and `full` profiles. Pull requests and main pushes run formatting, Clippy,
-  unit/API tests, FFI freshness and repository contracts. The separate protected
-  inference workflow runs the seven short serving configurations for relevant
-  trusted PRs. Nightly, release and reusable candidate validation use `full`,
-  adding the complete native battery, host/runtime producers, packaging and
-  hardware smoke. A short summary accepts only its explicitly skipped extended
-  stages; a full summary requires every stage to succeed.
+  and `full` profiles. Docs-only pull requests and main pushes do not start it.
+  Other changes run formatting, Clippy, unit/API tests, FFI freshness and
+  repository contracts. The separate protected inference workflow runs the
+  seven short serving configurations for relevant trusted PRs. Nightly,
+  release and reusable candidate validation use `full`, adding the complete
+  native battery, host/runtime producers, packaging and hardware smoke. A short
+  summary accepts only its explicitly skipped extended stages; a full summary
+  requires every stage to succeed.
+- `.github/workflows/docs.yml` owns documentation validation. Docs pull requests
+  build without credentials or publication, while protected-main docs changes
+  deploy the validated output to the beta site. Its pull-request job reports the
+  required `CI` check because path-filtered required workflows otherwise remain
+  pending. Release validation calls the same workflow to create the production
+  documentation artifact.
 - `.github/workflows/release.yml` starts only on version-tag pushes and calls
-  that CI implementation. A release never edits source, bumps versions, moves
-  a tag, or publishes an incomplete artifact matrix.
+  both validation implementations. A release never edits source, bumps
+  versions, moves a tag, or publishes an incomplete artifact matrix.
 - `.github/workflows/llama-upgrade.yml` keeps control on protected main, prepares
   an immutable candidate, certifies it, independently repeats certification,
   and opens an ordinary PR. Failed or incomplete qualification cannot publish.

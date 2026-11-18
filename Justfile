@@ -19,6 +19,9 @@ docs-deploy:
 docs-publish:
     @npm --prefix docs-site run deploy:prebuilt
 
+docs-publish-beta:
+    @npm --prefix docs-site run deploy:prebuilt:beta
+
 automation-run *args:
     @cargo xtool {{ args }}
 

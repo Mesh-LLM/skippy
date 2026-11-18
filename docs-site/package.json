@@ -9,7 +9,8 @@
     "postbuild": "pagefind --site out --output-path out/_pagefind",
     "check": "npm run build",
     "deploy": "npm run build && npm run deploy:prebuilt",
-    "deploy:prebuilt": "cf deploy out"
+    "deploy:prebuilt": "cf deploy out",
+    "deploy:prebuilt:beta": "cf deploy out --mode beta"
   },
   "dependencies": {
     "next": "16.4.6",
