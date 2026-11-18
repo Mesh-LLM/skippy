@@ -1,6 +1,8 @@
-//! Fetches and caches an explicitly configured Hugging Face layer-package catalog.
+//! Fetches and caches the Hugging Face model catalog.
 //!
-//! Set SKIPPY_MODEL_CATALOG=namespace/name to enable remote reads, with entries like:
+//! Reads `meshllm/catalog` by default. Set
+//! `SKIPPY_MODEL_CATALOG=namespace/name` to use another dataset repository, with
+//! entries like:
 //! ```text
 //! entries/unsloth/Qwen3-Coder-480B-A35B-Instruct-GGUF.json
 //! ```
@@ -24,6 +26,29 @@ use skippy_model_resolver::{
     CatalogVariant as ResolverCatalogVariant, HfCatalogProvider, ModelArtifactCandidate,
     ModelResolver,
 };
+
+const MODEL_CATALOG_ENV: &str = "SKIPPY_MODEL_CATALOG";
+const DEFAULT_MODEL_CATALOG_NAMESPACE: &str = "meshllm";
+const DEFAULT_MODEL_CATALOG_NAME: &str = "catalog";
+
+fn default_model_catalog() -> crate::repository_settings::HubRepository {
+    crate::repository_settings::HubRepository {
+        namespace: DEFAULT_MODEL_CATALOG_NAMESPACE.to_owned(),
+        name: DEFAULT_MODEL_CATALOG_NAME.to_owned(),
+    }
+}
+
+fn selected_model_catalog(
+    configured: Option<crate::repository_settings::HubRepository>,
+) -> crate::repository_settings::HubRepository {
+    configured.unwrap_or_else(default_model_catalog)
+}
+
+fn model_catalog() -> Result<crate::repository_settings::HubRepository> {
+    Ok(selected_model_catalog(
+        crate::repository_settings::HubRepository::from_env(MODEL_CATALOG_ENV)?,
+    ))
+}
 
 fn build_hf_api() -> Result<HFClientSync> {
     let repository = crate::HfModelRepository::from_env()?;
@@ -115,8 +140,8 @@ impl Drop for HfModelFileProbeOverrideGuard {
 /// Returns the directory where the catalog dataset is cached locally.
 pub fn catalog_cache_dir() -> PathBuf {
     let root = catalog_cache_dir_from(std::env::var_os("HF_HOME"), std::env::var_os("HOME"));
-    match crate::repository_settings::HubRepository::from_env("SKIPPY_MODEL_CATALOG") {
-        Ok(Some(repository)) => root.join(repository.namespace).join(repository.name),
+    match model_catalog() {
+        Ok(repository) => root.join(repository.namespace).join(repository.name),
         _ => root,
     }
 }
@@ -167,7 +192,7 @@ pub fn refresh_catalog() -> Result<()> {
 }
 
 fn refresh_catalog_sync() -> Result<()> {
-    let repository = crate::repository_settings::HubRepository::require("SKIPPY_MODEL_CATALOG")?;
+    let repository = model_catalog()?;
     let api = build_hf_api()?;
     let dataset = api.dataset(&repository.namespace, &repository.name);
 
@@ -263,16 +288,6 @@ pub fn ensure_catalog() -> Result<()> {
         if lock.is_some() {
             return Ok(());
         }
-    }
-
-    if crate::repository_settings::HubRepository::from_env("SKIPPY_MODEL_CATALOG")?.is_none() {
-        if catalog_cache_dir().join("entries").is_dir() {
-            return load_catalog_from_disk();
-        }
-        *CATALOG_ENTRIES
-            .write()
-            .map_err(|_| anyhow::anyhow!("catalog lock poisoned"))? = Some(Vec::new());
-        return Ok(());
     }
 
     {

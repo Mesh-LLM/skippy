@@ -1,8 +1,12 @@
 name: CI
 on:
   pull_request:
+    paths-ignore:
+      - 'docs-site/**'
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs-site/**'
   schedule:
     - cron: '0 14 * * *'
   workflow_dispatch:
