@@ -409,6 +409,9 @@ pub(in crate::frontend) struct GeneratedText {
     pub(in crate::frontend) matched_prefix_tokens: u32,
     pub(in crate::frontend) suffix_prefill_tokens: u32,
     pub(in crate::frontend) cache_hit_kind: Option<&'static str>,
+    pub(in crate::frontend) cache_restore_source: Option<&'static str>,
+    pub(in crate::frontend) cache_disk_payload_bytes_read_total: Option<u64>,
+    pub(in crate::frontend) sampled_token_timing: Option<SampledTokenTiming>,
     pub(in crate::frontend) native_mtp_stats: NativeMtpStats,
     pub(in crate::frontend) native_mtp_decode_telemetry: Option<NativeMtpDecodeTelemetry>,
     pub(in crate::frontend) verify_window_pipeline_stats: Option<VerifyWindowPipelineStats>,
@@ -430,6 +433,11 @@ pub(in crate::frontend) struct GeneratedText {
     /// observer after admission has been timed. `None` when no observer is
     /// installed.
     pub(in crate::frontend) generation_stats: Option<crate::generation_stats::GenerationStats>,
+}
+
+pub(in crate::frontend) struct SampledTokenTiming {
+    pub(in crate::frontend) ttft_ms: f64,
+    pub(in crate::frontend) decode_ms: f64,
 }
 
 /// Encoded activation bytes stage 0 wrote to the next stage for one response:
@@ -580,6 +588,8 @@ pub(in crate::frontend) struct GeneratedTokenLogprob {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::frontend) struct GeneratedLogprobCandidate {
+    #[cfg(test)]
+    pub(in crate::frontend) token_id: i32,
     pub(in crate::frontend) text: String,
     pub(in crate::frontend) bytes: Vec<u8>,
     /// `None` when the runtime could not read the logits row.
@@ -646,6 +656,19 @@ impl GeneratedText {
                 json!(stats.verification_count),
             ),
         ]);
+        if let Some(timing) = &self.sampled_token_timing {
+            timings.insert("sampled_ttft_ms".to_string(), json!(timing.ttft_ms));
+            timings.insert("sampled_decode_ms".to_string(), json!(timing.decode_ms));
+        }
+        if let Some(source) = self.cache_restore_source {
+            timings.insert("cache_source".to_string(), json!(source));
+        }
+        if let Some(bytes) = self.cache_disk_payload_bytes_read_total {
+            timings.insert(
+                "cache_disk_payload_bytes_read_total".to_string(),
+                json!(bytes),
+            );
+        }
         if let Some(telemetry) = self.native_mtp_decode_telemetry {
             telemetry.insert_response_timings(&mut timings);
         }

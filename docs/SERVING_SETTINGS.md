@@ -229,7 +229,7 @@ with their runtime purpose; existing controls follow in the same sections.
 | `--prefix-cache-stride-tokens` | `prefix_cache_stride_tokens` | Shared-prefix checkpoint spacing in tokens |
 | `--prefix-cache-record-limit` | `prefix_cache_record_limit` | Maximum shared-prefix checkpoints per recording |
 | `--prefix-cache-exact-budget` | `prefix_cache_exact_budget` | Exact-state retention ceiling: auto, unbounded, or IEC size; one snapshot may exceed it |
-| `--kv-cache-disk` | `kv_cache_disk` | See `skippy serve --help` for values and defaults. |
+| `--kv-cache-disk` | `kv_cache_disk` | Disk cache budget. Defaults to `auto` with a 64 GiB cap. Use `off` or an IEC size to override. |
 | `--kv-cache-disk-dir` | `kv_cache_disk_dir` | See `skippy serve --help` for values and defaults. |
 | `--kv-cache-min-free` | `kv_cache_min_free` | See `skippy serve --help` for values and defaults. |
 

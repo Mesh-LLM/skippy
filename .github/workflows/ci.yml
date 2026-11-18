@@ -3,6 +3,8 @@ on:
   pull_request:
     paths-ignore:
       - 'docs-site/**'
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main]
     paths-ignore:
@@ -63,6 +65,7 @@ jobs:
       profile: ${{ steps.plan.outputs.profile }}
       hosts: ${{ steps.plan.outputs.hosts }}
       runtimes: ${{ steps.plan.outputs.runtimes }}
+      cache_correctness: ${{ steps.plan.outputs.cache_correctness }}
     steps:
       - name: Validate CUDA architecture mode
         shell: bash
@@ -81,6 +84,7 @@ jobs:
           fi
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup
       - id: plan
@@ -490,9 +494,47 @@ jobs:
       - run: just automation-run ci smoke-summary
         env:
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
+  cache_correctness_metal:
+    name: Cache correctness (Metal)
+    needs: plan
+    if: needs.plan.outputs.cache_correctness == 'true'
+    runs-on:
+      group: jy-rnr_h7x5s2yx9gtkz3c
+      labels: [self-hosted, skippy-ephemeral, macOS, ARM64, metal]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/ci-cache-correctness
+        with:
+          backend: metal
+          fixtures: ${{ vars.SKIPPY_CACHE_QUAL_METAL_FIXTURE_DIR }}
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
+  cache_correctness_cuda:
+    name: Cache correctness (CUDA)
+    needs: plan
+    if: needs.plan.outputs.cache_correctness == 'true'
+    runs-on:
+      group: jy-rnr_8gvzbe9b9d79y0k
+      labels: [self-hosted, skippy-ephemeral, Linux, ARM64, runtime-image, cuda13]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/ci-cache-correctness
+        with:
+          backend: cuda-arm64
+          fixtures: ${{ vars.SKIPPY_CACHE_QUAL_CUDA_FIXTURE_DIR }}
+          candidate_artifact: ${{ inputs.candidate_artifact }}
+          candidate_sha: ${{ inputs.candidate_sha }}
   summary:
     name: ${{ needs.plan.outputs.profile == 'full' && 'Full qualification' || 'CI' }}
-    needs: [plan, inference_contracts, quality, host, runtime, product, smoke]
+    needs: [plan, inference_contracts, quality, cache_correctness_metal, cache_correctness_cuda, host, runtime, product, smoke]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 20

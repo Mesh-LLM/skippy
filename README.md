@@ -56,6 +56,7 @@ shared HTTP surface in
 - [Retained compatibility identifiers](docs/COMPATIBILITY.md)
 - [Configuration reference](docs/CONFIGURATION.md)
 - [Serving settings](docs/SERVING_SETTINGS.md)
+- [Disk KV cache operations](docs/PROMPT_CACHE.md#inspect-and-maintain-the-disk-cache)
 - [Continuous integration](ci/README.md)
 - [Private releases](RELEASE.md)
 - [Split serving](docs/SKIPPY_SPLITS.md)

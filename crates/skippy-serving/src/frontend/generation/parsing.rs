@@ -133,6 +133,9 @@ pub(in crate::frontend) struct PreparedGenerationPrompt {
     pub(in crate::frontend) text: String,
     pub(in crate::frontend) media: Vec<MediaInput>,
     pub(in crate::frontend) chat_parse_metadata: Option<String>,
+    /// Identity of an accepted renderer override. The default embedded
+    /// template derives its identity from the model artifact itself.
+    pub(in crate::frontend) cache_template_digest: Option<[u8; 32]>,
     /// Rendered message-history text before an assistant-generation suffix.
     ///
     /// This is only a candidate. The generation path retokenizes it with the
@@ -149,6 +152,7 @@ impl PreparedGenerationPrompt {
             text,
             media: Vec::new(),
             chat_parse_metadata: None,
+            cache_template_digest: None,
             recurrent_cache_prefix_text: None,
             shape: crate::generation_stats::RequestShape::default(),
         }

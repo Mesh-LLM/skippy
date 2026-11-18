@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Skippy Phase 1 cache parity plan and measurements",
+  "oneOf": [{ "$ref": "#/$defs/plan" }, { "$ref": "#/$defs/evidence" }],
+  "$defs": {
+    "sha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]+$" },
+    "revision": { "type": "string", "minLength": 40, "maxLength": 40, "pattern": "^[0-9a-f]+$" },
+    "positive": { "type": "number", "exclusiveMinimum": 0 },
+    "version": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+    "counter": { "type": "integer", "minimum": 0, "maximum": 200 },
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "backend", "cache", "workload"],
+      "properties": {
+        "family": { "enum": ["dense-attention", "hybrid-dense", "attention-moe", "hybrid-moe"] },
+        "backend": { "enum": ["metal", "cuda"] },
+        "cache": { "enum": ["cold_prefill", "warm_l1", "l2_restore", "post_restart_l3"] },
+        "workload": { "enum": ["exact_replay", "divergent_tail", "growing_conversation"] }
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "arch", "host_profile_sha256", "candidate_binary_sha256", "baseline_binary_sha256"],
+      "properties": {
+        "os": { "enum": ["macos", "linux"] },
+        "arch": { "enum": ["arm64", "x86_64"] },
+        "host_profile_sha256": { "$ref": "#/$defs/sha256" },
+        "candidate_binary_sha256": { "$ref": "#/$defs/sha256" },
+        "baseline_binary_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "plannedCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cell", "model_sha256", "template_sha256", "sidecars_sha256", "workload_sha256", "candidate_config_sha256", "baseline_config_sha256"],
+      "properties": {
+        "cell": { "$ref": "#/$defs/cell" },
+        "model_sha256": { "$ref": "#/$defs/sha256" },
+        "template_sha256": { "$ref": "#/$defs/sha256" },
+        "sidecars_sha256": { "$ref": "#/$defs/sha256" },
+        "workload_sha256": { "$ref": "#/$defs/sha256" },
+        "candidate_config_sha256": { "$ref": "#/$defs/sha256" },
+        "baseline_config_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "source_sha", "llama_pin", "patch_queue_sha256", "model_manifest_sha256", "abi_version", "cache_format_version", "harness_sha256", "agentx_corpus_sha256", "agentx_scorer_sha256", "backends", "cells"],
+      "properties": {
+        "schema_version": { "const": 2 },
+        "source_sha": { "$ref": "#/$defs/revision" },
+        "llama_pin": { "$ref": "#/$defs/revision" },
+        "patch_queue_sha256": { "$ref": "#/$defs/sha256" },
+        "model_manifest_sha256": { "$ref": "#/$defs/sha256" },
+        "abi_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "cache_format_version": { "$ref": "#/$defs/version" },
+        "harness_sha256": { "$ref": "#/$defs/sha256" },
+        "agentx_corpus_sha256": { "$ref": "#/$defs/sha256" },
+        "agentx_scorer_sha256": { "$ref": "#/$defs/sha256" },
+        "backends": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["metal", "cuda"],
+          "properties": {
+            "metal": { "$ref": "#/$defs/host" },
+            "cuda": { "$ref": "#/$defs/host" }
+          }
+        },
+        "cells": { "type": "array", "minItems": 96, "maxItems": 96, "items": { "$ref": "#/$defs/plannedCell" } }
+      }
+    },
+    "percentiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["p50", "p90", "p99"],
+      "properties": {
+        "p50": { "$ref": "#/$defs/positive" },
+        "p90": { "$ref": "#/$defs/positive" },
+        "p99": { "$ref": "#/$defs/positive" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agentx_score", "inference_ttft_ms", "end_to_end_ttft_ms", "prefill_tokens_per_second", "decode_tokens_per_second", "peak_host_bytes", "peak_device_bytes"],
+      "properties": {
+        "agentx_score": { "type": "number", "minimum": 0 },
+        "inference_ttft_ms": { "$ref": "#/$defs/percentiles" },
+        "end_to_end_ttft_ms": { "$ref": "#/$defs/percentiles" },
+        "prefill_tokens_per_second": { "$ref": "#/$defs/positive" },
+        "decode_tokens_per_second": { "$ref": "#/$defs/positive" },
+        "peak_host_bytes": { "type": "integer", "minimum": 1, "maximum": 18446744073709551615 },
+        "peak_device_bytes": { "type": "integer", "minimum": 1, "maximum": 18446744073709551615 }
+      }
+    },
+    "trial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine", "binary_sha256", "config_sha256", "host_profile_sha256", "raw_artifact_sha256", "requests", "failed_requests", "incorrect_outputs", "requests_with_expected_cache_path", "metrics"],
+      "properties": {
+        "engine": { "enum": ["candidate", "baseline"] },
+        "binary_sha256": { "$ref": "#/$defs/sha256" },
+        "config_sha256": { "$ref": "#/$defs/sha256" },
+        "host_profile_sha256": { "$ref": "#/$defs/sha256" },
+        "raw_artifact_sha256": { "$ref": "#/$defs/sha256" },
+        "requests": { "const": 200 },
+        "failed_requests": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "incorrect_outputs": { "$ref": "#/$defs/counter" },
+        "requests_with_expected_cache_path": { "$ref": "#/$defs/counter" },
+        "metrics": { "$ref": "#/$defs/metrics" }
+      }
+    },
+    "measuredCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cell", "model_sha256", "template_sha256", "sidecars_sha256", "workload_sha256", "pairs"],
+      "properties": {
+        "cell": { "$ref": "#/$defs/cell" },
+        "model_sha256": { "$ref": "#/$defs/sha256" },
+        "template_sha256": { "$ref": "#/$defs/sha256" },
+        "sidecars_sha256": { "$ref": "#/$defs/sha256" },
+        "workload_sha256": { "$ref": "#/$defs/sha256" },
+        "pairs": {
+          "type": "array",
+          "minItems": 20,
+          "maxItems": 20,
+          "items": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/trial" } }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "plan_sha256", "cells"],
+      "properties": {
+        "schema_version": { "const": 2 },
+        "plan_sha256": { "$ref": "#/$defs/sha256" },
+        "cells": { "type": "array", "minItems": 96, "maxItems": 96, "items": { "$ref": "#/$defs/measuredCell" } }
+      }
+    }
+  }
+}

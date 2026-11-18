@@ -1066,6 +1066,7 @@ impl StageOpenAiBackend {
         context: InferenceRequestContext,
         ids: InferenceGenerationIds,
     ) -> InferenceResult<GeneratedText> {
+        let ids = ids.with_chat_template(prompt.cache_template_digest);
         let (prompt, prepared_text) = if prompt.has_media() {
             (prompt, None)
         } else {
@@ -1163,6 +1164,7 @@ impl StageOpenAiBackend {
         context: InferenceRequestContext,
         ids: InferenceGenerationIds,
     ) -> InferenceResult<GenerationStream> {
+        let ids = ids.with_chat_template(prompt.cache_template_digest);
         let (prompt, prepared_text) = if prompt.has_media() {
             (prompt, None)
         } else {

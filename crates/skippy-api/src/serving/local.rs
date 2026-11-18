@@ -21,7 +21,14 @@ impl LocalDiskCacheOptions {
         ) {
             Ok(manager) => manager,
             Err(error) => {
-                tracing::warn!(%error, "disk prompt cache unavailable; using cold prefill");
+                let message = "Skippy L3 disk cache unavailable. Serving continues without L3.";
+                tracing::warn!(%error, "{message}");
+                let _ = skippy_events::diagnostics::emit(
+                    skippy_events::diagnostics::ServingDiagnostic::Warning {
+                        message: message.to_owned(),
+                        context: Some(format!("{error:#}")),
+                    },
+                );
                 None
             }
         }
@@ -152,7 +159,8 @@ impl LocalOpenAiOptions {
         Ok(openai)
     }
 
-    fn into_request(self) -> Result<(SocketAddr, ModelLoadRequest)> {
+    /// Resolve the local listener and create the request that owns the disk cache.
+    pub fn into_request(self) -> Result<(SocketAddr, ModelLoadRequest)> {
         let openai = self.resolved_openai_options()?;
         let native_mtp_enabled = openai.native_mtp_enabled;
         let mtp_source = if native_mtp_enabled {

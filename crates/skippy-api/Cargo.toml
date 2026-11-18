@@ -17,6 +17,7 @@ reqwest = { version = "0.13", features = ["json"] }
 tokio = { version = "1", features = ["rt"] }
 skippy-config = { path = "../skippy-config", version = "0.80.0" }
 skippy-cache = { path = "../skippy-cache", version = "0.80.0" }
+skippy-events = { path = "../skippy-events", version = "0.80.0" }
 skippy-serving = { path = "../skippy-serving", version = "0.80.0" }
 skippy-native-runtime = { path = "../skippy-native-runtime", version = "0.80.0" }
 skippy-runtime-install = { path = "../skippy-runtime-install", version = "0.80.0" }

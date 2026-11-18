@@ -18,6 +18,7 @@ mod progress;
 mod search;
 mod stage_cache;
 mod storage;
+mod support;
 mod transfer;
 mod updates;
 pub use download::{DownloadedModel, download_model, model_cache_dir};

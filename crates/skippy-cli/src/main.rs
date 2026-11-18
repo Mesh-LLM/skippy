@@ -1,6 +1,7 @@
 mod cli;
 mod conversion;
 mod disk_cache;
+mod kv_cache;
 mod local_model;
 mod local_resource_planning;
 mod native_logging;
@@ -131,6 +132,7 @@ async fn run_main(
     skippy_runtime::logging::set_native_log_sink(native_logs);
     match cli.command {
         Command::Doctor => runtime::doctor(&native_options),
+        Command::KvCache(args) => kv_cache::run(args).await,
         Command::Prompt(args) => {
             tokio::task::spawn_blocking(move || {
                 skippy_commands::prompt::run(skippy_commands::prompt::PromptCommand {

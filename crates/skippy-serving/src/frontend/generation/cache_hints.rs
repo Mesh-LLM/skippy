@@ -1,6 +1,7 @@
 use crate::frontend::NativeMtpStats;
 use crate::frontend::util::now_unix_millis;
 use crate::frontend::util::stable_wire_id;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use skippy_inference_api::CompletionRequest;
 use skippy_inference_api::InferenceExecutionScope;
 use skippy_inference_api::generation::GenerationRequest;
@@ -120,6 +121,21 @@ impl InferenceGenerationIds {
 
     pub(in crate::frontend) fn request_id_string(&self) -> String {
         self.request_id.to_string()
+    }
+
+    /// Separate native session reuse and prefix lookups for explicit renderers.
+    pub(in crate::frontend) fn with_chat_template(mut self, digest: Option<[u8; 32]>) -> Self {
+        if let Some(digest) = digest {
+            self.session_id = stable_wire_id(&[
+                b"chat-template-session-v1",
+                &digest,
+                &self.session_id.to_le_bytes(),
+            ]);
+            self.session_label =
+                format!("chat-template-{}-{}", self.session_id, self.session_label);
+            self.cache.chat_template_digest = Some(digest);
+        }
+        self
     }
 }
 
@@ -271,6 +287,7 @@ pub(in crate::frontend) struct InferenceCacheHints {
     pub(in crate::frontend) prompt_cache_key: Option<String>,
     pub(in crate::frontend) prompt_cache_retention: Option<String>,
     execution_scope: Option<InferenceExecutionScope>,
+    chat_template_digest: Option<[u8; 32]>,
 }
 
 impl InferenceCacheHints {
@@ -287,7 +304,7 @@ impl InferenceCacheHints {
                 .prompt_cache_retention
                 .map(prompt_cache_retention_label)
                 .map(ToString::to_string),
-            execution_scope: None,
+            ..Self::default()
         }
     }
 
@@ -304,20 +321,28 @@ impl InferenceCacheHints {
                 .prompt_cache_retention
                 .map(prompt_cache_retention_label)
                 .map(ToString::to_string),
-            execution_scope: None,
+            ..Self::default()
         }
     }
 
-    /// Derive a cache namespace from the trusted scope and optional client cache key.
+    /// Derive a cache namespace from the renderer, trusted scope and client cache key.
     /// A scoped request always has a namespace, even when the client supplies no key.
     pub(in crate::frontend) fn namespace(&self) -> Option<String> {
         let namespace = self
             .prompt_cache_key
             .as_ref()
             .map(|key| format!("openai:prompt_cache_key:{key}"));
-        match self.execution_scope {
+        let namespace = match self.execution_scope {
             Some(scope) => Some(format!(
                 "execution:{scope}:{}",
+                namespace.unwrap_or_default()
+            )),
+            None => namespace,
+        };
+        match self.chat_template_digest {
+            Some(digest) => Some(format!(
+                "chat-template-v1:{}:{}",
+                URL_SAFE_NO_PAD.encode(digest),
                 namespace.unwrap_or_default()
             )),
             None => namespace,
@@ -340,6 +365,7 @@ pub(in crate::frontend) struct GenerationCacheStats {
     pub(in crate::frontend) matched_prefix_tokens: u32,
     pub(in crate::frontend) suffix_prefill_tokens: u32,
     pub(in crate::frontend) hit_kind: Option<&'static str>,
+    pub(in crate::frontend) restore_source: Option<&'static str>,
     pub(in crate::frontend) native_mtp_stats: NativeMtpStats,
     pub(in crate::frontend) native_mtp_decode_telemetry:
         Option<crate::frontend::native_mtp::NativeMtpDecodeTelemetry>,
@@ -368,6 +394,7 @@ impl Default for GenerationCacheStats {
             matched_prefix_tokens: 0,
             suffix_prefill_tokens: 0,
             hit_kind: None,
+            restore_source: None,
             native_mtp_stats: NativeMtpStats::default(),
             native_mtp_decode_telemetry: None,
             verify_window_pipeline_stats: None,

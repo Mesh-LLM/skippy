@@ -49,6 +49,15 @@ Skippy reports cache state in OpenAI usage and telemetry:
 
 ## Exact-State Retention
 
+An explicit chat template or non-default renderer gets its own cache
+namespace and trusted native session identity. The default embedded
+template continues to use the model artifact's identity.
+
+L2 and L3 additionally key exact state by the native ABI, host OS, registered
+backend devices in runtime order, and placement settings. A namespace change
+causes a cold prefill. Entries written with the earlier durable key remain in
+disk usage until the normal eviction or operator cleanup removes them.
+
 Recurrent and hybrid families store an exact-state snapshot: the complete
 native session state, which is indivisible and includes recurrent and
 convolution buffers. The stage byte budget (`prefix_cache.max_bytes`, or
@@ -79,7 +88,7 @@ Exact-state lookup proceeds from the in-process radix cache (L1), to host RAM
 server locates the current durable manifest before serving an L2 mirror and
 requires the mirror digest to match it. The cache worker promotes an L3 fill
 on its second hit within ten minutes, or on the first hit for prefixes of at
-least 4,096 tokens. Payloads larger than 64 MiB stay out of L2. A verified L2
+least 4,096 tokens. Payloads larger than the configured host-RAM budget stay out of L2. A verified L2
 hit restores the request immediately and queues the same payload to rewarm L1.
 Rewarm records do not rewrite an existing L3 entry. Unloading the stage drops
 its L2 tier.
@@ -163,3 +172,53 @@ does not expose cached-token counts.
 The cold Skippy endpoint should use a config with no `kv_cache` or with
 `kv_cache.mode = "disabled"`. The warm Skippy endpoint should use mesh-llm
 family defaults or an explicit `lookup-record` prefix cache.
+
+## Inspect and maintain the disk cache
+
+Standalone Skippy defaults to an automatic L3 budget. It uses at most 64 GiB
+and preserves a 16 GiB filesystem reserve by default. Use `--kv-cache-disk off`
+to disable L3. When Skippy prepares a local model with prefix reuse enabled,
+it allows up to 256 MiB of L2 host RAM by default. Use `--prefix-cache-ram off`
+to disable that tier. Prepared stage configurations carry their own L2
+limits.
+
+Pass the settings file used to start Skippy, or use the same disk cache flags
+and environment variables. The commands use the serving settings precedence
+of CLI flags, environment, TOML, and defaults.
+
+```sh
+skippy kv-cache --settings serve.toml status
+skippy --output json kv-cache --settings serve.toml status
+skippy kv-cache --settings serve.toml prune --target 8GiB
+skippy kv-cache --settings serve.toml clear --model-identity "$model_identity" --yes
+```
+
+`status` reports the active disk limits, filesystem free space, usage and
+object counts, activity since the cache opened, startup reconciliation, and
+inventory grouped by model identity. Inventory reports logical state bytes
+per model. The whole-store usage accounts for physical space shared by cached
+entries. JSON emits one result object with `schema_version: 1`. JSONL wraps
+that object in the standard Skippy `result` event.
+
+`prune` trims least-recently-used inactive entries toward a whole-store byte
+target. Omit `--target` to use the active cache budget's low-water mark.
+`--model-identity` restricts which entries can be removed. Copy the complete
+identity printed by `status`. The result reports how much space was freed and
+whether the target was reached. `clear` removes all eligible entries for the
+selected scope. Pinned entries remain available to in-flight requests.
+Mutations prompt for consent in a human terminal. Use `--yes` in scripts.
+
+Each disk cache directory has one live Skippy owner. A replacement can
+reopen the directory after shutdown or process failure. When the directory
+is already owned, a second server logs the conflict and continues serving
+with L3 unavailable. Use separate cache directories for concurrent servers
+that each need L3.
+
+For a running server, maintenance goes through its private, authenticated
+loopback listener. An offline command can open and reconcile the store once
+it holds the exclusive cache root lock. If status reports that the root is
+already owned, use the serving process's cache settings and OS account. If
+the owner is unreachable, stop it before issuing offline maintenance.
+`read_only_low_space` means the store can still serve reads and has stopped
+admitting writes to preserve the filesystem reserve. Free space on that
+filesystem or prune inactive entries, then check status again.

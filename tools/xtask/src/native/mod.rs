@@ -8,6 +8,11 @@ mod package_version;
 mod runtime_manifest_writer;
 use crate::command::DynResult;
 
+pub(crate) fn checked_in_abi_version() -> DynResult<String> {
+    let bytes = package_version::read_source(std::path::Path::new("crates/skippy-ffi/src/lib.rs"))?;
+    Ok(package_version::abi_version(&bytes)?.to_string())
+}
+
 pub(crate) fn verify_host(args: &[String]) -> DynResult<()> {
     imports::verify_host(args)
 }

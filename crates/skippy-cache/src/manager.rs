@@ -10,7 +10,7 @@ use std::{
 };
 
 use anyhow::Result;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     l3::{HandoffSegmentStore, StoreLimits, StoreReconciliation, StoreUsage, WriteRefusal},
@@ -75,7 +75,7 @@ impl L3Activity {
 }
 
 /// Point-in-time activity across every stage attached to one root manager.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct L3ActivitySnapshot {
     pub fills: u64,
     pub hits: u64,
@@ -110,7 +110,7 @@ pub enum L3EffectiveState {
     Degraded,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum L3StateReason {
     ReadOnlyLowSpace,

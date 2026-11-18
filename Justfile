@@ -101,6 +101,67 @@ test: skippy-api-test
     @cargo test --workspace --no-default-features
     @cargo test --manifest-path skippy-api-rs/Cargo.toml --workspace
 
+cache-correctness-metal:
+    @SKIPPY_CACHE_QUAL_BACKEND=metal LLAMA_STAGE_BACKEND=metal just with-lld cargo test --locked -p skippy-serving --lib frontend::tests::cache_qualification::cross_tier -- --ignored --exact --nocapture
+
+[unix]
+cache-correctness-cuda:
+    @SKIPPY_CACHE_QUAL_BACKEND="${SKIPPY_CACHE_QUAL_BACKEND:-cuda}" LLAMA_STAGE_BACKEND=cuda just with-lld cargo test --locked -p skippy-serving --lib frontend::tests::cache_qualification::cross_tier -- --ignored --exact --nocapture
+
+cache-correctness-matrix backend output *options:
+    @cargo xtool cache-qualification "{{ backend }}" "{{ output }}" {{ options }}
+
+[unix]
+cache-correctness-verify backend report:
+    @SKIPPY_CACHE_QUAL_BACKEND={{ quote(backend) }} SKIPPY_CACHE_QUAL_VERIFY_REPORT={{ quote(report) }} just with-lld cargo test --locked -p skippy-serving --features dynamic-native-runtime --lib frontend::tests::cache_qualification::verify_report -- --ignored --exact --nocapture
+
+[unix]
+cache-correctness-verify-matrix backend source report_dir:
+    @cargo xtool cache-qualification verify {{ quote(backend) }} {{ quote(source) }} {{ quote(report_dir) }}
+
+cache-parity-plan-identity:
+    @cargo xtool cache-parity plan-identity
+
+cache-parity-verify plan evidence raw_dir:
+    @cargo xtool cache-parity verify {{ quote(plan) }} {{ quote(evidence) }} {{ quote(raw_dir) }}
+
+cache-parity-verify-diagnostic plan evidence raw_dir:
+    @cargo xtool cache-parity verify-diagnostic {{ quote(plan) }} {{ quote(evidence) }} {{ quote(raw_dir) }}
+
+cache-parity-verify-tier-a-inputs plan evidence raw_dir metal_correctness cuda_correctness output:
+    @cargo xtool cache-parity verify-tier-a-inputs {{ quote(plan) }} {{ quote(evidence) }} {{ quote(raw_dir) }} {{ quote(metal_correctness) }} {{ quote(cuda_correctness) }} {{ quote(output) }}
+
+cache-parity-summarize-trial raw:
+    @cargo xtool cache-parity summarize-trial "{{ raw }}"
+
+cache-parity-capture-request address request output:
+    @cargo xtool cache-parity capture-request "{{ address }}" "{{ request }}" "{{ output }}"
+
+cache-parity-capture-pairs config request output:
+    @cargo xtool cache-parity capture-pairs "{{ config }}" "{{ request }}" "{{ output }}"
+
+cache-parity-capture-trace config workload output:
+    @cargo xtool cache-parity capture-trace {{ quote(config) }} {{ quote(workload) }} {{ quote(output) }}
+
+cache-parity-make-workload model state shape width output:
+    @cargo xtool cache-parity make-workload {{ quote(model) }} {{ quote(state) }} {{ quote(shape) }} {{ quote(width) }} {{ quote(output) }}
+
+cache-parity-export-trace plan cell capture raw_dir:
+    @cargo xtool cache-parity export-trace {{ quote(plan) }} {{ quote(cell) }} {{ quote(capture) }} {{ quote(raw_dir) }}
+
+[macos]
+cache-parity-build-metal-probe output:
+    @xcrun clang -Wall -Wextra -Werror -fobjc-arc -dynamiclib -framework Metal -framework Foundation tools/xtask/native/metal_memory_probe.m -o {{ quote(output) }}
+
+[unix]
+cache-correctness-native-dir:
+    @scripts/build-llama.sh --print-build-dir
+
+[unix]
+cache-correctness-reference source build pin *options:
+    @cmake -S "{{ source }}" -B "{{ build }}" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DLLAMA_BUILD_COMMIT="{{ pin }}" -DLLAMA_BUILD_COMMON=ON -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TOOLS=ON -DLLAMA_BUILD_APP=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF {{ options }}
+    @cmake --build "{{ build }}" --target llama-server
+
 llama-prepare:
     @scripts/prepare-llama.sh pinned
 

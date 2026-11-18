@@ -268,6 +268,15 @@ pub fn local_openai_options(
         args.kv_cache_disk_dir.clone(),
         args.kv_cache_min_free.as_deref(),
     )?;
+    if args.config.is_none()
+        && disk_cache.is_some()
+        && !args.settings.values.contains_key("prefix-cache-ram")
+        && let Some(cache) = config.kv_cache.as_mut()
+        && cache.mode == skippy_protocol::StageKvCacheMode::LookupRecord
+        && cache.l2_max_bytes == 0
+    {
+        cache.l2_max_bytes = crate::disk_cache::DEFAULT_HOST_CACHE_BYTES;
+    }
     args.settings
         .validate_cache_dependencies(&config, disk_cache.is_some())?;
     Ok(skippy_api::serving::LocalOpenAiOptions {

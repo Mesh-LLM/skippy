@@ -6,7 +6,7 @@ use std::{io::Read, path::Path};
 pub(crate) fn sha256(path: &Path) -> DynResult<String> {
     digest(std::fs::File::open(path)?)
 }
-fn digest(mut reader: impl Read) -> DynResult<String> {
+pub(crate) fn digest(mut reader: impl Read) -> DynResult<String> {
     let mut hash = Sha256::new();
     let mut buffer = [0_u8; 65536];
     loop {

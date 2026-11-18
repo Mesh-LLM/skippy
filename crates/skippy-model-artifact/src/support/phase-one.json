@@ -1,0 +1,61 @@
+{
+  "schema_version": 2,
+  "models": [
+    {
+      "family": "dense-attention",
+      "repo": "unsloth/Qwen3-4B-GGUF",
+      "revision": "22c9fc8a8c7700b76a1789366280a6a5a1ad1120",
+      "file": "Qwen3-4B-Q4_K_M.gguf",
+      "quantization": "Q4_K_M",
+      "size_bytes": 2497281312,
+      "sha256": "f6f851777709861056efcdad3af01da38b31223a3ba26e61a4f8bf3a2195813a",
+      "chat_template_sha256": "5da44855ab7e0641774d5ed0ff0b4f89671d01df7d316e54d06557a962211cb4",
+      "license": "Apache-2.0",
+      "architecture": "qwen3",
+      "layers": 36,
+      "required_sidecars": []
+    },
+    {
+      "family": "hybrid-dense",
+      "repo": "unsloth/Qwen3.5-4B-GGUF",
+      "revision": "e87f176479d0855a907a41277aca2f8ee7a09523",
+      "file": "Qwen3.5-4B-Q4_K_M.gguf",
+      "quantization": "Q4_K_M",
+      "size_bytes": 2740937888,
+      "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+      "chat_template_sha256": "7f0e529032c25183bcd66c7f238da2d377f43be754a94e2725a58c4e16d2ed67",
+      "license": "Apache-2.0",
+      "architecture": "qwen35",
+      "layers": 32,
+      "required_sidecars": []
+    },
+    {
+      "family": "attention-moe",
+      "repo": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+      "revision": "b17cb02dd882d5b6ab62fc777ad2995f19668350",
+      "file": "Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
+      "quantization": "Q4_K_M",
+      "size_bytes": 18556689568,
+      "sha256": "fadc3e5f8d42bf7e894a785b05082e47daee4df26680389817e2093056f088ad",
+      "chat_template_sha256": "87710339d25b4e789c1d723f93c91ee861a86d305bb3d20a845536f251d6ea8a",
+      "license": "Apache-2.0",
+      "architecture": "qwen3moe",
+      "layers": 48,
+      "required_sidecars": []
+    },
+    {
+      "family": "hybrid-moe",
+      "repo": "unsloth/Qwen3.6-35B-A3B-GGUF",
+      "revision": "a483e9e6cbd595906af30beda3187c2663a1118c",
+      "file": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+      "quantization": "UD-Q4_K_M",
+      "size_bytes": 22134528992,
+      "sha256": "ac0e2c1189e055faa36eff361580e79c5bd6f8e76bffb4ce547f167d53e31a61",
+      "chat_template_sha256": "55d4931433fe502b794226ee7f4d206a6bdd436ac9f80eb7d8ebb4c639f9ea0c",
+      "license": "Apache-2.0",
+      "architecture": "qwen35moe",
+      "layers": 40,
+      "required_sidecars": []
+    }
+  ]
+}

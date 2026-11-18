@@ -8,6 +8,11 @@ and main pushes are excluded from `ci.yml`; all other pull requests and main
 pushes use the short profile for repository contracts, formatting/Clippy, unit
 and C API tests, and FFI binding freshness. Relevant trusted PRs also run the
 protected seven-configuration inference smoke workflow.
+CI also runs the four-family KV correctness matrix in parallel on Metal and
+Linux Arm64 CUDA for source-changing pull requests, merge groups, and main
+pushes. Full CI always includes both jobs. The required summary consumes their
+results, and the two hardware jobs start after planning. See the
+[cache correctness gate](../docs/CACHE_CORRECTNESS_GATE.md) for fixture setup.
 Its separate `Inference qualification` status explicitly reports when no serving
 inputs changed; required smoke jobs cannot pass by being skipped.
 The 308-test native family battery and complete host/runtime/package/smoke matrix
@@ -133,6 +138,11 @@ OpenAI completion, checks generated-token usage, and requires observed positive
 GPU layer offload for Metal/CUDA. Shutdown must be graceful. Product artifacts
 include logs and source-bound smoke evidence. A missing device, model or required
 row fails rather than passing as a skip.
+
+The separate [KV cache correctness workflow](../docs/CACHE_CORRECTNESS_GATE.md#run-all-four-model-families)
+retains all four family results on the Metal and CUDA qualification runners.
+The [cache parity verifier](cache-qualification/PARITY.md) evaluates measured
+candidate and baseline trials against the Phase 1 performance thresholds.
 
 ## Artifact flow
 

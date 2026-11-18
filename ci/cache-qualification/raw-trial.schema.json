@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Skippy cache parity raw trial",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "plan_sha256", "workload_sha256", "cell", "pair", "engine", "binary_sha256", "config_sha256", "host_profile_sha256", "duration_ns", "requests", "memory"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "plan_sha256": { "$ref": "parity.schema.json#/$defs/sha256" },
+    "workload_sha256": { "$ref": "parity.schema.json#/$defs/sha256" },
+    "cell": { "$ref": "parity.schema.json#/$defs/cell" },
+    "pair": { "type": "integer", "minimum": 1, "maximum": 20 },
+    "engine": { "enum": ["candidate", "baseline"] },
+    "binary_sha256": { "$ref": "parity.schema.json#/$defs/sha256" },
+    "config_sha256": { "$ref": "parity.schema.json#/$defs/sha256" },
+    "host_profile_sha256": { "$ref": "parity.schema.json#/$defs/sha256" },
+    "duration_ns": { "$ref": "#/$defs/positiveInteger" },
+    "requests": { "type": "array", "minItems": 200, "maxItems": 200, "items": { "$ref": "#/$defs/request" } },
+    "memory": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/memory" } }
+  },
+  "$defs": {
+    "nonnegativeInteger": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+    "positiveInteger": { "type": "integer", "minimum": 1, "maximum": 18446744073709551615 },
+    "tokens": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_sha256", "prompt_tokens", "result"],
+      "properties": {
+        "request_sha256": { "$ref": "parity.schema.json#/$defs/sha256" },
+        "prompt_tokens": { "$ref": "#/$defs/tokens" },
+        "result": { "oneOf": [{ "$ref": "#/$defs/failed" }, { "$ref": "#/$defs/completed" }] }
+      }
+    },
+    "failed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": { "status": { "const": "failed" } }
+    },
+    "completed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "observed_cache", "cached_tokens", "output_tokens", "output_correct", "inference_ttft_ns", "end_to_end_ttft_ns", "prefill_ns", "decode_ns"],
+      "properties": {
+        "status": { "const": "completed" },
+        "observed_cache": { "enum": ["cold_prefill", "warm_l1", "l2_restore", "post_restart_l3"] },
+        "cached_tokens": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "output_tokens": { "$ref": "#/$defs/tokens" },
+        "output_correct": { "type": "boolean" },
+        "inference_ttft_ns": { "$ref": "#/$defs/positiveInteger" },
+        "end_to_end_ttft_ns": { "$ref": "#/$defs/positiveInteger" },
+        "prefill_ns": { "$ref": "#/$defs/nonnegativeInteger" },
+        "decode_ns": { "$ref": "#/$defs/nonnegativeInteger" }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["offset_ns", "host_bytes", "device_bytes"],
+      "properties": {
+        "offset_ns": { "$ref": "#/$defs/nonnegativeInteger" },
+        "host_bytes": { "$ref": "#/$defs/nonnegativeInteger" },
+        "device_bytes": { "$ref": "#/$defs/nonnegativeInteger" }
+      }
+    }
+  }
+}

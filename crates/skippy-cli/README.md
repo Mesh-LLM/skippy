@@ -159,6 +159,10 @@ skippy models prune
 skippy models prune --yes
 ```
 
+`skippy models support` shows the bundled qualification targets. Use
+`skippy models support --json` for the exact artifact identities and evidence
+requirements. See the [generated model-support table](../../docs/MODEL_SUPPORT.md).
+
 Publishing requires explicit `SKIPPY_MODEL_CATALOG` and `SKIPPY_PACKAGE_BUCKET`
 settings plus `SKIPPY_GITHUB_TOKEN` for private source read access. It defaults
 to the authenticated user's Hugging Face namespace.

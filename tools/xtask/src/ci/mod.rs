@@ -2,6 +2,7 @@ pub(crate) mod artifacts;
 pub(crate) use crate::execution;
 mod contracts;
 mod gates;
+mod kv_scope;
 pub(crate) mod matrix;
 pub(crate) mod producers;
 mod profile;
@@ -28,15 +29,16 @@ fn plan() -> DynResult<()> {
     let profile = profile::Profile::from_environment()?;
     let matrix = matrix::Matrix::load()?;
     let (hosts, runtimes) = project_matrix(&matrix)?;
+    let cache_correctness = kv_scope::required(profile);
     println!(
         "{}",
-        serde_json::json!({"profile":profile.name(),"hosts": hosts, "runtimes": runtimes})
+        serde_json::json!({"profile":profile.name(),"hosts": hosts, "runtimes": runtimes,"cache_correctness":cache_correctness})
     );
     if let Some(path) = std::env::var_os("GITHUB_OUTPUT") {
         let mut file = std::fs::OpenOptions::new().append(true).open(path)?;
         writeln!(
             file,
-            "profile={}\nhosts={hosts}\nruntimes={runtimes}",
+            "profile={}\nhosts={hosts}\nruntimes={runtimes}\ncache_correctness={cache_correctness}",
             profile.name()
         )?;
     }
@@ -58,14 +60,24 @@ fn project_matrix(matrix: &matrix::Matrix) -> DynResult<(serde_json::Value, serd
 }
 fn summary() -> DynResult<()> {
     let needs: serde_json::Value = serde_json::from_str(&std::env::var("SKIPPY_CI_NEEDS")?)?;
-    validate_summary(&needs, profile::Profile::from_environment()?)
+    let required = needs["plan"]["outputs"]["cache_correctness"]
+        .as_str()
+        .ok_or("CI plan omitted the cache correctness requirement")?
+        .parse()?;
+    validate_summary(&needs, profile::Profile::from_environment()?, required)
 }
-fn validate_summary(needs: &serde_json::Value, profile: profile::Profile) -> DynResult<()> {
+fn validate_summary(
+    needs: &serde_json::Value,
+    profile: profile::Profile,
+    cache_correctness: bool,
+) -> DynResult<()> {
     let jobs = needs.as_object().ok_or("needs must be an object")?;
     let required = [
         "plan",
         "inference_contracts",
         "quality",
+        "cache_correctness_metal",
+        "cache_correctness_cuda",
         "host",
         "runtime",
         "product",
@@ -74,7 +86,9 @@ fn validate_summary(needs: &serde_json::Value, profile: profile::Profile) -> Dyn
     if jobs.len() != required.len()
         || required.iter().any(|job| {
             let expected = if profile == profile::Profile::Pr
-                && matches!(*job, "host" | "runtime" | "product" | "smoke")
+                && (matches!(*job, "host" | "runtime" | "product" | "smoke")
+                    || !cache_correctness
+                        && matches!(*job, "cache_correctness_metal" | "cache_correctness_cuda"))
             {
                 "skipped"
             } else {
@@ -93,31 +107,40 @@ mod tests {
     use super::*;
     #[test]
     fn skipped_and_missing_jobs_fail_summary() {
-        let mut jobs = serde_json::json!({"plan":{"result":"success"},"inference_contracts":{"result":"success"},"quality":{"result":"success"},"host":{"result":"success"},"runtime":{"result":"success"},"product":{"result":"success"},"smoke":{"result":"success"}});
-        validate_summary(&jobs, profile::Profile::Full).unwrap();
+        let mut jobs = serde_json::json!({"plan":{"result":"success"},"inference_contracts":{"result":"success"},"quality":{"result":"success"},"cache_correctness_metal":{"result":"success"},"cache_correctness_cuda":{"result":"success"},"host":{"result":"success"},"runtime":{"result":"success"},"product":{"result":"success"},"smoke":{"result":"success"}});
+        validate_summary(&jobs, profile::Profile::Full, true).unwrap();
         jobs["product"]["result"] = "skipped".into();
-        assert!(validate_summary(&jobs, profile::Profile::Full).is_err());
+        assert!(validate_summary(&jobs, profile::Profile::Full, true).is_err());
         jobs.as_object_mut().unwrap().remove("product");
-        assert!(validate_summary(&jobs, profile::Profile::Full).is_err());
+        assert!(validate_summary(&jobs, profile::Profile::Full, true).is_err());
     }
     #[test]
     fn short_profile_requires_quality_and_declared_extended_skips() {
-        let jobs = serde_json::json!({"plan":{"result":"success"},"inference_contracts":{"result":"success"},"quality":{"result":"success"},"host":{"result":"skipped"},"runtime":{"result":"skipped"},"product":{"result":"skipped"},"smoke":{"result":"skipped"}});
-        validate_summary(&jobs, profile::Profile::Pr).unwrap();
-        assert!(validate_summary(&jobs, profile::Profile::Full).is_err());
+        let jobs = serde_json::json!({"plan":{"result":"success"},"inference_contracts":{"result":"success"},"quality":{"result":"success"},"cache_correctness_metal":{"result":"skipped"},"cache_correctness_cuda":{"result":"skipped"},"host":{"result":"skipped"},"runtime":{"result":"skipped"},"product":{"result":"skipped"},"smoke":{"result":"skipped"}});
+        validate_summary(&jobs, profile::Profile::Pr, false).unwrap();
+        assert!(validate_summary(&jobs, profile::Profile::Pr, true).is_err());
+        assert!(validate_summary(&jobs, profile::Profile::Full, false).is_err());
         for job in ["plan", "inference_contracts", "quality"] {
             for result in ["skipped", "failure", "cancelled"] {
                 let mut changed = jobs.clone();
                 changed[job]["result"] = result.into();
-                assert!(validate_summary(&changed, profile::Profile::Pr).is_err());
+                assert!(validate_summary(&changed, profile::Profile::Pr, false).is_err());
             }
         }
         let mut missing = jobs.clone();
         missing.as_object_mut().unwrap().remove("runtime");
-        assert!(validate_summary(&missing, profile::Profile::Pr).is_err());
+        assert!(validate_summary(&missing, profile::Profile::Pr, false).is_err());
         let mut unexpected = jobs;
         unexpected["runtime"]["result"] = "success".into();
-        assert!(validate_summary(&unexpected, profile::Profile::Pr).is_err());
+        assert!(validate_summary(&unexpected, profile::Profile::Pr, false).is_err());
+        unexpected["runtime"]["result"] = "skipped".into();
+        unexpected["cache_correctness_metal"]["result"] = "success".into();
+        unexpected["cache_correctness_cuda"]["result"] = "success".into();
+        validate_summary(&unexpected, profile::Profile::Pr, true).unwrap();
+        for outcome in ["failure", "cancelled", "skipped"] {
+            unexpected["cache_correctness_cuda"]["result"] = outcome.into();
+            assert!(validate_summary(&unexpected, profile::Profile::Pr, true).is_err());
+        }
     }
     #[test]
     fn every_product_uses_its_hosted_target_runner() {
