@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 import os
+import struct
 import subprocess
 import sys
 import tarfile
@@ -76,6 +77,60 @@ class CrateReleaseContract(unittest.TestCase):
         with patch.object(self.release.time, "time", return_value=1795607991):
             self.assertEqual(self.release.retry_delay(log), 10)
         self.assertIsNone(self.release.retry_delay("401 Unauthorized"))
+
+
+class WindowsRuntimeArtifactContract(unittest.TestCase):
+    @staticmethod
+    def pe_image(machine):
+        image = bytearray(256)
+        image[:2] = b"MZ"
+        struct.pack_into("<I", image, 60, 64)
+        image[64:68] = b"PE\0\0"
+        struct.pack_into("<H", image, 68, machine)
+        struct.pack_into("<H", image, 84, 112)
+        struct.pack_into("<H", image, 88, 0x20B)
+        return bytes(image)
+
+    def test_windows_arm64_rejects_wrong_machine_in_every_declared_binary(self):
+        verify = release_script("native-inspect").verify_directory
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            files = {"lib/llama.dll": self.pe_image(0xAA64),
+                     "tools/runner.exe": self.pe_image(0xAA64),
+                     "extras/helper.dll": self.pe_image(0xAA64)}
+            manifest = {
+                "schema_version": 2,
+                "runtime": {
+                    "id": "skippy-native-runtime-windows-aarch64-cpu",
+                    "release_version": "0.80.0",
+                    "skippy_abi": "0.1.74",
+                    "platform": {"target": "aarch64-pc-windows-msvc", "os": "windows", "arch": "aarch64"},
+                    "backend": {"kind": "cpu"},
+                    "libraries": ["lib/llama.dll"],
+                    "files": {},
+                    "tools": {},
+                },
+                "build": {"llama_upstream_sha": "a" * 40, "llama_patched_sha": "b" * 40,
+                          "llama_patch_digest": "c" * 64, "primary_library": "lib/llama.dll"},
+            }
+            for candidate in (*files, None):
+                for name, arm_image in files.items():
+                    image = self.pe_image(0x8664) if name == candidate else arm_image
+                    path = root / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(image)
+                    group = "tools" if name.endswith(".exe") else "files"
+                    manifest["runtime"][group][name] = hashlib.sha256(image).hexdigest()
+                manifest["build"]["library_sha256"] = manifest["runtime"]["files"]["lib/llama.dll"]
+                (root / "manifest.json").write_text(json.dumps(manifest))
+                if candidate is None:
+                    verify(root, False)
+                else:
+                    with self.assertRaisesRegex(ValueError, "runtime architecture mismatch"):
+                        verify(root, False)
+            (root / "lib" / "unlisted.dll").write_bytes(self.pe_image(0xAA64))
+            with self.assertRaisesRegex(ValueError, "unhashed runtime library"):
+                verify(root, False)
 
 
 class SmokeEvidenceContract(unittest.TestCase):

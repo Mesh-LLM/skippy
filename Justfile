@@ -73,7 +73,7 @@ release-runtime-build backend="" target="":
     scripts/package-native-runtime.sh "${args[@]}"
 
 [windows]
-release-runtime-build backend="cpu" target="x86_64-pc-windows-msvc":
+release-runtime-build backend="cpu" target="":
     @powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1 -Backend "{{ backend }}" -Target "{{ target }}" -BuildProfile release -RuntimeOnly
 
 release-build backend="" target="":
