@@ -35,6 +35,11 @@ contract; no downstream product's workflow topology applies here.
 - Ordinary tests are offline. Model admission is explicit and digest-bound.
   GPU qualification requires a real matching device; missing fixtures, devices,
   capacity, or evidence fail or queue, never become passing skips.
+- Split admission unit tests use explicit recipe-bound fixtures; a native source
+  change does not renew the bundled certification roster. PR split smoke opts
+  into experimental planning and retains the actual admission status. It still
+  requires stage/frontier validation and all GPU/response checks. Nightly and
+  release keep certified admission; PR smoke never renews release certificates.
 - Trusted same-repository PRs from repository collaborators may run as native
   JY jobs on persistent dedicated lab hardware, including DGX Sparks. Admission
   must verify the source repository and contributor's collaborator status using
