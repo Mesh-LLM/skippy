@@ -122,11 +122,12 @@ skippy models updates unsloth/Qwen3-8B-GGUF
 skippy models cleanup --unused-since 30d
 ```
 
-`recommended` reads the dataset selected by `SKIPPY_MODEL_CATALOG=namespace/name`;
-remote catalog reads are disabled when it is unset. `search` queries Hugging
-Face for GGUF repositories by default; `--mlx` selects MLX repositories, and
-`--catalog` limits results to the curated catalog. `show` resolves an exact artifact and displays its
-revision and file set. `download` uses a catalog layer package when available;
+`recommended` reads `meshllm/catalog` by default.
+`SKIPPY_MODEL_CATALOG=namespace/name` selects another Hugging Face dataset
+repository with the same catalog format. `search` queries Hugging Face for GGUF
+repositories by default; `--mlx` selects MLX repositories, and `--catalog`
+limits results to the selected catalog. `show` resolves an exact artifact and
+displays its revision and file set. `download` uses a catalog layer package when available;
 `--direct` downloads the exact Hub artifact instead, and `--draft` also fetches
 the recommended speculative draft. Direct downloads verify selected files and
 include a catalog projector when present. Serving the same reference reuses the

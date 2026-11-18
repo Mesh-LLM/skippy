@@ -1,0 +1,92 @@
+---
+title: Install and run Skippy
+description: Build Skippy, inspect the runtime, and serve a first model.
+---
+
+# Install and run Skippy
+
+Skippy consists of a backend-neutral CLI and a verified native runtime selected
+for the host, architecture, accelerator, and Skippy ABI. Install both parts
+before serving a model.
+
+Download a release when you want to run a published version. Build from source
+when developing Skippy or testing the current checkout.
+
+## Download a release
+
+Download the archive for your platform from the
+[latest Skippy release](https://github.com/general-inference/skippy/releases/latest),
+or use the GitHub CLI:
+
+```console
+gh release download --repo general-inference/skippy
+```
+
+Verify and extract the archive, then place the `skippy` executable and its
+adjacent `native-runtimes` directory together. Confirm the installation before
+serving a model:
+
+```console
+skippy --version
+skippy doctor
+```
+
+## Build from source
+
+Skippy uses Just for repository builds. From the repository root:
+
+```console
+just build
+./target/debug/skippy --version
+./target/debug/skippy doctor
+```
+
+`just build` produces the CLI and a verified adjacent native runtime. The CLI
+automatically discovers `target/debug/native-runtimes` from that build.
+
+A source checkout may require a newer native ABI than the latest release. Use
+`--runtime-bundle /path/to/bundle` when you need to select a compatible local
+bundle explicitly.
+
+## How runtime discovery works
+
+The CLI first checks verified runtime bundles beside the executable, then its
+configured bundle roots and platform cache. It admits a runtime only when its
+host, architecture, backend, release metadata, native ABI, and recorded file
+hashes are compatible with the CLI and serving request.
+
+Run `skippy doctor` when selection fails. It reports the current machine,
+installed runtimes, supported backends, and the reason a candidate was rejected.
+
+## Serve a model
+
+```console
+skippy models recommended
+skippy serve --model Qwen3-0.6B-Q4_K_M
+```
+
+Wait for the ready message or, in JSONL mode, the `ready` event before sending
+requests. The default public address is `http://127.0.0.1:9337`.
+
+## Confirm the model
+
+```console
+curl http://127.0.0.1:9337/v1/models
+```
+
+A successful response confirms that the server is ready and exposes the model
+identifier clients must send in inference requests.
+
+## Command reference
+
+| Task | Command |
+| --- | --- |
+| Download the latest release | `gh release download --repo general-inference/skippy` |
+| Build the development product | `just build` |
+| Inspect the installation | `skippy doctor` |
+| List installed runtimes | `skippy runtime list` |
+| Install a compatible runtime | `skippy runtime install` |
+| Start serving | `skippy serve --model MODEL` |
+| Inspect served models | `GET /v1/models` |
+
+Next: [make an inference request](/getting-started/first-request/).

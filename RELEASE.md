@@ -44,6 +44,12 @@ when existing assets have matching GitHub SHA-256 identities. Reruns upload only
 missing assets; they cannot overwrite a published release or move a tag. A
 conflicting draft is an error requiring investigation. Preserve diagnostics.
 
+After the GitHub release is published, the documentation job downloads the
+exact `release-docs-site` artifact built by the shared validation workflow and
+deploys it to `skippy.sh`. It does not rebuild the site. Configure the
+`SKIPPY_DOCS_CLOUDFLARE_API_TOKEN` repository secret as described in
+[CI prerequisites](ci/README.md) before creating a version tag.
+
 No Apple Developer ID/notarization or Windows Authenticode identity is configured
 by this extraction. If platform signing is added, it must precede final hashes
 and require fresh verification; never reuse obsolete checksums after signing.
