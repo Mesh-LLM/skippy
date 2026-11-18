@@ -238,7 +238,9 @@ fn jsonl_syntax_error_is_structured_too() {
 #[test]
 fn recommended_models_have_human_and_json_presentations() {
     let root = tempfile::tempdir().unwrap();
-    let entries = root.path().join("skippy-catalog/entries/test");
+    let entries = root
+        .path()
+        .join("skippy-catalog/meshllm/catalog/entries/test");
     std::fs::create_dir_all(&entries).unwrap();
     std::fs::write(entries.join("tiny.json"), serde_json::to_vec(&serde_json::json!({
         "schema_version": 1,
@@ -249,7 +251,8 @@ fn recommended_models_have_human_and_json_presentations() {
         }}
     })).unwrap()).unwrap();
     std::fs::write(
-        root.path().join("skippy-catalog/entries/.last_refresh"),
+        root.path()
+            .join("skippy-catalog/meshllm/catalog/entries/.last_refresh"),
         b"",
     )
     .unwrap();

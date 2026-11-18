@@ -55,10 +55,12 @@ root for tests and embedding applications.
 Use `HfModelRepository::builder()` to override the cache directory, endpoint, or
 token explicitly in tests and embedding applications.
 
-Remote catalog discovery is disabled unless `SKIPPY_MODEL_CATALOG` names a
-dataset as `namespace/name`. Cached entries can still be read locally. Catalog
-caches live under `skippy-catalog` in `HF_HOME` (or `.cache/skippy/catalog`),
-with separate namespace/repository directories for configured catalogs.
+Remote catalog discovery uses `meshllm/catalog` by default.
+`SKIPPY_MODEL_CATALOG=namespace/name` selects another Hugging Face dataset
+repository with the same catalog format. Cached entries can still be read
+locally. Catalog caches live under `skippy-catalog` in `HF_HOME` (or
+`.cache/skippy/catalog`), with separate namespace/repository directories for
+each selected catalog.
 
 ## TLS portability
 
