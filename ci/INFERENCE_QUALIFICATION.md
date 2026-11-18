@@ -193,3 +193,21 @@ Cold GGUF downloads use HTTP instead of Xet's chunk cache on shared NFS and
 remain bounded by the native JY lease. Admission and formation-member polling
 share one controller deadline, leaving ten minutes before Actions' six-hour
 limit for cleanup and evidence retention.
+
+## PR results comment
+
+The protected inference workflow publishes one bot-owned results comment per PR,
+updating it on reruns. It shows the tested SHA, each serving configuration's
+Actions outcome, workflow timing/log links, GitHub evidence and available durable
+JY job records. PR smoke does not claim AgentX performance measurements.
+Irrelevant changes explicitly report that model tests did not run; failed,
+cancelled, skipped or missing configurations remain visible.
+
+The reporting job runs on success or failure, uses only protected-main code and
+has issues-write permission without the native dispatch credential. Its payload
+never includes PR titles, candidate-generated Markdown or native log contents.
+It refuses to update a comment when the PR head changed or a newer run/attempt
+has already reported. Missing controller artifacts leave JY links unavailable;
+Actions outcomes still report. Comment failures are visible separately and do not
+change the source-bound qualification verdict. GitHub artifact copies have a
+30-day retention period; JY job records link to the native evidence.

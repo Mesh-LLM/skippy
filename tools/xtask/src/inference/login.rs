@@ -40,12 +40,7 @@ pub fn token() -> DynResult<String> {
     let private = std::env::var("JIANYANG_INFERENCE_SSH_KEY")?;
     let dir = tempfile::tempdir()?;
     let key = dir.path().join("key");
-    fs::write(&key, private)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&key, fs::Permissions::from_mode(0o600))?;
-    }
+    write_private_key(&key, &private)?;
     let public = execution::capture(
         "ssh-keygen",
         &["-y".into(), "-f".into(), key.display().to_string()],
@@ -100,4 +95,67 @@ pub fn token() -> DynResult<String> {
         .to_owned();
     *cached = Some((Instant::now(), token.clone()));
     Ok(token)
+}
+
+fn write_private_key(path: &Path, private: &str) -> DynResult<()> {
+    let normalized = private.replace("\r\n", "\n");
+    let normalized = normalized.trim();
+    if normalized.is_empty() {
+        return Err("JIANYANG_INFERENCE_SSH_KEY is empty".into());
+    }
+    // Secret entry and shell substitution can strip the PEM terminator's newline.
+    fs::write(path, format!("{normalized}\n"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    #[test]
+    fn secret_line_endings_preserve_a_loadable_private_key() {
+        let root = tempfile::tempdir().unwrap();
+        let original = root.path().join("original");
+        execution::capture(
+            "ssh-keygen",
+            &[
+                "-q".into(),
+                "-t".into(),
+                "ed25519".into(),
+                "-N".into(),
+                "".into(),
+                "-f".into(),
+                original.display().to_string(),
+            ],
+            &[],
+        )
+        .unwrap();
+        let private = fs::read_to_string(&original).unwrap();
+        let public = fs::read_to_string(original.with_extension("pub")).unwrap();
+        let destination = root.path().join("normalized");
+        for secret in [
+            private.clone(),
+            private.trim_end().to_owned(),
+            private.replace('\n', "\r\n"),
+        ] {
+            write_private_key(&destination, &secret).unwrap();
+            let loaded = execution::capture(
+                "ssh-keygen",
+                &["-y".into(), "-f".into(), destination.display().to_string()],
+                &[],
+            )
+            .unwrap();
+            assert_eq!(loaded.trim(), public.trim());
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&destination).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        assert!(write_private_key(&destination, " \r\n").is_err());
+    }
 }

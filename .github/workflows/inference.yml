@@ -50,6 +50,7 @@ jobs:
           PROFILE: ${{ steps.admission.outputs.profile }}
         run: just automation-run inference matrix "$PROFILE" "$SOURCE_SHA"
   qualification:
+    name: qualification (${{ matrix.id }})
     needs: plan
     if: needs.plan.outputs.required == 'true'
     strategy:
@@ -108,3 +109,35 @@ jobs:
           RESULT: ${{ needs.qualification.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: just automation-run inference summary
+
+  report:
+    needs: [plan, qualification, summary]
+    if: always() && github.event_name == 'pull_request_target'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      issues: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Collect controller receipts when available
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        continue-on-error: true
+        with:
+          pattern: inference-*-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/inference-comment
+          merge-multiple: true
+      - name: Update the PR results comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source || github.event.pull_request.head.sha }}
+          PLAN: ${{ needs.plan.result }}
+          REQUIRED: ${{ needs.plan.outputs.required }}
+          RESULT: ${{ needs.qualification.result }}
+        run: just automation-run inference comment target/inference-comment

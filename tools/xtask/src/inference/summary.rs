@@ -36,7 +36,7 @@ pub fn run() -> DynResult<()> {
     Ok(())
 }
 
-fn verdict(plan: &str, required: &str, result: &str) -> (bool, &'static str) {
+pub(super) fn verdict(plan: &str, required: &str, result: &str) -> (bool, &'static str) {
     match (plan, required, result) {
         ("success", "true", "success") => (true, "Native JY Spark qualification"),
         ("success", "false", "skipped") => (
