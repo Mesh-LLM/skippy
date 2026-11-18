@@ -81,8 +81,10 @@ fn validate_recipe(roster: &SplitCertificationRoster) -> Result<()> {
     Ok(())
 }
 
-fn architecture_is_certified(architecture: &str) -> Result<bool> {
-    let roster = roster().context("load split certification roster")?;
+fn architecture_is_certified(
+    roster: &SplitCertificationRoster,
+    architecture: &str,
+) -> Result<bool> {
     validate_recipe(roster).context("validate split certification roster recipe")?;
     Ok(roster
         .architectures
@@ -95,7 +97,19 @@ pub fn require_split_certification(
     architecture: &str,
     allow_uncertified: bool,
 ) -> Result<SplitCertificationAdmission> {
-    match architecture_is_certified(architecture) {
+    require_with_roster(roster(), package, architecture, allow_uncertified)
+}
+
+fn require_with_roster(
+    roster: Result<&SplitCertificationRoster>,
+    package: &SkippyPackageIdentity,
+    architecture: &str,
+    allow_uncertified: bool,
+) -> Result<SplitCertificationAdmission> {
+    let certified = roster
+        .context("load split certification roster")
+        .and_then(|roster| architecture_is_certified(roster, architecture));
+    match certified {
         Ok(true) => {}
         Ok(false) => return handle_uncertified(package, architecture, allow_uncertified, None),
         Err(error) => {
@@ -122,12 +136,12 @@ fn handle_uncertified(
     if !allow_uncertified {
         if let Some(error) = roster_error {
             return Err(error).context(format!(
-                "split serving certification cannot be established for {}; retry explicitly with --split --allow-uncertified-split to run it experimentally",
+                "split serving certification cannot be established for {}; retry explicitly with plan-split --allow-uncertified-split to run it experimentally",
                 package.package_ref
             ));
         }
         anyhow::bail!(
-            "split serving architecture {architecture} is not certified for model artifact {} (source SHA-256 {}, manifest SHA-256 {}); retry explicitly with --split --allow-uncertified-split to run it experimentally",
+            "split serving architecture {architecture} is not certified for model artifact {} (source SHA-256 {}, manifest SHA-256 {}); retry explicitly with plan-split --allow-uncertified-split to run it experimentally",
             package.package_ref,
             package.source_model_sha256,
             package.manifest_sha256
@@ -160,6 +174,20 @@ fn handle_uncertified(
 mod tests {
     use super::*;
 
+    // This fixture tests admission policy, not real-model qualification. The
+    // release roster remains bound to its independently qualified recipe.
+    fn fixture_roster() -> SplitCertificationRoster {
+        SplitCertificationRoster {
+            schema_version: 2,
+            native_recipe: NativeRecipe {
+                llama_upstream_sha: env!("SKIPPY_LLAMA_UPSTREAM_SHA").into(),
+                patch_queue_sha256: env!("SKIPPY_PATCH_QUEUE_SHA256").into(),
+                skippy_abi: compiled_skippy_abi(),
+            },
+            architectures: vec!["inkling".into()],
+        }
+    }
+
     fn package(source_model_sha256: &str) -> SkippyPackageIdentity {
         SkippyPackageIdentity {
             package_ref: format!("local-gguf://sha256/{source_model_sha256}"),
@@ -179,11 +207,12 @@ mod tests {
 
     #[test]
     fn admits_different_artifact_of_certified_architecture() {
-        let roster = roster().unwrap();
-        validate_recipe(roster).unwrap();
+        let roster = fixture_roster();
+        validate_recipe(&roster).unwrap();
         let architecture = &roster.architectures[0];
         assert_eq!(
-            require_split_certification(&package(&"f".repeat(64)), architecture, false).unwrap(),
+            require_with_roster(Ok(&roster), &package(&"f".repeat(64)), architecture, false)
+                .unwrap(),
             SplitCertificationAdmission::Certified
         );
     }
@@ -195,7 +224,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("--split --allow-uncertified-split")
+                .contains("plan-split --allow-uncertified-split")
         );
     }
 
@@ -211,9 +240,53 @@ mod tests {
     fn package_v2_uses_the_same_architecture_admission() {
         let mut package = package(&"f".repeat(64));
         package.package_ref = "hf://example/package".to_string();
+        let roster = fixture_roster();
         assert_eq!(
-            require_split_certification(&package, "inkling", false).unwrap(),
+            require_with_roster(Ok(&roster), &package, "inkling", false).unwrap(),
             SplitCertificationAdmission::Certified
+        );
+    }
+
+    #[test]
+    fn recipe_mismatches_never_certify_a_listed_architecture() {
+        for mismatch in 0..4 {
+            let mut roster = fixture_roster();
+            match mismatch {
+                0 => roster.schema_version = 1,
+                1 => roster.native_recipe.llama_upstream_sha = "stale".into(),
+                2 => roster.native_recipe.patch_queue_sha256 = "stale".into(),
+                _ => roster.native_recipe.skippy_abi = "stale".into(),
+            }
+            let package = package(&"f".repeat(64));
+            assert!(require_with_roster(Ok(&roster), &package, "inkling", false).is_err());
+            assert_eq!(
+                require_with_roster(Ok(&roster), &package, "inkling", true).unwrap(),
+                SplitCertificationAdmission::UncertifiedOverride
+            );
+        }
+    }
+
+    #[test]
+    fn unavailable_roster_requires_an_explicit_override() {
+        let package = package(&"f".repeat(64));
+        assert!(
+            require_with_roster(
+                Err(anyhow::anyhow!("unavailable")),
+                &package,
+                "inkling",
+                false
+            )
+            .is_err()
+        );
+        assert_eq!(
+            require_with_roster(
+                Err(anyhow::anyhow!("unavailable")),
+                &package,
+                "inkling",
+                true
+            )
+            .unwrap(),
+            SplitCertificationAdmission::UncertifiedOverride
         );
     }
 }
