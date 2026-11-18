@@ -148,6 +148,15 @@ fn bindings_main() {
                 }
             }
             if !stale.is_empty() {
+                let evidence = workspace_root.join("target/ci-evidence/ffi-bindgen");
+                std::fs::create_dir_all(&evidence)
+                    .unwrap_or_else(|error| panic!("cannot retain binding diagnostics: {error}"));
+                for (path, content) in &committed {
+                    std::fs::write(evidence.join(path.file_name().unwrap()), content)
+                        .unwrap_or_else(|error| {
+                            panic!("cannot retain binding diagnostics: {error}")
+                        });
+                }
                 panic!(
                     "skippy-ffi bindings are stale: {} no longer matches the pinned \
                      native headers (llama.cpp pin {}, patched tree {}). Regenerate \

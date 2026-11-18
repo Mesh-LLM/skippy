@@ -34,8 +34,19 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       artifact_scope: release
+      profile: full
+      cuda_architecture_mode: release
+  inference:
+    needs: admission
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    uses: ./.github/workflows/inference.yml
+    secrets:
+      JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
   publish:
-    needs: [admission, validation]
+    needs: [admission, validation, inference]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:

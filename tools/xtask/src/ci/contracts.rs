@@ -6,6 +6,7 @@ use std::{
 };
 
 pub fn run() -> DynResult<()> {
+    super::matrix::Matrix::load()?;
     let root = std::env::current_dir()?.canonicalize()?;
     let mut files = Vec::new();
     collect(&root, &mut files)?;
