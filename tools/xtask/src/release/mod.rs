@@ -1,7 +1,7 @@
 //! Tag admission and immutable release inventory. Publication remains workflow-owned.
 mod upgrade_publication;
 use crate::{
-    ci::{artifacts, execution, matrix::Matrix},
+    ci::{artifacts, execution, matrix::Matrix, producers},
     command::DynResult,
 };
 use serde::{Deserialize, Serialize};
@@ -115,6 +115,10 @@ fn prepare(tag: &str, input: &Path) -> DynResult<()> {
         artifacts::unpack(&directory, workspace.path())?;
         let host = matrix.host(&row.host)?;
         artifacts::verify(workspace.path(), "product", &host.target, &row.id)?;
+        let runtime = workspace.path().join("native-runtimes").join(&row.id);
+        let expected_cuda_architectures =
+            (row.backend == "cuda").then_some(row.gpu_architectures.as_str());
+        producers::validate_native_identity(&runtime, host, row, expected_cuda_architectures)?;
         let evidence: serde_json::Value =
             serde_json::from_slice(&fs::read(directory.join("evidence/smoke.json"))?)?;
         if evidence["source"] != artifacts::source()?

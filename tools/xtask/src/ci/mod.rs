@@ -2,7 +2,7 @@ pub(crate) mod artifacts;
 pub(crate) use crate::execution;
 mod contracts;
 pub(crate) mod matrix;
-mod producers;
+pub(crate) mod producers;
 mod smoke;
 use crate::command::DynResult;
 use std::path::Path;

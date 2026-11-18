@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 #[serde(deny_unknown_fields)]
 pub struct Host {
     pub id: String,
+    pub display_name: String,
     pub target: String,
     pub os: String,
     pub arch: String,
@@ -17,6 +18,7 @@ pub struct Host {
 #[serde(deny_unknown_fields)]
 pub struct Runtime {
     pub id: String,
+    pub display_name: String,
     pub host: String,
     pub backend: String,
     pub toolkit: String,
@@ -61,8 +63,9 @@ impl Matrix {
         let mut ids = BTreeSet::new();
         for host in &self.hosts {
             if !safe_id(&host.id)
+                || host.display_name.trim().is_empty()
                 || !ids.insert(&host.id)
-                || host.runner != [hosted_runner(&host.id)?]
+                || host.runner != expected_host_runner(&host.id)?
                 || !valid_host_identity(host)
             {
                 return Err("invalid host identity or runner boundary".into());
@@ -74,7 +77,10 @@ impl Matrix {
             if runtime.enabled && !host.enabled {
                 return Err("enabled runtime cannot use a disabled host".into());
             }
-            if !safe_id(&runtime.id) || !ids.insert(&runtime.id) {
+            if !safe_id(&runtime.id)
+                || runtime.display_name.trim().is_empty()
+                || !ids.insert(&runtime.id)
+            {
                 return Err("invalid runtime identity or runner boundary".into());
             }
             let variant = match runtime.backend.as_str() {
@@ -185,14 +191,21 @@ fn safe_id(value: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
 }
 
-fn hosted_runner(id: &str) -> DynResult<&'static str> {
-    match id {
-        "darwin-aarch64" => Ok("macos-15"),
-        "linux-x86_64" => Ok("ubuntu-24.04"),
-        "linux-aarch64" => Ok("ubuntu-24.04-arm"),
-        "windows-x86_64" => Ok("windows-2025"),
-        _ => Err("unknown host identity".into()),
-    }
+fn expected_host_runner(id: &str) -> DynResult<Vec<String>> {
+    let runner = match id {
+        "darwin-aarch64" => vec!["self-hosted", "skippy-ephemeral", "macOS", "ARM64"],
+        "linux-x86_64" => vec!["self-hosted", "jy-linux-docker", "Linux", "X64"],
+        "linux-aarch64" => vec![
+            "self-hosted",
+            "skippy-ephemeral",
+            "Linux",
+            "ARM64",
+            "runtime-image",
+        ],
+        "windows-x86_64" => vec!["windows-2025"],
+        _ => return Err("unknown host identity".into()),
+    };
+    Ok(runner.into_iter().map(str::to_owned).collect())
 }
 
 pub fn require_host(host: &Host) -> DynResult<()> {

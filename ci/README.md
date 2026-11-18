@@ -8,14 +8,16 @@ step. Main, tags, manual runs and reusable release/upgrade calls always run it.
 The only source override is the immutable bundle produced by the protected-main
 llama upgrade workflow.
 
-The hosted preflight projects `targets.json` with `jq`; it does not compile the
+The ephemeral JY preflight projects `targets.json` with `jq`; it does not compile the
 Rust automation binary. A Linux CPU quality gate owns Rust lint and tests plus
 the core/API CTest suite. Once that fast gate passes, host builds and a separate
 conditional Linux CPU graph-contract job run in parallel. The graph job owns
 binding and documentation drift, generated-patch replay, and native graph
 contracts. Runtime matrix jobs explicitly disable those graph suites. They
 compile one release runtime, compose it with its exact host producer, and run
-packaged inference on the required device.
+packaged inference on the required device. Ordinary CI compiles CUDA only for
+the compute capabilities reported by its assigned runner. Release validation
+uses the same jobs with the complete architecture lists from `targets.json`.
 
 Graph-sensitive pull-request inputs include the llama pin and patch queues,
 native C++ facade and FFI, family manifests, native build scripts, and rewriter
@@ -24,17 +26,18 @@ changes do not rerun graph shapes. A missing base or head commit, an invalid
 diff, or an unknown path runs the graph contracts.
 
 Ad hoc CI is a full run, not a reduced diagnostic profile. Launch it from the
-Actions UI or with `gh workflow run ci.yml --ref main`. The workflow rejects a
-manual source other than protected `main` before it requests any self-hosted
-runner. Pilot runner groups remain scoped to this repository; the in-workflow
-check does not replace that external repository boundary.
+Actions UI or with `gh workflow run ci.yml --ref main`. Select `release` CUDA
+architecture mode to rehearse the complete release architecture lists. The
+workflow rejects a manual source other than protected `main`. Pilot runner
+groups remain scoped to this repository; the in-workflow check does not replace
+that external repository boundary.
 
 `targets.json` records four backend-neutral hosts and eleven runtime targets.
 Three hosts and eight runtimes are currently enabled for CI and release. All
 Windows targets stay declared but disabled until Windows infrastructure is
-provisioned. CPU work uses GitHub-hosted `ubuntu-24.04`, `ubuntu-24.04-arm` and
-`macos-15`. Metal and CUDA rows require the explicit ephemeral hardware labels
-in that manifest. Compilation never counts as device evidence.
+provisioned. Preflight, CLI, CPU, Metal and CUDA work uses eligible ephemeral JY
+runners. Metal and CUDA rows require the explicit hardware labels in that
+manifest. Compilation never counts as device evidence.
 
 ## Build prerequisites
 
@@ -65,8 +68,8 @@ machines are insufficient. The large family battery additionally requests
 `family-256g`; provision memory and device capacity for the largest admitted
 model and concurrent baseline contexts, not merely the GGUF file size.
 
-Quality and upstream candidate generation are the toolchain-specific exceptions
-to ordinary hosted CPU work. They request any available ephemeral Linux
+Preflight, quality, x86_64 CLI/CPU work and upstream candidate generation request
+available ephemeral Linux
 builder from the repository-scoped `jy-rnr_vfnz8k5p4yrh334` runner group with
 the container-only `jy-linux-docker` label and the `MeshLLM (latest) · CPU`
 environment, LLVM/Clang 22 development and CMake packages, Ninja and lld, with
@@ -104,7 +107,9 @@ device, model or required row fails rather than passing as a skip.
 5. Each runtime lane builds the selected native variant with graph tests disabled,
    verifies its manifest and dependency closure, downloads the matching host,
    composes the exact product, and runs Qwen3 on the required CPU/Metal/CUDA
-   device. Compilation never substitutes for inference evidence.
+   device. Ordinary CUDA lanes compile the assigned runner's detected compute
+   capabilities. Release lanes compile and verify the complete checked-in
+   architecture list. Compilation never substitutes for inference evidence.
 6. The stable `CI` summary accepts successful preflight, quality, host and
    complete runtime-lane results plus either successful graph coverage or its
    classified path-based skip. Failed, cancelled or absent required phases fail

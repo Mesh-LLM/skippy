@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      cuda_architecture_mode:
+        description: Build CUDA for the assigned GPU or the complete release architecture set.
+        type: choice
+        options: [native, release]
+        default: native
   workflow_call:
     inputs:
       artifact_scope:
@@ -15,20 +21,30 @@ on:
       candidate_sha:
         type: string
         default: ''
+      cuda_architecture_mode:
+        type: string
+        default: native
 permissions:
   contents: read
 concurrency:
   group: skippy-ci-${{ github.workflow }}-${{ inputs.artifact_scope || 'ci' }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
+  CARGO_INCREMENTAL: '0'
   CARGO_PROFILE_DEV_DEBUG: '0'
   CARGO_PROFILE_TEST_DEBUG: '0'
   CARGO_PROFILE_RELEASE_DEBUG: '0'
   CARGO_PROFILE_BENCH_DEBUG: '0'
+  SCCACHE_GHA_ENABLED: 'true'
+  SKIPPY_REQUIRE_SCCACHE: '1'
   SKIPPY_ARTIFACT_SCOPE: ${{ inputs.artifact_scope || 'ci' }}
+  SKIPPY_CUDA_ARCHITECTURE_MODE: ${{ inputs.cuda_architecture_mode || 'native' }}
 jobs:
   preflight:
-    runs-on: ubuntu-24.04
+    name: Plan & validate CI
+    runs-on:
+      group: jy-rnr_vfnz8k5p4yrh334
+      labels: [self-hosted, jy-linux-docker, Linux, X64]
     timeout-minutes: 5
     outputs:
       hosts: ${{ steps.plan.outputs.hosts }}
@@ -36,6 +52,16 @@ jobs:
       graph_required: ${{ steps.graph.outputs.graph_required }}
       graph_reason: ${{ steps.graph.outputs.graph_reason }}
     steps:
+      - name: Validate CUDA architecture mode
+        shell: bash
+        run: |
+          case "$SKIPPY_CUDA_ARCHITECTURE_MODE" in
+            native|release) ;;
+            *)
+              echo "::error::CUDA architecture mode must be native or release."
+              exit 1
+              ;;
+          esac
       - name: Admit manual source
         if: github.event_name == 'workflow_dispatch'
         shell: bash
@@ -60,7 +86,7 @@ jobs:
         run: scripts/ci-graph-impact.sh
 
   quality:
-    name: Linux CPU quality gate
+    name: Lint & test Core (Linux CPU)
     needs: preflight
     runs-on:
       group: jy-rnr_vfnz8k5p4yrh334
@@ -77,6 +103,9 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         if: runner.environment == 'github-hosted'
+      - uses: ./.github/actions/sccache
+        with:
+          scope: linux-x86_64-cpu
       - uses: ./.github/actions/source
         with:
           artifact: ${{ inputs.candidate_artifact }}
@@ -87,6 +116,10 @@ jobs:
         run: just ci-contracts
       - name: Run Rust and core API tests once
         run: just test
+      - name: Report compiler cache
+        if: always()
+        shell: bash
+        run: '"$SCCACHE" --show-stats'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: failure()
         with:
@@ -99,7 +132,7 @@ jobs:
           retention-days: 7
 
   graph:
-    name: Linux CPU graph contracts
+    name: Build & test Graph Contracts (Linux CPU)
     needs: [preflight, quality]
     if: needs.preflight.outputs.graph_required == 'true'
     runs-on:
@@ -117,12 +150,19 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         if: runner.environment == 'github-hosted'
+      - uses: ./.github/actions/sccache
+        with:
+          scope: linux-x86_64-cpu
       - uses: ./.github/actions/source
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
       - name: Build Linux CPU llama and run graph contracts once
         run: just llama-check
+      - name: Report compiler cache
+        if: always()
+        shell: bash
+        run: '"$SCCACHE" --show-stats'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: failure()
         with:
@@ -139,6 +179,7 @@ jobs:
           retention-days: 7
 
   host:
+    name: Build & test CLI (${{ matrix.display_name }})
     needs: [preflight, quality]
     strategy:
       fail-fast: true
@@ -151,6 +192,9 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         if: runner.environment == 'github-hosted'
+      - uses: ./.github/actions/sccache
+        with:
+          scope: host-${{ matrix.id }}
       - uses: ./.github/actions/source
         with:
           artifact: ${{ inputs.candidate_artifact }}
@@ -160,6 +204,10 @@ jobs:
         env:
           HOST_ID: ${{ matrix.id }}
         run: just ci-host "$HOST_ID"
+      - name: Report compiler cache
+        if: always()
+        shell: bash
+        run: '"$SCCACHE" --show-stats'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-host-${{ matrix.id }}
@@ -168,6 +216,7 @@ jobs:
           retention-days: 7
 
   runtime:
+    name: Build & test Runtime (${{ matrix.display_name }})
     needs: [preflight, quality, host]
     strategy:
       fail-fast: false
@@ -180,6 +229,9 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         if: runner.environment == 'github-hosted'
+      - uses: ./.github/actions/sccache
+        with:
+          scope: ${{ matrix.id }}-${{ inputs.cuda_architecture_mode || 'native' }}
       - uses: ./.github/actions/source
         with:
           artifact: ${{ inputs.candidate_artifact }}
@@ -206,6 +258,10 @@ jobs:
         env:
           RUNTIME_ID: ${{ matrix.id }}
         run: just ci-smoke "$RUNTIME_ID" "dist/products/$RUNTIME_ID"
+      - name: Report compiler cache
+        if: always()
+        shell: bash
+        run: '"$SCCACHE" --show-stats'
       - name: Retain bounded failure diagnostics
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: failure()

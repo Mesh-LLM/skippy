@@ -10,9 +10,15 @@ jq -e '
     and (.hosts | length == 4)
     and (.runtimes | length == 11)
     and ([.hosts[].id, .runtimes[].id] | length == (unique | length))
-    and all(.hosts[]; (.id | type == "string") and (.runner | length > 0))
+    and all(.hosts[];
+      (.id | type == "string")
+      and (.display_name | type == "string")
+      and (.display_name | length > 0)
+      and (.runner | length > 0))
     and all(.runtimes[];
       (.id | type == "string")
+      and (.display_name | type == "string")
+      and (.display_name | length > 0)
       and (.runner | length > 0)
       and (.host as $host | any($matrix.hosts[]; .id == $host)))
 ' "$matrix" >/dev/null
