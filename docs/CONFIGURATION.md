@@ -21,7 +21,9 @@ section, environment mapping, default, and mode constraint.
 
 Hugging Face cache and authentication follow the standard `HF_HOME`,
 `HF_HUB_CACHE`, `HUGGINGFACE_HUB_CACHE`, and token settings. Remote curated
-catalog reads are disabled unless `SKIPPY_MODEL_CATALOG=namespace/name` is set.
+catalog reads use `meshllm/catalog` by default.
+`SKIPPY_MODEL_CATALOG=namespace/name` selects another Hugging Face dataset
+repository with the same catalog format.
 Layer-package publication also requires `SKIPPY_PACKAGE_BUCKET` and an explicit
 authenticated destination.
 
