@@ -45,6 +45,14 @@ In full qualification, host and runtime producers start after planning alongside
 quality; the final gate requires every producer and smoke result.
 Compilation never counts as device evidence.
 
+The CPU-only `quality` job runs on GitHub-hosted `ubuntu-26.04`, keeping lab
+capacity available for device qualification. This image supplies LLVM/Clang 22;
+the job verifies the compiler and development CMake packages before running the
+existing checks. Missing prerequisites fail the job without installing packages
+or skipping checks. Cargo and CMake compilation use two workers to fit standard
+private-repository hosted capacity. Metal/CUDA runtime and model inference jobs
+retain their dedicated lab routing.
+
 `docs.yml` runs one documentation job when `docs-site/**` changes. On a pull
 request it installs the lockfile, builds Nextra, generates the Pagefind index and
 retains `docs-site/out`, but receives no publication credentials and does not
