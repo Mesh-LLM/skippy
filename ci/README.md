@@ -143,8 +143,6 @@ row fails rather than passing as a skip.
 The [KV cache correctness jobs](../docs/CACHE_CORRECTNESS_GATE.md#run-all-four-kv-architecture-cases)
 use the runners' Hugging Face cache and retain all four fixture results on Metal
 and CUDA.
-The [cache parity verifier](cache-qualification/PARITY.md) evaluates measured
-candidate and baseline trials against the Phase 1 performance thresholds.
 
 ## Artifact flow
 

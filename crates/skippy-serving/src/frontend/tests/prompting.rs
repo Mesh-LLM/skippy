@@ -159,9 +159,6 @@ fn chat_response_from_parsed_message_separates_reasoning_content() {
         matched_prefix_tokens: 0,
         suffix_prefill_tokens: 0,
         cache_hit_kind: None,
-        cache_restore_source: None,
-        cache_disk_payload_bytes_read_total: None,
-        sampled_token_timing: None,
         native_mtp_stats: NativeMtpStats {
             drafted_tokens: 7,
             accepted_tokens: 5,
@@ -229,12 +226,6 @@ fn generated_text_timings_are_present_without_native_mtp() {
         matched_prefix_tokens: 0,
         suffix_prefill_tokens: 0,
         cache_hit_kind: None,
-        cache_restore_source: Some("l2"),
-        cache_disk_payload_bytes_read_total: Some(1024),
-        sampled_token_timing: Some(crate::frontend::generation::SampledTokenTiming {
-            ttft_ms: 21.0,
-            decode_ms: 35.0,
-        }),
         native_mtp_stats: NativeMtpStats::default(),
         native_mtp_decode_telemetry: None,
         verify_window_pipeline_stats: None,
@@ -259,13 +250,6 @@ fn generated_text_timings_are_present_without_native_mtp() {
     assert_eq!(timings.get("draft_n_accepted"), Some(&json!(0)));
     assert_eq!(timings.get("prompt_per_second"), Some(&json!(200.0)));
     assert_eq!(timings.get("predicted_per_second"), Some(&json!(80.0)));
-    assert_eq!(timings.get("sampled_ttft_ms"), Some(&json!(21.0)));
-    assert_eq!(timings.get("sampled_decode_ms"), Some(&json!(35.0)));
-    assert_eq!(timings.get("cache_source"), Some(&json!("l2")));
-    assert_eq!(
-        timings.get("cache_disk_payload_bytes_read_total"),
-        Some(&json!(1024))
-    );
 }
 
 #[test]
@@ -278,9 +262,6 @@ fn generated_text_timings_report_standalone_speculative_totals() {
         matched_prefix_tokens: 0,
         suffix_prefill_tokens: 0,
         cache_hit_kind: None,
-        cache_restore_source: None,
-        cache_disk_payload_bytes_read_total: None,
-        sampled_token_timing: None,
         native_mtp_stats: NativeMtpStats::default(),
         native_mtp_decode_telemetry: None,
         verify_window_pipeline_stats: None,
@@ -345,9 +326,6 @@ fn generated_text_timings_prefer_composite_proposal_totals() {
         matched_prefix_tokens: 0,
         suffix_prefill_tokens: 0,
         cache_hit_kind: None,
-        cache_restore_source: None,
-        cache_disk_payload_bytes_read_total: None,
-        sampled_token_timing: None,
         native_mtp_stats: NativeMtpStats::default(),
         native_mtp_decode_telemetry: Some(NativeMtpDecodeTelemetry::new(options, counters)),
         verify_window_pipeline_stats: None,
@@ -386,9 +364,6 @@ fn split_prefix_cache_hit_is_reported_in_timings() {
         matched_prefix_tokens: 3_456,
         suffix_prefill_tokens: 491,
         cache_hit_kind: Some("chain_prefix"),
-        cache_restore_source: None,
-        cache_disk_payload_bytes_read_total: None,
-        sampled_token_timing: None,
         native_mtp_stats: NativeMtpStats::default(),
         native_mtp_decode_telemetry: None,
         verify_window_pipeline_stats: None,
@@ -822,9 +797,6 @@ fn generated_text_with_logprobs() -> GeneratedText {
         matched_prefix_tokens: 0,
         suffix_prefill_tokens: 0,
         cache_hit_kind: None,
-        cache_restore_source: None,
-        cache_disk_payload_bytes_read_total: None,
-        sampled_token_timing: None,
         native_mtp_stats: NativeMtpStats::default(),
         native_mtp_decode_telemetry: None,
         verify_window_pipeline_stats: None,

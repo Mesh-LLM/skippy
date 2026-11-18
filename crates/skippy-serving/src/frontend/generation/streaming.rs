@@ -5,7 +5,6 @@ use crate::frontend::generation::GenerationCacheStats;
 use crate::frontend::generation::GenerationMetrics;
 use crate::frontend::generation::ParsedChatMessage;
 use crate::frontend::generation::PreparedGenerationPrompt;
-use crate::frontend::generation::SampledTokenTiming;
 use crate::frontend::generation::StageOpenAiBackend;
 use crate::frontend::generation::incremental_text::suffix_delta;
 use crate::frontend::generation::tool_call_stream::ToolCallStreamState;
@@ -363,8 +362,6 @@ where
     stop_searched_len: usize,
     generated_text_bytes: Vec<u8>,
     completion_tokens: usize,
-    sampling_started: Instant,
-    first_and_last_sample: Option<(Instant, Instant)>,
     finish_reason: FinishReason,
     metrics: GenerationMetrics,
     emulation_active: bool,
@@ -398,8 +395,6 @@ where
             stop_searched_len: 0,
             generated_text_bytes: Vec::new(),
             completion_tokens: 0,
-            sampling_started: Instant::now(),
-            first_and_last_sample: None,
             finish_reason: finish_reason_for_generation(true),
             metrics: GenerationMetrics::default(),
             emulation_active: false,
@@ -435,9 +430,6 @@ where
             return Ok(TokenControl::Stop);
         }
         self.metrics.eog_check_ms += eog_timer.elapsed().as_secs_f64() * 1000.0;
-        self.first_and_last_sample
-            .get_or_insert((eog_timer, eog_timer))
-            .1 = eog_timer;
         self.completion_tokens += 1;
         self.emitted_tokens.push(token);
         let detokenize_timer = Instant::now();
@@ -525,14 +517,6 @@ where
             matched_prefix_tokens: cache_stats.matched_prefix_tokens,
             suffix_prefill_tokens: cache_stats.suffix_prefill_tokens,
             cache_hit_kind: cache_stats.hit_kind,
-            cache_restore_source: cache_stats.restore_source,
-            cache_disk_payload_bytes_read_total: None,
-            sampled_token_timing: self.first_and_last_sample.map(|(first, last)| {
-                SampledTokenTiming {
-                    ttft_ms: (first - self.sampling_started).as_secs_f64() * 1000.0,
-                    decode_ms: (last - first).as_secs_f64() * 1000.0,
-                }
-            }),
             native_mtp_stats: cache_stats.native_mtp_stats,
             native_mtp_decode_telemetry: cache_stats.native_mtp_decode_telemetry,
             verify_window_pipeline_stats: cache_stats.verify_window_pipeline_stats,

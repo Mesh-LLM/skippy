@@ -365,7 +365,6 @@ pub(in crate::frontend) struct GenerationCacheStats {
     pub(in crate::frontend) matched_prefix_tokens: u32,
     pub(in crate::frontend) suffix_prefill_tokens: u32,
     pub(in crate::frontend) hit_kind: Option<&'static str>,
-    pub(in crate::frontend) restore_source: Option<&'static str>,
     pub(in crate::frontend) native_mtp_stats: NativeMtpStats,
     pub(in crate::frontend) native_mtp_decode_telemetry:
         Option<crate::frontend::native_mtp::NativeMtpDecodeTelemetry>,
@@ -394,7 +393,6 @@ impl Default for GenerationCacheStats {
             matched_prefix_tokens: 0,
             suffix_prefill_tokens: 0,
             hit_kind: None,
-            restore_source: None,
             native_mtp_stats: NativeMtpStats::default(),
             native_mtp_decode_telemetry: None,
             verify_window_pipeline_stats: None,

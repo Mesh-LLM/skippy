@@ -68,21 +68,14 @@ pub(super) struct Receipt {
 }
 
 pub(crate) fn recipe_digest_at(root: &Path) -> DynResult<String> {
-    digest_source_paths(
-        root,
-        &[
-            "llama_cpp",
-            "scripts/build-llama.sh",
-            "scripts/prepare-llama.sh",
-            "skippy_api",
-            "crates/skippy-ffi",
-        ],
-    )
-}
-
-pub(crate) fn digest_source_paths(root: &Path, inputs: &[&str]) -> DynResult<String> {
     let mut paths = Vec::new();
-    for relative in inputs {
+    for relative in [
+        "llama_cpp",
+        "scripts/build-llama.sh",
+        "scripts/prepare-llama.sh",
+        "skippy_api",
+        "crates/skippy-ffi",
+    ] {
         inventory(root, &root.join(relative), &mut paths)?;
     }
     paths.sort();

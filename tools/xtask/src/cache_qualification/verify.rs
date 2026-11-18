@@ -3,7 +3,6 @@ use super::{
     read_manifest, strings,
 };
 use crate::command::DynResult;
-use serde::Serialize;
 use skippy_model_artifact::kv_fixtures::{KvFixtureManifest, valid_sha256};
 use std::{
     collections::BTreeSet,
@@ -42,44 +41,15 @@ impl Source {
 }
 
 pub(super) fn run(backend: Backend, source: &str, directory: &Path) -> DynResult<()> {
-    assess(backend, source, directory, None)?;
-    println!(
-        "Verified {} correctness evidence for {source}",
-        backend.name()
-    );
-    Ok(())
-}
-
-#[derive(Serialize)]
-pub(crate) struct VerifiedMatrix {
-    summary_sha256: String,
-    reports: Vec<VerifiedReport>,
-}
-
-#[derive(Serialize)]
-struct VerifiedReport {
-    family: String,
-    report_sha256: String,
-    test_executable_sha256: String,
-    reference_binary_sha256: String,
-}
-
-pub(crate) fn assess(
-    backend: Backend,
-    source: &str,
-    directory: &Path,
-    reference: Option<&str>,
-) -> DynResult<VerifiedMatrix> {
     let manifest = fs::read_to_string(MANIFEST)?;
     let digest = artifact::digest(manifest.as_bytes())?;
-    let phase_one = read_manifest(&manifest)?;
+    let fixtures = read_manifest(&manifest)?;
     let directory = directory.canonicalize()?;
-    let summary_bytes = read_file(&directory.join("batch-result.json"))?;
-    let summary: Summary = serde_json::from_slice(&summary_bytes)?;
-    validate_summary(backend, source, &digest, &phase_one, &summary)?;
+    let summary: Summary =
+        serde_json::from_slice(&read_file(&directory.join("batch-result.json"))?)?;
+    validate_summary(backend, source, &digest, &fixtures, &summary)?;
     let staging = tempfile::tempdir()?;
-    let mut reports = Vec::new();
-    for model in &phase_one.models {
+    for model in &fixtures.models {
         let family = model.family.as_str();
         let cell = summary
             .cells
@@ -96,7 +66,7 @@ pub(crate) fn assess(
             return Err(format!("changed correctness report for {family}").into());
         }
         let measured = serde_json::from_slice::<super::Report>(&report)?;
-        let (test_digest, reference_digest) = report_binaries(&measured, reference)?;
+        validate_report_binaries(&measured)?;
         assess_report(backend, model, Ok(()), Some(Ok(measured)))?;
         let staged = staging.path().join(format!("{family}.json"));
         fs::write(&staged, report)?;
@@ -112,45 +82,34 @@ pub(crate) fn assess(
         .map_err(|error| {
             format!("{family} correctness evidence failed offline validation: {error}")
         })?;
-        reports.push(VerifiedReport {
-            family: family.into(),
-            report_sha256: observed_sha,
-            test_executable_sha256: test_digest,
-            reference_binary_sha256: reference_digest,
-        });
     }
-    Ok(VerifiedMatrix {
-        summary_sha256: artifact::digest(&summary_bytes[..])?,
-        reports,
-    })
+    println!(
+        "Verified {} correctness evidence for {source}",
+        backend.name()
+    );
+    Ok(())
 }
 
-fn report_binaries(
-    report: &super::Report,
-    expected_reference: Option<&str>,
-) -> DynResult<(String, String)> {
-    let test = report
+fn validate_report_binaries(report: &super::Report) -> DynResult<()> {
+    report
         .skippy_binary_sha256
         .as_deref()
         .filter(|hash| valid_sha256(hash))
         .ok_or("missing correctness test executable digest")?;
-    let reference = report
+    report
         .reference
         .as_ref()
         .map(|reference| reference.binary_sha256.as_str())
         .filter(|hash| valid_sha256(hash))
         .ok_or("missing correctness reference executable digest")?;
-    if expected_reference.is_some_and(|expected| expected != reference) {
-        return Err("correctness reference binary differs from the frozen parity plan".into());
-    }
-    Ok((test.into(), reference.into()))
+    Ok(())
 }
 
 fn validate_summary(
     backend: Backend,
     source: &str,
     manifest_sha256: &str,
-    phase_one: &KvFixtureManifest,
+    fixtures: &KvFixtureManifest,
     summary: &Summary,
 ) -> DynResult<()> {
     if source.len() != 40
@@ -168,10 +127,10 @@ fn validate_summary(
             "correctness matrix identity does not match the requested source and profile".into(),
         );
     }
-    if summary.status != Status::Pass || summary.cells.len() != phase_one.models.len() {
+    if summary.status != Status::Pass || summary.cells.len() != fixtures.models.len() {
         return Err("correctness matrix lacks a complete passing roster".into());
     }
-    let expected: BTreeSet<_> = phase_one
+    let expected: BTreeSet<_> = fixtures
         .models
         .iter()
         .map(|model| model.family.as_str())
@@ -205,10 +164,8 @@ mod tests {
     use crate::cache_qualification::Cell;
 
     #[test]
-    fn parity_join_checks_the_reference_digest_and_preserves_test_binary_identity() {
+    fn offline_verification_requires_both_executable_digests() {
         let model = KvFixtureManifest::bundled().unwrap().models.remove(0);
-        let candidate = "a".repeat(64);
-        let reference = "b".repeat(64);
         let mut report = super::super::Report {
             schema_version: 9,
             status: Status::Pass,
@@ -216,21 +173,20 @@ mod tests {
             model_sha256: Some(model.sha256.clone()),
             fixture: model,
             error: None,
-            skippy_binary_sha256: Some(candidate.clone()),
+            skippy_binary_sha256: Some("a".repeat(64)),
             reference: Some(super::super::ReferenceIdentity {
-                binary_sha256: reference.clone(),
+                binary_sha256: "b".repeat(64),
             }),
             conversation_results: Default::default(),
             structured_results: Default::default(),
             template_result: None,
         };
-        assert_eq!(
-            report_binaries(&report, Some(&reference)).unwrap(),
-            (candidate.clone(), reference)
-        );
-        assert!(report_binaries(&report, Some(&candidate)).is_err());
+        assert!(validate_report_binaries(&report).is_ok());
+        report.skippy_binary_sha256 = Some("0".repeat(64));
+        assert!(validate_report_binaries(&report).is_err());
+        report.skippy_binary_sha256 = Some("a".repeat(64));
         report.reference = None;
-        assert!(report_binaries(&report, None).is_err());
+        assert!(validate_report_binaries(&report).is_err());
     }
 
     #[test]

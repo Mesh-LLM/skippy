@@ -119,40 +119,6 @@ cache-correctness-verify backend report:
 cache-correctness-verify-matrix backend source report_dir:
     @cargo xtool cache-qualification verify {{ quote(backend) }} {{ quote(source) }} {{ quote(report_dir) }}
 
-cache-parity-plan-identity:
-    @cargo xtool cache-parity plan-identity
-
-cache-parity-verify plan evidence raw_dir:
-    @cargo xtool cache-parity verify {{ quote(plan) }} {{ quote(evidence) }} {{ quote(raw_dir) }}
-
-cache-parity-verify-diagnostic plan evidence raw_dir:
-    @cargo xtool cache-parity verify-diagnostic {{ quote(plan) }} {{ quote(evidence) }} {{ quote(raw_dir) }}
-
-cache-parity-verify-inputs plan evidence raw_dir metal_correctness cuda_correctness output:
-    @cargo xtool cache-parity verify-inputs {{ quote(plan) }} {{ quote(evidence) }} {{ quote(raw_dir) }} {{ quote(metal_correctness) }} {{ quote(cuda_correctness) }} {{ quote(output) }}
-
-cache-parity-summarize-trial raw:
-    @cargo xtool cache-parity summarize-trial "{{ raw }}"
-
-cache-parity-capture-request address request output:
-    @cargo xtool cache-parity capture-request "{{ address }}" "{{ request }}" "{{ output }}"
-
-cache-parity-capture-pairs config request output:
-    @cargo xtool cache-parity capture-pairs "{{ config }}" "{{ request }}" "{{ output }}"
-
-cache-parity-capture-trace config workload output:
-    @cargo xtool cache-parity capture-trace {{ quote(config) }} {{ quote(workload) }} {{ quote(output) }}
-
-cache-parity-make-workload model state shape width output:
-    @cargo xtool cache-parity make-workload {{ quote(model) }} {{ quote(state) }} {{ quote(shape) }} {{ quote(width) }} {{ quote(output) }}
-
-cache-parity-export-trace plan cell capture raw_dir:
-    @cargo xtool cache-parity export-trace {{ quote(plan) }} {{ quote(cell) }} {{ quote(capture) }} {{ quote(raw_dir) }}
-
-[macos]
-cache-parity-build-metal-probe output:
-    @xcrun clang -Wall -Wextra -Werror -fobjc-arc -dynamiclib -framework Metal -framework Foundation tools/xtask/native/metal_memory_probe.m -o {{ quote(output) }}
-
 [unix]
 cache-correctness-native-dir:
     @scripts/build-llama.sh --print-build-dir
