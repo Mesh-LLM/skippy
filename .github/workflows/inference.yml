@@ -1,0 +1,110 @@
+name: Inference qualification
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+    inputs:
+      profile:
+        type: choice
+        options: [pr, nightly, release]
+        default: pr
+  workflow_call:
+    secrets:
+      JIANYANG_INFERENCE_SSH_KEY:
+        required: true
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+concurrency:
+  group: inference-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      source: ${{ steps.admission.outputs.source }}
+      required: ${{ steps.admission.outputs.required }}
+      profile: ${{ steps.admission.outputs.profile }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      # Credentialed controller source always comes from protected main.
+      # Candidate source is never checked out or executed by this workflow.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - id: admission
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFICATION_PROFILE: ${{ inputs.profile || 'release' }}
+        run: just automation-run inference admit
+      - id: matrix
+        if: steps.admission.outputs.required == 'true'
+        env:
+          SOURCE_SHA: ${{ steps.admission.outputs.source }}
+          PROFILE: ${{ steps.admission.outputs.profile }}
+        run: just automation-run inference matrix "$PROFILE" "$SOURCE_SHA"
+  qualification:
+    needs: plan
+    if: needs.plan.outputs.required == 'true'
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ needs.plan.outputs.profile == 'pr' && 45 || 360 }}
+    env:
+      EVIDENCE: target/ci-evidence/inference-${{ matrix.id }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Dispatch and await native Spark qualification
+        env:
+          SOURCE_SHA: ${{ needs.plan.outputs.source }}
+          PROFILE: ${{ needs.plan.outputs.profile }}
+          CONFIGURATION: ${{ matrix.id }}
+          JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
+        run: just automation-run inference dispatch "$PROFILE" "$SOURCE_SHA" "$EVIDENCE" "$CONFIGURATION"
+      - name: Cancel outstanding JY jobs and formations
+        if: cancelled() || failure()
+        env:
+          JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
+        run: |
+          if test -f "$EVIDENCE/jobs.json"; then
+            just inference-cancel "$EVIDENCE/jobs.json"
+          fi
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: inference-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE }}
+          if-no-files-found: error
+          retention-days: 30
+  summary:
+    needs: [plan, qualification]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Publish the source-bound conditional qualification gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source || github.event.pull_request.head.sha || github.sha }}
+          PLAN: ${{ needs.plan.result }}
+          REQUIRED: ${{ needs.plan.outputs.required }}
+          RESULT: ${{ needs.qualification.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: just automation-run inference summary

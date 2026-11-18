@@ -1,5 +1,10 @@
 {
   "schema_version": 1,
+  "enabled_hosts": [
+    "darwin-aarch64",
+    "linux-x86_64",
+    "linux-aarch64"
+  ],
   "hosts": [
     {
       "id": "darwin-aarch64",
@@ -8,10 +13,7 @@
       "os": "macos",
       "arch": "aarch64",
       "runner": [
-        "self-hosted",
-        "skippy-ephemeral",
-        "macOS",
-        "ARM64"
+        "macos-15"
       ]
     },
     {
@@ -21,10 +23,7 @@
       "os": "linux",
       "arch": "x86_64",
       "runner": [
-        "self-hosted",
-        "jy-linux-docker",
-        "Linux",
-        "X64"
+        "ubuntu-24.04"
       ]
     },
     {
@@ -34,11 +33,7 @@
       "os": "linux",
       "arch": "aarch64",
       "runner": [
-        "self-hosted",
-        "skippy-ephemeral",
-        "Linux",
-        "ARM64",
-        "runtime-image"
+        "ubuntu-24.04-arm"
       ]
     },
     {
@@ -62,10 +57,7 @@
       "toolkit": "",
       "gpu_architectures": "",
       "runner": [
-        "self-hosted",
-        "skippy-ephemeral",
-        "macOS",
-        "ARM64"
+        "macos-15"
       ]
     },
     {
@@ -81,7 +73,8 @@
         "macOS",
         "ARM64",
         "metal"
-      ]
+      ],
+      "runner_group": "jy-rnr_h7x5s2yx9gtkz3c"
     },
     {
       "id": "linux-x86_64-cpu",
@@ -91,10 +84,7 @@
       "toolkit": "",
       "gpu_architectures": "",
       "runner": [
-        "self-hosted",
-        "jy-linux-docker",
-        "Linux",
-        "X64"
+        "ubuntu-24.04"
       ]
     },
     {
@@ -111,7 +101,8 @@
         "X64",
         "runtime-image",
         "cuda12"
-      ]
+      ],
+      "runner_group": "jy-rnr_btc4xhvks1eer0j"
     },
     {
       "id": "linux-x86_64-cuda13",
@@ -127,7 +118,8 @@
         "X64",
         "runtime-image",
         "cuda13"
-      ]
+      ],
+      "runner_group": "jy-rnr_p0zx3thw895vrka"
     },
     {
       "id": "linux-aarch64-cpu",
@@ -137,11 +129,7 @@
       "toolkit": "",
       "gpu_architectures": "",
       "runner": [
-        "self-hosted",
-        "skippy-ephemeral",
-        "Linux",
-        "ARM64",
-        "runtime-image"
+        "ubuntu-24.04-arm"
       ]
     },
     {
@@ -158,7 +146,8 @@
         "ARM64",
         "runtime-image",
         "cuda12"
-      ]
+      ],
+      "runner_group": "jy-rnr_pg90ves41xbxvwy"
     },
     {
       "id": "linux-aarch64-cuda13",
@@ -174,7 +163,8 @@
         "ARM64",
         "runtime-image",
         "cuda13"
-      ]
+      ],
+      "runner_group": "jy-rnr_8gvzbe9b9d79y0k"
     },
     {
       "id": "windows-x86_64-cpu",

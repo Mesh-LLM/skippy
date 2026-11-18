@@ -24,6 +24,8 @@ pub struct Runtime {
     pub toolkit: String,
     pub gpu_architectures: String,
     pub runner: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runner_group: Option<String>,
     #[serde(default = "enabled")]
     pub enabled: bool,
 }
@@ -31,14 +33,27 @@ pub struct Runtime {
 #[serde(deny_unknown_fields)]
 pub struct Matrix {
     pub schema_version: u32,
+    #[serde(default)]
+    enabled_hosts: Option<Vec<String>>,
     pub hosts: Vec<Host>,
     pub runtimes: Vec<Runtime>,
 }
 
 impl Matrix {
     pub fn load() -> DynResult<Self> {
-        let matrix: Self = serde_json::from_slice(&std::fs::read("ci/targets.json")?)?;
+        Self::from_json(&std::fs::read_to_string("ci/targets.json")?)
+    }
+    pub(crate) fn from_json(text: &str) -> DynResult<Self> {
+        let mut matrix: Self = serde_json::from_str(text)?;
         matrix.validate()?;
+        if let Some(enabled) = &matrix.enabled_hosts {
+            matrix.hosts.retain(|host| enabled.contains(&host.id));
+            matrix
+                .runtimes
+                .retain(|runtime| enabled.contains(&runtime.host));
+        }
+        matrix.hosts.retain(|host| host.enabled);
+        matrix.runtimes.retain(|runtime| runtime.enabled);
         Ok(matrix)
     }
     pub fn host(&self, id: &str) -> DynResult<&Host> {
@@ -69,6 +84,17 @@ impl Matrix {
                 || !valid_host_identity(host)
             {
                 return Err("invalid host identity or runner boundary".into());
+            }
+        }
+        if let Some(enabled) = &self.enabled_hosts {
+            let selected = enabled.iter().collect::<BTreeSet<_>>();
+            if selected.is_empty()
+                || selected.len() != enabled.len()
+                || selected
+                    .iter()
+                    .any(|id| !self.hosts.iter().any(|host| &host.id == *id))
+            {
+                return Err("enabled_hosts must select unique, defined hosts".into());
             }
         }
         let mut variants = BTreeSet::new();
@@ -108,6 +134,17 @@ impl Matrix {
                 return Err(
                     "runtime runner labels do not match its exact OS/architecture/backend".into(),
                 );
+            }
+            if let Some(group) = &runtime.runner_group
+                && (runtime.runner.first().map(String::as_str) != Some("self-hosted")
+                    || !group.strip_prefix("jy-rnr_").is_some_and(|id| {
+                        !id.is_empty()
+                            && id
+                                .chars()
+                                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+                    }))
+            {
+                return Err("runner groups require self-hosted JY runner labels".into());
             }
             if !variants.insert((runtime.host.as_str(), variant)) {
                 return Err("duplicate runtime variant".into());
@@ -193,19 +230,44 @@ fn safe_id(value: &str) -> bool {
 
 fn expected_host_runner(id: &str) -> DynResult<Vec<String>> {
     let runner = match id {
-        "darwin-aarch64" => vec!["self-hosted", "skippy-ephemeral", "macOS", "ARM64"],
-        "linux-x86_64" => vec!["self-hosted", "jy-linux-docker", "Linux", "X64"],
-        "linux-aarch64" => vec![
-            "self-hosted",
-            "skippy-ephemeral",
-            "Linux",
-            "ARM64",
-            "runtime-image",
-        ],
-        "windows-x86_64" => vec!["windows-2025"],
+        "darwin-aarch64" => "macos-15",
+        "linux-x86_64" => "ubuntu-24.04",
+        "linux-aarch64" => "ubuntu-24.04-arm",
+        "windows-x86_64" => "windows-2025",
         _ => return Err("unknown host identity".into()),
     };
-    Ok(runner.into_iter().map(str::to_owned).collect())
+    Ok(vec![runner.to_owned()])
+}
+
+#[derive(Serialize)]
+pub(crate) struct RunnerSelection {
+    group: &'static str,
+    labels: &'static [&'static str],
+}
+
+pub(crate) fn release_runner(host: &Host) -> DynResult<RunnerSelection> {
+    let selection = match host.id.as_str() {
+        "darwin-aarch64" => RunnerSelection {
+            group: "jy-rnr_h7x5s2yx9gtkz3c",
+            labels: &["self-hosted", "skippy-ephemeral", "macOS", "ARM64"],
+        },
+        "linux-x86_64" => RunnerSelection {
+            group: "jy-rnr_vfnz8k5p4yrh334",
+            labels: &["self-hosted", "jy-linux-docker", "Linux", "X64"],
+        },
+        "linux-aarch64" => RunnerSelection {
+            group: "jy-rnr_8gvzbe9b9d79y0k",
+            labels: &[
+                "self-hosted",
+                "skippy-ephemeral",
+                "Linux",
+                "ARM64",
+                "runtime-image",
+            ],
+        },
+        _ => return Err(format!("no JY release runner is configured for {}", host.id).into()),
+    };
+    Ok(selection)
 }
 
 pub fn require_host(host: &Host) -> DynResult<()> {
@@ -226,6 +288,39 @@ pub fn require_host(host: &Host) -> DynResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn windows_definitions_are_retained_but_not_activated() {
+        let text = include_str!("../../../../ci/targets.json");
+        let raw: Matrix = serde_json::from_str(text).unwrap();
+        assert_eq!(raw.hosts.len(), 4);
+        assert_eq!(raw.runtimes.len(), 11);
+        let active = Matrix::from_json(text).unwrap();
+        assert_eq!(active.hosts.len(), 3);
+        assert_eq!(active.runtimes.len(), 8);
+        assert!(active.hosts.iter().all(|host| host.os != "windows"));
+        assert!(
+            active
+                .runtimes
+                .iter()
+                .all(|runtime| !runtime.host.starts_with("windows"))
+        );
+        let mut restored = raw;
+        restored.enabled_hosts = None;
+        restored.validate().unwrap();
+    }
+    #[test]
+    fn enabled_selection_rejects_empty_unknown_and_duplicate_hosts() {
+        for enabled in [
+            vec![],
+            vec!["unknown"],
+            vec!["linux-x86_64", "linux-x86_64"],
+        ] {
+            let mut matrix: Matrix =
+                serde_json::from_str(include_str!("../../../../ci/targets.json")).unwrap();
+            matrix.enabled_hosts = Some(enabled.into_iter().map(str::to_owned).collect());
+            assert!(matrix.validate().is_err());
+        }
+    }
     #[test]
     fn rejects_missing_or_duplicate_runtime() {
         let mut matrix: Matrix =

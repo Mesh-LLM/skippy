@@ -19,9 +19,11 @@ never changes versions or pushes source. Tags created with an ordinary workflow
 App if tag creation is automated.
 
 `release.yml` checks the tag against the committed Cargo version and main
-ancestry, then calls the same `ci.yml` used by PRs and main in release CUDA
-architecture mode. Admission, qualification and publication are constrained to
-the repository-scoped JY runner group while retaining each job's exact platform
+ancestry. It then runs full artifact qualification and the source-bound
+inference ladder in parallel; publication requires both. Admission and
+publication use the generic JY Linux builder. The same `ci.yml` used by PRs and
+main projects hosted work onto platform-specific JY groups in release CUDA
+architecture mode, while Metal and CUDA jobs retain their exact hardware groups
 and backend labels. It requires all three enabled hosts and eight complete
 bundles. Windows targets remain declared but disabled until infrastructure is
 available:

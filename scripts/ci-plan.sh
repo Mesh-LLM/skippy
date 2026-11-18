@@ -23,26 +23,8 @@ jq -e '
       and (.host as $host | any($matrix.hosts[]; .id == $host)))
 ' "$matrix" >/dev/null
 
-jy_runners="${SKIPPY_CI_JY_RUNNERS:-false}"
-case "$jy_runners" in
-  true)
-    runner_group="jy-rnr_vfnz8k5p4yrh334"
-    hosts="$(jq -c --arg group "$runner_group" \
-      '{include: [.hosts[] | select(.enabled != false) | .runner = {group: $group, labels: .runner}]}' \
-      "$matrix")"
-    runtimes="$(jq -c --arg group "$runner_group" \
-      '{include: [.runtimes[] | select(.enabled != false) | .runner = {group: $group, labels: .runner}]}' \
-      "$matrix")"
-    ;;
-  false)
-    hosts="$(jq -c '{include: [.hosts[] | select(.enabled != false)]}' "$matrix")"
-    runtimes="$(jq -c '{include: [.runtimes[] | select(.enabled != false)]}' "$matrix")"
-    ;;
-  *)
-    printf 'SKIPPY_CI_JY_RUNNERS must be true or false, got %q\n' "$jy_runners" >&2
-    exit 1
-    ;;
-esac
+hosts="$(jq -c '{include: [.hosts[] | select(.enabled != false)]}' "$matrix")"
+runtimes="$(jq -c '{include: [.runtimes[] | select(.enabled != false)]}' "$matrix")"
 printf '%s\n' "$(jq -cn --argjson hosts "$hosts" --argjson runtimes "$runtimes" '{hosts: $hosts, runtimes: $runtimes}')"
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then

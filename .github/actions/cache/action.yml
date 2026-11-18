@@ -1,0 +1,24 @@
+name: Restore Skippy build caches
+description: Cache Cargo artifacts and compiler results without replacing qualification evidence.
+runs:
+  using: composite
+  steps:
+    - name: Configure bounded compiler caching
+      shell: bash
+      run: |
+        echo "SCCACHE_DIR=$HOME/.cache/sccache" >> "$GITHUB_ENV"
+        echo "SCCACHE_BASEDIRS=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+        echo 'SCCACHE_CACHE_SIZE=5G' >> "$GITHUB_ENV"
+    - name: Restore Rust dependencies and build outputs
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target/debug
+          skippy-api-rs/target/debug
+          ~/.cache/sccache
+        key: rust-v3-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ matrix.id || 'tools' }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', '.cargo/config.toml', 'Justfile', 'scripts/cargo-linker*', 'scripts/build-llama.sh', 'llama_cpp/upstream.txt', 'llama_cpp/patches/**/*.patch') }}
+        restore-keys: |
+          rust-v3-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ matrix.id || 'tools' }}-
+          rust-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ matrix.id || 'tools' }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-

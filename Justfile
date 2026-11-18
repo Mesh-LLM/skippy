@@ -92,6 +92,9 @@ llama-build: llama-prepare
 skippy-ffi-bindgen-check: llama-prepare
     @SKIPPY_FFI_BINDGEN=check SKIPPY_FFI_BINDGEN_SELFTEST=1 cargo check -p skippy-ffi
 
+skippy-ffi-bindgen: llama-prepare
+    @SKIPPY_FFI_BINDGEN=regen cargo check --locked -p skippy-ffi
+
 skippy-api-test:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -117,8 +120,57 @@ llama-check: skippy-ffi-bindgen-check
     LLAMA_STAGE_BUILD_DIR="$build_dir" scripts/check-skippy-generated-family-patch.sh
     cargo xtool automation native-generator contracts api-doc --check
 
+ci-plan:
+    @cargo xtool ci plan
+
+inference-plan profile source output="target/ci-evidence/inference-plan.json":
+    @cargo xtool inference plan "{{ profile }}" "{{ source }}" "{{ output }}"
+
+inference-contracts:
+    @cargo test --locked -p xtask inference::
+
+inference-dispatch profile source output="target/ci-evidence/inference":
+    @cargo xtool inference dispatch "{{ profile }}" "{{ source }}" "{{ output }}"
+
+inference-execute profile model mode:
+    @cargo xtool inference execute "{{ profile }}" "{{ model }}" "{{ mode }}"
+
+inference-cancel ledger="target/ci-evidence/inference/jobs.json":
+    @cargo xtool inference cancel "{{ ledger }}"
+
+inference-build:
+    @cargo xtool inference build
+
+inference-build-uncached:
+    @command -v hf uv nvidia-smi
+    @SCCACHE_BASEDIRS="$PWD" LLAMA_STAGE_BACKEND=cuda LLAMA_STAGE_CUDA_ARCHITECTURES=121 LLAMA_STAGE_LINK_MODE=static just llama-build
+    @LLAMA_STAGE_BACKEND=cuda LLAMA_STAGE_CUDA_ARCHITECTURES=121 LLAMA_STAGE_LINK_MODE=static cargo build --locked -p skippy-cli -p skippy-correctness
+
+inference-tool-check:
+    @cargo check --locked -p xtask
+    @cargo clippy --locked -p xtask --all-targets -- -D warnings
+    @cargo test --locked -p xtask
+
+inference-format:
+    @rustfmt --edition 2024 tools/xtask/src/inference.rs tools/xtask/src/inference/tests.rs
+
+# Linux diagnostic: retain all MiMo2 graph assertions and report peak memory.
+native-contract-build: llama-prepare
+    @LLAMA_STAGE_BACKEND=cpu LLAMA_STAGE_LINK_MODE=static LLAMA_STAGE_BUILD_TESTS=ON scripts/build-llama.sh --build-only
+
+native-mimo2-contract:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export LLAMA_STAGE_BACKEND=cpu LLAMA_STAGE_LINK_MODE=static LLAMA_STAGE_BUILD_TESTS=ON
+    build_dir="$(scripts/build-llama.sh --print-build-dir)"
+    ctest --test-dir "$build_dir" -R '^skippy_generate_contract_mimo2$' --output-on-failure --no-tests=error
+    /usr/bin/time -v ctest --test-dir "$build_dir" -R '^skippy_graph_contract_mimo2$' --output-on-failure --no-tests=error
+
 ci-contracts:
     @cargo xtool ci contracts
+
+ci-summary:
+    @cargo xtool ci summary
 
 ci-host host:
     @cargo xtool ci host "{{ host }}"
