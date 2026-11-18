@@ -118,16 +118,24 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         if: runner.environment == 'github-hosted'
-      - uses: ./.github/actions/cache
-        if: runner.environment == 'self-hosted'
-      - uses: ./.github/actions/sccache
         with:
-          scope: quality-${{ runner.os }}-${{ runner.arch }}
+          cache: 'false'
       - uses: ./.github/actions/source
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/cache
+        with:
+          scope: quality-native
+          download-scope: quality
+          build-paths: |
+            target/debug
+            skippy-api-rs/target/debug
+      - uses: ./.github/actions/sccache
+        with:
+          scope: quality-${{ runner.os }}-${{ runner.arch }}
       - run: just ci-contracts
+      - uses: ./.github/actions/native-source
       - run: just llama-prepare
       - run: just skippy-ffi-bindgen-check
       - run: just lint
@@ -165,13 +173,22 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         if: runner.environment == 'github-hosted'
-      - uses: ./.github/actions/sccache
         with:
-          scope: host-${{ matrix.id }}
+          cache: 'false'
       - uses: ./.github/actions/source
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/cache
+        with:
+          scope: host-${{ matrix.id }}-backend-neutral
+          download-scope: host
+          build-paths: |
+            target/debug
+            target/release
+      - uses: ./.github/actions/sccache
+        with:
+          scope: host-${{ matrix.id }}
       - name: Build backend-neutral host
         shell: bash
         env:

@@ -15,15 +15,17 @@ runs:
   steps:
     - uses: ./.github/actions/setup
       if: runner.environment == 'github-hosted'
-    - uses: ./.github/actions/cache
-      if: runner.environment == 'self-hosted'
-    - uses: ./.github/actions/sccache
       with:
-        scope: ${{ inputs.runtime_id }}-${{ env.SKIPPY_CUDA_ARCHITECTURE_MODE }}
+        cache: 'false'
     - uses: ./.github/actions/source
       with:
         artifact: ${{ inputs.candidate_artifact }}
         sha: ${{ inputs.candidate_sha }}
+    - uses: ./.github/actions/cache
+    - uses: ./.github/actions/sccache
+      with:
+        scope: ${{ inputs.runtime_id }}-${{ env.SKIPPY_CUDA_ARCHITECTURE_MODE }}
+    - uses: ./.github/actions/native-source
     - name: Build native runtime
       shell: bash
       env:
