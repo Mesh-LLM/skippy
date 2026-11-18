@@ -1,11 +1,11 @@
-use super::{Backend, Inputs, execution, existing_input, strings};
+use super::{Backend, Fixtures, Inputs, execution, existing_input, strings};
 use crate::command::DynResult;
 use std::{
     env, fs,
     path::{Path, PathBuf},
 };
 
-pub(super) fn build(backend: Backend, output: &Path, fixtures: PathBuf) -> DynResult<Inputs> {
+pub(super) fn build(backend: Backend, output: &Path, fixtures: Fixtures) -> DynResult<Inputs> {
     let mut environment = vec![
         ("LLAMA_STAGE_BACKEND", backend.runtime_backend().to_owned()),
         ("LLAMA_STAGE_LINK_MODE", "static".into()),

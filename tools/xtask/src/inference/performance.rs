@@ -1,5 +1,5 @@
 use super::*;
-use crate::execution;
+use crate::{execution, huggingface};
 pub fn run(
     profile: &str,
     key: &str,
@@ -7,16 +7,13 @@ pub fn run(
     out: &Path,
     fixture: &super::artifacts::Fixture,
 ) -> DynResult<()> {
-    let mut tokenizer_args = vec![
-        "download".into(),
-        fixture.tokenizer_repo.clone(),
-        "--revision".into(),
-        fixture.tokenizer_revision.clone(),
-        "--quiet".into(),
-    ];
-    tokenizer_args.extend(fixture.tokenizer_files.iter().cloned());
-    let tokenizer = execution::capture_for("hf", &tokenizer_args, &[], 600)?;
-    let tokenizer = super::artifacts::downloaded_path(&tokenizer)?;
+    let files: Vec<_> = fixture.tokenizer_files.iter().map(String::as_str).collect();
+    let tokenizer = huggingface::download(
+        &fixture.tokenizer_repo,
+        &fixture.tokenizer_revision,
+        &files,
+        600,
+    )?;
     for file in &fixture.tokenizer_files {
         if std::fs::metadata(tokenizer.join(file))?.len() == 0 {
             return Err("empty pinned tokenizer asset".into());

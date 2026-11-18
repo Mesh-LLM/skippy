@@ -4,6 +4,7 @@ use crate::{
     artifact,
     command::DynResult,
     execution::{self, strings},
+    huggingface,
 };
 use serde::{Deserialize, Serialize};
 use skippy_model_artifact::support::{PhaseOneFixture, PhaseOneManifest, valid_sha256};
@@ -84,14 +85,46 @@ pub(crate) fn read_manifest(body: &str) -> DynResult<PhaseOneManifest> {
 }
 
 struct Inputs {
-    fixtures: PathBuf,
+    fixtures: Fixtures,
     reference: PathBuf,
     native_build: PathBuf,
 }
 
+enum Fixtures {
+    Directory(PathBuf),
+    HuggingFace,
+}
+
+impl Fixtures {
+    fn resolve(&self, model: &PhaseOneFixture) -> DynResult<PathBuf> {
+        let path = match self {
+            Self::Directory(directory) => directory.join(&model.file),
+            Self::HuggingFace => {
+                huggingface::download(&model.repo, &model.revision, &[&model.file], 1800)?
+            }
+        };
+        if !path.is_file() {
+            return Err(format!("missing pinned fixture {}", path.display()).into());
+        }
+        Ok(path)
+    }
+}
+
 impl Inputs {
-    fn load(backend: Backend, output: &Path, prepare_builds: bool) -> DynResult<Self> {
-        let fixtures = existing_input("SKIPPY_CACHE_QUAL_FIXTURE_DIR", Path::is_dir)?;
+    fn load(
+        backend: Backend,
+        output: &Path,
+        prepare_builds: bool,
+        download: bool,
+    ) -> DynResult<Self> {
+        let fixtures = if download {
+            Fixtures::HuggingFace
+        } else {
+            Fixtures::Directory(existing_input(
+                "SKIPPY_CACHE_QUAL_FIXTURE_DIR",
+                Path::is_dir,
+            )?)
+        };
         if prepare_builds {
             return prepare::build(backend, output, fixtures);
         }
@@ -166,15 +199,18 @@ struct Summary {
 }
 
 pub fn run(args: &[String]) -> DynResult<()> {
-    let (backend, output, prepare_builds) = match args {
+    let (backend, output, prepare_builds, download) = match args {
         [command, backend, source, directory] if command == "verify" => {
             return verify::run(Backend::parse(backend)?, source, Path::new(directory));
         }
-        [backend, output] => (backend, output, false),
-        [backend, output, flag] if flag == "--build" => (backend, output, true),
+        [backend, output] => (backend, output, false, false),
+        [backend, output, flag] if flag == "--build" => (backend, output, true, false),
+        [backend, output, build, hf] if build == "--build" && hf == "--hf" => {
+            (backend, output, true, true)
+        }
         _ => {
             return Err(
-                "usage: cache-qualification {metal|cuda|cuda-arm64} FRESH_REPORT_DIR [--build] | verify {metal|cuda|cuda-arm64} SOURCE_SHA REPORT_DIR".into(),
+                "usage: cache-qualification {metal|cuda|cuda-arm64} FRESH_REPORT_DIR [--build [--hf]] | verify {metal|cuda|cuda-arm64} SOURCE_SHA REPORT_DIR".into(),
             );
         }
     };
@@ -185,7 +221,7 @@ pub fn run(args: &[String]) -> DynResult<()> {
     let manifest_bytes = fs::read_to_string(MANIFEST)?;
     let manifest = read_manifest(&manifest_bytes)?;
     let start = verify::Source::capture(&output)?;
-    let inputs = Inputs::load(backend, &output, prepare_builds);
+    let inputs = Inputs::load(backend, &output, prepare_builds, download);
     let cells = manifest
         .models
         .iter()
@@ -223,15 +259,10 @@ pub fn run(args: &[String]) -> DynResult<()> {
 }
 
 fn run_cell(backend: Backend, output: &Path, model: &PhaseOneFixture, inputs: &Inputs) -> Cell {
-    let fixture = inputs.fixtures.join(&model.file);
-    if !fixture.is_file() {
-        return failure(
-            model,
-            None,
-            None,
-            format!("missing pinned fixture {}", fixture.display()),
-        );
-    }
+    let fixture = match inputs.fixtures.resolve(model) {
+        Ok(path) => path,
+        Err(error) => return failure(model, None, None, error.to_string()),
+    };
     let family = model.family.as_str();
     let directory = output.join(family);
     let relative_report = PathBuf::from(family).join("result.json");

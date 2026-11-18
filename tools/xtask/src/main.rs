@@ -6,6 +6,7 @@ mod ci;
 mod command;
 mod execution;
 mod fixture_paths;
+mod huggingface;
 mod inference;
 mod native;
 mod release;

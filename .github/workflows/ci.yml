@@ -510,7 +510,6 @@ jobs:
       - uses: ./.github/actions/ci-cache-correctness
         with:
           backend: metal
-          fixtures: ${{ vars.SKIPPY_CACHE_QUAL_METAL_FIXTURE_DIR }}
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   cache_correctness_cuda:
@@ -529,7 +528,6 @@ jobs:
       - uses: ./.github/actions/ci-cache-correctness
         with:
           backend: cuda-arm64
-          fixtures: ${{ vars.SKIPPY_CACHE_QUAL_CUDA_FIXTURE_DIR }}
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   summary:

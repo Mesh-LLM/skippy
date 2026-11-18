@@ -128,8 +128,9 @@ development packages cannot run these gates; no job downloads system packages
 to disguise that prerequisite.
 
 Qwen3 dense smoke preparation is explicit: `just automation-run ci model-fetch`
-resolves the immutable public model URL and verifies the family manifest's size
-and SHA-256. A runner-provided `SKIPPY_CI_MODEL` is verified without downloading.
+uses `hf download` with the pinned revision and verifies the family manifest's
+size and SHA-256. The Hugging Face cache follows the runner's environment.
+A runner-provided `SKIPPY_CI_MODEL` is verified without downloading.
 This command sets the path for subsequent Actions steps; locally export the path
 before running `just ci-smoke`. Default `just test` does not download models.
 
@@ -139,8 +140,9 @@ GPU layer offload for Metal/CUDA. Shutdown must be graceful. Product artifacts
 include logs and source-bound smoke evidence. A missing device, model or required
 row fails rather than passing as a skip.
 
-The separate [KV cache correctness workflow](../docs/CACHE_CORRECTNESS_GATE.md#run-all-four-model-families)
-retains all four family results on the Metal and CUDA qualification runners.
+The [KV cache correctness jobs](../docs/CACHE_CORRECTNESS_GATE.md#run-all-four-model-families)
+use the runners' Hugging Face cache and retain all four family results on Metal
+and CUDA.
 The [cache parity verifier](cache-qualification/PARITY.md) evaluates measured
 candidate and baseline trials against the Phase 1 performance thresholds.
 

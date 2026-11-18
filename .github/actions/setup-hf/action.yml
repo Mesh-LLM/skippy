@@ -1,0 +1,19 @@
+name: Prepare Hugging Face CLI
+description: Supply the hf command when it is missing from the runner.
+runs:
+  using: composite
+  steps:
+    - name: Set up hf
+      shell: bash
+      run: |
+        if command -v hf >/dev/null; then
+          exit 0
+        fi
+        venv="$RUNNER_TEMP/skippy-hf"
+        python3 -m venv "$venv"
+        bin="$venv/bin"
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          bin="$venv/Scripts"
+        fi
+        "$bin/python" -m pip install --disable-pip-version-check 'huggingface-hub==1.33.0'
+        echo "$bin" >> "$GITHUB_PATH"

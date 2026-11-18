@@ -2,7 +2,7 @@ use super::{
     artifacts, execution,
     matrix::{Matrix, require_host},
 };
-use crate::command::DynResult;
+use crate::{command::DynResult, huggingface};
 use process_supervision::{
     Cancellation, ObservedLine, OutputFiles, Probe, ProbeContext, ProbeDecision, ReadinessProbe,
 };
@@ -65,7 +65,7 @@ pub fn run(id: &str, input: &Path) -> DynResult<()> {
     artifacts::verify(&product, "product", &host.target, id)?;
     let model = std::env::var("SKIPPY_CI_MODEL")
         .map_err(|_| "SKIPPY_CI_MODEL must point at the pinned Qwen3 dense fixture")?;
-    verify_model(Path::new(&model))?;
+    SmokeFixture::load()?.verify(Path::new(&model))?;
     let binary = artifacts::binary(&product, &host.os);
     execution::run(
         &binary.to_string_lossy(),
@@ -216,64 +216,70 @@ fn request_inference(endpoint: &str, stop: &AtomicBool) -> DynResult<serde_json:
     Ok(response)
 }
 
-fn verify_model(path: &Path) -> DynResult<()> {
-    let manifest: serde_json::Value =
-        serde_json::from_slice(&fs::read("ci/llama-canary/family-certified.json")?)?;
-    let model = manifest["models"]
-        .as_array()
-        .ok_or("missing family roster")?
-        .iter()
-        .find(|row| row["family"] == "qwen3-dense")
-        .ok_or("missing Qwen3 dense fixture")?;
-    let filename = model["artifact"]["files"][0]
-        .as_str()
-        .ok_or("missing fixture filename")?;
-    let identity = &model["artifact"]["file_integrity"][filename];
-    if Some(fs::metadata(path)?.len()) != identity["size_bytes"].as_u64()
-        || Some(artifacts::digest(path)?.as_str()) != identity["blob_id"].as_str()
-    {
-        return Err("Qwen3 fixture size or SHA-256 mismatch".into());
+struct SmokeFixture {
+    repo: String,
+    revision: String,
+    filename: String,
+    size: u64,
+    sha256: String,
+}
+
+impl SmokeFixture {
+    fn load() -> DynResult<Self> {
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read("ci/llama-canary/family-certified.json")?)?;
+        let artifact = &manifest["models"]
+            .as_array()
+            .ok_or("missing family roster")?
+            .iter()
+            .find(|row| row["family"] == "qwen3-dense")
+            .ok_or("missing Qwen3 dense fixture")?["artifact"];
+        let filename = artifact["files"][0]
+            .as_str()
+            .ok_or("missing fixture filename")?;
+        let identity = &artifact["file_integrity"][filename];
+        Ok(Self {
+            repo: artifact["repo"]
+                .as_str()
+                .ok_or("missing fixture repo")?
+                .into(),
+            revision: artifact["revision"]
+                .as_str()
+                .ok_or("missing fixture revision")?
+                .into(),
+            filename: filename.into(),
+            size: identity["size_bytes"]
+                .as_u64()
+                .ok_or("missing fixture size")?,
+            sha256: identity["blob_id"]
+                .as_str()
+                .ok_or("missing fixture SHA-256")?
+                .into(),
+        })
     }
-    Ok(())
+
+    fn verify(&self, path: &Path) -> DynResult<()> {
+        if fs::metadata(path)?.len() != self.size || artifacts::digest(path)? != self.sha256 {
+            return Err("Qwen3 fixture size or SHA-256 mismatch".into());
+        }
+        Ok(())
+    }
 }
 
 pub fn prepare_model() -> DynResult<()> {
     use std::io::Write;
+    let fixture = SmokeFixture::load()?;
     let destination = if let Some(path) = std::env::var_os("SKIPPY_CI_MODEL") {
         std::path::PathBuf::from(path)
     } else {
-        let root = Path::new("target/ci-models");
-        fs::create_dir_all(root)?;
-        let destination = root.join("Qwen3-0.6B-Q8_0.gguf");
-        if !destination.exists() {
-            let input = tempfile::NamedTempFile::new_in(root)?;
-            execution::run(
-                "curl",
-                &execution::strings(&[
-                    "--fail",
-                    "--location",
-                    "--proto",
-                    "=https",
-                    "--max-time",
-                    "900",
-                    "--output",
-                    &input.path().to_string_lossy(),
-                    "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/23749fefcc72300e3a2ad315e1317431b06b590a/Qwen3-0.6B-Q8_0.gguf",
-                ]),
-                &[],
-                960,
-            )?;
-            verify_model(input.path())?;
-            input.persist(&destination)?;
-        }
-        destination
+        huggingface::download(&fixture.repo, &fixture.revision, &[&fixture.filename], 960)?
     };
-    verify_model(&destination)?;
+    fixture.verify(&destination)?;
     if let Some(path) = std::env::var_os("GITHUB_ENV") {
         writeln!(
             fs::OpenOptions::new().append(true).open(path)?,
             "SKIPPY_CI_MODEL={}",
-            destination.canonicalize()?.display()
+            std::path::absolute(&destination)?.display()
         )?;
     }
     Ok(())

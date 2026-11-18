@@ -117,10 +117,9 @@ diagnostics.
 The main CI workflow runs all four families on isolated Metal and Linux Arm64
 CUDA runners for source-changing pull requests, merge groups, and pushes to
 `main`. Full CI always requires both jobs, including nightly, release and llama
-upgrade runs. Configure
-`SKIPPY_CACHE_QUAL_METAL_FIXTURE_DIR` and `SKIPPY_CACHE_QUAL_CUDA_FIXTURE_DIR` as
-repository variables pointing to the pinned read-only fixtures on those
-runners. The jobs run in parallel, build once per job for all four models, and
+upgrade runs. The jobs use `hf download` with each fixture's pinned revision
+and reuse the runners' default Hugging Face cache on the NAS. The jobs run in
+parallel, build once per job for all four models, and
 cache the pinned llama.cpp reference by backend and toolchain. They retain
 summaries, cell reports, and logs. A failing model, missing fixture, absent GPU,
 or incomplete required job fails the CI summary.

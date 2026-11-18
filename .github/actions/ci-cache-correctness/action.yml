@@ -4,9 +4,6 @@ inputs:
   backend:
     description: Cache qualification profile
     required: true
-  fixtures:
-    description: Absolute path to the pinned read-only GGUF fixtures
-    required: true
   candidate_artifact:
     description: Protected candidate source artifact
     default: ''
@@ -24,6 +21,7 @@ runs:
       with:
         artifact: ${{ inputs.candidate_artifact }}
         sha: ${{ inputs.candidate_sha }}
+    - uses: ./.github/actions/setup-hf
     - name: Identify pinned reference build inputs
       id: reference
       shell: bash
@@ -54,14 +52,13 @@ runs:
       shell: bash
       env:
         BACKEND: ${{ inputs.backend }}
-        SKIPPY_CACHE_QUAL_FIXTURE_DIR: ${{ inputs.fixtures }}
         CMAKE_BUILD_PARALLEL_LEVEL: '8'
       run: |
         reference="$GITHUB_WORKSPACE/target/cache-qualification-reference/llama-server"
         if [[ -x "$reference" ]]; then
           export SKIPPY_CACHE_QUAL_LLAMA_SERVER="$reference"
         fi
-        just cache-correctness-matrix "$BACKEND" target/cache-qualification-results --build
+        just cache-correctness-matrix "$BACKEND" target/cache-qualification-results --build --hf
     - name: Stage the built reference for future runs
       id: stage-reference
       if: always() && steps.reference-cache.outputs.cache-hit != 'true'
