@@ -196,6 +196,16 @@ limit for cleanup and evidence retention.
 
 ## PR results comment
 
+PR split smoke exercises a candidate native recipe before release certification.
+It passes `plan-split --allow-uncertified-split` explicitly and retains
+`split-admissions.json` from each member. `qualification.json` records the
+planner's actual `certified` or `uncertified_override` admission. Both paths
+still require native stage/frontier admission, GPU offload, deterministic scored
+responses and streaming completion. Smoke does not renew `split-certified.json`.
+Default CLI planning, nightly and release continue to require the exact certified
+recipe. Admission unit tests use explicit fixtures and test rejection of stale
+upstream, patch digest, ABI and schema identities independently of that roster.
+
 The protected inference workflow publishes one bot-owned results comment per PR,
 updating it on reruns. It shows the tested SHA, each serving configuration's
 Actions outcome, workflow timing/log links, GitHub evidence and available durable
@@ -204,7 +214,7 @@ Irrelevant changes explicitly report that model tests did not run; failed,
 cancelled, skipped or missing configurations remain visible.
 
 The reporting job runs on success or failure, uses only protected-main code and
-has issues-write permission without the native dispatch credential. Its payload
+has pull-requests-write permission without the native dispatch credential. Its payload
 never includes PR titles, candidate-generated Markdown or native log contents.
 It refuses to update a comment when the PR head changed or a newer run/attempt
 has already reported. Missing controller artifacts leave JY links unavailable;
