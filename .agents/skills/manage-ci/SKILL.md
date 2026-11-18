@@ -62,6 +62,9 @@ contract; no downstream product's workflow topology applies here.
 - Pin third-party actions by full commit SHA. Default permissions are read-only.
   Only the release publisher receives contents write; only the upgrade publisher
   receives a scoped App credential. Do not expose publisher secrets to builds.
+- The protected inference results-comment job alone receives pull-requests write
+  permission for PR comments, plus read-only contents/actions. It receives no
+  native dispatch credential and never executes candidate code.
 - Cache keys bind source recipe, lockfile, toolchain, platform, and backend.
   Caches are accelerators, not artifact correctness or qualification evidence.
   Restore Cargo and compiler caches on native runners as well as hosted runners;

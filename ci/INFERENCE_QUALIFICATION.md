@@ -214,7 +214,7 @@ Irrelevant changes explicitly report that model tests did not run; failed,
 cancelled, skipped or missing configurations remain visible.
 
 The reporting job runs on success or failure, uses only protected-main code and
-has issues-write permission without the native dispatch credential. Its payload
+has pull-requests-write permission without the native dispatch credential. Its payload
 never includes PR titles, candidate-generated Markdown or native log contents.
 It refuses to update a comment when the PR head changed or a newer run/attempt
 has already reported. Missing controller artifacts leave JY links unavailable;
