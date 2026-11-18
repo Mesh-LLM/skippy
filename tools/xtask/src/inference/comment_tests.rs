@@ -83,10 +83,14 @@ fn reports_each_configuration_without_turning_missing_work_into_a_pass() {
         42,
         2,
         true,
-        "Native JY Spark qualification",
+        "Native Spark lab qualification",
     )
     .unwrap();
-    assert!(aggregate_only.contains("qualification: Failed or incomplete"));
+    assert!(aggregate_only.contains("Lab Qualification: Failed or incomplete"));
+    assert!(body.contains("[General Inference](https://generalinference.xyz) Lab Qualification"));
+    assert!(body.contains("Prefill tok/s | Decode tok/s"));
+    assert!(body.contains("Lab record"));
+    assert!(!body.contains("JY"));
 }
 
 #[test]
@@ -141,4 +145,35 @@ fn rejects_mixed_source_receipts_and_unsafe_record_links() {
         write_json_file(&path, &receipt).unwrap();
         assert!(jy_record(directory.path(), row, plan.source_sha).is_err());
     }
+}
+
+#[test]
+fn renders_source_bound_rates_only_for_passed_configurations() {
+    let plan = smoke_plan();
+    let directory = tempfile::tempdir().unwrap();
+    let jobs: Vec<_> = plan.rows.iter().enumerate().map(|(i, row)| {
+        let job = json!({"id":"job_test","repo_rev":plan.source_sha,"status":"succeeded","runs":[{"id":"run_test","status":"succeeded"}]});
+        write_json_file(&directory.path().join(format!("{}-job.json", row.id)), &job).unwrap();
+        let rates = super::super::throughput::Rates {
+            source_sha: plan.source_sha.into(), configuration: row.id.clone(),
+            job_id: "job_test".into(), run_id: "run_test".into(), requests: 3,
+            prefill_tokens: 300, prefill_ms: 600.0, decode_tokens: 30, decode_ms: 300.0,
+        };
+        write_json_file(&directory.path().join(format!("{}-throughput.json", row.id)), &rates).unwrap();
+        json!({"id":i+1,"name":format!("qualification ({})",row.id),"conclusion":if i==0 {"failure"} else {"success"}})
+    }).collect();
+    let body = render(
+        &plan,
+        &json!({"jobs":jobs}),
+        directory.path(),
+        42,
+        1,
+        false,
+        "Incomplete",
+    )
+    .unwrap();
+    assert_eq!(body.matches("| 500.0 | 100.0 |").count(), 6);
+    assert!(body.contains("| Failed | Unavailable | Unavailable |"));
+    assert!(body.contains("first response of each of three short scored smoke cases"));
+    assert!(!body.contains("JY"));
 }
