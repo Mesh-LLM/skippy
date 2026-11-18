@@ -94,6 +94,35 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn gi_qualification_is_limited_to_the_exact_native_template_path() {
+        for (path, expected) in [
+            (".gi/templates.yaml", true),
+            (".gi/agents/code-review.yaml", false),
+            (".gi/config.yaml", false),
+            (".gi/templates.yml", false),
+            (".gi/templates.yaml.bak", false),
+            (".gi/templates.yaml/other.yaml", false),
+        ] {
+            assert_eq!(
+                requires_qualification(&json!([[{"filename":path}]])).unwrap(),
+                expected,
+                "{path}"
+            );
+        }
+        for (path, previous) in [
+            (".gi/agents/code-review.yaml", ".gi/templates.yaml"),
+            (".gi/templates.yaml", ".gi/agents/code-review.yaml"),
+        ] {
+            assert!(
+                requires_qualification(&json!([[{
+                    "filename":path, "previous_filename":previous
+                }]]))
+                .unwrap()
+            );
+        }
+    }
+
+    #[test]
     fn documentation_and_repository_metadata_skip_native_jobs() {
         for path in [
             ".github/PULL_REQUEST_TEMPLATE.md",
