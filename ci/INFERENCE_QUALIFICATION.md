@@ -208,9 +208,26 @@ recipe. Admission unit tests use explicit fixtures and test rejection of stale
 upstream, patch digest, ABI and schema identities independently of that roster.
 
 The protected inference workflow publishes one bot-owned results comment per PR,
-updating it on reruns. It shows the tested SHA, each serving configuration's
-Actions outcome, workflow timing/log links, GitHub evidence and available durable
-JY job records. PR smoke does not claim AgentX performance measurements.
+updating it on reruns. The heading is
+"[General Inference](https://generalinference.xyz) Lab Qualification". It shows
+the tested SHA, each serving configuration's Actions outcome, prefill/decode
+tokens per second, workflow timing/log links, GitHub evidence and available
+durable lab records. PR smoke does not claim AgentX performance measurements.
+Rates describe the first response of each of the three scored quality cases at
+concurrency 1, excluding the deterministic repeats. They are total phase tokens
+divided by total server-reported phase seconds, rather than an average of request
+rates. Prefill counts prompt tokens minus cached tokens; decode counts generated
+tokens. These very short samples include startup/warmup effects and do not
+establish sustained throughput or a controlled speedup comparison.
+
+The protected controller retrieves `qualification.json` and `quality.json` from
+the successful native attempt and writes a numeric, per-configuration throughput
+receipt into the Actions evidence. Qualification identity must match the tested
+SHA, model, mode and PR profile; every scored case must match and pass. The report
+checks the receipt against the job and attempt before rendering numbers. Raw
+candidate text and logs are never inserted into the comment. Missing native
+artifacts or any missing/invalid phase timing show `Unavailable` for the affected
+rate; they do not manufacture zero TPS, a partial aggregate or a passing test.
 Irrelevant changes explicitly report that model tests did not run; failed,
 cancelled, skipped or missing configurations remain visible.
 

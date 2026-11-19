@@ -8,21 +8,45 @@ description: Maintain standalone Skippy CI, native hardware qualification, llama
 Read this file before inspecting or changing CI. This is the standalone Skippy
 contract; no downstream product's workflow topology applies here.
 
+- `.github/workflows/pr-checks.yml` owns the single intended required `PR checks`
+  aggregate on a standard GitHub-hosted Ubuntu runner. Protected-main code reads
+  workflow/check/status results without executing candidate code or using lab
+  credentials. Failures/cancellations fail it; pending or missing applicable work
+  stays pending; success/neutral/intentional skips pass. Producer starts and
+  completions re-evaluate reruns; latest exact-head results govern. Add new PR
+  producer workflows to its event list. Activate the one-check branch rule only
+  after the controller reaches main and its real aggregate is verified; preserve
+  the previous two required checks until then, and retain all review protections.
+
 - `.github/workflows/ci.yml` is the single implementation with explicit `pr`
-  and `full` profiles. Docs-only pull requests and main pushes do not start it.
-  Other changes run formatting, Clippy, unit/API tests, FFI freshness and
-  repository contracts. The separate protected inference workflow runs the
+  and `full` profiles. Declarative paths in `.github/path-filters.yml` select
+  code checks and reusable PR documentation validation; a lightweight result gate
+  always reports (`CI` for short runs, `Full CI gate` for full runs) and rejects
+  failed selection or missing selected results.
+  Code changes run formatting, Clippy, unit/API tests and FFI freshness. Cargo
+  handles manifest/dependency validity; `ci plan` validates the target matrix.
+  The separate protected inference workflow uses the same
+  path filters from protected main and runs the
   seven short serving configurations for relevant trusted PRs. Nightly,
   release and reusable candidate validation use `full`, adding the complete
   native battery, host/runtime producers, packaging and hardware smoke. A short
   summary accepts only its explicitly skipped extended stages; a full summary
   requires every stage to succeed.
+  The full-profile Runtime test summary uses `jq` and the already validated
+  plan matrix; it requires every expected smoke result without checkout or Rust setup.
 - `.github/workflows/docs.yml` owns documentation validation. Docs pull requests
   build without credentials or publication, while protected-main docs changes
-  deploy the validated output to the beta site. Its pull-request job reports the
-  required `CI` check because path-filtered required workflows otherwise remain
-  pending. Release validation calls the same workflow to create the production
+  deploy the validated output to the beta site. PR CI calls this reusable workflow
+  for `docs-site/**` changes and waits for its uniquely named documentation job.
+  Release validation calls the same workflow to create the production
   documentation artifact.
+- `.github/workflows/ci-image.yml` owns the standalone `skippy-ci-cpu` dependency
+  image. PRs build and qualify offline without publication credentials; main
+  pushes and manual main dispatches publish the exact tested artifact in a
+  separate job with packages write. Only a fully qualified image advances
+  `latest`; retain its immutable build tag and unique cache identity. Bootstrap
+  the publisher before changing CI consumers. ROCm/CUDA variants remain separate
+  image names and must not inherit CPU qualification as device evidence.
 - `.github/workflows/release.yml` starts only on version-tag pushes and calls
   both validation implementations. A release never edits source, bumps
   versions, moves a tag, or publishes an incomplete artifact matrix.
@@ -35,8 +59,11 @@ contract; no downstream product's workflow topology applies here.
   artifacts for disabled hosts or describe those hosts as qualified.
   Keep CLI builds backend-neutral and build each host once. Package by copying
   exact verified producer outputs; consumers must not rebuild missing inputs.
-- Keep policy and orchestration in typed Rust under `tools/xtask`. Just recipes
-  and platform adapters are thin. Do not add Python or generic shell policy.
+- Keep workflow path routing declarative in YAML. Build and qualification
+  commands remain typed Rust under `tools/xtask`; Just recipes and platform
+  adapters stay thin. PR lab-result comments use the focused Bash/gh/jq report
+  script without Rust setup. Prefer shell for small CI checks, with Python as
+  a fallback when structured parsing needs it.
 - All builds use Just. Run Cargo serially within one checkout. Include both
   Rust workspaces, full crate tests, FFI contracts, and native API contracts.
 - Ordinary tests are offline. Model admission is explicit and digest-bound.
@@ -78,7 +105,8 @@ contract; no downstream product's workflow topology applies here.
   image-provided tooling does not make fresh containers retain compiler outputs.
 - Cancel superseded PR validation only. Release and upgrade concurrency must
   retain evidence and never cancel another release or an independent CI run.
-- A stable `CI` summary rejects failed, cancelled, or missing required jobs.
+- The code workflow's `CI` summary rejects failed, cancelled, or missing selected jobs;
+  `PR checks` additionally covers the separate inference and image workflows.
   Upload diagnostic evidence on failure before cleanup.
 - Runtime metadata includes the source SHA, llama pin, patch digest, ABI,
   architecture, backend, toolkit and file hashes. Signing, if configured, runs

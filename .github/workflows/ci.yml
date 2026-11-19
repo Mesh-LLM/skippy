@@ -1,14 +1,10 @@
 name: CI
 on:
   pull_request:
-    paths-ignore:
-      - 'docs-site/**'
   merge_group:
     types: [checks_requested]
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs-site/**'
   schedule:
     - cron: '0 14 * * *'
   workflow_dispatch:
@@ -56,7 +52,35 @@ env:
   SKIPPY_CUDA_ARCHITECTURE_MODE: ${{ inputs.cuda_architecture_mode || 'native' }}
   SKIPPY_ARTIFACT_SCOPE: ${{ inputs.artifact_scope || 'ci' }}
 jobs:
+  changes:
+    name: Select checks by path
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ inputs.profile != '' || (github.event_name != 'pull_request' && github.event_name != 'push') || steps.paths.outputs.code == 'true' }}
+      docs: ${{ inputs.profile == '' && github.event_name == 'pull_request' && steps.paths.outputs.docs == 'true' }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        if: inputs.profile == '' && (github.event_name == 'pull_request' || github.event_name == 'push')
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: paths
+        if: inputs.profile == '' && (github.event_name == 'pull_request' || github.event_name == 'push')
+        with:
+          predicate-quantifier: some-with-excludes
+          filters: .github/path-filters.yml
+  documentation:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    uses: ./.github/workflows/docs.yml
   plan:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -104,35 +128,76 @@ jobs:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
       - run: just inference-tool-check
+      - name: Test inference results reporting
+        run: bash scripts/tests/inference-report.sh
+      - name: Test workflow result gates
+        run: node --test .github/scripts/*.test.cjs
   quality:
     needs: plan
     env:
-      CMAKE_BUILD_PARALLEL_LEVEL: '4'
+      CARGO_BUILD_JOBS: '2'
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
       CTEST_PARALLEL_LEVEL: '2'
+      CC: /usr/lib/llvm-22/bin/clang
+      CXX: /usr/lib/llvm-22/bin/clang++
       SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
       LIBCLANG_PATH: /usr/lib/llvm-22/lib
       SKIPPY_REQUIRE_SCCACHE: '1'
       SCCACHE_GHA_ENABLED: 'true'
-    runs-on:
-      group: jy-rnr_vfnz8k5p4yrh334
-      labels: [self-hosted, skippy-ephemeral, Linux, native-contracts]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/general-inference/skippy-ci-cpu:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: ${{ needs.plan.outputs.profile == 'pr' && 30 || 180 }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup
-        if: runner.environment == 'github-hosted'
-      - uses: ./.github/actions/cache
-        if: runner.environment == 'self-hosted'
-      - uses: ./.github/actions/sccache
-        with:
-          scope: quality-${{ runner.os }}-${{ runner.arch }}
+      - name: Verify image toolchain and cache identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc --version
+          just --version
+          sccache --version
+          "$CC" --version
+          "$CXX" --version
+          "$SKIPPY_REWRITER_LLVM_PREFIX/bin/clang-format" --version
+          "$SKIPPY_REWRITER_LLVM_PREFIX/bin/clang-tidy" --version
+          "$SKIPPY_REWRITER_LLVM_PREFIX/bin/clang" --version
+          test -r "$SKIPPY_REWRITER_LLVM_PREFIX/lib/cmake/llvm/LLVMConfig.cmake"
+          test -r "$SKIPPY_REWRITER_LLVM_PREFIX/lib/cmake/clang/ClangConfig.cmake"
+          image_id="$(cat /etc/skippy-ci-image-id)"
+          test -n "$image_id"
+          echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
       - uses: ./.github/actions/source
+        # Protected admission runs before GitHub compiler-cache credentials are exported.
+        env:
+          RUSTC_WRAPPER: ''
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
-      - run: just ci-contracts
+          cache-scope: quality-container-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}-admission
+          download-scope: quality-container-admission
+      - uses: ./.github/actions/cache
+        with:
+          scope: quality-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
+          download-scope: quality-container
+          build-paths: |
+            target/debug
+            skippy-api-rs/target/debug
+      - uses: ./.github/actions/sccache
+        with:
+          scope: quality-${{ runner.os }}-${{ runner.arch }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
+      - uses: ./.github/actions/native-source
       - run: just llama-prepare
       - run: just skippy-ffi-bindgen-check
       - run: just lint
@@ -145,6 +210,7 @@ jobs:
           name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-quality-evidence
           path: |
             target/ci-evidence/**
+            target/skippy-api-build/Testing/**
             target/skippy-llama-api-build/Testing/**
             target/skippy-stage-rewriter-check/report*
             target/skippy-stage-rewriter-check/patch-drift.diff
@@ -156,6 +222,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
   host:
+    name: Build Skippy · ${{ matrix.display_name }}
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     strategy:
@@ -169,13 +236,22 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         if: runner.environment == 'github-hosted'
-      - uses: ./.github/actions/sccache
         with:
-          scope: host-${{ matrix.id }}
+          cache: 'false'
       - uses: ./.github/actions/source
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/cache
+        with:
+          scope: host-${{ matrix.id }}-backend-neutral
+          download-scope: host
+          build-paths: |
+            target/debug
+            target/release
+      - uses: ./.github/actions/sccache
+        with:
+          scope: host-${{ matrix.id }}
       - name: Build backend-neutral host
         shell: bash
         env:
@@ -188,6 +264,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   runtime_darwin_aarch64_cpu:
+    name: Build · macOS · CPU
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on: macos-15
@@ -202,6 +279,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_darwin_aarch64_metal:
+    name: Build · macOS · Metal
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -218,6 +296,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_x86_64_cpu:
+    name: Build · Linux x64 · CPU
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04
@@ -232,6 +311,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_x86_64_cuda12:
+    name: Build · Linux x64 · CUDA 12
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -248,6 +328,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_x86_64_cuda13:
+    name: Build · Linux x64 · CUDA 13
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -264,6 +345,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_aarch64_cpu:
+    name: Build · Linux ARM64 · CPU
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04-arm
@@ -278,6 +360,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_aarch64_cuda12:
+    name: Build · Linux ARM64 · CUDA 12
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -294,6 +377,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_aarch64_cuda13:
+    name: Build · Linux ARM64 · CUDA 13
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -310,6 +394,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime:
+    name: Runtime build summary
     needs: [plan, runtime_darwin_aarch64_cpu, runtime_darwin_aarch64_metal, runtime_linux_x86_64_cpu, runtime_linux_x86_64_cuda12, runtime_linux_x86_64_cuda13, runtime_linux_aarch64_cpu, runtime_linux_aarch64_cuda12, runtime_linux_aarch64_cuda13]
     if: always() && needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04
@@ -323,6 +408,7 @@ jobs:
         env:
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
   product:
+    name: Package · ${{ matrix.display_name }}
     needs: [plan, host, runtime]
     if: needs.plan.outputs.profile == 'full'
     strategy:
@@ -361,6 +447,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   smoke_darwin_aarch64_cpu:
+    name: Test · macOS · CPU
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on: macos-15
@@ -375,6 +462,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_darwin_aarch64_metal:
+    name: Test · macOS · Metal
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -391,6 +479,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_x86_64_cpu:
+    name: Test · Linux x64 · CPU
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04
@@ -405,6 +494,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_x86_64_cuda12:
+    name: Test · Linux x64 · CUDA 12
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -421,6 +511,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_x86_64_cuda13:
+    name: Test · Linux x64 · CUDA 13
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -437,6 +528,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_aarch64_cpu:
+    name: Test · Linux ARM64 · CPU
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04-arm
@@ -451,6 +543,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_aarch64_cuda12:
+    name: Test · Linux ARM64 · CUDA 12
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -467,6 +560,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_aarch64_cuda13:
+    name: Test · Linux ARM64 · CUDA 13
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -483,18 +577,27 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke:
+    name: Runtime test summary
     needs: [plan, smoke_darwin_aarch64_cpu, smoke_darwin_aarch64_metal, smoke_linux_x86_64_cpu, smoke_linux_x86_64_cuda12, smoke_linux_x86_64_cuda13, smoke_linux_aarch64_cpu, smoke_linux_aarch64_cuda12, smoke_linux_aarch64_cuda13]
     if: always() && needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-      - run: just automation-run ci smoke-summary
+      - name: Validate all runtime smoke-test results
         env:
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
+          RUNTIME_MATRIX: ${{ needs.plan.outputs.runtimes }}
+        run: |
+          jq -en --argjson needs "$SKIPPY_CI_NEEDS" --argjson matrix "$RUNTIME_MATRIX" '
+            ($matrix.include | map("smoke_" + (.id | gsub("-"; "_")))) as $jobs |
+            ($jobs + ["plan"] | sort) as $expected |
+            ($jobs | length) > 0 and
+            ($needs | keys) == $expected and
+            all($expected[]; $needs[.].result == "success")
+          ' || {
+            echo '::error::Plan and every active runtime smoke test must succeed, with no missing or unexpected jobs.'
+            exit 1
+          }
   cache_build_metal:
     name: Build cache tests (Metal)
     needs: plan
@@ -578,9 +681,11 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   summary:
-    name: ${{ needs.plan.outputs.profile == 'full' && 'Full qualification' || 'CI' }}
+    name: ${{ needs.plan.outputs.profile == 'full' && 'Full qualification' || 'Code checks' }}
     needs: [plan, inference_contracts, quality, cache_correctness_metal, cache_correctness_cuda, host, runtime, product, smoke]
-    if: always()
+    if: always() && needs.plan.result != 'skipped'
+    outputs:
+      profile: ${{ needs.plan.outputs.profile }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -626,3 +731,27 @@ jobs:
         env:
           SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
+  gate:
+    name: ${{ needs.summary.outputs.profile == 'full' && 'Full CI gate' || 'CI' }}
+    needs: [changes, documentation, summary]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          CHECK_RESULTS: ${{ toJSON(needs) }}
+        with:
+          script: |
+            const needs = JSON.parse(process.env.CHECK_RESULTS);
+            if (needs.changes.result !== 'success') {
+              core.setFailed('Path selection failed or was cancelled');
+              return;
+            }
+            for (const [filter, job] of [['code', 'summary'], ['docs', 'documentation']]) {
+              const required = needs.changes.outputs[filter];
+              const expected = required === 'true' ? 'success' : 'skipped';
+              if (!['true', 'false'].includes(required) || needs[job].result !== expected) {
+                core.setFailed(`${job} must be ${expected}; got ${needs[job].result}`);
+              }
+            }

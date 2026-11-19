@@ -13,14 +13,17 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: ./.github/actions/cache
-    - uses: ./.github/actions/sccache
-      with:
-        scope: cache-correctness-${{ inputs.backend }}
     - uses: ./.github/actions/source
       with:
         artifact: ${{ inputs.candidate_artifact }}
         sha: ${{ inputs.candidate_sha }}
+    - uses: ./.github/actions/cache
+      with:
+        scope: cache-correctness-${{ inputs.backend }}
+        download-scope: cache-tests
+    - uses: ./.github/actions/sccache
+      with:
+        scope: cache-correctness-${{ inputs.backend }}
     - name: Identify pinned reference build inputs
       id: reference
       shell: bash

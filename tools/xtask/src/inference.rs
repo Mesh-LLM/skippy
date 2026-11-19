@@ -2,7 +2,6 @@
 mod admission;
 mod artifacts;
 mod build;
-mod comment;
 mod corpus;
 mod dispatch;
 mod execute;
@@ -14,8 +13,8 @@ mod placement;
 mod provenance;
 mod retention;
 mod smoke;
-mod summary;
 mod tests;
+mod throughput;
 use crate::command::{DynResult, write_json_file};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, path::Path};
@@ -68,8 +67,6 @@ pub fn run(args: &[String]) -> DynResult<()> {
     {
         ["build"] => build::run(),
         ["admit"] => admission::run(),
-        ["summary"] => summary::run(),
-        ["comment", directory] => comment::run(Path::new(directory)),
         ["control-preflight"] => {
             let result = dispatch::api("GET", "/v1/repos/skippy", None)?;
             println!("JY repository access verified: {}", result["slug"]);

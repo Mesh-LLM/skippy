@@ -1,6 +1,5 @@
 pub(crate) mod artifacts;
 pub(crate) use crate::execution;
-mod contracts;
 mod gates;
 mod kv_scope;
 pub(crate) mod matrix;
@@ -13,7 +12,6 @@ use std::{io::Write, path::Path};
 pub fn run(args: &[String]) -> DynResult<()> {
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         ["plan"] => plan(),
-        ["contracts"] => contracts::run(),
         ["host", id] => producers::host(id),
         ["runtime", id] => producers::runtime(id),
         ["package", id, host, runtime] => producers::package(id, Path::new(host), Path::new(runtime)),
@@ -22,7 +20,7 @@ pub fn run(args: &[String]) -> DynResult<()> {
         ["summary"] => summary(),
         ["runtime-summary"] => gates::run("runtime"),
         ["smoke-summary"] => gates::run("smoke"),
-        _ => Err("usage: ci {plan|contracts|model-fetch|host ID|runtime ID|package ID HOST_DIR RUNTIME_DIR|smoke ID PRODUCT_DIR|summary|runtime-summary|smoke-summary}".into()),
+        _ => Err("usage: ci {plan|model-fetch|host ID|runtime ID|package ID HOST_DIR RUNTIME_DIR|smoke ID PRODUCT_DIR|summary|runtime-summary|smoke-summary}".into()),
     }
 }
 fn plan() -> DynResult<()> {
