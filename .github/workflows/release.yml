@@ -88,7 +88,8 @@ jobs:
           SOURCE_SHA: ${{ needs.admission.outputs.source }}
           PRERELEASE: ${{ needs.admission.outputs.prerelease }}
         run: |
-          gh release create "$RELEASE_TAG" --verify-tag --draft --prerelease="$PRERELEASE" --title "Skippy $RELEASE_TAG" --notes "Skippy source: $SOURCE_SHA"
+          just automation-run release notes "$RELEASE_TAG" > release-notes.md
+          gh release create "$RELEASE_TAG" --verify-tag --draft --prerelease="$PRERELEASE" --title "Skippy $RELEASE_TAG" --notes-file release-notes.md
       - name: Read immutable draft asset identities
         env:
           GH_TOKEN: ${{ github.token }}

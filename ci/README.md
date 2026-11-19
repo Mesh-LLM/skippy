@@ -51,9 +51,12 @@ create the exact `release-docs-site` artifact.
 
 For a version tag, the release workflow downloads that exact
 `release-docs-site` artifact after validation and GitHub release publication,
-then deploys it to `skippy.sh` with `just docs-publish`. The publication job
-does not rebuild the site. It installs the lockfile-pinned `cf` CLI and exposes
-`CLOUDFLARE_API_TOKEN` only to the deploy step.
+then deploys it to `skippy.sh` with `just docs-publish`. Release admission
+requires a matching reviewed `docs-site/content/blog/<tag>.mdx` post, so the
+validated artifact and GitHub release link publish the same version-specific
+notes. The publication job does not rebuild the site. It installs the
+lockfile-pinned `cf` CLI and exposes `CLOUDFLARE_API_TOKEN` only to the deploy
+step.
 
 Configure `SKIPPY_DOCS_CLOUDFLARE_API_TOKEN` as a GitHub Actions repository
 secret. Create it from Cloudflare's **Edit Cloudflare Workers** token template

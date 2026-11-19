@@ -18,3 +18,11 @@ by Cloudflare's `beta` mode. The production custom domain is
 <https://skippy.sh>, and protected-main documentation changes deploy to
 <https://beta.skippy.sh>. No server-side rendering or runtime database is
 required.
+
+## Blog posts
+
+Add ordinary updates under `content/blog/` with `title`, `description`, and an
+ISO `date` in front matter. The blog index discovers and sorts them
+automatically. A tagged release additionally requires `content/blog/<tag>.mdx`
+with `release: "<tag>"`; see the repository `RELEASE.md` for the required
+release-note structure and publication contract.

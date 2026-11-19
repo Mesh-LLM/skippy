@@ -30,13 +30,14 @@ pub fn run(args: &[String]) -> DynResult<()> {
         .as_slice()
     {
         ["validate", tag] => validate(tag),
+        ["notes", tag] => notes(tag),
         ["prepare", tag, directory] => prepare(tag, Path::new(directory)),
         ["verify", directory] => verify(Path::new(directory)),
         ["admit-draft", path] => admit_draft(Path::new(path)),
         ["select", tag, path] => select(tag, Path::new(path)),
         ["upload-plan", directory, path] => upload_plan(Path::new(directory), Path::new(path)),
         _ => Err(
-            "usage: release {validate TAG|prepare TAG INPUT_DIR|verify DIR|admit-draft JSON}"
+            "usage: release {validate TAG|notes TAG|prepare TAG INPUT_DIR|verify DIR|admit-draft JSON}"
                 .into(),
         ),
     }
@@ -59,6 +60,7 @@ fn version(tag: &str, manifest: &str) -> DynResult<semver::Version> {
 
 fn validate(tag: &str) -> DynResult<()> {
     let parsed = version(tag, &fs::read_to_string("Cargo.toml")?)?;
+    validate_release_post(tag, Path::new("docs-site/content/blog"))?;
     let source = artifacts::source()?;
     let tagged = execution::capture(
         "git",
@@ -98,6 +100,49 @@ fn validate(tag: &str) -> DynResult<()> {
         },
     )?;
     github_output("source", &source)
+}
+
+fn validate_release_post(tag: &str, blog: &Path) -> DynResult<()> {
+    let path = blog.join(format!("{tag}.mdx"));
+    let source = fs::read_to_string(&path)
+        .map_err(|_| format!("release blog post is missing: {}", path.display()))?;
+    let front_matter = source
+        .strip_prefix("---\n")
+        .and_then(|source| source.split_once("\n---\n"))
+        .ok_or("release blog post must begin with front matter")?;
+    let expected_release = format!("release: \"{tag}\"");
+    for field in ["title:", "description:", "date:"] {
+        let value = front_matter
+            .0
+            .lines()
+            .find_map(|line| line.trim().strip_prefix(field))
+            .map(str::trim);
+        if value.is_none_or(|value| value.is_empty() || matches!(value, "\"\"" | "''")) {
+            return Err(format!("release blog post is missing or empty: {field}").into());
+        }
+    }
+    if !front_matter
+        .0
+        .lines()
+        .any(|line| line.trim() == expected_release)
+    {
+        return Err("release blog post metadata does not match the tag".into());
+    }
+    if front_matter.1.trim().is_empty() {
+        return Err("release blog post body is empty".into());
+    }
+    Ok(())
+}
+
+fn release_body(tag: &str, source: &str) -> String {
+    format!("Skippy source: {source}\n\nRelease notes: https://skippy.sh/blog/{tag}/")
+}
+
+fn notes(tag: &str) -> DynResult<()> {
+    version(tag, &fs::read_to_string("Cargo.toml")?)?;
+    validate_release_post(tag, Path::new("docs-site/content/blog"))?;
+    println!("{}", release_body(tag, &artifacts::source()?));
+    Ok(())
 }
 
 fn prepare(tag: &str, input: &Path) -> DynResult<()> {
@@ -210,7 +255,7 @@ fn admit_draft(path: &Path) -> DynResult<()> {
     }
     let tag = value["tagName"].as_str().ok_or("release has no tag")?;
     validate(tag)?;
-    if value["body"].as_str() != Some(&format!("Skippy source: {}", artifacts::source()?)) {
+    if value["body"].as_str() != Some(&release_body(tag, &artifacts::source()?)) {
         return Err("draft source identity does not match checkout".into());
     }
     Ok(())
@@ -244,7 +289,7 @@ fn upload_plan(directory: &Path, path: &Path) -> DynResult<()> {
     let remote: serde_json::Value = serde_json::from_slice(&fs::read(path)?)?;
     if remote["draft"] != true
         || remote["tag_name"] != local.tag
-        || remote["body"] != format!("Skippy source: {}", local.source)
+        || remote["body"] != release_body(&local.tag, &local.source)
     {
         return Err("refusing a published or foreign draft release".into());
     }
@@ -281,5 +326,30 @@ mod tests {
         for tag in ["1.2.3-rc.1", "v1.2.3", "v01.2.3-rc.1", "main"] {
             assert!(version(tag, manifest).is_err());
         }
+    }
+
+    #[test]
+    fn release_requires_a_matching_blog_post() {
+        let root = tempfile::tempdir().unwrap();
+        let post = root.path().join("v1.2.3.mdx");
+        fs::write(
+            &post,
+            "---\ntitle: Skippy v1.2.3\ndescription: Release notes.\ndate: \"2026-11-19\"\nrelease: \"v1.2.3\"\n---\n\n# Skippy v1.2.3\n",
+        )
+        .unwrap();
+        validate_release_post("v1.2.3", root.path()).unwrap();
+        assert!(validate_release_post("v1.2.4", root.path()).is_err());
+        fs::write(
+            &post,
+            "---\ntitle: Skippy v1.2.3\ndescription: \"\"\ndate: \"2026-11-19\"\nrelease: \"v1.2.3\"\n---\n\n# Skippy v1.2.3\n",
+        )
+        .unwrap();
+        assert!(validate_release_post("v1.2.3", root.path()).is_err());
+        fs::write(
+            post,
+            "---\ntitle: Skippy v1.2.3\ndescription: Release notes.\ndate: \"2026-11-19\"\nrelease: \"v1.2.4\"\n---\n\n# Skippy v1.2.3\n",
+        )
+        .unwrap();
+        assert!(validate_release_post("v1.2.3", root.path()).is_err());
     }
 }

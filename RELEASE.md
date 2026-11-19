@@ -18,6 +18,28 @@ never changes versions or pushes source. Tags created with an ordinary workflow
 `GITHUB_TOKEN` do not trigger another push workflow; use a maintainer or a scoped
 App if tag creation is automated.
 
+Every release commit must include a reviewed blog post at
+`docs-site/content/blog/<tag>.mdx`. Its front matter must include the exact tag:
+
+```mdx
+---
+title: "Skippy v1.2.3"
+description: "What changed in Skippy v1.2.3."
+date: "2026-11-19"
+release: "v1.2.3"
+---
+
+# Skippy v1.2.3
+
+Describe what changed, why it matters, how to adopt it, compatibility notes,
+and links to the exact options and artifacts.
+```
+
+The release gate rejects a missing, empty, or mismatched post. The GitHub release
+links to the post, and the production documentation deployment publishes it from
+the exact validated release artifact. The workflow never generates or commits
+release prose.
+
 `release.yml` checks the tag against the committed Cargo version and main
 ancestry, then calls the same `ci.yml` used by PRs and main in release CUDA
 architecture mode. It requires all three enabled hosts and eight complete
@@ -46,7 +68,8 @@ conflicting draft is an error requiring investigation. Preserve diagnostics.
 
 After the GitHub release is published, the documentation job downloads the
 exact `release-docs-site` artifact built by the shared validation workflow and
-deploys it to `skippy.sh`. It does not rebuild the site. Configure the
+deploys it to `skippy.sh`, including the matching release post. It does not
+rebuild the site. Configure the
 `SKIPPY_DOCS_CLOUDFLARE_API_TOKEN` repository secret as described in
 [CI prerequisites](ci/README.md) before creating a version tag.
 

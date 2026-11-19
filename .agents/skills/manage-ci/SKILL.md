@@ -25,7 +25,9 @@ contract; no downstream product's workflow topology applies here.
   documentation artifact.
 - `.github/workflows/release.yml` starts only on version-tag pushes and calls
   both validation implementations. A release never edits source, bumps
-  versions, moves a tag, or publishes an incomplete artifact matrix.
+  versions, moves a tag, or publishes an incomplete artifact matrix. Each tag
+  requires a matching reviewed blog post in the tagged source; the validated
+  documentation artifact publishes it after the GitHub release succeeds.
 - `.github/workflows/llama-upgrade.yml` keeps control on protected main, prepares
   an immutable candidate, certifies it, independently repeats certification,
   and opens an ordinary PR. Failed or incomplete qualification cannot publish.
