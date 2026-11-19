@@ -246,11 +246,7 @@ sha256_file() {
   elif command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | awk '{print $1}'
   else
-    if [[ -n "${SKIPPY_AUTOMATION_BIN:-}" ]]; then
-      "$SKIPPY_AUTOMATION_BIN" artifact file-projection sha256 "$1"
-    else
-      just --justfile "$ROOT/Justfile" automation-run artifact file-projection sha256 "$1"
-    fi
+    bash "$ROOT/scripts/artifact-file.sh" sha256 "$1"
   fi
 }
 
@@ -260,11 +256,7 @@ sha256_stream() {
   elif command -v sha256sum >/dev/null 2>&1; then
     sha256sum | awk '{print $1}'
   else
-    if [[ -n "${SKIPPY_AUTOMATION_BIN:-}" ]]; then
-      "$SKIPPY_AUTOMATION_BIN" artifact file-projection sha256 -
-    else
-      just --justfile "$ROOT/Justfile" automation-run artifact file-projection sha256 -
-    fi
+    bash "$ROOT/scripts/artifact-file.sh" sha256 -
   fi
 }
 

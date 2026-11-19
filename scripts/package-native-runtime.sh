@@ -19,7 +19,6 @@ rpath_paths() {
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../scripts" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-xtool() { if [[ -n "${SKIPPY_AUTOMATION_BIN:-}" ]]; then "$SKIPPY_AUTOMATION_BIN" "$@"; else just --justfile "$REPO_ROOT/Justfile" automation-run "$@"; fi; }
 
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib/cuda-toolkit.sh"
@@ -232,11 +231,11 @@ sha256_file() {
 }
 
 skippy_runtime_version() {
-    xtool native package-source-version runtime "$REPO_ROOT/crates/skippy-native-runtime/RUNTIME_VERSION"
+    "${SKIPPY_PYTHON:-python3}" "$REPO_ROOT/scripts/native-source.py" package-source-version runtime "$REPO_ROOT/crates/skippy-native-runtime/RUNTIME_VERSION"
 }
 
 skippy_abi_version() {
-    xtool native package-source-version abi "$REPO_ROOT/crates/skippy-ffi/src/lib.rs"
+    "${SKIPPY_PYTHON:-python3}" "$REPO_ROOT/scripts/native-source.py" package-source-version abi "$REPO_ROOT/crates/skippy-ffi/src/lib.rs"
 }
 
 library_pattern() {
@@ -450,7 +449,7 @@ build_model_package_tool() {
             just --justfile "$REPO_ROOT/Justfile" with-lld cargo build --release --locked --target "$TARGET_TRIPLE" \
                 -p skippy-package-builder
         cargo_metadata="$(cargo metadata --no-deps --format-version 1)"
-        cargo_target_dir="$(xtool native cargo-target-directory <<< "$cargo_metadata")"
+        cargo_target_dir="$("${SKIPPY_PYTHON:-python3}" "$REPO_ROOT/scripts/native-source.py" cargo-target-directory <<< "$cargo_metadata")"
         source_path="$cargo_target_dir/$TARGET_TRIPLE/release/$(basename "$tool_rel")"
         if [[ ! -x "$source_path" ]]; then
             echo "model package tool build did not produce $source_path" >&2
@@ -622,7 +621,7 @@ collect_linux_cuda_dependencies() {
         [[ -n "$dependency_dir" ]] && dependency_args+=(--search-dir "$dependency_dir")
     done < <(linux_cuda_dependency_search_dirs | awk '!seen[$0]++')
 
-    xtool native linux-runtime-deps collect \
+    "${SKIPPY_PYTHON:-python3}" "$SCRIPT_DIR/native-inspect.py" linux-runtime-deps collect \
         --lib-dir "$stage_dir/lib" \
         --scan-dir "$stage_dir/tools" \
         --arch "$runtime_arch" \
@@ -633,7 +632,7 @@ collect_linux_cuda_dependencies() {
     while IFS= read -r library; do
         [[ -n "$library" ]] && library_paths+=("lib/$library")
     done < <(
-        xtool native linux-runtime-deps order \
+        "${SKIPPY_PYTHON:-python3}" "$SCRIPT_DIR/native-inspect.py" linux-runtime-deps order \
             --lib-dir "$stage_dir/lib" \
             --scan-dir "$stage_dir/tools" \
             --arch "$runtime_arch" \
@@ -840,7 +839,7 @@ if [[ "$runtime_os" == "windows" ]]; then
             fi
         fi
     done
-    xtool native windows-runtime-deps collect \
+    "${SKIPPY_PYTHON:-python3}" "$SCRIPT_DIR/native-inspect.py" windows-runtime-deps collect \
         --lib-dir "$stage_dir/lib" \
         --scan-dir "$stage_dir/tools" \
         "${dependency_args[@]}"
@@ -863,7 +862,7 @@ rewrite_linux_runtime_paths
 
 # Relocation is complete: retain every loader name but archive identical bytes once.
 if [[ "$runtime_os" == linux ]]; then
-    xtool native deduplicate-linux-libraries "$stage_dir/lib"
+    "${SKIPPY_PYTHON:-python3}" "$SCRIPT_DIR/native-library-aliases.py" "$stage_dir/lib"
 fi
 
 primary_library="lib/$primary_name"
@@ -903,7 +902,7 @@ if [[ "${#license_paths[@]}" -gt 0 ]]; then
 fi
 manifest_args+=(-- "${linux_relocatable_library_paths[@]}")
 
-xtool native runtime-manifest-write --schema-v2 "${manifest_args[@]}"
+"${SKIPPY_PYTHON:-python3}" "$SCRIPT_DIR/native-manifest.py" --schema-v2 "${manifest_args[@]}"
 
 cat > "$stage_dir/README.md" <<EOF
 # $artifact_id

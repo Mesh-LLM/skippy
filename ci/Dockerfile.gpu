@@ -18,7 +18,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential ca-certificates clang clang-format clang-tidy cmake curl \
       git libclang-dev libclang-rt-dev libcurl4-openssl-dev libedit-dev \
-      libssl-dev libzstd-dev lld llvm-dev mold ninja-build patchelf pkg-config \
+      libssl-dev libzstd-dev lld llvm-dev mold ninja-build patchelf pkg-config jq python3 \
       rustup xz-utils zlib1g-dev zstd \
     && rm -rf /var/lib/apt/lists/*
 

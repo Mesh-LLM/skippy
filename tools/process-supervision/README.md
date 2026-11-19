@@ -2,8 +2,7 @@
 
 `process-supervision` runs CI automation child processes under bounded
 supervision. It is a library only. Its normal dependencies are thiserror, libc
-on Unix, and windows-sys on Windows, so a narrow CI binary can link it without
-pulling in full xtask's dependency closure.
+on Unix, and windows-sys on Windows.
 
 It owns:
 
@@ -17,16 +16,4 @@ It owns:
 - `interrupt`: the process-wide SIGINT/SIGTERM (or console control) scope whose
   `Cancellation` stops supervised children.
 
-It doesn't own HTTPS transfers through curl (`curl_https`) or any command
-dispatch. Those stay in [xtask](../xtask/README.md).
-
-## Consumers
-
-- [xtask](../xtask/README.md), which imports this crate as `crate::process` and
-  `crate::command_interrupt`. Its integration targets and examples use the crate
-  directly. The interrupt scope's behavior tests live in xtask
-  (`tests/migration_lifecycle/interrupt_scope.rs` and `blocked_scope.rs`),
-  because they exercise xtask's client readiness and retained sessions.
-
-`just ci-automation-contracts` runs this crate's tests; the main Rust test
-matrix skips it.
+Run the library tests with `just process-supervision-test`.
