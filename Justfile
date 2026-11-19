@@ -200,6 +200,45 @@ ci-image-export:
     @mkdir -p target/ci-image
     @docker image save --output target/ci-image/skippy-ci-cpu.tar skippy-ci-cpu:build
 
+ci-gpu-image-build backend toolkit_base toolkit_version:
+    @docker buildx build --load --platform linux/amd64 --file ci/Dockerfile.gpu --tag skippy-ci-{{ backend }}:build --build-arg TOOLKIT_BASE="{{ toolkit_base }}" --build-arg BACKEND="{{ backend }}" --build-arg TOOLKIT_VERSION="{{ toolkit_version }}" --build-arg SKIPPY_CI_IMAGE_ID --build-arg SOURCE_REVISION .
+
+ci-gpu-image-smoke backend:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    docker run --rm --platform linux/amd64 --network none --read-only "skippy-ci-{{ backend }}:build" bash -euc '
+      rustc --version
+      cargo clippy --version
+      rustfmt --version
+      just --version
+      sccache --version
+      /usr/bin/clang --version
+      /usr/bin/clang++ --version
+      cmake --version
+      ninja --version
+      llvm-config --version
+      test -r /usr/lib/llvm-18/lib/cmake/llvm/LLVMConfig.cmake
+      test -r /usr/lib/llvm-18/lib/cmake/clang/ClangConfig.cmake
+      test -s /etc/skippy-ci-image-id
+      test "$(id -u)" = 1001
+      test "$SKIPPY_CI_BACKEND" = "{{ backend }}"
+      case "$SKIPPY_CI_BACKEND" in
+        cuda)
+          /usr/local/cuda-13.1/bin/nvcc --version | grep -F "release 13.1, V13.1.2"
+          /usr/local/cuda-12.9/bin/nvcc --version | grep -F "release 12.9, V12.9.2"
+          test -e /usr/local/cuda-13.1/lib64/libcudart.so
+          test -e /usr/local/cuda-12.9/lib64/libcudart.so
+          ;;
+        rocm) hipcc --version ;;
+        *) exit 2 ;;
+      esac
+    '
+
+ci-gpu-image-export backend:
+    @mkdir -p target/ci-image
+    @docker image save --output target/ci-image/skippy-ci-{{ backend }}.tar skippy-ci-{{ backend }}:build
+    @docker image inspect -q skippy-ci-{{ backend }}:build > target/ci-image/skippy-ci-{{ backend }}.id
+
 ci-summary:
     @cargo xtool ci summary
 

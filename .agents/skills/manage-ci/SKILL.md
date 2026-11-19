@@ -30,6 +30,11 @@ contract; no downstream product's workflow topology applies here.
   `latest`; retain its immutable build tag and unique cache identity. Bootstrap
   the publisher before changing CI consumers. ROCm/CUDA variants remain separate
   image names and must not inherit CPU qualification as device evidence.
+- `.github/workflows/ci-gpu-images.yml` builds CUDA and ROCm compiler images from
+  separate digest-pinned vendor toolkits. Build-time compiler probes and the
+  exported-image smoke qualify image contents only; GPU runtime qualification
+  still requires the matching device jobs in `ci.yml`. Publish only the exact
+  artifact that passed its backend-specific smoke and metadata checks.
 - `.github/workflows/release.yml` starts only on version-tag pushes and calls
   both validation implementations. A release never edits source, bumps
   versions, moves a tag, or publishes an incomplete artifact matrix.
