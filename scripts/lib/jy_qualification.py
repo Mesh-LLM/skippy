@@ -27,7 +27,10 @@ class Pilot:
     def request(self, method, path, body=None, token=None, timeout=60):
         if not path.startswith("/v1/") or re.search(r"[\r\n]", path):
             raise ValueError("invalid API path")
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "skippy-inference-ci/1.0",
+        }
         if token is not None:
             if not token or re.search(r"[\r\n]", token):
                 raise ValueError("invalid API credential")
@@ -39,7 +42,7 @@ class Pilot:
                 result = response.read(16 * 1024 * 1024 + 1)
         except HTTPError as error:
             detail = (error.read(65536).decode("utf-8", errors="replace")
-                      if not path.startswith("/v1/auth/") else "authentication request failed")
+                      if not path.startswith("/v1/auth/") else f"{path} authentication request failed")
             raise RuntimeError(f"JY HTTP {error.code}: {detail}") from None
         if len(result) > 16 * 1024 * 1024:
             raise ValueError("JY response exceeded capture limit")
