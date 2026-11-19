@@ -248,15 +248,6 @@ ci-gpu-image-export backend:
     mv "$temporary_archive" "$archive"
     docker image inspect --format '{{"{{.Id}}"}}' skippy-ci-{{ backend }}:build > target/ci-image/skippy-ci-{{ backend }}.id
 
-ci-summary:
-    @bash scripts/ci-gate.sh summary
-
-ci-runtime-summary:
-    @bash scripts/ci-gate.sh runtime
-
-ci-smoke-summary:
-    @bash scripts/ci-gate.sh smoke
-
 [positional-arguments]
 ci-host host:
     @"{{ automation_python }}" scripts/ci-product.py host "$@"
@@ -275,6 +266,10 @@ ci-smoke runtime product_dir:
 
 ci-model-fetch:
     @bash scripts/ci-model-fetch.sh
+
+[positional-arguments]
+ci-artifact-smoke runtime product_dir:
+    @"{{ automation_python }}" scripts/ci-product.py artifact-smoke "$@"
 
 ci: lint test llama-check
 

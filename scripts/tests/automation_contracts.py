@@ -4,14 +4,14 @@ import importlib.util
 import io
 import json
 import os
-import subprocess
 import sys
 import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from lib import ci_artifacts
+from lib import ci_artifacts, ci_smoke
 from lib.ci_process import command
 from lib.upgrade_evidence import MANIFEST, load
 from lib.upgrade_source import git, restore_at
@@ -19,28 +19,6 @@ from lib.upgrade_source import git, restore_at
 SCRIPTS = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).with_name("fixtures")
 ROOT = SCRIPTS.parent
-
-
-class SummaryGate(unittest.TestCase):
-    def test_native_contracts_must_match_profile(self):
-        for profile, expected in (("pr", "skipped"), ("full", "success")):
-            jobs = {name: {"result": "success"} for name in (
-                "plan", "inference_contracts", "quality",
-            )}
-            jobs.update({name: {"result": expected} for name in (
-                "host", "runtime", "product", "smoke",
-            )})
-            for status in ("success", "skipped", "failure", "cancelled", None):
-                with self.subTest(profile=profile, status=status):
-                    needs = dict(jobs)
-                    if status is not None:
-                        needs["native_contracts"] = {"result": status}
-                    result = subprocess.run(
-                        ["just", "ci-summary"], cwd=ROOT, capture_output=True,
-                        env=dict(os.environ, SKIPPY_CI_PROFILE=profile,
-                                 SKIPPY_CI_NEEDS=json.dumps(needs)),
-                    )
-                    self.assertEqual(result.returncode == 0, status == expected, result.stderr)
 
 
 def module(name):
@@ -60,6 +38,47 @@ def commit(root, message):
 
 
 class Artifacts(unittest.TestCase):
+    def test_artifact_smoke_requires_release_architectures_and_cleans_cli_environment(self):
+        host = {"os": "linux", "arch": "aarch64", "target": "aarch64-unknown-linux-gnu"}
+        variant = "linux-aarch64-cuda13"
+        row = {"id": variant, "backend": "cuda", "toolkit": "13.1.0", "gpu_architectures": "90;120"}
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(ci_artifacts, "source", return_value="a" * 40), \
+             patch.object(ci_smoke, "require_host"), patch.object(ci_smoke, "command") as command, \
+             patch.dict(os.environ, {"LD_LIBRARY_PATH": "/host/lib", "DYLD_LIBRARY_PATH": "/host/lib"}):
+            product = Path(tmp) / "product"
+            runtime = product / "native-runtimes" / variant
+            runtime.mkdir(parents=True)
+            manifest_path = runtime / "manifest.json"
+            cuda = {"toolkit_major": 13, "gpu_arches": ["90"]}
+            manifest = {"runtime": {"platform": host, "backend": {"kind": "cuda", "cuda": cuda}}}
+            archive = Path(tmp) / "input" / f"skippy-{variant}.tar.gz"
+            ci_artifacts.write_json(manifest_path, manifest)
+            ci_artifacts.receipt(product, "product", host["target"], variant)
+            ci_artifacts.archive(product, archive)
+            with self.assertRaisesRegex(ValueError, "architectures differ"):
+                ci_smoke.artifact_smoke(host, row, archive.parent)
+            report = archive.parent / "evidence" / "artifact-smoke.json"
+            self.assertFalse(report.exists())
+            self.assertEqual(command.call_count, 1)
+
+            cuda["gpu_arches"] = ["90", "120"]
+            ci_artifacts.write_json(manifest_path, manifest)
+            (product / "provenance.json").unlink()
+            ci_artifacts.receipt(product, "product", host["target"], variant)
+            ci_artifacts.archive(product, archive)
+            command.reset_mock()
+            ci_smoke.artifact_smoke(host, row, archive.parent)
+            startup, native_verify = command.call_args_list
+            self.assertEqual(startup.args[0][-1], "--version")
+            self.assertEqual(Path(startup.args[0][0]).parent, startup.kwargs["cwd"].resolve())
+            self.assertNotIn("LD_LIBRARY_PATH", startup.kwargs["overrides"])
+            self.assertNotIn("DYLD_LIBRARY_PATH", startup.kwargs["overrides"])
+            self.assertIn("verify-runtime-package", native_verify.args[0])
+            self.assertEqual(ci_artifacts.read_json(report), {
+                "source": "a" * 40, "variant": variant, "backend": "cuda",
+            })
+
     def test_archive_preserves_executable_hardlink_and_internal_library_link(self):
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)

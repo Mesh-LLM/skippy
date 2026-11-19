@@ -5,13 +5,45 @@ import os
 import re
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
 
 from . import ci_artifacts as artifacts
-from .ci_process import command, start, stop
-from .ci_targets import require_host
+from .ci_process import command, environment, start, stop
+from .ci_targets import require_host, validate_native_identity
+
+
+def verify_product(host, runtime, product_input, product):
+    require_host(host)
+    artifacts.unpack(product_input, product)
+    artifacts.verify(product, "product", host["target"], runtime["id"])
+    binary = artifacts.binary(product.resolve(), host["os"])
+    env = environment()
+    for key in ("LD_LIBRARY_PATH", "LD_PRELOAD", "DYLD_LIBRARY_PATH",
+                "DYLD_FALLBACK_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES"):
+        env.pop(key, None)
+    command([str(binary), "--version"], timeout=60, cwd=product, overrides=env, clean_env=False)
+    return binary
+
+
+def artifact_smoke(host, runtime, product_input):
+    variant = runtime["id"]
+    backend = runtime["backend"]
+    with tempfile.TemporaryDirectory() as tmp:
+        product = Path(tmp) / "product"
+        verify_product(host, runtime, product_input, product)
+        directory = product / "native-runtimes" / variant
+        architectures = runtime["gpu_architectures"] if backend == "cuda" else None
+        validate_native_identity(directory, host, runtime, architectures)
+        verifier = Path(__file__).resolve().parents[1] / "native-inspect.py"
+        command([sys.executable, str(verifier), "verify-runtime-package", str(directory)])
+    output = product_input / "evidence"
+    output.mkdir(parents=True, exist_ok=True)
+    artifacts.write_json(output / "artifact-smoke.json", {
+        "source": artifacts.source(), "variant": variant, "backend": backend,
+    })
 
 
 def model_digest(model):
@@ -92,7 +124,6 @@ def completion(server, endpoint, deadline):
 
 
 def smoke(host, runtime, product_input):
-    require_host(host)
     model_path = os.environ.get("SKIPPY_CI_MODEL")
     if not model_path:
         raise ValueError("SKIPPY_CI_MODEL must point at the pinned Qwen3 dense fixture")
@@ -103,11 +134,8 @@ def smoke(host, runtime, product_input):
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         product = root / "product"
-        artifacts.unpack(product_input, product)
-        artifacts.verify(product, "product", host["target"], variant)
+        binary = str(verify_product(host, runtime, product_input, product))
         digest = model_digest(model)
-        binary = str(artifacts.binary(product, host["os"]))
-        command([binary, "--version"], timeout=60)
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             address = f"127.0.0.1:{listener.getsockname()[1]}"

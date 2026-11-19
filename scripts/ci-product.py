@@ -13,7 +13,7 @@ from pathlib import Path
 from lib import ci_artifacts as artifacts
 from lib.ci_process import cancel_on_signal, capture, command
 from lib.ci_targets import require_host, targets, validate_native_identity
-from lib.ci_smoke import smoke
+from lib.ci_smoke import artifact_smoke, smoke
 
 
 def build_host(host):
@@ -105,13 +105,13 @@ def package(host, runtime, host_input, runtime_input):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     actions = parser.add_subparsers(dest="action", required=True)
-    for name in ("host", "runtime", "package", "smoke"):
+    for name in ("host", "runtime", "package", "smoke", "artifact-smoke"):
         action = actions.add_parser(name)
         action.add_argument("id")
         if name == "package":
             action.add_argument("host_input", type=Path)
             action.add_argument("runtime_input", type=Path)
-        elif name == "smoke":
+        elif name in ("smoke", "artifact-smoke"):
             action.add_argument("product_input", type=Path)
     args = parser.parse_args()
     hosts, runtimes = targets()
@@ -124,6 +124,8 @@ def main():
             build_runtime(host, runtime)
         elif args.action == "package":
             package(host, runtime, args.host_input, args.runtime_input)
+        elif args.action == "artifact-smoke":
+            artifact_smoke(host, runtime, args.product_input)
         else:
             smoke(host, runtime, args.product_input)
 

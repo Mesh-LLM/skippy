@@ -31,6 +31,9 @@ module.exports = async function aggregate({ github, context, core }) {
       const files = await github.paginate(github.rest.pulls.listFiles,
         { ...repo, pull_number: pr.number, per_page: 100 });
       const expected = new Set(['.github/workflows/ci.yml', '.github/workflows/inference.yml']);
+      if (files.some(file => [file.filename, file.previous_filename].some(filename => filename?.startsWith('docs-site/')))) {
+        expected.add('.github/workflows/docs.yml');
+      }
       // Match the unified CI images workflow's native PR trigger paths. The
       // contract test keeps this routing in sync so early aggregate results wait.
       if (files.some(file => [file.filename, file.previous_filename].some(filename =>

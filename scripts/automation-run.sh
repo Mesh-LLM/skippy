@@ -91,12 +91,7 @@ case "${1:-}:${2:-}" in
         action="$2"
         shift 2
         exec bash "$script_dir/ci-$action.sh" "$@" ;;
-    ci:summary|ci:runtime-summary|ci:smoke-summary)
-        action="$2"
-        shift 2
-        if [[ "$action" != summary ]]; then action="${action%-summary}"; fi
-        exec bash "$script_dir/ci-gate.sh" "$action" "$@" ;;
-    ci:host|ci:runtime|ci:package|ci:smoke)
+    ci:host|ci:runtime|ci:package|ci:smoke|ci:artifact-smoke)
         shift
         exec "$python" "$script_dir/ci-product.py" "$@" ;;
     *)

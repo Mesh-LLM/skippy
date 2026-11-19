@@ -1,8 +1,8 @@
 # Skippy continuous integration
 
-`ci.yml` has explicit `pr` and `full` profiles. `CI` reports the short-profile
-code/documentation result; extended runs report `Full qualification` and
-`Full CI gate`. Release callers require the full workflow result independently
+`ci.yml` reports `CI` for code checks and inference PR package smoke, and
+`Full CI gate` for the complete package roster and Graph Contracts. Release callers
+require the full workflow result independently
 of the check name. The single intended branch requirement is `PR checks`, the
 aggregate of all applicable PR workflows, checks and statuses.
 
@@ -16,8 +16,8 @@ skipped results are accepted. Results bind to the current PR head; older runs
 and attempts cannot override newer results. It includes additional automatic PR
 workflows and independent checks/statuses, rather than requiring their names
 in branch protection. Source code owns the expected CI/inference producers and
-the native CPU-image trigger paths so a scheduling delay cannot produce an
-early pass. New PR producers must also be added to the `workflow_run` trigger
+the documentation and image trigger paths so a scheduling delay cannot produce
+an early pass. New PR producers must also be added to the `workflow_run` trigger
 list so their reruns re-evaluate the aggregate.
 
 The controller reports pending and exits while producers work; it does not
@@ -30,7 +30,7 @@ until this workflow has reached `main` and reported a verified aggregate on an
 open PR. Then replace only the required-status-check list with `PR checks`, from
 the GitHub Actions app; retain reviews and all other protection settings.
 
-`.github/path-filters.yml` declares the code, documentation and inference paths.
+`.github/path-filters.yml` declares the code and inference paths.
 A pinned `dorny/paths-filter` action uses `some-with-excludes`: a changed file must
 match an inclusion and no exclusion. Mixed PRs run every applicable check group.
 These are file-level rules. Inline tests in production files, shared Cargo
@@ -38,14 +38,12 @@ manifests/lockfiles, and any `Justfile` edit still count as changes to those fil
 Separate test files/directories and standalone tools are excluded from GPU
 qualification; `.gi/templates.yaml` is exact and `.gi/agents/**` is excluded.
 
-`ci.yml` always runs a lightweight result gate: short runs report the
-`CI` check and full runs report `Full CI gate`. Code paths select the existing
-short code checks on PRs and main pushes. Documentation paths select reusable
-`docs.yml` validation on PRs. The gate accepts only successful selected groups
-and explicitly skipped unselected groups; failed/cancelled selection, missing
-outputs, or failed/cancelled/skipped required checks fail it. Metadata-only and
-docs-only PRs do not allocate native code builders. Documentation has its own
-job name, avoiding duplicate `CI` checks on mixed PRs.
+Code paths select formatting, Clippy, FFI, Rust and C++ tests, and CI
+automation tests. CI reads PR path rules from the base commit. PRs matching the
+inference filter also require Linux x64 CUDA 13 and macOS ARM64 Metal packages to
+build and serve a short inference request on real hardware. Both jobs wait for
+applicable code and automation checks. Docs-only and metadata-only PRs skip those
+jobs. The CI result gate rejects missing, failed or unexpectedly skipped results.
 
 The protected inference workflow reads the same filters from `main`. Irrelevant
 PRs report a source-bound `Inference qualification` success without
@@ -65,33 +63,27 @@ Tagged releases and manual llama upgrades retain their explicit triggers. The
 `ci/Dockerfile*`, `ci/targets.json`, `rust-toolchain.toml` and `Justfile`.
 Protected inference and aggregate workflow changes take effect after they
 reach `main`.
-The 308-test native family battery and complete host/runtime/package/smoke matrix
-run nightly and for releases. Reusable candidate validation defaults to `full`;
-release publication explicitly requests it. Manual dispatch from protected main selects either
-profile, defaulting to `full`. Both nightly workflows run at 14:00 UTC.
-Full runs can build CUDA for the assigned GPU; release validation explicitly
-selects the complete architecture lists from `targets.json`. The only source override is the immutable bundle produced by the protected-main
-llama upgrade workflow.
+Nightly, reusable candidate validation and tagged releases use the full profile.
+Manual dispatch from protected main defaults to full. Both nightly workflows run
+at 14:00 UTC. Release validation uses the complete CUDA architecture lists from
+`targets.json`. Full runs may instead use the assigned GPU's native architecture
+for the Linux x64 CUDA 13 device job. Compiler-only CUDA builds always use the
+manifest architecture lists. The only source override is the immutable bundle
+produced by the protected-main llama upgrade workflow.
 
-`targets.json` defines four backend-neutral hosts and eleven runtimes.
-`enabled_hosts` currently activates Linux and macOS only: three hosts and eight
-runtimes. Windows qualification and publication are temporarily deferred at the
-maintainer's request. Re-enable its retained definitions by enabling
-its host/runtime definitions and adding `windows-x86_64` to `enabled_hosts`. CPU work uses GitHub-hosted
-`ubuntu-24.04`, `ubuntu-24.04-arm` and `macos-15`. Metal and CUDA rows require the explicit ephemeral
-hardware labels and JY runner group in that manifest. JY uses the requested group
-to attribute queued Actions jobs and place capacity; labels alone are insufficient.
-Hardware build and smoke jobs declare literal groups and labels in the workflow:
-JY cannot resolve a runner group hidden behind a matrix expression. Shared
-composite actions retain one implementation of each contract. The runtime and
-smoke aggregate gates use `scripts/ci-gate.sh` to require every active manifest
-row, rejecting missing,
-skipped, cancelled or failed jobs in full qualification. The PR summary instead
-requires those extended stages to be explicitly skipped; skipped unit or quality
-checks still fail, and no GPU package qualification is claimed by a short run.
-In full qualification, host and runtime producers start after planning alongside
-quality; the final gate requires every producer and smoke result.
-Compilation never counts as device evidence.
+`targets.json` defines four hosts and eleven runtimes. Three hosts and eight
+runtimes are active. Windows qualification and publication are deferred. After
+the quality and automation canary, each CPU job builds, packages and tests its
+runtime on GitHub-hosted `ubuntu-24.04`, `ubuntu-24.04-arm` or `macos-15`. Each
+also produces the shared CLI for its platform. Linux x64 builds the shared CLI
+on Ubuntu 24.04 for compatibility with the CUDA toolchain images. Each backend
+job waits for its matching CPU job only. Linux x64 CUDA 12 and Linux ARM64
+CUDA 12 and 13 run on GitHub-hosted Ubuntu in the corresponding compiler images
+and check the packaged CLI and runtime artifact without a device. Linux x64
+CUDA 13 and macOS Metal run device smoke on ephemeral JY runners. Tagged
+releases add device smoke for the other three CUDA packages using their exact
+archives. JY hardware jobs declare literal runner groups and labels. The full
+CI gate matches all package jobs to the plan and checks required device results.
 
 The CPU-only `quality` job runs on GitHub-hosted `ubuntu-24.04` inside
 `ghcr.io/general-inference/skippy-ci-cpu:latest` for lint, tests and FFI binding
@@ -108,20 +100,17 @@ to avoid restoring archives made with hosted-VM home/workspace paths. Native
 source caches remain shared. Protected candidate admission precedes build-cache
 restoration and compiler-cache credential export.
 
-In full CI, `Llama native contracts` runs `just llama-check` in parallel with
-`quality` on the existing ephemeral Linux JY `native-contracts` runner group.
-It uploads graph verification logs and generated patch reports under the
-`native-contracts-evidence` artifact suffix.
-Metal/CUDA runtime and model inference jobs retain their dedicated lab routing.
+Full CI runs `just llama-check` on the ephemeral Linux JY `native-contracts`
+runner after the canary, in parallel with packaging. It checks Graph Contracts,
+patch regeneration, public headers and generated API docs. The gate requires
+both CTest batches to pass. The `native-contracts-evidence` artifact retains
+logs and patch reports.
 
-`docs.yml` validates `docs-site/**` changes through a reusable call from PR CI.
-It installs the lockfile, builds Nextra, generates the Pagefind index and retains
-`docs-site/out`, without publication credentials or deployment. The caller's
-required `CI` gate waits for this validation on both docs-only and mixed PRs.
-After the change reaches protected `main`, the workflow's native push path filter
-builds and deploys the output to `beta.skippy.sh` with `just docs-publish-beta`.
-Release validation calls `docs.yml` directly to create the exact
-`release-docs-site` artifact.
+`docs.yml` triggers directly for `docs-site/**` changes on PRs and pushes to
+`main`. It installs the lockfile, builds Nextra, generates the Pagefind index
+and retains `docs-site/out`. The protected PR aggregate waits for this workflow
+on docs-only and mixed PRs. Only the main push deploys to `beta.skippy.sh`.
+The tagged release calls the workflow to create the `release-docs-site` artifact.
 
 For a version tag, the release workflow downloads that exact
 `release-docs-site` artifact after validation and GitHub release publication,
@@ -295,41 +284,32 @@ and SHA-256. A runner-provided `SKIPPY_CI_MODEL` is verified without downloading
 This command sets the path for subsequent Actions steps; locally export the path
 before running `just ci-smoke`. Default `just test` does not download models.
 
-Every package smoke executes the bundled CLI and runtime, submits an actual
-OpenAI completion, checks generated-token usage, and requires observed positive
-GPU layer offload for Metal/CUDA. Shutdown must be graceful. Product artifacts
-include logs and source-bound smoke evidence. A missing device, model or required
-row fails rather than passing as a skip.
+Inference smoke executes the bundled CLI and runtime, submits a completion,
+checks generated tokens, requires observed device selection and positive layer offload for Metal and CUDA,
+and verifies graceful shutdown. Missing required fixtures or devices fail the
+job. Compiler-only CUDA rows validate the extracted package's source, hashes,
+runtime metadata and native dependency closure, then check CLI startup. This
+artifact smoke is recorded separately from inference evidence.
 
 ## Artifact flow
 
-Cargo validates manifests and dependencies during ordinary checks and builds.
-`just ci-plan` runs `scripts/ci-plan.sh`, which validates the target/runner
-matrix with `jq` and produces workflow outputs without Rust setup or compilation.
-`just ci-host`, `just ci-runtime`, `just ci-package`, and `just ci-smoke`
-use Python 3.9 or later for artifact and process handling. Release inventory
-commands use Python 3.11 or later for TOML parsing. Set `SKIPPY_PYTHON` to
-select the interpreter used by Just.
+`just ci-plan` validates the target matrix with `jq`. The package and
+smoke commands use Python 3.9 or later. Release inventory uses Python
+3.11 or later for TOML parsing. Set `SKIPPY_PYTHON` to select the interpreter.
 
-1. `just ci-host` builds each CLI once, verifies its imports, records its source and
-   checksums, and archives executable permissions.
-2. `just ci-runtime` builds the selected native variant and verifies its manifest and
-   dependency closure. The artifact is bound to the source, target and variant.
-3. `just ci-package` verifies and composes those producer archives without compiling,
-   then runs the bundled CLI on the target's hosted CPU machine. CUDA bundle
-   startup is therefore checked without depending on a hardware runner's driver.
-4. `just ci-smoke` receives that exact archive, admits the pinned model and runs the
-   packaged server on its required CPU/Metal/CUDA device.
-5. `just ci-summary` requires plan, automation contracts and quality in short
-   CI. Full CI also requires llama native contracts and every host, runtime, product and
-   smoke result. Failed, cancelled, absent and unexpectedly skipped required
-   jobs all fail the summary. Docs-only changes skip code builders and run
-   documentation validation.
-
-The full-profile `Runtime test summary` checks `needs` using `jq` on hosted
-Ubuntu, without checkout, Rust setup or compilation. It uses the active runtime
-matrix already validated by `plan` and requires that exact smoke-job roster plus
-the successful plan; missing, extra, skipped, failed or cancelled jobs fail it.
+1. Each platform's CPU job builds and
+   verifies its CLI once using `just ci-host`. Inference PR jobs build their two CLIs
+   locally because they do not run the CPU package jobs.
+2. Each selected job calls `just ci-runtime` for its variant, then `just ci-package` to
+   compose verified producer archives. It smokes the extracted product on the
+   same runner and uploads the package with its evidence.
+3. Release-only device jobs download the exact compiler-only CUDA archives,
+   run inference smoke, and upload the same archives with device evidence under
+   `release-product-*`. The publisher requires all eight variants and smoke
+   evidence before publication.
+4. The hosted CI gate reads the dependency results and the validated plan
+   without checkout or Rust setup. Required work must pass and unselected work
+   must report a skip.
 
 Native runtime manifests retain the upstream pin, patch digest, ABI and backend
 metadata. Product provenance hashes the complete file roster. Actions artifacts
