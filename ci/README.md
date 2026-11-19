@@ -108,6 +108,34 @@ receive this secret.
 
 ## Build prerequisites
 
+### CPU dependency image
+
+`ci/Dockerfile` builds the x86_64 CPU dependency image
+`ghcr.io/general-inference/skippy-ci-cpu:latest`. It includes **build-essential
+and mold**, LLVM/Clang 22 development packages and sanitizers, Rust/Clippy/rustfmt
+from `rust-toolchain.toml`, Just, sccache, CMake, Ninja and system libraries.
+The Ubuntu base is digest-pinned and release binaries are checksum-verified.
+The image runs as uid 1001 to match GitHub-hosted workspace ownership.
+
+Use `just ci-image-build` and `just ci-image-smoke` locally. The Docker build
+compiles and runs Rust with mold and sanitized C++23 with lld without networking;
+the smoke command checks the installed tools in a read-only, offline container.
+`just ci-image-export` saves the image to `target/ci-image/skippy-ci-cpu.tar`.
+
+One workflow, `.github/workflows/ci-image.yml`, builds and tests relevant PRs.
+Main pushes and manual main dispatches publish the exact tested image in a
+separate job with package-write permission. The publisher checks the image ID
+and source label, then pushes an immutable build tag and `latest` without
+rebuilding or running the image. Run manual refreshes with
+`gh workflow run ci-image.yml --ref main` after the workflow lands.
+
+This PR only bootstraps the image; consumer adoption follows after publication.
+Future consumers use `latest` and include `/etc/skippy-ci-image-id` in build-cache
+keys. Private same-repository pulls use `GITHUB_TOKEN` with `packages: read`.
+Future GPU images can use `skippy-ci-rocm` and `skippy-ci-cuda`.
+
+### Source and build caches
+
 Cargo download caches are shared by jobs with compatible dependency sets on the
 same OS and keyed by both workspace lockfiles. Tools, quality, host producers and
 upgrade builders have separate download scopes so a tools-only first writer

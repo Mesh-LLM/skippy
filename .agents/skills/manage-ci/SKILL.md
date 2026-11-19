@@ -23,6 +23,13 @@ contract; no downstream product's workflow topology applies here.
   required `CI` check because path-filtered required workflows otherwise remain
   pending. Release validation calls the same workflow to create the production
   documentation artifact.
+- `.github/workflows/ci-image.yml` owns the standalone `skippy-ci-cpu` dependency
+  image. PRs build and qualify offline without publication credentials; main
+  pushes and manual main dispatches publish the exact tested artifact in a
+  separate job with packages write. Only a fully qualified image advances
+  `latest`; retain its immutable build tag and unique cache identity. Bootstrap
+  the publisher before changing CI consumers. ROCm/CUDA variants remain separate
+  image names and must not inherit CPU qualification as device evidence.
 - `.github/workflows/release.yml` starts only on version-tag pushes and calls
   both validation implementations. A release never edits source, bumps
   versions, moves a tag, or publishes an incomplete artifact matrix.
