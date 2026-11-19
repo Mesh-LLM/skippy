@@ -60,7 +60,7 @@ RUN --network=none image_probe_dir="$(mktemp -d)" \
     && rustc -C linker=clang -C link-arg=-fuse-ld=mold "$image_probe_dir/probe.rs" -o "$image_probe_dir/rust-probe" \
     && "$image_probe_dir/rust-probe" \
     && printf '#include <expected>\nint main() { std::expected<int,int> v{41}; auto r = v.and_then([](int n) { return std::expected<int,int>{n+1}; }); return r && *r == 42 ? 0 : 1; }\n' > "$image_probe_dir/probe.cpp" \
-    && clang++ -std=c++23 -Wall -Wextra -Werror -fuse-ld=lld -fsanitize=address,undefined \
+    && g++ -std=c++23 -Wall -Wextra -Werror -fuse-ld=lld -fsanitize=address,undefined \
       "$image_probe_dir/probe.cpp" -o "$image_probe_dir/cpp-probe" \
     && "$image_probe_dir/cpp-probe" \
     && if [ "$BACKEND" = cuda12 ]; then \
