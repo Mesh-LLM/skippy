@@ -61,7 +61,8 @@ contract; no downstream product's workflow topology applies here.
 - Keep workflow path routing declarative in YAML. Build and qualification
   commands remain typed Rust under `tools/xtask`; Just recipes and platform
   adapters stay thin. PR lab-result comments use the focused Bash/gh/jq report
-  script without Rust setup. Do not add Python or generic shell policy.
+  script without Rust setup. Prefer shell for small CI checks, with Python as
+  a fallback when structured parsing needs it.
 - All builds use Just. Run Cargo serially within one checkout. Include both
   Rust workspaces, full crate tests, FFI contracts, and native API contracts.
 - Ordinary tests are offline. Model admission is explicit and digest-bound.

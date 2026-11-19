@@ -1,4 +1,4 @@
-//! Standalone repository boundaries, checked without compiling product crates.
+//! Repository manifests, paths, documentation links and target configuration.
 use crate::command::DynResult;
 use std::{
     fs,
@@ -21,9 +21,6 @@ pub fn run() -> DynResult<()> {
         }
         if path.extension().is_some_and(|extension| extension == "md") {
             links(&root, &path, &relative, &mut failures)?;
-        }
-        if active_source(&relative) {
-            active_boundaries(&path, &relative, &mut failures)?;
         }
     }
     if failures.is_empty() {
@@ -75,30 +72,23 @@ fn manifests(
     failures: &mut Vec<String>,
 ) -> DynResult<()> {
     let manifest: toml::Value = toml::from_str(&fs::read_to_string(path)?)?;
-    if let Some(package) = manifest.get("package") {
-        if package
-            .get("name")
-            .and_then(toml::Value::as_str)
-            .is_some_and(forbidden_package)
-        {
-            failures.push(format!("{relative}: forbidden downstream package"));
+    if let Some(package) = manifest.get("package")
+        && relative.starts_with("crates/")
+    {
+        if package.get("publish").and_then(toml::Value::as_bool) != Some(false) {
+            failures.push(format!(
+                "{relative}: packages under crates/ require publish = false"
+            ));
         }
-        if relative.starts_with("crates/") {
-            if package.get("publish").and_then(toml::Value::as_bool) != Some(false) {
-                failures.push(format!(
-                    "{relative}: production crates require publish = false"
-                ));
-            }
-            if package
-                .get("description")
-                .and_then(toml::Value::as_str)
-                .is_none_or(|text| text.trim().is_empty())
-            {
-                failures.push(format!("{relative}: missing crate description"));
-            }
-            if !path.with_file_name("README.md").is_file() {
-                failures.push(format!("{relative}: missing crate README"));
-            }
+        if package
+            .get("description")
+            .and_then(toml::Value::as_str)
+            .is_none_or(|text| text.trim().is_empty())
+        {
+            failures.push(format!("{relative}: missing crate description"));
+        }
+        if !path.with_file_name("README.md").is_file() {
+            failures.push(format!("{relative}: missing crate README"));
         }
     }
     dependencies(
@@ -108,9 +98,6 @@ fn manifests(
         relative,
         failures,
     )
-}
-fn forbidden_package(name: &str) -> bool {
-    name.starts_with("mesh-") || name.starts_with("mesh_llm")
 }
 fn dependencies(
     root: &Path,
@@ -142,14 +129,6 @@ fn dependency_entries(
 ) -> DynResult<()> {
     if let Some(table) = value.as_table() {
         for (name, entry) in table {
-            if forbidden_package(name)
-                || entry
-                    .get("package")
-                    .and_then(toml::Value::as_str)
-                    .is_some_and(forbidden_package)
-            {
-                failures.push(format!("{label}: forbidden dependency {name}"));
-            }
             if let Some(path) = entry.get("path").and_then(toml::Value::as_str) {
                 match directory.join(path).canonicalize() {
                     Ok(path) if path.starts_with(root) => {}
@@ -158,72 +137,10 @@ fn dependency_entries(
                     )),
                 }
             }
-            if let Some(url) = entry.get("git").and_then(toml::Value::as_str)
-                && url.to_ascii_lowercase().contains("mesh-llm/")
-            {
-                failures.push(format!("{label}: downstream Git dependency {name}"));
-            }
             dependency_entries(root, directory, entry, label, failures)?;
         }
     }
     Ok(())
-}
-fn active_source(path: &str) -> bool {
-    path != "tools/xtask/src/ci/contracts.rs"
-        && !path.starts_with("llama_cpp/")
-        && (path.starts_with("crates/")
-            || path.starts_with("tools/")
-            || path.starts_with("scripts/")
-            || path.starts_with(".github/")
-            || path.starts_with("just/")
-            || path == "Justfile")
-        && ["rs", "sh", "ps1", "yml", "yaml", "just", "cmd"]
-            .iter()
-            .any(|extension| path.ends_with(&format!(".{extension}")) || path == "Justfile")
-}
-fn active_boundaries(path: &Path, label: &str, failures: &mut Vec<String>) -> DynResult<()> {
-    let source = fs::read_to_string(path)?;
-    for (index, line) in source.lines().enumerate() {
-        let lower = line.to_ascii_lowercase();
-        let comment = line.trim_start();
-        if comment.starts_with("//") || comment.starts_with('#') {
-            continue;
-        }
-        if misplaced_worker_transport(label, line) {
-            failures.push(format!(
-                "{label}:{}: historical worker transport identifier outside its compatibility owner",
-                index + 1
-            ));
-        }
-        if [
-            "github.com/mesh-llm/mesh-llm",
-            "git@github.com:mesh-llm/",
-            "mesh/crates/",
-            "mesh/scripts/",
-            "mesh/website/",
-            "mesh_llm::",
-        ]
-        .iter()
-        .any(|pattern| lower.contains(pattern))
-        {
-            failures.push(format!(
-                "{label}:{}: active downstream source/build reference",
-                index + 1
-            ));
-        }
-    }
-    Ok(())
-}
-fn misplaced_worker_transport(path: &str, line: &str) -> bool {
-    path != "crates/skippy-model-package/src/jobs/delivery.rs"
-        && !path.starts_with("crates/skippy-model-package/src/jobs/delivery/")
-        && [
-            "MESH_HF_JOB_INPUT",
-            "MESH_HF_JOB_REQUEST",
-            "MESH_HF_PUBLICATION_TOKEN",
-        ]
-        .iter()
-        .any(|identifier| line.contains(identifier))
 }
 fn links(root: &Path, file: &Path, label: &str, failures: &mut Vec<String>) -> DynResult<()> {
     let source = fs::read_to_string(file)?;
@@ -305,43 +222,36 @@ fn normalize(path: &Path) -> PathBuf {
 mod tests {
     use super::*;
     #[test]
-    fn historical_worker_transport_is_confined_to_delivery() {
-        for identifier in [
-            "MESH_HF_JOB_INPUT",
-            "MESH_HF_JOB_REQUEST",
-            "MESH_HF_PUBLICATION_TOKEN",
+    fn package_and_dependency_names_are_unrestricted() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("Cargo.toml");
+        for name in [
+            "arbitrary-name",
+            "mesh-example",
+            "mesh_llm_example",
+            "skippy",
         ] {
-            for path in [
-                "crates/skippy-model-package/src/jobs/delivery.rs",
-                "crates/skippy-model-package/src/jobs/delivery/request_transport.rs",
-                "crates/skippy-model-package/src/jobs/delivery/generic_cli/tests.rs",
-            ] {
-                assert!(!misplaced_worker_transport(path, identifier));
-            }
-            for path in [
-                "crates/skippy-model-package/src/jobs/delivery_new.rs",
-                "crates/skippy-model-package/src/jobs/delivery_new/worker.rs",
-                "scripts/publish.sh",
-                ".github/workflows/release.yml",
-            ] {
-                assert!(misplaced_worker_transport(path, identifier));
-            }
+            fs::write(
+                &path,
+                format!(
+                    "[package]\nname='{name}'\n[dependencies]\nmesh-runtime='1'\nalias={{package='mesh_llm_core',version='1'}}\nupstream={{git='https://github.com/Mesh-LLM/example'}}\n"
+                ),
+            )
+            .unwrap();
+            let mut failures = Vec::new();
+            manifests(root.path(), &path, "Cargo.toml", &mut failures).unwrap();
+            assert!(failures.is_empty(), "{failures:?}");
         }
-        assert!(!misplaced_worker_transport(
-            "scripts/worker.sh",
-            "SKIPPY_JOB_INPUT"
-        ));
     }
     #[test]
     fn dependency_cannot_escape_checkout() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("repo");
         fs::create_dir(&root).unwrap();
-        let value: toml::Value =
-            toml::from_str("[dependencies]\nforeign={path='..'}\nmesh-runtime='1'").unwrap();
+        let value: toml::Value = toml::from_str("[dependencies]\nforeign={path='..'}").unwrap();
         let mut failures = Vec::new();
         dependencies(&root, &root, &value, "Cargo.toml", &mut failures).unwrap();
-        assert_eq!(failures.len(), 2);
+        assert_eq!(failures.len(), 1);
     }
     #[test]
     fn markdown_links_resolve_from_owning_file() {

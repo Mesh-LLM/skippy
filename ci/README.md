@@ -245,6 +245,11 @@ row fails rather than passing as a skip.
 
 ## Artifact flow
 
+`ci-contracts` validates the target matrix, Cargo metadata, local dependency
+paths and documentation links. Package and dependency names are unrestricted;
+Mesh references are not a CI contract. Packages under `crates/` still require
+`publish = false`, a description and a README.
+
 1. `ci host` builds each CLI once, verifies its imports, records its source and
    checksums, and archives executable permissions.
 2. `ci runtime` builds the selected native variant and verifies its manifest and
