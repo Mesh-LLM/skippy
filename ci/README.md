@@ -29,11 +29,15 @@ same-repository/collaborator admission, a fresh-head check and all seven GPU smo
 configurations. No candidate source is executed by the credentialed controller.
 Rust admission verifies trust and source identity; it does not classify changes.
 The syntax/dependency classifier and offline replay command have been removed.
+The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
+`gh` and `jq`; it needs no Rust setup or compilation. It checks receipt source,
+configuration and native-attempt identity, updates only its bot-owned comment,
+and refuses to replace results for a newer commit or workflow attempt.
 
 Scheduled, manual and reusable full/candidate validation bypass path selection.
 Tagged releases and manual llama upgrades retain their explicit triggers. The
 CPU image workflow retains its native paths for its workflow, `ci/Dockerfile*`,
-`rust-toolchain.toml` and `Justfile`. The two existing required status names are
+and `rust-toolchain.toml`. The two existing required status names are
 preserved without changing branch protection. Protected inference workflow
 changes take effect after they reach `main`.
 The 308-test native family battery and complete host/runtime/package/smoke matrix

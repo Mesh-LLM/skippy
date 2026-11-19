@@ -123,6 +123,8 @@ jobs:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
       - run: just inference-tool-check
+      - name: Test inference results reporting
+        run: bash scripts/tests/inference-report.sh
   quality:
     needs: plan
     env:

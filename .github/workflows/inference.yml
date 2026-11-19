@@ -143,7 +143,6 @@ jobs:
         with:
           ref: main
           persist-credentials: false
-      - uses: ./.github/actions/setup
       - name: Collect controller receipts when available
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         continue-on-error: true
@@ -158,4 +157,4 @@ jobs:
           PLAN: ${{ needs.plan.result }}
           REQUIRED: ${{ needs.plan.outputs.required }}
           RESULT: ${{ needs.qualification.result }}
-        run: just automation-run inference comment target/inference-comment
+        run: bash scripts/inference-report.sh target/inference-comment
