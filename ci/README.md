@@ -3,7 +3,7 @@
 `ci.yml` reports `CI` for code checks and inference PR package smoke, and
 `Full CI gate` for the complete package roster and Graph Contracts. Release callers
 require the full workflow result independently
-of the check name. The single intended branch requirement is `PR checks`, the
+of the check name. The single required status is `PR checks`, the
 aggregate of all applicable PR workflows, checks and statuses.
 
 `pr-checks.yml` evaluates that aggregate on a standard GitHub-hosted
@@ -15,24 +15,21 @@ applicable workflows leave it pending. Successful, neutral and intentionally
 skipped results are accepted. Results bind to the current PR head; older runs
 and attempts cannot override newer results. It includes additional automatic PR
 workflows and independent checks/statuses, rather than requiring their names
-in branch protection. Source code owns the expected CI/inference producers and
-the documentation and image trigger paths so a scheduling delay cannot produce
-an early pass. New PR producers must also be added to the `workflow_run` trigger
-list so their reruns re-evaluate the aggregate.
+in branch protection. The aggregate reads the native PR trigger paths for CI,
+inference, documentation and images from the protected workflow files. Missing
+matching producers keep it pending even before GitHub schedules their runs.
+New PR producers must also be added to the `workflow_run` trigger list so their
+reruns re-evaluate the aggregate.
 
 The controller reports pending and exits while producers work; it does not
 hold a hosted runner open waiting for native hardware. Repository `GITHUB_TOKEN`
-status updates cannot recursively trigger the controller. No separate
-`Inference qualification` branch requirement is needed after activation.
+status updates cannot recursively trigger the controller.
 
-For rollout, retain the existing `CI` and `Inference qualification` requirements
-until this workflow has reached `main` and reported a verified aggregate on an
-open PR. Then replace only the required-status-check list with `PR checks`, from
-the GitHub Actions app; retain reviews and all other protection settings.
-
-`.github/path-filters.yml` declares the code and inference paths.
-A pinned `dorny/paths-filter` action uses `some-with-excludes`: a changed file must
-match an inclusion and no exclusion. Mixed PRs run every applicable check group.
+`ci.yml` uses native paths to start on code or inference PRs and on code pushes
+to `main`. Once a PR run starts, a pinned `dorny/paths-filter` action reads
+`.github/path-filters.yml` to choose code and package jobs independently. It uses
+`some-with-excludes`, so a changed file must match an inclusion and no exclusion.
+Mixed PRs run every applicable check group.
 These are file-level rules. Inline tests in production files, shared Cargo
 manifests/lockfiles, and any `Justfile` edit still count as changes to those files.
 Separate test files/directories and standalone tools are excluded from GPU
@@ -42,15 +39,15 @@ Code paths select formatting, Clippy, FFI, Rust and C++ tests, and CI
 automation tests. CI reads PR path rules from the base commit. PRs matching the
 inference filter also require Linux x64 CUDA 13 and macOS ARM64 Metal packages to
 build and serve a short inference request on real hardware. Both jobs wait for
-applicable code and automation checks. Docs-only and metadata-only PRs skip those
-jobs. The CI result gate rejects missing, failed or unexpectedly skipped results.
+applicable code and automation checks. Docs-only and metadata-only PRs do not
+start CI. The CI result gate rejects missing, failed or unexpectedly skipped
+results.
 
-The protected inference workflow reads the same filters from `main`. Irrelevant
-PRs report a source-bound `Inference qualification` success without
-dispatching lab jobs or posting lab-result comments. Relevant PRs retain
-same-repository/collaborator admission, a fresh-head check and all seven GPU smoke
-configurations. No candidate source is executed by the credentialed controller.
-Inference admission verifies trust and source identity; it does not classify changes.
+The protected inference workflow uses native `pull_request_target` path filters
+for the same inference inputs. Relevant PRs retain same-repository/collaborator
+admission, a fresh-head check and all seven GPU smoke configurations.
+The credentialed controller runs only protected source.
+Python admission verifies trust and source identity.
 The syntax/dependency classifier and offline replay command have been removed.
 The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
 `gh` and `jq`; it needs no Rust setup or compilation. It checks receipt source,
@@ -284,10 +281,10 @@ and SHA-256. A runner-provided `SKIPPY_CI_MODEL` is verified without downloading
 This command sets the path for subsequent Actions steps; locally export the path
 before running `just ci-smoke`. Default `just test` does not download models.
 
-Inference smoke executes the bundled CLI and runtime, submits a completion,
-checks generated tokens, requires observed device selection and positive layer offload for Metal and CUDA,
-and verifies graceful shutdown. Missing required fixtures or devices fail the
-job. Compiler-only CUDA rows validate the extracted package's source, hashes,
+Inference smoke executes the bundled CLI and runtime, checks generated tokens
+in a completion, and verifies graceful shutdown. Metal and CUDA require
+observed device selection and positive layer offload. Missing required fixtures
+or devices fail the job. Compiler-only CUDA rows validate the extracted package's source, hashes,
 runtime metadata and native dependency closure, then check CLI startup. This
 artifact smoke is recorded separately from inference evidence.
 
@@ -297,12 +294,12 @@ artifact smoke is recorded separately from inference evidence.
 smoke commands use Python 3.9 or later. Release inventory uses Python
 3.11 or later for TOML parsing. Set `SKIPPY_PYTHON` to select the interpreter.
 
-1. Each platform's CPU job builds and
-   verifies its CLI once using `just ci-host`. Inference PR jobs build their two CLIs
-   locally because they do not run the CPU package jobs.
-2. Each selected job calls `just ci-runtime` for its variant, then `just ci-package` to
-   compose verified producer archives. It smokes the extracted product on the
-   same runner and uploads the package with its evidence.
+1. Each platform's CPU job builds and verifies its CLI once using
+   `just ci-host`. Inference PR jobs build their two CLIs locally because they
+   do not run the CPU package jobs.
+2. Each selected job calls `just ci-runtime` for its variant, then
+   `just ci-package` to compose verified producer archives. It smokes the
+   extracted product on the same runner and uploads the package with its evidence.
 3. Release-only device jobs download the exact compiler-only CUDA archives,
    run inference smoke, and upload the same archives with device evidence under
    `release-product-*`. The publisher requires all eight variants and smoke

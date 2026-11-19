@@ -1,4 +1,5 @@
 # Used with dorny/paths-filter's some-with-excludes predicate.
+# The PR workflow tests check these lists against the native triggers.
 # These are file-level rules: inline tests and shared manifest/Justfile edits
 # still count when their containing file matches.
 code:
@@ -11,7 +12,9 @@ code:
   - '.cargo/**'
   - '.github/actions/**'
   - '.github/scripts/**'
+  - '.github/path-filters.yml'
   - '.github/workflows/ci.yml'
+  - '.github/workflows/inference.yml'
   - 'Cargo.toml'
   - 'Cargo.lock'
   - 'rust-toolchain.toml'
