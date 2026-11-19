@@ -18,8 +18,6 @@ automation do not dispatch native jobs. The controller still publishes the
 source-bound status for these PRs. An unreadable or potentially truncated file
 list fails admission. Scheduled, manual, and release qualification remain explicit
 and do not use the PR path filter.
-Within `.gi/`, only the exact `.gi/templates.yaml` path requires qualification;
-agent configuration such as `.gi/agents/code-review.yaml` does not.
 The 308-test native family battery and complete host/runtime/package/smoke matrix
 run nightly and for releases. Reusable candidate validation defaults to `full`;
 release publication explicitly requests it. Manual dispatch from protected main selects either
