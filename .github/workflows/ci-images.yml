@@ -1,18 +1,88 @@
-name: GPU CI images
+name: CI images
 on:
   pull_request:
-    paths: ['.github/workflows/ci-gpu-images.yml', 'ci/Dockerfile.gpu', 'ci/Dockerfile.gpu.dockerignore', 'ci/targets.json', 'rust-toolchain.toml', 'Justfile']
+    paths: ['.github/workflows/ci-images.yml', 'ci/Dockerfile*', 'ci/targets.json', 'rust-toolchain.toml', 'Justfile']
   push:
     branches: [main]
-    paths: ['.github/workflows/ci-gpu-images.yml', 'ci/Dockerfile.gpu', 'ci/Dockerfile.gpu.dockerignore', 'ci/targets.json', 'rust-toolchain.toml', 'Justfile']
+    paths: ['.github/workflows/ci-images.yml', 'ci/Dockerfile*', 'ci/targets.json', 'rust-toolchain.toml', 'Justfile']
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: skippy-ci-gpu-images-${{ github.event.pull_request.number || 'main' }}
+  group: skippy-ci-images-${{ github.event.pull_request.number || 'main' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  build:
+  cpu-build:
+    name: Build and test CPU image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      artifact_id: ${{ steps.image.outputs.artifact-id }}
+      image_id: ${{ steps.metadata.outputs.image_id }}
+    env:
+      SKIPPY_CI_IMAGE_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      SOURCE_REVISION: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - run: just ci-image-build
+      - run: time just ci-image-smoke
+      - id: metadata
+        run: |
+          echo "image_id=$(docker image inspect --format '{{.Id}}' skippy-ci-cpu:build)" >> "$GITHUB_OUTPUT"
+          docker image inspect --format 'Uncompressed image size: {{.Size}} bytes' skippy-ci-cpu:build
+      - run: just ci-image-export
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        id: image
+        with:
+          name: skippy-ci-cpu-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/ci-image/skippy-ci-cpu.tar
+          if-no-files-found: error
+          retention-days: 7
+  cpu-publish:
+    name: Publish tested CPU image
+    needs: cpu-build
+    if: >-
+      github.repository == 'general-inference/skippy' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.cpu-build.outputs.artifact_id }}
+          path: image
+      - name: Load and verify tested image
+        env:
+          EXPECTED_IMAGE_ID: ${{ needs.cpu-build.outputs.image_id }}
+        run: |
+          set -euo pipefail
+          docker image load --input image/skippy-ci-cpu.tar
+          test "$(docker image inspect --format '{{.Id}}' skippy-ci-cpu:build)" = "$EXPECTED_IMAGE_ID"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' skippy-ci-cpu:build)" = "$GITHUB_SHA"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish immutable build and latest
+        run: |
+          set -euo pipefail
+          image=ghcr.io/general-inference/skippy-ci-cpu
+          build_tag="build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          docker image tag skippy-ci-cpu:build "$image:$build_tag"
+          docker image push "$image:$build_tag"
+          docker image tag skippy-ci-cpu:build "$image:latest"
+          docker image push "$image:latest"
+  gpu-build:
     name: Build and test ${{ matrix.backend }} image
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -62,9 +132,9 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 7
-  publish:
+  gpu-publish:
     name: Publish tested ${{ matrix.backend }} image
-    needs: build
+    needs: gpu-build
     if: >-
       github.repository == 'general-inference/skippy' &&
       github.ref == 'refs/heads/main' &&
