@@ -233,6 +233,14 @@ pub fn run(profile: &str, sha: &str, output: &Path, row: Option<&str>) -> DynRes
                     _ => thread::sleep(Duration::from_secs(15)),
                 }
             }
+            if profile == "pr" {
+                let job = serde_json::from_slice(&fs::read(
+                    output.join(format!("{}-job.json", row.id)),
+                )?)?;
+                if let Err(error) = super::throughput::collect(&job, row, sha, output) {
+                    eprintln!("{} smoke throughput unavailable: {error}", row.id);
+                }
+            }
         }
         Ok(())
     })();

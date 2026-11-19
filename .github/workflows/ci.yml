@@ -118,16 +118,24 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         if: runner.environment == 'github-hosted'
-      - uses: ./.github/actions/cache
-        if: runner.environment == 'self-hosted'
-      - uses: ./.github/actions/sccache
         with:
-          scope: quality-${{ runner.os }}-${{ runner.arch }}
+          cache: 'false'
       - uses: ./.github/actions/source
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/cache
+        with:
+          scope: quality-native
+          download-scope: quality
+          build-paths: |
+            target/debug
+            skippy-api-rs/target/debug
+      - uses: ./.github/actions/sccache
+        with:
+          scope: quality-${{ runner.os }}-${{ runner.arch }}
       - run: just ci-contracts
+      - uses: ./.github/actions/native-source
       - run: just llama-prepare
       - run: just skippy-ffi-bindgen-check
       - run: just lint
@@ -151,6 +159,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
   host:
+    name: Build Skippy · ${{ matrix.display_name }}
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     strategy:
@@ -164,13 +173,22 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         if: runner.environment == 'github-hosted'
-      - uses: ./.github/actions/sccache
         with:
-          scope: host-${{ matrix.id }}
+          cache: 'false'
       - uses: ./.github/actions/source
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/cache
+        with:
+          scope: host-${{ matrix.id }}-backend-neutral
+          download-scope: host
+          build-paths: |
+            target/debug
+            target/release
+      - uses: ./.github/actions/sccache
+        with:
+          scope: host-${{ matrix.id }}
       - name: Build backend-neutral host
         shell: bash
         env:
@@ -183,6 +201,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   runtime_darwin_aarch64_cpu:
+    name: Build · macOS · CPU
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on: macos-15
@@ -197,6 +216,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_darwin_aarch64_metal:
+    name: Build · macOS · Metal
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -213,6 +233,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_x86_64_cpu:
+    name: Build · Linux x64 · CPU
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04
@@ -227,6 +248,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_x86_64_cuda12:
+    name: Build · Linux x64 · CUDA 12
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -243,6 +265,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_x86_64_cuda13:
+    name: Build · Linux x64 · CUDA 13
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -259,6 +282,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_aarch64_cpu:
+    name: Build · Linux ARM64 · CPU
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04-arm
@@ -273,6 +297,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_aarch64_cuda12:
+    name: Build · Linux ARM64 · CUDA 12
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -289,6 +314,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime_linux_aarch64_cuda13:
+    name: Build · Linux ARM64 · CUDA 13
     needs: plan
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -305,6 +331,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   runtime:
+    name: Runtime build summary
     needs: [plan, runtime_darwin_aarch64_cpu, runtime_darwin_aarch64_metal, runtime_linux_x86_64_cpu, runtime_linux_x86_64_cuda12, runtime_linux_x86_64_cuda13, runtime_linux_aarch64_cpu, runtime_linux_aarch64_cuda12, runtime_linux_aarch64_cuda13]
     if: always() && needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04
@@ -318,6 +345,7 @@ jobs:
         env:
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
   product:
+    name: Package · ${{ matrix.display_name }}
     needs: [plan, host, runtime]
     if: needs.plan.outputs.profile == 'full'
     strategy:
@@ -356,6 +384,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   smoke_darwin_aarch64_cpu:
+    name: Test · macOS · CPU
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on: macos-15
@@ -370,6 +399,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_darwin_aarch64_metal:
+    name: Test · macOS · Metal
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -386,6 +416,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_x86_64_cpu:
+    name: Test · Linux x64 · CPU
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04
@@ -400,6 +431,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_x86_64_cuda12:
+    name: Test · Linux x64 · CUDA 12
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -416,6 +448,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_x86_64_cuda13:
+    name: Test · Linux x64 · CUDA 13
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -432,6 +465,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_aarch64_cpu:
+    name: Test · Linux ARM64 · CPU
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04-arm
@@ -446,6 +480,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_aarch64_cuda12:
+    name: Test · Linux ARM64 · CUDA 12
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -462,6 +497,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke_linux_aarch64_cuda13:
+    name: Test · Linux ARM64 · CUDA 13
     needs: [plan, product]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
@@ -478,6 +514,7 @@ jobs:
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
   smoke:
+    name: Runtime test summary
     needs: [plan, smoke_darwin_aarch64_cpu, smoke_darwin_aarch64_metal, smoke_linux_x86_64_cpu, smoke_linux_x86_64_cuda12, smoke_linux_x86_64_cuda13, smoke_linux_aarch64_cpu, smoke_linux_aarch64_cuda12, smoke_linux_aarch64_cuda13]
     if: always() && needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04

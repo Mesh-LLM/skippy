@@ -38,7 +38,7 @@ pub fn run() -> DynResult<()> {
 
 pub(super) fn verdict(plan: &str, required: &str, result: &str) -> (bool, &'static str) {
     match (plan, required, result) {
-        ("success", "true", "success") => (true, "Native JY Spark qualification"),
+        ("success", "true", "success") => (true, "Native Spark lab qualification"),
         ("success", "false", "skipped") => (
             true,
             "No inference inputs changed; model tests not required",
