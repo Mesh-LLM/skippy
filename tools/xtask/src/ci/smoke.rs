@@ -1,6 +1,7 @@
 use super::{
     artifacts, execution,
-    matrix::{Matrix, require_host},
+    matrix::{Host, Matrix, require_host},
+    producers::validate_native_identity,
 };
 use crate::command::DynResult;
 use process_supervision::{
@@ -58,21 +59,13 @@ pub fn run(id: &str, input: &Path) -> DynResult<()> {
     let matrix = Matrix::load()?;
     let row = matrix.runtime(id)?;
     let host = matrix.host(&row.host)?;
-    require_host(host)?;
     let temp = tempfile::tempdir()?;
     let product = temp.path().join("product");
-    artifacts::unpack(input, &product)?;
-    artifacts::verify(&product, "product", &host.target, id)?;
+    verify_product(input, &product, host, id)?;
     let model = std::env::var("SKIPPY_CI_MODEL")
         .map_err(|_| "SKIPPY_CI_MODEL must point at the pinned Qwen3 dense fixture")?;
     verify_model(Path::new(&model))?;
     let binary = artifacts::binary(&product, &host.os);
-    execution::run(
-        &binary.to_string_lossy(),
-        &execution::strings(&["--version"]),
-        &[],
-        60,
-    )?;
     let port = TcpListener::bind("127.0.0.1:0")?.local_addr()?.port();
     let endpoint = format!("http://127.0.0.1:{port}/v1");
     let args = execution::strings(&[
@@ -114,6 +107,68 @@ pub fn run(id: &str, input: &Path) -> DynResult<()> {
             "model_sha256": artifacts::digest(Path::new(&model))?, "response": response
         }),
     )?;
+    Ok(())
+}
+
+pub fn artifact(id: &str, input: &Path) -> DynResult<()> {
+    let matrix = Matrix::load()?;
+    let row = matrix.runtime(id)?;
+    let host = matrix.host(&row.host)?;
+    let temp = tempfile::tempdir()?;
+    let product = temp.path().join("product");
+    verify_product(input, &product, host, id)?;
+    let runtime = product.join("native-runtimes").join(id);
+    let architectures = (row.backend == "cuda").then_some(row.gpu_architectures.as_str());
+    validate_native_identity(&runtime, host, row, architectures)?;
+    crate::native::run(&execution::strings(&[
+        "verify-runtime-package",
+        &runtime.to_string_lossy(),
+    ]))?;
+    artifacts::write_json(
+        &input.join("evidence/artifact-smoke.json"),
+        &serde_json::json!({
+            "source": artifacts::source()?,
+            "variant": id,
+            "backend": row.backend,
+        }),
+    )
+}
+
+fn verify_product(input: &Path, product: &Path, host: &Host, id: &str) -> DynResult<()> {
+    require_host(host)?;
+    artifacts::unpack(input, product)?;
+    artifacts::verify(product, "product", &host.target, id)?;
+    let binary = artifacts::binary(product, &host.os);
+    let mut spec = execution::specification(
+        &binary.to_string_lossy(),
+        &execution::strings(&["--version"]),
+        &[],
+    )?;
+    for key in [
+        "LD_LIBRARY_PATH",
+        "LD_PRELOAD",
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FALLBACK_LIBRARY_PATH",
+        "DYLD_INSERT_LIBRARIES",
+    ] {
+        spec.environment.remove(std::ffi::OsStr::new(key));
+    }
+    spec.cwd = product.canonicalize()?;
+    let report = process_supervision::supervise_inherited(
+        &spec,
+        &execution::limits(60),
+        &Cancellation::default(),
+    )?;
+    if report.outcome != process_supervision::Outcome::Exited
+        || !report.status.is_some_and(|status| status.success())
+        || !report.cleanup.complete
+    {
+        return Err(format!(
+            "packaged CLI startup failed: {:?}, {:?}",
+            report.outcome, report.status
+        )
+        .into());
+    }
     Ok(())
 }
 

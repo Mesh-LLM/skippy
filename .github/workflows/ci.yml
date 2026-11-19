@@ -59,11 +59,12 @@ jobs:
       pull-requests: read
     outputs:
       code: ${{ inputs.profile != '' || (github.event_name != 'pull_request' && github.event_name != 'push') || steps.paths.outputs.code == 'true' }}
-      docs: ${{ inputs.profile == '' && github.event_name == 'pull_request' && steps.paths.outputs.docs == 'true' }}
+      inference: ${{ inputs.profile == '' && github.event_name == 'pull_request' && steps.paths.outputs.inference == 'true' }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         if: inputs.profile == '' && (github.event_name == 'pull_request' || github.event_name == 'push')
         with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
@@ -72,20 +73,16 @@ jobs:
         with:
           predicate-quantifier: some-with-excludes
           filters: .github/path-filters.yml
-  documentation:
-    needs: changes
-    if: needs.changes.outputs.docs == 'true'
-    uses: ./.github/workflows/docs.yml
   plan:
+    name: Validate build targets
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.inference == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       SKIPPY_CI_PROFILE: ${{ inputs.profile || (github.event_name == 'schedule' && 'full' || 'pr') }}
     outputs:
       profile: ${{ steps.plan.outputs.profile }}
-      hosts: ${{ steps.plan.outputs.hosts }}
       runtimes: ${{ steps.plan.outputs.runtimes }}
     steps:
       - name: Validate CUDA architecture mode
@@ -107,10 +104,16 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
+      - uses: ./.github/actions/source
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
       - id: plan
         run: just ci-plan
-  inference_contracts:
-    needs: plan
+  automation:
+    name: Test xtask and CI automation
+    needs: [changes, plan]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -128,7 +131,9 @@ jobs:
       - name: Test workflow result gates
         run: node --test .github/scripts/*.test.cjs
   quality:
-    needs: plan
+    name: Quality canary
+    needs: [changes, plan]
+    if: needs.changes.outputs.code == 'true'
     env:
       CARGO_BUILD_JOBS: '2'
       CMAKE_BUILD_PARALLEL_LEVEL: '2'
@@ -210,8 +215,8 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
   native_contracts:
-    name: Llama native contracts
-    needs: plan
+    name: Check llama.cpp Graph Contracts, patches, and API docs
+    needs: [plan, quality, automation]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
       group: jy-rnr_vfnz8k5p4yrh334
@@ -260,282 +265,103 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
-  host:
-    name: Build Skippy · ${{ matrix.display_name }}
-    needs: plan
-    if: needs.plan.outputs.profile == 'full'
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.hosts) }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 150
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-        if: runner.environment == 'github-hosted'
-        with:
-          cache: 'false'
-      - uses: ./.github/actions/source
-        with:
-          artifact: ${{ inputs.candidate_artifact }}
-          sha: ${{ inputs.candidate_sha }}
-      - uses: ./.github/actions/cache
-        with:
-          scope: host-${{ matrix.id }}-backend-neutral
-          download-scope: host
-          build-paths: |
-            target/debug
-            target/release
-      - uses: ./.github/actions/sccache
-        with:
-          scope: host-${{ matrix.id }}
-      - name: Build backend-neutral host
-        shell: bash
-        env:
-          HOST_ID: ${{ matrix.id }}
-        run: just ci-host "$HOST_ID"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-host-${{ matrix.id }}
-          path: dist/hosts/${{ matrix.id }}
-          if-no-files-found: error
-          retention-days: 7
-  runtime_darwin_aarch64_cpu:
-    name: Build · macOS · CPU
-    needs: plan
+  package_darwin_aarch64_cpu:
+    name: Build, package, and smoke · macOS ARM64 CPU
+    needs: [plan, quality, automation]
     if: needs.plan.outputs.profile == 'full'
     runs-on: macos-15
     timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: ./.github/actions/ci-runtime
+      - uses: ./.github/actions/ci-package
         with:
-          runtime_id: darwin-aarch64-cpu
-          candidate_artifact: ${{ inputs.candidate_artifact }}
-          candidate_sha: ${{ inputs.candidate_sha }}
-  runtime_darwin_aarch64_metal:
-    name: Build · macOS · Metal
-    needs: plan
-    if: needs.plan.outputs.profile == 'full'
+          runtime-id: darwin-aarch64-cpu
+          host-id: darwin-aarch64
+          build-cli: 'true'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_darwin_aarch64_metal:
+    name: Build, package, and smoke · macOS ARM64 Metal
+    needs: [plan, quality, automation, package_darwin_aarch64_cpu, changes]
+    if: >-
+      ${{ !cancelled() && needs.plan.result == 'success' &&
+      ((needs.changes.outputs.code == 'true' && needs.quality.result == 'success' && needs.automation.result == 'success') ||
+      (needs.changes.outputs.code == 'false' && needs.quality.result == 'skipped' && needs.automation.result == 'skipped')) &&
+      ((needs.plan.outputs.profile == 'full' && needs.package_darwin_aarch64_cpu.result == 'success') ||
+      (needs.plan.outputs.profile == 'pr' && needs.changes.outputs.inference == 'true')) }}
     runs-on:
       group: jy-rnr_h7x5s2yx9gtkz3c
       labels: ["self-hosted", "skippy-ephemeral", "macOS", "ARM64", "metal"]
     timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: ./.github/actions/ci-runtime
+      - uses: ./.github/actions/ci-package
         with:
-          runtime_id: darwin-aarch64-metal
-          candidate_artifact: ${{ inputs.candidate_artifact }}
-          candidate_sha: ${{ inputs.candidate_sha }}
-  runtime_linux_x86_64_cpu:
-    name: Build · Linux x64 · CPU
-    needs: plan
+          runtime-id: darwin-aarch64-metal
+          host-id: darwin-aarch64
+          build-cli: ${{ needs.plan.outputs.profile == 'pr' }}
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_linux_x86_64_cpu:
+    name: Build, package, and smoke · Linux x64 CPU
+    needs: [plan, quality, automation]
     if: needs.plan.outputs.profile == 'full'
+    # The shared CLI must also run in the Ubuntu 24.04 CUDA toolchain images.
     runs-on: ubuntu-24.04
     timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: ./.github/actions/ci-runtime
+      - uses: ./.github/actions/ci-package
         with:
-          runtime_id: linux-x86_64-cpu
-          candidate_artifact: ${{ inputs.candidate_artifact }}
-          candidate_sha: ${{ inputs.candidate_sha }}
-  runtime_linux_x86_64_cuda12:
-    name: Build · Linux x64 · CUDA 12
-    needs: plan
-    if: needs.plan.outputs.profile == 'full'
-    runs-on:
-      group: jy-rnr_btc4xhvks1eer0j
-      labels: ["self-hosted", "skippy-ephemeral", "Linux", "X64", "runtime-image", "cuda12"]
-    timeout-minutes: 240
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/ci-runtime
-        with:
-          runtime_id: linux-x86_64-cuda12
-          candidate_artifact: ${{ inputs.candidate_artifact }}
-          candidate_sha: ${{ inputs.candidate_sha }}
-  runtime_linux_x86_64_cuda13:
-    name: Build · Linux x64 · CUDA 13
-    needs: plan
-    if: needs.plan.outputs.profile == 'full'
-    runs-on:
-      group: jy-rnr_p0zx3thw895vrka
-      labels: ["self-hosted", "skippy-ephemeral", "Linux", "X64", "runtime-image", "cuda13"]
-    timeout-minutes: 240
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/ci-runtime
-        with:
-          runtime_id: linux-x86_64-cuda13
-          candidate_artifact: ${{ inputs.candidate_artifact }}
-          candidate_sha: ${{ inputs.candidate_sha }}
-  runtime_linux_aarch64_cpu:
-    name: Build · Linux ARM64 · CPU
-    needs: plan
-    if: needs.plan.outputs.profile == 'full'
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 240
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/ci-runtime
-        with:
-          runtime_id: linux-aarch64-cpu
-          candidate_artifact: ${{ inputs.candidate_artifact }}
-          candidate_sha: ${{ inputs.candidate_sha }}
-  runtime_linux_aarch64_cuda12:
-    name: Build · Linux ARM64 · CUDA 12
-    needs: plan
-    if: needs.plan.outputs.profile == 'full'
-    runs-on:
-      group: jy-rnr_pg90ves41xbxvwy
-      labels: ["self-hosted", "skippy-ephemeral", "Linux", "ARM64", "runtime-image", "cuda12"]
-    timeout-minutes: 240
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/ci-runtime
-        with:
-          runtime_id: linux-aarch64-cuda12
-          candidate_artifact: ${{ inputs.candidate_artifact }}
-          candidate_sha: ${{ inputs.candidate_sha }}
-  runtime_linux_aarch64_cuda13:
-    name: Build · Linux ARM64 · CUDA 13
-    needs: plan
-    if: needs.plan.outputs.profile == 'full'
-    runs-on:
-      group: jy-rnr_8gvzbe9b9d79y0k
-      labels: ["self-hosted", "skippy-ephemeral", "Linux", "ARM64", "runtime-image", "cuda13"]
-    timeout-minutes: 240
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/ci-runtime
-        with:
-          runtime_id: linux-aarch64-cuda13
-          candidate_artifact: ${{ inputs.candidate_artifact }}
-          candidate_sha: ${{ inputs.candidate_sha }}
-  runtime:
-    name: Runtime build summary
-    needs: [plan, runtime_darwin_aarch64_cpu, runtime_darwin_aarch64_metal, runtime_linux_x86_64_cpu, runtime_linux_x86_64_cuda12, runtime_linux_x86_64_cuda13, runtime_linux_aarch64_cpu, runtime_linux_aarch64_cuda12, runtime_linux_aarch64_cuda13]
-    if: always() && needs.plan.outputs.profile == 'full'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-      - run: just automation-run ci runtime-summary
-        env:
-          SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
-  product:
-    name: Package · ${{ matrix.display_name }}
-    needs: [plan, host, runtime]
-    if: needs.plan.outputs.profile == 'full'
-    strategy:
-      fail-fast: false
-      max-parallel: 4
-      matrix: ${{ fromJSON(needs.plan.outputs.runtimes) }}
-    runs-on: ${{ matrix.host_runner }}
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-        if: runner.environment == 'github-hosted'
-      - uses: ./.github/actions/source
-        with:
-          artifact: ${{ inputs.candidate_artifact }}
-          sha: ${{ inputs.candidate_sha }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-host-${{ matrix.host }}
-          path: inputs/host
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-runtime-${{ matrix.id }}
-          path: inputs/runtime
-      - name: Compose exact producers and verify startup on a hosted machine
-        shell: bash
-        env:
-          RUNTIME_ID: ${{ matrix.id }}
-        run: just ci-package "$RUNTIME_ID" inputs/host inputs/runtime
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-package-${{ matrix.id }}
-          path: dist/products/${{ matrix.id }}
-          if-no-files-found: error
-          retention-days: 7
-  smoke_darwin_aarch64_cpu:
-    name: Test · macOS · CPU
-    needs: [plan, product]
-    if: needs.plan.outputs.profile == 'full'
-    runs-on: macos-15
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/ci-smoke
-        with:
-          runtime_id: darwin-aarch64-cpu
-          candidate_artifact: ${{ inputs.candidate_artifact }}
-          candidate_sha: ${{ inputs.candidate_sha }}
-  smoke_darwin_aarch64_metal:
-    name: Test · macOS · Metal
-    needs: [plan, product]
-    if: needs.plan.outputs.profile == 'full'
-    runs-on:
-      group: jy-rnr_h7x5s2yx9gtkz3c
-      labels: ["self-hosted", "skippy-ephemeral", "macOS", "ARM64", "metal"]
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/ci-smoke
-        with:
-          runtime_id: darwin-aarch64-metal
-          candidate_artifact: ${{ inputs.candidate_artifact }}
-          candidate_sha: ${{ inputs.candidate_sha }}
-  smoke_linux_x86_64_cpu:
-    name: Test · Linux x64 · CPU
-    needs: [plan, product]
+          runtime-id: linux-x86_64-cpu
+          host-id: linux-x86_64
+          build-cli: 'true'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_linux_x86_64_cuda12:
+    name: Build, package, and smoke · Linux x64 CUDA 12
+    needs: [plan, quality, automation, package_linux_x86_64_cpu]
     if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/general-inference/skippy-ci-cuda12:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: ./.github/actions/ci-smoke
+      - uses: ./.github/actions/ci-package
         with:
-          runtime_id: linux-x86_64-cpu
-          candidate_artifact: ${{ inputs.candidate_artifact }}
-          candidate_sha: ${{ inputs.candidate_sha }}
-  smoke_linux_x86_64_cuda12:
-    name: Test · Linux x64 · CUDA 12
-    needs: [plan, product]
-    if: needs.plan.outputs.profile == 'full'
+          runtime-id: linux-x86_64-cuda12
+          host-id: linux-x86_64
+          smoke: artifact
+          containerized: 'true'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  release_smoke_linux_x86_64_cuda12:
+    name: Release GPU smoke · Linux x64 CUDA 12
+    needs: [package_linux_x86_64_cuda12]
+    if: inputs.artifact_scope == 'release'
     runs-on:
       group: jy-rnr_btc4xhvks1eer0j
       labels: ["self-hosted", "skippy-ephemeral", "Linux", "X64", "runtime-image", "cuda12"]
@@ -547,44 +373,86 @@ jobs:
       - uses: ./.github/actions/ci-smoke
         with:
           runtime_id: linux-x86_64-cuda12
+          download-package: 'true'
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
-  smoke_linux_x86_64_cuda13:
-    name: Test · Linux x64 · CUDA 13
-    needs: [plan, product]
-    if: needs.plan.outputs.profile == 'full'
+  package_linux_x86_64_cuda13:
+    name: Build, package, and smoke · Linux x64 CUDA 13
+    needs: [plan, quality, automation, package_linux_x86_64_cpu, changes]
+    if: >-
+      ${{ !cancelled() && needs.plan.result == 'success' &&
+      ((needs.changes.outputs.code == 'true' && needs.quality.result == 'success' && needs.automation.result == 'success') ||
+      (needs.changes.outputs.code == 'false' && needs.quality.result == 'skipped' && needs.automation.result == 'skipped')) &&
+      ((needs.plan.outputs.profile == 'full' && needs.package_linux_x86_64_cpu.result == 'success') ||
+      (needs.plan.outputs.profile == 'pr' && needs.changes.outputs.inference == 'true')) }}
     runs-on:
       group: jy-rnr_p0zx3thw895vrka
       labels: ["self-hosted", "skippy-ephemeral", "Linux", "X64", "runtime-image", "cuda13"]
-    timeout-minutes: 30
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: ./.github/actions/ci-smoke
+      - uses: ./.github/actions/ci-package
         with:
-          runtime_id: linux-x86_64-cuda13
-          candidate_artifact: ${{ inputs.candidate_artifact }}
-          candidate_sha: ${{ inputs.candidate_sha }}
-  smoke_linux_aarch64_cpu:
-    name: Test · Linux ARM64 · CPU
-    needs: [plan, product]
+          runtime-id: linux-x86_64-cuda13
+          host-id: linux-x86_64
+          build-cli: ${{ needs.plan.outputs.profile == 'pr' }}
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_linux_aarch64_cpu:
+    name: Build, package, and smoke · Linux ARM64 CPU
+    needs: [plan, quality, automation]
     if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 30
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: ./.github/actions/ci-smoke
+      - uses: ./.github/actions/ci-package
         with:
-          runtime_id: linux-aarch64-cpu
-          candidate_artifact: ${{ inputs.candidate_artifact }}
-          candidate_sha: ${{ inputs.candidate_sha }}
-  smoke_linux_aarch64_cuda12:
-    name: Test · Linux ARM64 · CUDA 12
-    needs: [plan, product]
+          runtime-id: linux-aarch64-cpu
+          host-id: linux-aarch64
+          build-cli: 'true'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_linux_aarch64_cuda12:
+    name: Build, package, and smoke · Linux ARM64 CUDA 12
+    needs: [plan, quality, automation, package_linux_aarch64_cpu]
     if: needs.plan.outputs.profile == 'full'
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/general-inference/skippy-ci-cuda12:latest-arm64
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: linux-aarch64-cuda12
+          host-id: linux-aarch64
+          smoke: artifact
+          containerized: 'true'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  release_smoke_linux_aarch64_cuda12:
+    name: Release GPU smoke · Linux ARM64 CUDA 12
+    needs: [package_linux_aarch64_cuda12]
+    if: inputs.artifact_scope == 'release'
     runs-on:
       group: jy-rnr_pg90ves41xbxvwy
       labels: ["self-hosted", "skippy-ephemeral", "Linux", "ARM64", "runtime-image", "cuda12"]
@@ -596,12 +464,41 @@ jobs:
       - uses: ./.github/actions/ci-smoke
         with:
           runtime_id: linux-aarch64-cuda12
+          download-package: 'true'
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
-  smoke_linux_aarch64_cuda13:
-    name: Test · Linux ARM64 · CUDA 13
-    needs: [plan, product]
+  package_linux_aarch64_cuda13:
+    name: Build, package, and smoke · Linux ARM64 CUDA 13
+    needs: [plan, quality, automation, package_linux_aarch64_cpu]
     if: needs.plan.outputs.profile == 'full'
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/general-inference/skippy-ci-cuda13:latest-arm64
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: linux-aarch64-cuda13
+          host-id: linux-aarch64
+          smoke: artifact
+          containerized: 'true'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  release_smoke_linux_aarch64_cuda13:
+    name: Release GPU smoke · Linux ARM64 CUDA 13
+    needs: [package_linux_aarch64_cuda13]
+    if: inputs.artifact_scope == 'release'
     runs-on:
       group: jy-rnr_8gvzbe9b9d79y0k
       labels: ["self-hosted", "skippy-ephemeral", "Linux", "ARM64", "runtime-image", "cuda13"]
@@ -613,50 +510,18 @@ jobs:
       - uses: ./.github/actions/ci-smoke
         with:
           runtime_id: linux-aarch64-cuda13
+          download-package: 'true'
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
-  smoke:
-    name: Runtime test summary
-    needs: [plan, smoke_darwin_aarch64_cpu, smoke_darwin_aarch64_metal, smoke_linux_x86_64_cpu, smoke_linux_x86_64_cuda12, smoke_linux_x86_64_cuda13, smoke_linux_aarch64_cpu, smoke_linux_aarch64_cuda12, smoke_linux_aarch64_cuda13]
-    if: always() && needs.plan.outputs.profile == 'full'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Validate all runtime smoke-test results
-        env:
-          SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
-          RUNTIME_MATRIX: ${{ needs.plan.outputs.runtimes }}
-        run: |
-          jq -en --argjson needs "$SKIPPY_CI_NEEDS" --argjson matrix "$RUNTIME_MATRIX" '
-            ($matrix.include | map("smoke_" + (.id | gsub("-"; "_")))) as $jobs |
-            ($jobs + ["plan"] | sort) as $expected |
-            ($jobs | length) > 0 and
-            ($needs | keys) == $expected and
-            all($expected[]; $needs[.].result == "success")
-          ' || {
-            echo '::error::Plan and every active runtime smoke test must succeed, with no missing or unexpected jobs.'
-            exit 1
-          }
-  summary:
-    name: ${{ needs.plan.outputs.profile == 'full' && 'Full qualification' || 'Code checks' }}
-    needs: [plan, inference_contracts, quality, native_contracts, host, runtime, product, smoke]
-    if: always() && needs.plan.result != 'skipped'
-    outputs:
-      profile: ${{ needs.plan.outputs.profile }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-      - run: just ci-summary
-        env:
-          SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
-          SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
   gate:
-    name: ${{ needs.summary.outputs.profile == 'full' && 'Full CI gate' || 'CI' }}
-    needs: [changes, documentation, summary]
+    name: ${{ needs.plan.outputs.profile == 'full' && 'Full CI gate' || 'CI' }}
+    needs: [
+      changes, plan, automation, quality, native_contracts,
+      package_darwin_aarch64_cpu, package_darwin_aarch64_metal,
+      package_linux_x86_64_cpu, package_linux_x86_64_cuda12, package_linux_x86_64_cuda13,
+      package_linux_aarch64_cpu, package_linux_aarch64_cuda12, package_linux_aarch64_cuda13,
+      release_smoke_linux_x86_64_cuda12, release_smoke_linux_aarch64_cuda12, release_smoke_linux_aarch64_cuda13
+    ]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -664,17 +529,47 @@ jobs:
       - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           CHECK_RESULTS: ${{ toJSON(needs) }}
+          RELEASE_SMOKE: ${{ inputs.artifact_scope == 'release' }}
         with:
           script: |
             const needs = JSON.parse(process.env.CHECK_RESULTS);
-            if (needs.changes.result !== 'success') {
-              core.setFailed('Path selection failed or was cancelled');
-              return;
+            const paths = needs.changes?.outputs;
+            if (needs.changes?.result !== 'success' ||
+                !['true', 'false'].includes(paths?.code) ||
+                !['true', 'false'].includes(paths?.inference)) {
+              throw new Error('Path selection failed or did not report all decisions');
             }
-            for (const [filter, job] of [['code', 'summary'], ['docs', 'documentation']]) {
-              const required = needs.changes.outputs[filter];
-              const expected = required === 'true' ? 'success' : 'skipped';
-              if (!['true', 'false'].includes(required) || needs[job].result !== expected) {
-                core.setFailed(`${job} must be ${expected}; got ${needs[job].result}`);
+            const inference = paths.inference === 'true';
+            const code = paths.code === 'true';
+            const selected = code || inference;
+            const profile = needs.plan?.outputs?.profile;
+            if (selected && !['pr', 'full'].includes(profile)) throw new Error('Missing or invalid CI profile');
+            const full = selected && profile === 'full';
+            const release = process.env.RELEASE_SMOKE === 'true';
+            if (release && !full) throw new Error('Release validation requires full CI');
+
+            const prPackages = ['package_darwin_aarch64_metal', 'package_linux_x86_64_cuda13'];
+            const releaseSmokes = ['release_smoke_linux_x86_64_cuda12', 'release_smoke_linux_aarch64_cuda12', 'release_smoke_linux_aarch64_cuda13'];
+            const packageJobs = Object.keys(needs).filter(job => job.startsWith('package_'));
+            if (selected) {
+              const rows = JSON.parse(needs.plan.outputs.runtimes).include;
+              const matrixJobs = rows.map(row => 'package_' + row.id.replaceAll('-', '_'));
+              if (matrixJobs.length === 0 ||
+                  matrixJobs.length !== packageJobs.length || new Set(matrixJobs).size !== matrixJobs.length ||
+                  matrixJobs.some(job => !packageJobs.includes(job))) {
+                throw new Error('Package jobs do not match the active runtime matrix');
               }
             }
+
+            const requireResult = (job, required) => {
+              const expected = required ? 'success' : 'skipped';
+              if (needs[job]?.result !== expected) {
+                throw new Error(`${job} must be ${expected}; got ${needs[job]?.result}`);
+              }
+            };
+            requireResult('plan', selected);
+            for (const job of ['automation', 'quality']) requireResult(job, code);
+            requireResult('native_contracts', full);
+            for (const job of prPackages) if (!packageJobs.includes(job)) throw new Error(`Missing package job ${job}`);
+            for (const job of packageJobs) requireResult(job, full || (inference && prPackages.includes(job)));
+            for (const job of releaseSmokes) requireResult(job, release);

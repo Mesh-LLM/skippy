@@ -9,6 +9,9 @@ code:
   - 'tools/**'
   - 'scripts/**'
   - '.cargo/**'
+  - '.github/actions/**'
+  - '.github/scripts/**'
+  - '.github/workflows/ci.yml'
   - 'Cargo.toml'
   - 'Cargo.lock'
   - 'rust-toolchain.toml'
@@ -21,9 +24,6 @@ code:
   - '!**/*.adoc'
   - '!**/docs/**'
   - '!docs-site/**'
-
-docs:
-  - 'docs-site/**'
 
 inference:
   - 'crates/**'

@@ -18,40 +18,25 @@ contract; no downstream product's workflow topology applies here.
   after the controller reaches main and its real aggregate is verified; preserve
   the previous two required checks until then, and retain all review protections.
 
-- `.github/workflows/ci.yml` is the single implementation with explicit `pr`
-  and `full` profiles. Declarative paths in `.github/path-filters.yml` select
-  code checks and reusable PR documentation validation; a lightweight result gate
-  always reports (`CI` for short runs, `Full CI gate` for full runs) and rejects
-  failed selection or missing selected results.
-  Code changes run formatting, Clippy, unit/API tests and FFI freshness. Cargo
-  handles manifest/dependency validity; `ci plan` validates the target matrix.
-  The separate protected inference workflow uses the same
-  path filters from protected main and runs the
-  seven short serving configurations for relevant trusted PRs. Nightly,
-  release and reusable candidate validation use `full`, adding the complete
-  native battery, host/runtime producers, packaging and hardware smoke. A short
-  summary accepts only its explicitly skipped extended stages; a full summary
-  requires every stage to succeed.
-  The full-profile Runtime test summary uses `jq` and the already validated
-  plan matrix; it requires every expected smoke result without checkout or Rust setup.
-- `.github/workflows/docs.yml` owns documentation validation. Docs pull requests
-  build without credentials or publication, while protected-main docs changes
-  deploy the validated output to the beta site. PR CI calls this reusable workflow
-  for `docs-site/**` changes and waits for its uniquely named documentation job.
-  Release validation calls the same workflow to create the production
-  documentation artifact.
-- `.github/workflows/ci-image.yml` owns the standalone `skippy-ci-cpu` dependency
-  image. PRs build and qualify offline without publication credentials; main
-  pushes and manual main dispatches publish the exact tested artifact in a
-  separate job with packages write. Only a fully qualified image advances
-  `latest`; retain its immutable build tag and unique cache identity. Bootstrap
-  the publisher before changing CI consumers. ROCm/CUDA variants remain separate
-  image names and must not inherit CPU qualification as device evidence.
-- `.github/workflows/ci-gpu-images.yml` builds CUDA and ROCm compiler images from
-  separate digest-pinned vendor toolkits. Build-time compiler probes and the
-  exported-image smoke qualify image contents only; GPU runtime qualification
-  still requires the matching device jobs in `ci.yml`. Publish only the exact
-  artifact that passed its backend-specific smoke and metadata checks.
+- `.github/workflows/ci.yml` owns code checks and package builds. Declarative
+  filters select code checks and require Linux x64 CUDA 13 and macOS ARM64 Metal
+  package and device smoke on inference PRs. The protected inference workflow
+  uses those same inference paths for the seven Spark configurations. The
+  quality and automation checks gate package jobs. Full CI runs Graph Contracts
+  in parallel with eight build, package and smoke jobs. Each CPU job supplies a
+  shared platform CLI to its backend jobs. Routine CI uses two device jobs and
+  checks the three remaining CUDA archives on hosted compiler-image runners.
+  Tagged releases add device smoke on those exact archives. The lightweight
+  CI gate checks the validated matrix and requires all applicable results.
+- `.github/workflows/docs.yml` directly validates `docs-site/**` changes on PRs
+  and deploys to beta on protected-main pushes. The protected PR aggregate
+  expects this workflow when docs paths match. Tagged release validation calls
+  the same workflow to produce the production docs artifact.
+- `.github/workflows/ci-images.yml` builds and qualifies the CPU, CUDA and ROCm
+  compiler images without publication credentials. Protected-main publication
+  pushes the exact tested image. The package jobs use the matching x86_64 or
+  ARM64 CUDA image. Bootstrap image publication before changing consumers, and
+  require actual device results for GPU qualification.
 - `.github/workflows/release.yml` starts only on version-tag pushes and calls
   both validation implementations. A release never edits source, bumps
   versions, moves a tag, or publishes an incomplete artifact matrix.
