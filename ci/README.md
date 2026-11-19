@@ -114,7 +114,9 @@ receive this secret.
 `ghcr.io/general-inference/skippy-ci-cpu:latest`. It includes **build-essential
 and mold**, LLVM/Clang 22 development packages (including `libclang-cpp22-dev`),
 libc++/libc++abi 22, OpenMP and sanitizers, Rust/Clippy/rustfmt
-from `rust-toolchain.toml`, Just, sccache, CMake, Ninja and system libraries.
+from `rust-toolchain.toml`, Just, sccache, CMake, Ninja, OpenSSH client tools and
+system libraries. `ssh-keygen` supports the offline private-key normalization
+test; the image build also generates and reloads a disposable Ed25519 fixture.
 The Ubuntu base is digest-pinned and release binaries are checksum-verified.
 The image runs as uid 1001 to match GitHub-hosted workspace ownership. Cargo uses
 its default `$HOME/.cargo` directory so the existing dependency cache follows the
