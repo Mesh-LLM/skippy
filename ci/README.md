@@ -176,14 +176,17 @@ The `CI images` workflow also builds
 `ghcr.io/general-inference/skippy-ci-cuda13`, and
 `ghcr.io/general-inference/skippy-ci-rocm` from digest-pinned vendor development
 images. CUDA 12.9.2 and 13.1.2 use separate images, matching `targets.json`, so
-each image carries one complete toolkit without exceeding hosted-runner disk
-capacity. Each CUDA image compiles a small kernel with its toolkit. All three
-images carry the Rust and native build tools used by the CPU image; the ROCm
-image also compiles a backend-specific kernel during the image build. PRs build,
+each hosted runner only needs space for one toolkit. Both CUDA toolkits build
+on native x86_64 and ARM64 Ubuntu runners.
+Use `skippy-ci-cuda12:latest-arm64` and `skippy-ci-cuda13:latest-arm64` for
+Linux ARM64. The `latest` tags serve Linux x86_64. ROCm builds for Linux x86_64.
+The images include Rust and native build tools and compile a small
+backend-specific kernel during the image build. PRs build,
 smoke, and stream each exact image into a gzip-compressed archive without
 publication credentials. Protected-main publication loads those same
-artifacts, checks their image IDs, source revisions, backend and toolkit labels,
-then pushes immutable build tags and `latest`.
+artifacts, checks their image IDs, platforms, source revisions, backend and
+toolkit labels, then pushes immutable build tags and the corresponding latest
+tags. ARM64 build tags also end in `-arm64`.
 
 The kernel compiler probes and container smoke establish compiler/toolkit image
 contents only. They do not execute GPU kernels and cannot qualify a GPU runtime;
@@ -191,8 +194,9 @@ device evidence still comes from the matching CUDA/ROCm inference jobs.
 Run `just ci-gpu-image-build cuda12 BASE_IMAGE 12.9.2`,
 `just ci-gpu-image-build cuda13 BASE_IMAGE 13.1.2`, or
 `just ci-gpu-image-build rocm BASE_IMAGE 7.2.4`, then the matching smoke and
-export recipes. The exact, digest-pinned base references are in the workflow
-matrix.
+export recipes. For ARM64, pass `arm64` as the final argument to both the build
+and smoke recipes. Use the digest-pinned base for the selected architecture from
+the workflow matrix.
 
 ### Source and build caches
 
