@@ -91,6 +91,22 @@ In full qualification, host and runtime producers start after planning alongside
 quality; the final gate requires every producer and smoke result.
 Compilation never counts as device evidence.
 
+The CPU-only `quality` job runs on GitHub-hosted `ubuntu-24.04` inside
+`ghcr.io/general-inference/skippy-ci-cpu:latest`, keeping lab capacity available
+for device qualification. The image supplies the pinned Rust toolchain, Just,
+sccache, build-essential, mold and LLVM/Clang 22 development inputs. The job
+verifies its tools before running the existing checks and pulls the private
+image with its own `GITHUB_TOKEN` using `packages: read`.
+
+Cargo and CMake compilation use two workers to fit standard private-repository
+hosted capacity. Cargo build snapshots, protected admission snapshots and
+sccache include `/etc/skippy-ci-image-id`, so updates to `latest` use a new
+compiled-output namespace. Cargo downloads use separate container cache scopes
+to avoid restoring archives made with hosted-VM home/workspace paths. Native
+source caches remain shared. Protected candidate admission precedes build-cache
+restoration and compiler-cache credential export.
+Metal/CUDA runtime and model inference jobs retain their dedicated lab routing.
+
 `docs.yml` validates `docs-site/**` changes through a reusable call from PR CI.
 It installs the lockfile, builds Nextra, generates the Pagefind index and retains
 `docs-site/out`, without publication credentials or deployment. The caller's
