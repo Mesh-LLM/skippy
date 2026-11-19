@@ -1,7 +1,5 @@
 self-hosted-runner:
   labels:
-    # Official hosted label not yet known by older actionlint releases.
-    - ubuntu-26.04
     - skippy-ephemeral
     - jy-linux-docker
     - native-contracts

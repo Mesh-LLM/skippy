@@ -10,14 +10,48 @@ and C API tests, and FFI binding freshness. Relevant trusted PRs also run the
 protected seven-configuration inference smoke workflow.
 Its separate `Inference qualification` status explicitly reports when no serving
 inputs changed; required smoke jobs cannot pass by being skipped.
-PR admission checks every changed-file page and both paths of a rename. Serving
-crates, native sources and patches, build dependencies, and the inference harness
-and its configuration require qualification. Documentation (including nested
-READMEs and docs directories), PR/issue templates, and unrelated CI/release
-automation do not dispatch native jobs. The controller still publishes the
-source-bound status for these PRs. An unreadable or potentially truncated file
-list fails admission. Scheduled, manual, and release qualification remain explicit
-and do not use the PR path filter.
+PR admission checks every changed-file page and both paths of a rename against
+immutable merge-base and head objects. It reads those objects in a temporary bare
+Git repository; it never checks out or runs candidate code to make this decision.
+It also rejects a PR head that changes while admission is collecting inputs.
+
+GPU qualification requires a change to the native Linux ARM64 serving workload:
+production Rust modules in the CLI's non-development dependency graph, their
+embedded assets and build inputs, native sources and patch queues, native build
+recipes, or the model/quality/smoke workload. Rust syntax comparisons remove
+proven test-only and other-platform items and ignore comments and formatting,
+while retaining string literals and unknown feature conditions. Separate test
+modules are resolved from production module declarations rather than filename
+conventions. An embedded runtime asset still counts if its filename looks like
+documentation.
+
+Shared configuration is compared by its consumed content: native Just recipes
+and their recipe dependencies/exports, production Cargo dependency declarations
+and lockfile closure, native development profiles and dependency overrides, and
+the two PR native templates. Unrelated recipes, development dependencies,
+standalone tools, offline unit tests, admission policy, dispatch, reporting,
+workflow wiring, and publication automation do not dispatch GPU jobs. These
+changes retain normal CI and inference contract tests. Changes to the candidate
+worker's execution, GPU checks, smoke checks or split preparation still require
+qualification. The reviewed candidate-side xtask dependency list must be updated
+when these worker helpers acquire a new external dependency.
+
+Admission logs the files and reasons that require qualification and the files
+whose production content is unchanged or outside the workload. The controller
+still publishes the source-bound status for irrelevant PRs. Invalid source,
+unresolvable modules/assets/dependencies, or an unreadable or potentially
+truncated file list fail admission; they never become passing skips. Scheduled,
+manual, and release qualification remain explicit and do not use the PR filter.
+
+Replay the decision offline using two full commit SHAs already present locally:
+
+```sh
+just inference-inputs BASE_SHA HEAD_SHA target/ci-evidence/inference-inputs.json
+```
+
+This writes source-bound reasons and exclusions without dispatching native jobs.
+The protected controller uses the policy on `main`; a policy PR's own workflow
+continues to use the previous policy until the PR is merged.
 The 308-test native family battery and complete host/runtime/package/smoke matrix
 run nightly and for releases. Reusable candidate validation defaults to `full`;
 release publication explicitly requests it. Manual dispatch from protected main selects either
@@ -45,17 +79,19 @@ In full qualification, host and runtime producers start after planning alongside
 quality; the final gate requires every producer and smoke result.
 Compilation never counts as device evidence.
 
-The CPU-only `quality` job runs directly on GitHub-hosted `ubuntu-26.04`, keeping
-lab capacity available for device qualification. It selects the preinstalled
-LLVM/Clang 22 compiler and development inputs at `/usr/lib/llvm-22`. The job
-verifies the compiler and development CMake packages before running the existing
-checks. Missing prerequisites fail without installing system packages or
-skipping checks. No container-registry access or package credential is needed.
+The CPU-only `quality` job runs on GitHub-hosted `ubuntu-24.04` in
+`ghcr.io/general-inference/skippy-ci-cpu:latest`, keeping lab capacity available
+for device qualification. This repository's image supplies Rust, Just, sccache,
+build-essential, mold and LLVM/Clang 22 development inputs at `/usr/lib/llvm-22`.
+The job verifies its tools and development CMake packages before running the
+existing checks. Missing prerequisites fail without installing system packages
+or skipping checks. The job pulls using its own read-only `GITHUB_TOKEN` with
+`packages: read`; no publication credentials are supplied.
 
 Cargo and CMake compilation use two workers to fit standard private-repository
-hosted capacity. Cargo and sccache identities include GitHub's image OS/version
-and the LLVM major so weekly hosted-image updates cannot reuse incompatible
-build snapshots. Shared dependency and native-source caches remain enabled.
+hosted capacity. Cargo and sccache identities include `/etc/skippy-ci-image-id`
+from the pulled image, so updates to `latest` use a new build-cache namespace.
+Shared dependency and native-source caches remain enabled.
 Metal/CUDA runtime and model inference jobs retain their dedicated lab routing.
 
 `docs.yml` runs one documentation job when `docs-site/**` changes. On a pull
@@ -86,6 +122,34 @@ Pull requests, documentation builds and shared release validation do not
 receive this secret.
 
 ## Build prerequisites
+
+### CPU dependency image
+
+`ci/Dockerfile` builds the x86_64 CPU dependency image
+`ghcr.io/general-inference/skippy-ci-cpu:latest`. It includes **build-essential
+and mold**, LLVM/Clang 22 development packages and sanitizers, Rust/Clippy/rustfmt
+from `rust-toolchain.toml`, Just, sccache, CMake, Ninja and system libraries.
+The Ubuntu base is digest-pinned and release binaries are checksum-verified.
+The image runs as uid 1001 to match GitHub-hosted workspace ownership.
+
+Use `just ci-image-build` and `just ci-image-smoke` locally. The Docker build
+compiles and runs Rust with mold and sanitized C++23 with lld without networking;
+the smoke command checks the installed tools in a read-only, offline container.
+`just ci-image-export` saves the image to `target/ci-image/skippy-ci-cpu.tar`.
+
+One workflow, `.github/workflows/ci-image.yml`, builds and tests relevant PRs.
+Main pushes and manual main dispatches publish the exact tested image in a
+separate job with package-write permission. The publisher checks the image ID
+and source label, then pushes an immutable build tag and `latest` without
+rebuilding or running the image. Run manual refreshes with
+`gh workflow run ci-image.yml --ref main` after the workflow lands.
+
+This PR only bootstraps the image; consumer adoption follows after publication.
+Future consumers use `latest` and include `/etc/skippy-ci-image-id` in build-cache
+keys. Private same-repository pulls use `GITHUB_TOKEN` with `packages: read`.
+Future GPU images can use `skippy-ci-rocm` and `skippy-ci-cuda`.
+
+### Source and build caches
 
 Cargo download caches are shared by jobs with compatible dependency sets on the
 same OS and keyed by both workspace lockfiles. Tools, quality, host producers and

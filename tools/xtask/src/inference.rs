@@ -70,6 +70,7 @@ pub fn run(args: &[String]) -> DynResult<()> {
     {
         ["build"] => build::run(),
         ["admit"] => admission::run(),
+        ["inputs", base, head, output] => changes::inspect(base, head, Path::new(output)),
         ["summary"] => summary::run(),
         ["comment", directory] => comment::run(Path::new(directory)),
         ["control-preflight"] => {
