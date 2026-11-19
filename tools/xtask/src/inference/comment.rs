@@ -147,7 +147,7 @@ fn render(
         "Failed or incomplete"
     };
     let mut body = format!(
-        "{MARKER}\n<!-- run:{run}:{attempt} -->\n### Inference qualification: {outcome}\n\nCommit: `{}` · PR smoke · [Workflow and timings]({url}) · [Saved evidence](https://github.com/general-inference/skippy/actions/runs/{run}#artifacts)\n\n{description}.\n",
+        "{MARKER}\n<!-- run:{run}:{attempt} -->\n### [General Inference](https://generalinference.xyz) Lab Qualification: {outcome}\n\nCommit: `{}` · PR smoke · [Workflow and timings]({url}) · [Saved evidence](https://github.com/general-inference/skippy/actions/runs/{run}#artifacts)\n\n{description}.\n",
         plan.source_sha
     );
     if noop {
@@ -158,7 +158,7 @@ fn render(
         .as_array()
         .ok_or("invalid workflow jobs response")?;
     body.push_str(
-        "\n| Configuration | Outcome | Actions | JY record |\n| --- | --- | --- | --- |\n",
+        "\n| Configuration | Outcome | Prefill tok/s | Decode tok/s | Actions | Lab record |\n| --- | --- | ---: | ---: | --- | --- |\n",
     );
     for row in &plan.rows {
         let name = format!("Qualify · {}", row.id);
@@ -171,13 +171,19 @@ fn render(
             _ => "Missing or incomplete",
         };
         let action = job.and_then(|j| j["id"].as_u64()).map_or_else(|| "—".into(), |id| format!("[Logs](https://github.com/general-inference/skippy/actions/runs/{run}/job/{id})"));
+        let (prefill, decode) = if outcome == "Passed" {
+            super::throughput::read(directory, row, plan.source_sha)?
+        } else {
+            ("Unavailable".into(), "Unavailable".into())
+        };
         body.push_str(&format!(
-            "| `{}` | {outcome} | {action} | {} |\n",
+            "| `{}` | {outcome} | {prefill} | {decode} | {action} | {} |\n",
             row.id,
             jy_record(directory, row, plan.source_sha)?
         ));
     }
-    body.push_str("\nSmoke checks cover GPU startup, deterministic endpoint repeats and bounded streaming. They do not establish an AgentX performance score. JY retains native results and logs; GitHub evidence copies expire after 30 days.\n");
+    body.push_str("\nTPS describes the first response of each of three short scored smoke cases at concurrency 1; deterministic repeats are excluded. Each rate is total tokens / total server-reported phase time, not an average of request rates. Prefill excludes cached prompt tokens. These short samples include startup/warmup effects and are not sustained benchmarks or controlled speedup comparisons. Missing or invalid timings show as Unavailable.\n");
+    body.push_str("\nSmoke checks cover GPU startup, deterministic endpoint repeats and bounded streaming. They do not establish an AgentX performance score. The General Inference lab retains native results and logs; GitHub evidence copies expire after 30 days.\n");
     Ok(body)
 }
 

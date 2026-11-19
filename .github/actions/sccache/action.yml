@@ -57,8 +57,9 @@ runs:
         fi
 
         recipe_digest="$({
-          git ls-files -z Cargo.lock rust-toolchain.toml scripts/build-llama.sh \
-            llama_cpp/upstream.txt llama_cpp/patches
+          git ls-files -z Cargo.lock skippy-api-rs/Cargo.lock rust-toolchain.toml \
+            .cargo/config.toml Justfile scripts/build-llama.sh scripts/cargo-linker\* \
+            llama_cpp/upstream.txt llama_cpp/whisper-upstream.txt llama_cpp/patches
         } | xargs -0 git hash-object | shasum -a 256 | awk '{print $1}')"
         export SCCACHE_BASEDIRS="$GITHUB_WORKSPACE"
         export SCCACHE_GHA_VERSION="skippy-v1-$SCCACHE_SCOPE-$recipe_digest"

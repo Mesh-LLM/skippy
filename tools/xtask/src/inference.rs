@@ -2,6 +2,7 @@
 mod admission;
 mod artifacts;
 mod build;
+mod changes;
 mod comment;
 mod corpus;
 mod dispatch;
@@ -16,6 +17,7 @@ mod retention;
 mod smoke;
 mod summary;
 mod tests;
+mod throughput;
 use crate::command::{DynResult, write_json_file};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, path::Path};

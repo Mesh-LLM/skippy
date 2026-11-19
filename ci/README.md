@@ -3,12 +3,21 @@
 `ci.yml` has explicit `pr` and `full` profiles. `CI` is the required short-profile
 summary; extended runs report `Full qualification`, so an optional full run on a
 PR commit does not replace its short merge gate. Release callers require the
-full workflow result independently of the check name.
-Pull requests and main pushes use the short profile: repository contracts,
-formatting/Clippy, unit and C API tests, and FFI binding freshness. Relevant trusted
-PRs also run the protected seven-configuration inference smoke workflow.
+full workflow result independently of the check name. Docs-only pull requests
+and main pushes are excluded from `ci.yml`; all other pull requests and main
+pushes use the short profile for repository contracts, formatting/Clippy, unit
+and C API tests, and FFI binding freshness. Relevant trusted PRs also run the
+protected seven-configuration inference smoke workflow.
 Its separate `Inference qualification` status explicitly reports when no serving
 inputs changed; required smoke jobs cannot pass by being skipped.
+PR admission checks every changed-file page and both paths of a rename. Serving
+crates, native sources and patches, build dependencies, and the inference harness
+and its configuration require qualification. Documentation (including nested
+READMEs and docs directories), PR/issue templates, and unrelated CI/release
+automation do not dispatch native jobs. The controller still publishes the
+source-bound status for these PRs. An unreadable or potentially truncated file
+list fails admission. Scheduled, manual, and release qualification remain explicit
+and do not use the PR path filter.
 The 308-test native family battery and complete host/runtime/package/smoke matrix
 run nightly and for releases. Reusable candidate validation defaults to `full`;
 release publication explicitly requests it. Manual dispatch from protected main selects either
@@ -44,16 +53,74 @@ back to GitHub-hosted capacity or a different toolkit environment. The separate
 inference qualification dispatches its source-bound model ladder to native JY
 Sparks before publication.
 
+`docs.yml` runs one documentation job when `docs-site/**` changes. On a pull
+request it installs the lockfile, builds Nextra, generates the Pagefind index and
+retains `docs-site/out`, but receives no publication credentials and does not
+deploy. The pull-request job reports the required `CI` check because GitHub
+leaves a path-filtered required workflow pending unless another job supplies
+that check. After the change reaches protected `main`, the same workflow builds
+and deploys the output to `beta.skippy.sh` with `just docs-publish-beta`.
+
+Mixed source and documentation changes run both documentation validation and
+the normal short CI workflow. Release validation calls `docs.yml` directly to
+create the exact `release-docs-site` artifact.
+
+For a version tag, the release workflow downloads that exact
+`release-docs-site` artifact after validation and GitHub release publication,
+then deploys it to `skippy.sh` with `just docs-publish`. The publication job
+does not rebuild the site. It installs the lockfile-pinned `cf` CLI and exposes
+`CLOUDFLARE_API_TOKEN` only to the deploy step.
+
+Configure `SKIPPY_DOCS_CLOUDFLARE_API_TOKEN` as a GitHub Actions repository
+secret. Create it from Cloudflare's **Edit Cloudflare Workers** token template
+and scope it to the account that owns the `skippy-docs`, `skippy-docs-beta`,
+`skippy.sh` and `beta.skippy.sh` resources. The workflow maps it to the
+`CLOUDFLARE_API_TOKEN` environment variable expected by `cf` only in the
+protected-main beta deploy step and the tagged-release production deploy step.
+Pull requests, documentation builds and shared release validation do not
+receive this secret.
+
 ## Build prerequisites
 
-Build-cache keys stay stable across ordinary source commits and change with the
-toolchain, lockfile and native build recipe. A matching cache avoids repeated
-uploads; Cargo still validates and rebuilds changed source. Caches are not
-qualification evidence.
+Cargo download caches are shared by jobs with compatible dependency sets on the
+same OS and keyed by both workspace lockfiles. Tools, quality, host producers and
+upgrade builders have separate download scopes so a tools-only first writer
+cannot freeze an incomplete product dependency cache. Cargo build snapshots have
+a compatibility prefix binding the OS, architecture, job role/backend, profile
+debug/incremental settings, toolchain, both lockfiles and native build recipe,
+followed by the actual checked-out source SHA. A new revision restores
+the latest compatible snapshot and saves updated outputs after success. A rerun
+of the same revision can reuse the exact snapshot without another upload. Snapshot
+retention and eviction follow the repository's Actions cache settings. Cargo still
+validates and rebuilds changed source; caches are not qualification evidence.
 
-The hosted setup action installs full-SHA-pinned Just 1.58.0. Both hosted and
-native runners restore Cargo dependencies, debug artifacts and bounded sccache
-compiler results using the shared cache action. Rust follows
+Small command-runner jobs cache only `target/debug`. Quality additionally caches
+the Rust facade's debug outputs; host producers cache `target/release` as well as
+their command runner. Candidate admission uses a separate
+`target/ci-admission/debug` cache before source restoration, then build caches
+are selected from the admitted checkout. Cache paths exclude native build trees,
+packages and qualification evidence. Dependency downloads are separate from
+compiled outputs, and the GitHub-backed sccache is not redundantly archived as a
+local disk cache.
+
+Native jobs separately cache prepared llama.cpp sources by upstream pin, complete
+ordered patch queues and preparation recipe, and whisper.cpp sources by their
+pin and preparation recipe. Existing preparation commands still validate or
+reapply the selected inputs on every run. Explicit source overrides bypass the
+corresponding source cache. Smoke jobs cache the immutable Qwen fixture using its
+admission manifest and fetch recipe; model admission always verifies its size and
+SHA-256, even after a cache hit. A supplied `SKIPPY_CI_MODEL` bypasses that cache.
+
+The upgrade candidate and both supported-family passes restore command-runner
+and compiler caches. Family passes may also reuse prepared sources. Each pass
+still requires absent `target/llama-upgrade/native`,
+`target/llama-upgrade/cargo` and evidence directories, builds independently and
+executes the full qualification battery; those directories are never cached.
+
+The hosted setup action installs full-SHA-pinned Just 1.58.0. The documentation
+job additionally selects Node.js 22.23.0. Both hosted and native runners restore
+Cargo dependencies, debug artifacts and bounded
+sccache compiler results using the shared cache action. Rust follows
 `rust-toolchain.toml`. Build agents must already provide Git, CMake, Ninja, a
 native C/C++ toolchain, curl, and the platform linker selected by `scripts/`.
 Core, CLI and runtime compilation jobs print their final sccache statistics so
@@ -126,9 +193,10 @@ row fails rather than passing as a skip.
    startup is therefore checked without depending on a hardware runner's driver.
 4. `ci smoke` receives that exact archive, admits the pinned model and runs the
    packaged server on its required CPU/Metal/CUDA device.
-5. `ci summary` accepts only successful plan, quality, host, runtime and product
-   and smoke jobs. Failed, cancelled, absent and skipped required jobs all fail
-   the summary.
+5. `ci summary` requires plan, inference contracts and quality in short CI. Full
+   CI also requires every host, runtime, product and smoke result. Failed,
+   cancelled, absent and unexpectedly skipped required jobs all fail the
+   summary. Docs-only changes do not start this workflow.
 
 Native runtime manifests retain the upstream pin, patch digest, ABI and backend
 metadata. Product provenance hashes the complete file roster. Actions artifacts
