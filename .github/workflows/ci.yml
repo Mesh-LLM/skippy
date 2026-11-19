@@ -102,6 +102,7 @@ jobs:
   quality:
     needs: plan
     env:
+      CARGO_HOME: /opt/rust/cargo
       CARGO_BUILD_JOBS: '2'
       CMAKE_BUILD_PARALLEL_LEVEL: '2'
       CTEST_PARALLEL_LEVEL: '2'
