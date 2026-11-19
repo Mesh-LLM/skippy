@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       cmake curl git libc++-22-dev libc++abi-22-dev libclang-22-dev \
       libclang-cpp22-dev libclang-rt-22-dev libcurl4-openssl-dev \
       libedit-dev libomp-22-dev libssl-dev libzstd-dev lld-22 llvm-22-dev mold ninja-build \
-      openssh-client patchelf pkg-config rustup xz-utils zlib1g-dev zstd \
+      openssh-client patchelf pkg-config jq python3 rustup xz-utils zlib1g-dev zstd \
     && rm -rf /var/lib/apt/lists/*
 
 # Cargo keeps its default $HOME/.cargo layout, including when Actions mounts a

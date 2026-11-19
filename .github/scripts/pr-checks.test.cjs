@@ -101,6 +101,9 @@ test('native trigger patterns distinguish metadata, code-only, inference and mix
     ['crates/skippy-cli/src/helper_tests.rs', ['ci.yml']],
     ['crates/skippy-cli/src/main.rs', ['ci.yml', 'inference.yml']],
     ['ci/inference-ladder.json', ['ci.yml', 'inference.yml']],
+    ['scripts/inference-execute.py', ['ci.yml', 'inference.yml']],
+    ['scripts/lib/inference_inputs.py', ['ci.yml', 'inference.yml']],
+    ['scripts/tests/inference_contracts.py', ['ci.yml']],
     ['.gi/templates.yaml', ['ci.yml', 'inference.yml']],
     ['.gi/agents/code-review.yaml', []],
     ['.github/scripts/pr-checks.cjs', ['ci.yml']],
@@ -138,7 +141,7 @@ test('native CI and inference triggers match the internal route lists', () => {
       (trigger.endsWith('/**') && path.startsWith(trigger.slice(0, -2)))), `CI never triggers for ${path}`);
   }
   assert.ok(kv.includes('crates/skippy-cache/**'));
-  assert.ok(kv.includes('tools/xtask/src/cache_qualification/**'));
+  assert.ok(kv.includes('tools/xtask/**'));
   const pushIncludes = code.filter(path => !path.startsWith('!'));
   for (const path of kv.filter(path => !path.startsWith('!'))) {
     assert.ok(pushIncludes.some(trigger => trigger === path ||

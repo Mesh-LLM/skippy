@@ -196,7 +196,7 @@ jobs:
       - id: plan
         run: just ci-plan
   automation:
-    name: Test xtask and CI automation
+    name: Test CI automation
     needs: [changes, plan]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
@@ -210,7 +210,7 @@ jobs:
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
-      - run: just inference-tool-check
+      - run: just automation-contracts
       - name: Test inference results reporting
         run: bash scripts/tests/inference-report.sh
       - name: Test workflow result gates
@@ -265,14 +265,9 @@ jobs:
           test -n "$image_id"
           echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
       - uses: ./.github/actions/source
-        # Protected admission runs before GitHub compiler-cache credentials are exported.
-        env:
-          RUSTC_WRAPPER: ''
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
-          cache-scope: quality-container-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}-admission
-          download-scope: quality-container-admission
       - uses: ./.github/actions/cache
         with:
           scope: quality-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
@@ -319,13 +314,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/source
-        env:
-          RUSTC_WRAPPER: ''
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
-          cache-scope: native-contracts-llvm22-admission
-          download-scope: native-contracts
       - uses: ./.github/actions/cache
         with:
           scope: native-contracts-llvm22-cpu

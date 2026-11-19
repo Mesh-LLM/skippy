@@ -45,7 +45,7 @@ runs:
     - uses: ./.github/actions/setup-hf
       if: env.SKIPPY_CI_MODEL == ''
     - name: Admit pinned Qwen3 fixture
-      run: just automation-run ci model-fetch
+      run: just ci-model-fetch
       shell: bash
     - name: Execute packaged Qwen3 on the required backend
       shell: bash

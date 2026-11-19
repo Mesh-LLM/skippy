@@ -1,15 +1,8 @@
 use super::{
-    Backend, Fixtures, Inputs, MANIFEST, Report, Status, TestRunner, execution, prepare,
+    Backend, Fixtures, Inputs, MANIFEST, Report, Status, TestRunner, artifact, execution, prepare,
     read_manifest, run_cell, strings, verify, write_summary,
 };
-use crate::{
-    ci::{
-        artifacts,
-        matrix::{Matrix, require_host},
-        producers::validate_native_identity,
-    },
-    command::DynResult,
-};
+use crate::command::{DynResult, write_json_file};
 use serde::Deserialize;
 use std::{
     fs,
@@ -26,27 +19,32 @@ pub(super) fn run(variant: &str, profile: &str, input: &Path, output: &Path) -> 
         ("linux-aarch64-cuda13", "full") => (Backend::CudaArm64, true),
         _ => return Err(format!("unsupported KV profile {profile:?} for {variant:?}").into()),
     };
-    let matrix = Matrix::load()?;
-    let row = matrix.runtime(variant)?;
-    let host = matrix.host(&row.host)?;
-    require_host(host)?;
     let temp = tempfile::tempdir()?;
     let product = temp.path().join("product");
-    artifacts::unpack(input, &product)?;
-    artifacts::verify(&product, "product", &host.target, variant)?;
+    execution::run(
+        "just",
+        &strings(&[
+            "ci-extract-runtime",
+            variant,
+            &input.to_string_lossy(),
+            &product.to_string_lossy(),
+        ]),
+        &[],
+        600,
+    )?;
     let runtime = product.join("native-runtimes");
     let variant_dir = runtime.join(variant);
-    validate_native_identity(&variant_dir, host, row, None)?;
 
     fs::create_dir(output)?;
     let output = output.canonicalize()?;
-    artifacts::write_json(
+    let start = verify::Source::capture(&output)?;
+    write_json_file(
         &output.join("runtime.json"),
         &serde_json::json!({
-            "source": artifacts::source()?,
+            "source": start.head,
             "variant": variant,
             "profile": profile,
-            "manifest_sha256": artifacts::digest(&variant_dir.join("manifest.json"))?
+            "manifest_sha256": artifact::sha256(&variant_dir.join("manifest.json"))?
         }),
     )?;
     let binary = compile_test()?;
@@ -89,7 +87,6 @@ pub(super) fn run(variant: &str, profile: &str, input: &Path, output: &Path) -> 
         return Ok(());
     }
 
-    let start = verify::Source::capture(&output)?;
     let inputs = Inputs {
         fixtures: Fixtures::HuggingFace,
         reference: prepare::packaged_reference(backend)?,

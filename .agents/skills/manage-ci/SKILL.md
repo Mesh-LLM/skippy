@@ -54,9 +54,9 @@ contract; no downstream product's workflow topology applies here.
   artifacts for disabled hosts or describe those hosts as qualified.
   Keep CLI builds backend-neutral and build each host once. Package by copying
   exact verified producer outputs; consumers must not rebuild missing inputs.
-- Keep workflow path routing declarative in YAML. Build and qualification
-  commands remain typed Rust under `tools/xtask`; Just recipes and platform
-  adapters stay thin. PR lab-result comments use the focused Bash/gh/jq report
+- Keep workflow path routing declarative in YAML. Keep Just recipes and platform adapters thin. Use
+  shell for orchestration and focused Python modules for structured build and
+  qualification work under `scripts/`. PR lab-result comments use the focused Bash/gh/jq report
   script without Rust setup. Prefer shell for small CI checks, with Python as
   a fallback when structured parsing needs it.
 - All builds use Just. Run Cargo serially within one checkout. Include both

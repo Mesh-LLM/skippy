@@ -5,8 +5,8 @@ the separate Rust facade workspace lives under `skippy-api-rs/`, and the C++
 facade lives under `skippy_api/`.
 
 Use Just for all builds. Prefer shell for CI orchestration and simple checks;
-use Python as a fallback for tasks such as structured manifest parsing. Keep
-native build and qualification logic in focused Rust modules under `tools/xtask`.
+use Python for structured manifest parsing, artifact verification, and
+qualification. Keep each command in a focused script under `scripts/`.
 Honor supplied native source and dependency inputs without downloading replacements.
 
 Run Cargo commands serially in each checkout. For changed Rust crates run

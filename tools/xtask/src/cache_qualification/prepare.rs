@@ -73,12 +73,19 @@ fn reference_environment(backend: Backend) -> DynResult<Vec<(&'static str, Strin
         Backend::Cuda => "linux-x86_64-cuda13",
         Backend::CudaArm64 => "linux-aarch64-cuda13",
     };
-    let matrix = crate::ci::matrix::Matrix::load()?;
+    let plan = execution::output("just", &strings(&["ci-plan"]))?;
+    let plan: serde_json::Value = serde_json::from_str(&plan)?;
+    let runtimes = plan["runtimes"]["include"]
+        .as_array()
+        .ok_or("CI plan omitted runtimes")?;
+    let toolkit = runtimes
+        .iter()
+        .find(|row| row["id"] == variant)
+        .and_then(|row| row["toolkit"].as_str())
+        .filter(|value| !value.is_empty())
+        .ok_or("CI plan omitted the CUDA toolkit")?;
     Ok(vec![
-        (
-            "SKIPPY_CUDA_VERSION",
-            matrix.runtime(variant)?.toolkit.clone(),
-        ),
+        ("SKIPPY_CUDA_VERSION", toolkit.to_owned()),
         ("LLAMA_STAGE_CUDA_ARCHITECTURES", "native".into()),
     ])
 }

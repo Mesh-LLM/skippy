@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*", "tools/xtask", "tools/process-supervision"]
+members = ["crates/*", "tools/process-supervision", "tools/xtask"]
 default-members = ["crates/skippy-cli"]
 resolver = "2"
 

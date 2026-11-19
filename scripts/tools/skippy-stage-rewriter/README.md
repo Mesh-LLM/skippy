@@ -50,7 +50,7 @@ diffs the result against that stage-free semantic baseline so static support can
 never leak into or poison the generated shards:
 
 ```sh
-cargo xtool automation native-generator generate \
+just automation-run automation native-generator generate \
   --git "$(command -v git)" \
   --max-diff-bytes 16777216 \
   --source-root .scratch/llama-central \

@@ -128,9 +128,9 @@ with the runner's Hugging Face cache on the NAS. CI retains the runtime
 manifest digest, fixture reports, and logs. A failed model, missing fixture,
 absent GPU, or incomplete required job fails CI.
 
-## State handoff batch
+## Historical state handoff batch
 
-Prepare local observations with the existing operator owner:
+Earlier checkouts that include the state-handoff operator prepare local observations with:
 
 ```sh
 cargo xtool automation cache-family-run prepare-full --input /absolute/operator.json --output /absolute/fresh-preparation

@@ -18,25 +18,3 @@ pub(crate) fn digest(mut reader: impl Read) -> DynResult<String> {
     }
     Ok(hex::encode(hash.finalize()))
 }
-pub(crate) fn run(args: &[String]) -> DynResult<()> {
-    let args = args
-        .strip_prefix(&["file-projection".into()])
-        .unwrap_or(args);
-    match args {
-        [command, file] if command == "sha256" => {
-            println!(
-                "{}",
-                if file == "-" {
-                    digest(std::io::stdin().lock())?
-                } else {
-                    sha256(Path::new(file))?
-                }
-            );
-        }
-        [command, file] if command == "canonical-path" => {
-            println!("{}", Path::new(file).canonicalize()?.display())
-        }
-        _ => return Err("artifact {sha256|canonical-path} PATH".into()),
-    }
-    Ok(())
-}
