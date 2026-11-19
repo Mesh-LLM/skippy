@@ -9,13 +9,15 @@ case "$stage" in
     profile="${SKIPPY_CI_PROFILE-full}"
     case "$profile" in pr|full) ;; *) echo 'CI profile must be pr or full' >&2; exit 1 ;; esac
     if ! jq -es --arg profile "$profile" '
-      ["plan", "inference_contracts", "quality", "host", "runtime", "product", "smoke"] as $required
+      ["plan", "inference_contracts", "quality"] as $core
+      | ["native_contracts", "host", "runtime", "product", "smoke"] as $extended
+      | ($core + $extended) as $required
       | if length == 1 then .[0] else error("expected one needs object") end
       | . as $needs
       | type == "object"
       and (keys == ($required | sort))
       and all($required[]; . as $job | $needs[$job].result ==
-          (if $profile == "pr" and ($job == "host" or $job == "runtime" or $job == "product" or $job == "smoke")
+          (if $profile == "pr" and ($extended | index($job)) != null
            then "skipped" else "success" end))
     ' <<<"$needs" >/dev/null; then
       echo "CI results do not satisfy the $profile profile" >&2

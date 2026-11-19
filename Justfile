@@ -198,13 +198,14 @@ ci-image-export:
     @mkdir -p target/ci-image
     @docker image save --output target/ci-image/skippy-ci-cpu.tar skippy-ci-cpu:build
 
-ci-gpu-image-build backend toolkit_base toolkit_version:
-    @docker buildx build --load --platform linux/amd64 --file ci/Dockerfile.gpu --tag skippy-ci-{{ backend }}:build --build-arg TOOLKIT_BASE="{{ toolkit_base }}" --build-arg BACKEND="{{ backend }}" --build-arg TOOLKIT_VERSION="{{ toolkit_version }}" --build-arg SKIPPY_CI_IMAGE_ID --build-arg SOURCE_REVISION .
+ci-gpu-image-build backend toolkit_base toolkit_version arch="amd64":
+    @docker buildx build --load --platform "linux/{{ arch }}" --file ci/Dockerfile.gpu --tag skippy-ci-{{ backend }}:build --build-arg TOOLKIT_BASE="{{ toolkit_base }}" --build-arg BACKEND="{{ backend }}" --build-arg TOOLKIT_VERSION="{{ toolkit_version }}" --build-arg SKIPPY_CI_IMAGE_ID --build-arg SOURCE_REVISION .
 
-ci-gpu-image-smoke backend:
+ci-gpu-image-smoke backend arch="amd64":
     #!/usr/bin/env bash
     set -euo pipefail
-    docker run --rm --platform linux/amd64 --network none --read-only "skippy-ci-{{ backend }}:build" bash -euc '
+    docker run --rm --platform "linux/{{ arch }}" --network none --read-only "skippy-ci-{{ backend }}:build" bash -euc '
+      test "$(dpkg --print-architecture)" = "{{ arch }}"
       python3 --version
       jq --version
       rustc --version

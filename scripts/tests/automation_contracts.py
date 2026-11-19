@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -18,6 +19,28 @@ from lib.upgrade_source import git, restore_at
 SCRIPTS = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).with_name("fixtures")
 ROOT = SCRIPTS.parent
+
+
+class SummaryGate(unittest.TestCase):
+    def test_native_contracts_must_match_profile(self):
+        for profile, expected in (("pr", "skipped"), ("full", "success")):
+            jobs = {name: {"result": "success"} for name in (
+                "plan", "inference_contracts", "quality",
+            )}
+            jobs.update({name: {"result": expected} for name in (
+                "host", "runtime", "product", "smoke",
+            )})
+            for status in ("success", "skipped", "failure", "cancelled", None):
+                with self.subTest(profile=profile, status=status):
+                    needs = dict(jobs)
+                    if status is not None:
+                        needs["native_contracts"] = {"result": status}
+                    result = subprocess.run(
+                        ["just", "ci-summary"], cwd=ROOT, capture_output=True,
+                        env=dict(os.environ, SKIPPY_CI_PROFILE=profile,
+                                 SKIPPY_CI_NEEDS=json.dumps(needs)),
+                    )
+                    self.assertEqual(result.returncode == 0, status == expected, result.stderr)
 
 
 def module(name):

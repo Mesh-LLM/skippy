@@ -61,9 +61,10 @@ and refuses to replace results for a newer commit or workflow attempt.
 
 Scheduled, manual and reusable full/candidate validation bypass path selection.
 Tagged releases and manual llama upgrades retain their explicit triggers. The
-CPU image workflow retains its native paths for its workflow, `ci/Dockerfile*`,
-and `rust-toolchain.toml`. Protected inference and aggregate workflow
-changes take effect after they reach `main`.
+`CI images` workflow retains its native paths for its workflow,
+`ci/Dockerfile*`, `ci/targets.json`, `rust-toolchain.toml` and `Justfile`.
+Protected inference and aggregate workflow changes take effect after they
+reach `main`.
 The 308-test native family battery and complete host/runtime/package/smoke matrix
 run nightly and for releases. Reusable candidate validation defaults to `full`;
 release publication explicitly requests it. Manual dispatch from protected main selects either
@@ -93,11 +94,11 @@ quality; the final gate requires every producer and smoke result.
 Compilation never counts as device evidence.
 
 The CPU-only `quality` job runs on GitHub-hosted `ubuntu-24.04` inside
-`ghcr.io/general-inference/skippy-ci-cpu:latest`, keeping lab capacity available
-for device qualification. The image supplies the pinned Rust toolchain, Just,
-sccache, build-essential, mold and LLVM/Clang 22 development inputs. The job
-verifies its tools before running the existing checks and pulls the private
-image with its own `GITHUB_TOKEN` using `packages: read`.
+`ghcr.io/general-inference/skippy-ci-cpu:latest` for lint, tests and FFI binding
+freshness. The image supplies the pinned Rust toolchain, Just, sccache,
+build-essential, mold and LLVM/Clang 22 development inputs. The job verifies
+its tools and pulls the private image with its own `GITHUB_TOKEN` using
+`packages: read`.
 
 Cargo and CMake compilation use two workers to fit standard private-repository
 hosted capacity. Cargo build snapshots and
@@ -106,6 +107,11 @@ compiled-output namespace. Cargo downloads use separate container cache scopes
 to avoid restoring archives made with hosted-VM home/workspace paths. Native
 source caches remain shared. Protected candidate admission precedes build-cache
 restoration and compiler-cache credential export.
+
+In full CI, `Llama native contracts` runs `just llama-check` in parallel with
+`quality` on the existing ephemeral Linux JY `native-contracts` runner group.
+It uploads graph verification logs and generated patch reports under the
+`native-contracts-evidence` artifact suffix.
 Metal/CUDA runtime and model inference jobs retain their dedicated lab routing.
 
 `docs.yml` validates `docs-site/**` changes through a reusable call from PR CI.
@@ -158,12 +164,12 @@ the smoke command checks the installed tools in a read-only, offline container
 with a fresh `/github/home` mount, as used by GitHub container jobs.
 `just ci-image-export` saves the image to `target/ci-image/skippy-ci-cpu.tar`.
 
-One workflow, `.github/workflows/ci-image.yml`, builds and tests relevant PRs.
-Main pushes and manual main dispatches publish the exact tested image in a
-separate job with package-write permission. The publisher checks the image ID
-and source label, then pushes an immutable build tag and `latest` without
-rebuilding or running the image. Run manual refreshes with
-`gh workflow run ci-image.yml --ref main` after the workflow lands.
+The `.github/workflows/ci-images.yml` workflow is named `CI images` and builds
+and tests relevant PRs. Main pushes and manual main dispatches publish the exact
+tested CPU and GPU images in separate jobs with package-write permission. Each
+publisher verifies its tested artifact and metadata, then pushes immutable build
+tags and `latest` without rebuilding or running the image. Run manual refreshes
+with `gh workflow run ci-images.yml --ref main` after the workflow lands.
 
 This PR only bootstraps the image; consumer adoption follows after publication.
 Future consumers use `latest` and include `/etc/skippy-ci-image-id` in build-cache
@@ -171,19 +177,22 @@ keys. Private same-repository pulls use `GITHUB_TOKEN` with `packages: read`.
 
 ### CUDA and ROCm compiler images
 
-`.github/workflows/ci-gpu-images.yml` builds
+The `CI images` workflow also builds
 `ghcr.io/general-inference/skippy-ci-cuda12`,
 `ghcr.io/general-inference/skippy-ci-cuda13`, and
 `ghcr.io/general-inference/skippy-ci-rocm` from digest-pinned vendor development
 images. CUDA 12.9.2 and 13.1.2 use separate images, matching `targets.json`, so
-each image carries one complete toolkit without exceeding hosted-runner disk
-capacity. Each CUDA image compiles a small kernel with its toolkit. All three
-images carry the Rust and native build tools used by the CPU image; the ROCm
-image also compiles a backend-specific kernel during the image build. PRs build,
+each hosted runner only needs space for one toolkit. Both CUDA toolkits build
+on native x86_64 and ARM64 Ubuntu runners.
+Use `skippy-ci-cuda12:latest-arm64` and `skippy-ci-cuda13:latest-arm64` for
+Linux ARM64. The `latest` tags serve Linux x86_64. ROCm builds for Linux x86_64.
+The images include Rust and native build tools and compile a small
+backend-specific kernel during the image build. PRs build,
 smoke, and stream each exact image into a gzip-compressed archive without
 publication credentials. Protected-main publication loads those same
-artifacts, checks their image IDs, source revisions, backend and toolkit labels,
-then pushes immutable build tags and `latest`.
+artifacts, checks their image IDs, platforms, source revisions, backend and
+toolkit labels, then pushes immutable build tags and the corresponding latest
+tags. ARM64 build tags also end in `-arm64`.
 
 The kernel compiler probes and container smoke establish compiler/toolkit image
 contents only. They do not execute GPU kernels and cannot qualify a GPU runtime;
@@ -191,8 +200,9 @@ device evidence still comes from the matching CUDA/ROCm inference jobs.
 Run `just ci-gpu-image-build cuda12 BASE_IMAGE 12.9.2`,
 `just ci-gpu-image-build cuda13 BASE_IMAGE 13.1.2`, or
 `just ci-gpu-image-build rocm BASE_IMAGE 7.2.4`, then the matching smoke and
-export recipes. The exact, digest-pinned base references are in the workflow
-matrix.
+export recipes. For ARM64, pass `arm64` as the final argument to both the build
+and smoke recipes. Use the digest-pinned base for the selected architecture from
+the workflow matrix.
 
 ### Source and build caches
 
@@ -273,14 +283,11 @@ only orchestrates these jobs, so the 6 GiB runner-container limit does not bound
 model execution. Split jobs reserve both Sparks atomically. This policy does not
 prove live JY configuration.
 
-Quality and upstream candidate generation are the toolchain-specific exceptions
-to ordinary hosted CPU work. Quality accepts either 64-bit Linux architecture;
-candidate generation retains its Linux x86_64 lane. Both request a
-`native-contracts` builder with LLVM/Clang 22 development and CMake packages,
-Ninja, lld and `SKIPPY_REWRITER_LLVM_PREFIX` configured. The same generator tools
-must be available on full family builders. A standard hosted image without those
-development packages cannot run these gates; no job downloads system packages
-to disguise that prerequisite.
+Llama native contracts and upstream candidate generation use preprovisioned
+JY builders with LLVM/Clang 22 development and CMake packages, Ninja and lld.
+The contracts job accepts either 64-bit Linux architecture; candidate
+generation uses its Linux x86_64 lane. The same generator tools must be
+available on full family builders.
 
 Qwen3 dense smoke preparation is explicit: `just ci-model-fetch`
 resolves the immutable public model URL and verifies the family manifest's size
@@ -314,9 +321,10 @@ select the interpreter used by Just.
 4. `just ci-smoke` receives that exact archive, admits the pinned model and runs the
    packaged server on its required CPU/Metal/CUDA device.
 5. `just ci-summary` requires plan, automation contracts and quality in short
-   CI. Full CI also requires every host, runtime, product and smoke result. Failed,
-   cancelled, absent and unexpectedly skipped required jobs all fail the
-   summary. Docs-only changes skip code builders and run documentation validation.
+   CI. Full CI also requires llama native contracts and every host, runtime, product and
+   smoke result. Failed, cancelled, absent and unexpectedly skipped required
+   jobs all fail the summary. Docs-only changes skip code builders and run
+   documentation validation.
 
 The full-profile `Runtime test summary` checks `needs` using `jq` on hosted
 Ubuntu, without checkout, Rust setup or compilation. It uses the active runtime

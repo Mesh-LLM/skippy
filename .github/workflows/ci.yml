@@ -151,7 +151,8 @@ jobs:
     defaults:
       run:
         shell: bash
-    timeout-minutes: ${{ needs.plan.outputs.profile == 'pr' && 30 || 180 }}
+    # Cold caches can take more than 30 minutes for lint and tests alone.
+    timeout-minutes: ${{ needs.plan.outputs.profile == 'pr' && 60 || 180 }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -193,8 +194,6 @@ jobs:
       - run: just skippy-ffi-bindgen-check
       - run: just lint
       - run: just test
-      - run: just llama-check
-        if: needs.plan.outputs.profile == 'full'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
@@ -203,6 +202,47 @@ jobs:
             target/ci-evidence/**
             target/skippy-api-build/Testing/**
             target/skippy-llama-api-build/Testing/**
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+  native_contracts:
+    name: Llama native contracts
+    needs: plan
+    if: needs.plan.outputs.profile == 'full'
+    runs-on:
+      group: jy-rnr_vfnz8k5p4yrh334
+      labels: [self-hosted, skippy-ephemeral, Linux, native-contracts]
+    timeout-minutes: 180
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '4'
+      CTEST_PARALLEL_LEVEL: '2'
+      CC: /usr/lib/llvm-22/bin/clang
+      CXX: /usr/lib/llvm-22/bin/clang++
+      SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
+      LIBCLANG_PATH: /usr/lib/llvm-22/lib
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/source
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/cache
+        with:
+          scope: native-contracts-llvm22-cpu
+          download-scope: native-contracts
+      - uses: ./.github/actions/sccache
+        with:
+          scope: native-contracts-${{ runner.os }}-${{ runner.arch }}-llvm22-cpu
+      - uses: ./.github/actions/native-source
+      - run: just llama-check
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-native-contracts-evidence
+          path: |
+            target/skippy-stage-rewriter-check/*.log
             target/skippy-stage-rewriter-check/report*
             target/skippy-stage-rewriter-check/patch-drift.diff
             target/skippy-stage-rewriter-check/changed-family-selection.json
@@ -593,7 +633,7 @@ jobs:
           }
   summary:
     name: ${{ needs.plan.outputs.profile == 'full' && 'Full qualification' || 'Code checks' }}
-    needs: [plan, inference_contracts, quality, host, runtime, product, smoke]
+    needs: [plan, inference_contracts, quality, native_contracts, host, runtime, product, smoke]
     if: always() && needs.plan.result != 'skipped'
     outputs:
       profile: ${{ needs.plan.outputs.profile }}
