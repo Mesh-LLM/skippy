@@ -10,14 +10,48 @@ and C API tests, and FFI binding freshness. Relevant trusted PRs also run the
 protected seven-configuration inference smoke workflow.
 Its separate `Inference qualification` status explicitly reports when no serving
 inputs changed; required smoke jobs cannot pass by being skipped.
-PR admission checks every changed-file page and both paths of a rename. Serving
-crates, native sources and patches, build dependencies, and the inference harness
-and its configuration require qualification. Documentation (including nested
-READMEs and docs directories), PR/issue templates, and unrelated CI/release
-automation do not dispatch native jobs. The controller still publishes the
-source-bound status for these PRs. An unreadable or potentially truncated file
-list fails admission. Scheduled, manual, and release qualification remain explicit
-and do not use the PR path filter.
+PR admission checks every changed-file page and both paths of a rename against
+immutable merge-base and head objects. It reads those objects in a temporary bare
+Git repository; it never checks out or runs candidate code to make this decision.
+It also rejects a PR head that changes while admission is collecting inputs.
+
+GPU qualification requires a change to the native Linux ARM64 serving workload:
+production Rust modules in the CLI's non-development dependency graph, their
+embedded assets and build inputs, native sources and patch queues, native build
+recipes, or the model/quality/smoke workload. Rust syntax comparisons remove
+proven test-only and other-platform items and ignore comments and formatting,
+while retaining string literals and unknown feature conditions. Separate test
+modules are resolved from production module declarations rather than filename
+conventions. An embedded runtime asset still counts if its filename looks like
+documentation.
+
+Shared configuration is compared by its consumed content: native Just recipes
+and their recipe dependencies/exports, production Cargo dependency declarations
+and lockfile closure, native development profiles and dependency overrides, and
+the two PR native templates. Unrelated recipes, development dependencies,
+standalone tools, offline unit tests, admission policy, dispatch, reporting,
+workflow wiring, and publication automation do not dispatch GPU jobs. These
+changes retain normal CI and inference contract tests. Changes to the candidate
+worker's execution, GPU checks, smoke checks or split preparation still require
+qualification. The reviewed candidate-side xtask dependency list must be updated
+when these worker helpers acquire a new external dependency.
+
+Admission logs the files and reasons that require qualification and the files
+whose production content is unchanged or outside the workload. The controller
+still publishes the source-bound status for irrelevant PRs. Invalid source,
+unresolvable modules/assets/dependencies, or an unreadable or potentially
+truncated file list fail admission; they never become passing skips. Scheduled,
+manual, and release qualification remain explicit and do not use the PR filter.
+
+Replay the decision offline using two full commit SHAs already present locally:
+
+```sh
+just inference-inputs BASE_SHA HEAD_SHA target/ci-evidence/inference-inputs.json
+```
+
+This writes source-bound reasons and exclusions without dispatching native jobs.
+The protected controller uses the policy on `main`; a policy PR's own workflow
+continues to use the previous policy until the PR is merged.
 The 308-test native family battery and complete host/runtime/package/smoke matrix
 run nightly and for releases. Reusable candidate validation defaults to `full`;
 release publication explicitly requests it. Manual dispatch from protected main selects either

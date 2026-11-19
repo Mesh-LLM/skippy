@@ -73,7 +73,27 @@ fn admit_pr(sha: &str) -> DynResult<bool> {
         })
         .ok_or("no current open PR for tested SHA")?;
     let number = pr["number"].as_u64().ok_or("missing PR number")?;
-    if !changes::requires_qualification(&changed_files(number)?)? {
+    let base = pr["base"]["sha"].as_str().ok_or("missing PR base SHA")?;
+    let comparison = github(&format!(
+        "repos/general-inference/skippy/compare/{base}...{sha}"
+    ))?;
+    let base = comparison["merge_base_commit"]["sha"]
+        .as_str()
+        .ok_or("missing PR merge base")?;
+    let files = changed_files(number)?;
+    let mut source = changes::GitSource::new(base, sha)?;
+    let decision = changes::assess(&files, &mut source, base, sha)?;
+    println!(
+        "Inference input decision:\n{}",
+        serde_json::to_string_pretty(&decision)?
+    );
+    // The file-list API is live, while source reads are pinned. Reject a head
+    // change during collection instead of publishing a stale no-op decision.
+    let current = github(&format!("repos/general-inference/skippy/pulls/{number}"))?;
+    if current["head"]["sha"] != sha {
+        return Err("PR head changed during inference admission".into());
+    }
+    if decision.reasons.is_empty() {
         return Ok(false);
     }
     if pr["head"]["repo"]["full_name"] != "general-inference/skippy" {
