@@ -105,13 +105,18 @@ jobs:
       CARGO_BUILD_JOBS: '2'
       CMAKE_BUILD_PARALLEL_LEVEL: '2'
       CTEST_PARALLEL_LEVEL: '2'
-      CC: /usr/lib/llvm-22/bin/clang
-      CXX: /usr/lib/llvm-22/bin/clang++
       SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
       LIBCLANG_PATH: /usr/lib/llvm-22/lib
       SKIPPY_REQUIRE_SCCACHE: '1'
       SCCACHE_GHA_ENABLED: 'true'
-    runs-on: ubuntu-26.04
+      SKIPPY_TOOLCHAIN_CACHE_KEY: cpu-2da4291a5021d6e99771c4d0f15ee3e90278c6de6fe59f0824a39433d9bab2ca
+    runs-on: ubuntu-24.04
+    container:
+      # Public CPU toolchain; promoted by runner-images run 44047250262.
+      image: ghcr.io/mesh-llm/mesh-llm-cuda-runner@sha256:2da4291a5021d6e99771c4d0f15ee3e90278c6de6fe59f0824a39433d9bab2ca
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: ${{ needs.plan.outputs.profile == 'pr' && 30 || 180 }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -120,20 +125,17 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           cache: 'false'
-      - name: Verify hosted compiler and LLVM 22 development inputs
+      - name: Verify image compiler and LLVM 22 development inputs
         shell: bash
         run: |
           set -euo pipefail
           "$CC" --version
           "$CXX" --version
-          "$SKIPPY_REWRITER_LLVM_PREFIX/bin/clang-format" --version
-          "$SKIPPY_REWRITER_LLVM_PREFIX/bin/clang-tidy" --version
+          clang-format --version
+          clang-tidy --version
           "$SKIPPY_REWRITER_LLVM_PREFIX/bin/clang" --version
           test -r "$SKIPPY_REWRITER_LLVM_PREFIX/lib/cmake/llvm/LLVMConfig.cmake"
           test -r "$SKIPPY_REWRITER_LLVM_PREFIX/lib/cmake/clang/ClangConfig.cmake"
-          echo "$SKIPPY_REWRITER_LLVM_PREFIX/bin" >> "$GITHUB_PATH"
-          printf 'SKIPPY_TOOLCHAIN_CACHE_KEY=hosted-%s-%s-llvm22\n' \
-            "${ImageOS:?Missing hosted image OS}" "${ImageVersion:?Missing hosted image version}" >> "$GITHUB_ENV"
       - uses: ./.github/actions/source
         with:
           artifact: ${{ inputs.candidate_artifact }}
