@@ -93,6 +93,9 @@ jobs:
     name: Qualify · Candidate CI
     needs: candidate
     if: needs.candidate.outputs.certify == 'true'
+    permissions:
+      contents: read
+      packages: read
     uses: ./.github/workflows/ci.yml
     with:
       artifact_scope: upgrade-candidate
@@ -154,6 +157,9 @@ jobs:
   independent_ci:
     name: Qualify · Independent CI
     needs: [candidate, candidate_ci, candidate_families]
+    permissions:
+      contents: read
+      packages: read
     uses: ./.github/workflows/ci.yml
     with:
       artifact_scope: upgrade-independent

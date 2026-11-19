@@ -17,24 +17,6 @@ pub(super) struct Rates {
     pub decode_ms: f64,
 }
 
-impl Rates {
-    pub fn display(&self) -> (String, String) {
-        (
-            rate(self.prefill_tokens, self.prefill_ms),
-            rate(self.decode_tokens, self.decode_ms),
-        )
-    }
-}
-
-fn rate(tokens: u64, milliseconds: f64) -> String {
-    let value = tokens as f64 * 1000.0 / milliseconds;
-    if tokens > 0 && milliseconds.is_finite() && milliseconds > 0.0 && value.is_finite() {
-        format!("{value:.1}")
-    } else {
-        "Unavailable".into()
-    }
-}
-
 fn successful_run(job: &Value) -> DynResult<&str> {
     let run = job["runs"]
         .as_array()
@@ -159,28 +141,6 @@ fn accumulate(
     *total_tokens = sum;
     *total_ms += ms;
     true
-}
-
-pub(super) fn read(directory: &Path, row: &Row, sha: &str) -> DynResult<(String, String)> {
-    let path = directory.join(format!("{}-throughput.json", row.id));
-    if !path.is_file() {
-        return Ok(("Unavailable".into(), "Unavailable".into()));
-    }
-    let rates: Rates = serde_json::from_slice(&std::fs::read(path)?)?;
-    let job: Value = serde_json::from_slice(&std::fs::read(
-        directory.join(format!("{}-job.json", row.id)),
-    )?)?;
-    if rates.source_sha != sha
-        || rates.configuration != row.id
-        || job["repo_rev"] != sha
-        || job["status"] != "succeeded"
-        || job["id"] != rates.job_id
-        || successful_run(&job)? != rates.run_id
-        || rates.requests != 3
-    {
-        return Err("comment throughput evidence identity mismatch".into());
-    }
-    Ok(rates.display())
 }
 
 #[cfg(test)]

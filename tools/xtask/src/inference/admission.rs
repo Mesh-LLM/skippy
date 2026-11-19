@@ -8,20 +8,6 @@ fn github(path: &str) -> DynResult<Value> {
     Ok(serde_json::from_str(&output)?)
 }
 
-fn changed_files(number: u64) -> DynResult<Value> {
-    let token = std::env::var("GH_TOKEN")?;
-    let output = execution::capture(
-        "gh",
-        &[
-            "api".into(),
-            format!("repos/general-inference/skippy/pulls/{number}/files?per_page=100"),
-            "--paginate".into(),
-            "--slurp".into(),
-        ],
-        &[("GH_TOKEN", token)],
-    )?;
-    Ok(serde_json::from_str(&output)?)
-}
 pub fn run() -> DynResult<()> {
     let event: Value = serde_json::from_slice(&fs::read(std::env::var("GITHUB_EVENT_PATH")?)?)?;
     let name = std::env::var("GITHUB_EVENT_NAME")?;
@@ -47,21 +33,19 @@ pub fn run() -> DynResult<()> {
         };
         (sha, profile)
     };
-    let required = if matches!(name.as_str(), "workflow_run" | "pull_request_target") {
-        admit_pr(&sha)?
-    } else {
-        true
-    };
+    if matches!(name.as_str(), "workflow_run" | "pull_request_target") {
+        admit_pr(&sha)?;
+    }
     let ladder: Ladder =
         serde_json::from_str(include_str!("../../../../ci/inference-ladder.json"))?;
     plan(&ladder, &profile, &sha)?;
     let mut file = fs::OpenOptions::new()
         .append(true)
         .open(std::env::var("GITHUB_OUTPUT")?)?;
-    writeln!(file, "source={sha}\nprofile={profile}\nrequired={required}")?;
+    writeln!(file, "source={sha}\nprofile={profile}")?;
     Ok(())
 }
-fn admit_pr(sha: &str) -> DynResult<bool> {
+fn admit_pr(sha: &str) -> DynResult<()> {
     let prs = github(&format!(
         "repos/general-inference/skippy/commits/{sha}/pulls"
     ))?;
@@ -73,9 +57,6 @@ fn admit_pr(sha: &str) -> DynResult<bool> {
         })
         .ok_or("no current open PR for tested SHA")?;
     let number = pr["number"].as_u64().ok_or("missing PR number")?;
-    if !changes::requires_qualification(&changed_files(number)?)? {
-        return Ok(false);
-    }
     if pr["head"]["repo"]["full_name"] != "general-inference/skippy" {
         return Err("fork PR needs isolated execution".into());
     }
@@ -89,5 +70,9 @@ fn admit_pr(sha: &str) -> DynResult<bool> {
     ) {
         return Err("PR author is not a trusted collaborator".into());
     }
-    Ok(true)
+    let current = github(&format!("repos/general-inference/skippy/pulls/{number}"))?;
+    if current["head"]["sha"] != sha {
+        return Err("PR head changed during inference admission".into());
+    }
+    Ok(())
 }

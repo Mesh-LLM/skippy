@@ -35,6 +35,9 @@ jobs:
   validation:
     name: Qualify · Release artifacts
     needs: admission
+    permissions:
+      contents: read
+      packages: read
     uses: ./.github/workflows/ci.yml
     with:
       artifact_scope: release
