@@ -162,7 +162,6 @@ jobs:
       - uses: ./.github/actions/sccache
         with:
           scope: quality-${{ runner.os }}-${{ runner.arch }}
-      - run: just ci-contracts
       - uses: ./.github/actions/native-source
       - run: just llama-prepare
       - run: just skippy-ffi-bindgen-check

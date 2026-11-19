@@ -23,8 +23,9 @@ contract; no downstream product's workflow topology applies here.
   code checks and reusable PR documentation validation; a lightweight result gate
   always reports (`CI` for short runs, `Full CI gate` for full runs) and rejects
   failed selection or missing selected results.
-  Code changes run formatting, Clippy, unit/API tests, FFI freshness and
-  repository contracts. The separate protected inference workflow uses the same
+  Code changes run formatting, Clippy, unit/API tests and FFI freshness. Cargo
+  handles manifest/dependency validity; `ci plan` validates the target matrix.
+  The separate protected inference workflow uses the same
   path filters from protected main and runs the
   seven short serving configurations for relevant trusted PRs. Nightly,
   release and reusable candidate validation use `full`, adding the complete
