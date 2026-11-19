@@ -2,6 +2,63 @@ name: Inference qualification
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'crates/**'
+      - 'skippy_api/src/**'
+      - 'skippy_api/include/**'
+      - 'skippy_api/CMakeLists.txt'
+      - 'llama_cpp/upstream.txt'
+      - 'llama_cpp/whisper-upstream.txt'
+      - 'llama_cpp/patches/**'
+      - 'tools/process-supervision/**'
+      - 'tools/xtask/src/main.rs'
+      - 'tools/xtask/src/command.rs'
+      - 'tools/xtask/src/execution.rs'
+      - 'tools/xtask/src/artifact.rs'
+      - 'tools/xtask/src/inference.rs'
+      - 'tools/xtask/src/inference/execute.rs'
+      - 'tools/xtask/src/inference/execute/**'
+      - 'tools/xtask/src/inference/artifacts.rs'
+      - 'tools/xtask/src/inference/build.rs'
+      - 'tools/xtask/src/inference/gpu.rs'
+      - 'tools/xtask/src/inference/provenance.rs'
+      - 'tools/xtask/src/inference/smoke.rs'
+      - 'scripts/build-llama.sh'
+      - 'scripts/prepare-llama.sh'
+      - 'scripts/prepare-whisper.sh'
+      - 'scripts/cargo-linker*'
+      - 'scripts/lib/cuda-toolkit.sh'
+      - 'scripts/lib/lld.sh'
+      - 'scripts/lib/macos-deployment-target*'
+      - '.gi/templates.yaml'
+      - 'ci/inference-ladder.json'
+      - 'ci/inference-artifacts.json'
+      - 'ci/inference-quality.json'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'tools/xtask/Cargo.toml'
+      - '.cargo/**'
+      - 'rust-toolchain.toml'
+      - 'Justfile'
+      - '!**/*.md'
+      - '!**/*.mdx'
+      - '!**/*.rst'
+      - '!**/*.adoc'
+      - '!**/docs/**'
+      - '!**/tests/**'
+      - '!**/benches/**'
+      - '!**/examples/**'
+      - '!**/fuzz/**'
+      - '!**/tests.rs'
+      - '!**/*_tests.rs'
+      - '!**/tests_*.rs'
+      - '!**/test_support.rs'
+      - '!crates/llama-spec-bench/**'
+      - '!crates/metrics-server/**'
+      - '!crates/skippy-gpu-bench/**'
+      - '!crates/skippy-package-builder/**'
+      - '!crates/skippy-quantize/**'
+      - '!crates/skippy-correctness/**'
   schedule:
     - cron: '0 14 * * *'
   workflow_dispatch:
@@ -27,7 +84,6 @@ jobs:
     timeout-minutes: 20
     outputs:
       source: ${{ steps.admission.outputs.source || github.event.pull_request.head.sha || github.sha }}
-      required: ${{ github.event_name != 'pull_request_target' || steps.paths.outputs.inference == 'true' }}
       profile: ${{ steps.admission.outputs.profile || 'pr' }}
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
@@ -37,22 +93,13 @@ jobs:
         with:
           ref: main
           persist-credentials: false
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
-        id: paths
-        if: github.event_name == 'pull_request_target'
-        with:
-          predicate-quantifier: some-with-excludes
-          filters: .github/path-filters.yml
       - uses: ./.github/actions/setup
-        if: github.event_name != 'pull_request_target' || steps.paths.outputs.inference == 'true'
       - id: admission
-        if: github.event_name != 'pull_request_target' || steps.paths.outputs.inference == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           QUALIFICATION_PROFILE: ${{ inputs.profile || 'release' }}
         run: just automation-run inference admit
       - id: matrix
-        if: github.event_name != 'pull_request_target' || steps.paths.outputs.inference == 'true'
         env:
           SOURCE_SHA: ${{ steps.admission.outputs.source }}
           PROFILE: ${{ steps.admission.outputs.profile }}
@@ -60,7 +107,6 @@ jobs:
   qualification:
     name: qualification (${{ matrix.id }})
     needs: plan
-    if: needs.plan.outputs.required == 'true'
     strategy:
       fail-fast: false
       max-parallel: 3
@@ -103,25 +149,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Publish the source-bound conditional qualification gate
+      - name: Publish the source-bound qualification result
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ needs.plan.outputs.source || github.event.pull_request.head.sha || github.sha }}
           PLAN: ${{ needs.plan.result }}
-          REQUIRED: ${{ needs.plan.outputs.required }}
           RESULT: ${{ needs.qualification.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |
-            const { SOURCE_SHA: sha, PLAN: plan, REQUIRED: required, RESULT: result, RUN_URL: url } = process.env;
+            const { SOURCE_SHA: sha, PLAN: plan, RESULT: result, RUN_URL: url } = process.env;
             if (!/^[a-f0-9]{40}$/i.test(sha)) throw new Error('Invalid qualification source SHA');
-            const passed = plan === 'success' && (
-              (required === 'true' && result === 'success') ||
-              (required === 'false' && result === 'skipped')
-            );
+            const passed = plan === 'success' && result === 'success';
             const description = passed
-              ? (required === 'true' ? 'Native Spark lab qualification' : 'No inference inputs changed; model tests not required')
+              ? 'Native Spark lab qualification'
               : 'Inference admission or qualification incomplete or failed';
             await github.rest.repos.createCommitStatus({
               ...context.repo, sha, context: 'Inference qualification',
@@ -131,7 +173,7 @@ jobs:
 
   report:
     needs: [plan, qualification, summary]
-    if: always() && github.event_name == 'pull_request_target' && needs.plan.outputs.required == 'true'
+    if: always() && github.event_name == 'pull_request_target'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -155,6 +197,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ needs.plan.outputs.source || github.event.pull_request.head.sha }}
           PLAN: ${{ needs.plan.result }}
-          REQUIRED: ${{ needs.plan.outputs.required }}
+          REQUIRED: 'true'
           RESULT: ${{ needs.qualification.result }}
         run: bash scripts/inference-report.sh target/inference-comment

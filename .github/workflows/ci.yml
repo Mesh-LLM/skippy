@@ -1,8 +1,63 @@
 name: CI
 on:
   pull_request:
+    # Include the inference-only inputs as well as the code filter.
+    paths:
+      - 'crates/**'
+      - 'skippy-api-rs/**'
+      - 'skippy_api/**'
+      - 'llama_cpp/**'
+      - 'tools/**'
+      - 'scripts/**'
+      - '.cargo/**'
+      - '.github/actions/**'
+      - '.github/scripts/**'
+      - '.github/path-filters.yml'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/inference.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'Justfile'
+      - 'ci/targets.json'
+      - 'ci/llama-canary/**'
+      - '.gi/templates.yaml'
+      - 'ci/inference-ladder.json'
+      - 'ci/inference-artifacts.json'
+      - 'ci/inference-quality.json'
+      - '!**/*.md'
+      - '!**/*.mdx'
+      - '!**/*.rst'
+      - '!**/*.adoc'
+      - '!**/docs/**'
+      - '!docs-site/**'
   push:
     branches: [main]
+    paths:
+      - 'crates/**'
+      - 'skippy-api-rs/**'
+      - 'skippy_api/**'
+      - 'llama_cpp/**'
+      - 'tools/**'
+      - 'scripts/**'
+      - '.cargo/**'
+      - '.github/actions/**'
+      - '.github/scripts/**'
+      - '.github/path-filters.yml'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/inference.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'Justfile'
+      - 'ci/targets.json'
+      - 'ci/llama-canary/**'
+      - '!**/*.md'
+      - '!**/*.mdx'
+      - '!**/*.rst'
+      - '!**/*.adoc'
+      - '!**/docs/**'
+      - '!docs-site/**'
   schedule:
     - cron: '0 14 * * *'
   workflow_dispatch:
@@ -58,18 +113,17 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      code: ${{ inputs.profile != '' || (github.event_name != 'pull_request' && github.event_name != 'push') || steps.paths.outputs.code == 'true' }}
+      code: ${{ inputs.profile != '' || github.event_name != 'pull_request' || steps.paths.outputs.code == 'true' }}
       inference: ${{ inputs.profile == '' && github.event_name == 'pull_request' && steps.paths.outputs.inference == 'true' }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        if: inputs.profile == '' && (github.event_name == 'pull_request' || github.event_name == 'push')
+        if: inputs.profile == '' && github.event_name == 'pull_request'
         with:
-          ref: ${{ github.event.pull_request.base.sha || github.sha }}
-          fetch-depth: 0
+          ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: paths
-        if: inputs.profile == '' && (github.event_name == 'pull_request' || github.event_name == 'push')
+        if: inputs.profile == '' && github.event_name == 'pull_request'
         with:
           predicate-quantifier: some-with-excludes
           filters: .github/path-filters.yml
