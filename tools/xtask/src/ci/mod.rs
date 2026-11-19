@@ -64,6 +64,7 @@ fn validate_summary(needs: &serde_json::Value, profile: profile::Profile) -> Dyn
         "plan",
         "inference_contracts",
         "quality",
+        "native_contracts",
         "host",
         "runtime",
         "product",
@@ -72,8 +73,10 @@ fn validate_summary(needs: &serde_json::Value, profile: profile::Profile) -> Dyn
     if jobs.len() != required.len()
         || required.iter().any(|job| {
             let expected = if profile == profile::Profile::Pr
-                && matches!(*job, "host" | "runtime" | "product" | "smoke")
-            {
+                && matches!(
+                    *job,
+                    "native_contracts" | "host" | "runtime" | "product" | "smoke"
+                ) {
                 "skipped"
             } else {
                 "success"
@@ -91,8 +94,25 @@ mod tests {
     use super::*;
     #[test]
     fn skipped_and_missing_jobs_fail_summary() {
-        let mut jobs = serde_json::json!({"plan":{"result":"success"},"inference_contracts":{"result":"success"},"quality":{"result":"success"},"host":{"result":"success"},"runtime":{"result":"success"},"product":{"result":"success"},"smoke":{"result":"success"}});
+        let mut jobs = serde_json::json!({
+            "plan": {"result": "success"},
+            "inference_contracts": {"result": "success"},
+            "quality": {"result": "success"},
+            "native_contracts": {"result": "success"},
+            "host": {"result": "success"},
+            "runtime": {"result": "success"},
+            "product": {"result": "success"},
+            "smoke": {"result": "success"}
+        });
         validate_summary(&jobs, profile::Profile::Full).unwrap();
+        for result in ["skipped", "failure", "cancelled"] {
+            let mut changed = jobs.clone();
+            changed["native_contracts"]["result"] = result.into();
+            assert!(validate_summary(&changed, profile::Profile::Full).is_err());
+        }
+        let mut missing = jobs.clone();
+        missing.as_object_mut().unwrap().remove("native_contracts");
+        assert!(validate_summary(&missing, profile::Profile::Full).is_err());
         jobs["product"]["result"] = "skipped".into();
         assert!(validate_summary(&jobs, profile::Profile::Full).is_err());
         jobs.as_object_mut().unwrap().remove("product");
@@ -100,7 +120,16 @@ mod tests {
     }
     #[test]
     fn short_profile_requires_quality_and_declared_extended_skips() {
-        let jobs = serde_json::json!({"plan":{"result":"success"},"inference_contracts":{"result":"success"},"quality":{"result":"success"},"host":{"result":"skipped"},"runtime":{"result":"skipped"},"product":{"result":"skipped"},"smoke":{"result":"skipped"}});
+        let jobs = serde_json::json!({
+            "plan": {"result": "success"},
+            "inference_contracts": {"result": "success"},
+            "quality": {"result": "success"},
+            "native_contracts": {"result": "skipped"},
+            "host": {"result": "skipped"},
+            "runtime": {"result": "skipped"},
+            "product": {"result": "skipped"},
+            "smoke": {"result": "skipped"}
+        });
         validate_summary(&jobs, profile::Profile::Pr).unwrap();
         assert!(validate_summary(&jobs, profile::Profile::Full).is_err());
         for job in ["plan", "inference_contracts", "quality"] {
@@ -110,6 +139,9 @@ mod tests {
                 assert!(validate_summary(&changed, profile::Profile::Pr).is_err());
             }
         }
+        let mut unexpected_native = jobs.clone();
+        unexpected_native["native_contracts"]["result"] = "success".into();
+        assert!(validate_summary(&unexpected_native, profile::Profile::Pr).is_err());
         let mut missing = jobs.clone();
         missing.as_object_mut().unwrap().remove("runtime");
         assert!(validate_summary(&missing, profile::Profile::Pr).is_err());
