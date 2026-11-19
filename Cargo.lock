@@ -2957,7 +2957,7 @@ checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 
 [[package]]
 name = "llama-spec-bench"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3084,7 +3084,7 @@ dependencies = [
 
 [[package]]
 name = "metrics-server"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3953,7 +3953,7 @@ dependencies = [
 
 [[package]]
 name = "process-supervision"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "libc",
  "serde_json",
@@ -5141,7 +5141,7 @@ checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
 
 [[package]]
 name = "skippy-api"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -5173,7 +5173,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-cache"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -5188,7 +5188,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-cli"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -5218,7 +5218,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-commands"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5254,7 +5254,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-config"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -5265,7 +5265,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-coordinator"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "skippy-model-artifact",
  "thiserror 2.0.21",
@@ -5273,7 +5273,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-correctness"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -5293,7 +5293,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-events"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5302,7 +5302,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-ffi"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "bindgen",
  "libloading 0.9.1",
@@ -5310,7 +5310,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-gpu-bench"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5319,14 +5319,14 @@ dependencies = [
 
 [[package]]
 name = "skippy-guardrails"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "skippy-hardware-profile"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "libc",
  "libloading 0.8.9",
@@ -5337,7 +5337,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-hf-hub"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "base64 0.22.1",
  "bon",
@@ -5368,7 +5368,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-inference-api"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -5391,11 +5391,11 @@ dependencies = [
 
 [[package]]
 name = "skippy-metrics"
-version = "0.80.0"
+version = "0.81.0"
 
 [[package]]
 name = "skippy-model"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -5410,7 +5410,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-model-artifact"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5422,7 +5422,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-model-hf"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5448,7 +5448,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-model-package"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -5473,14 +5473,14 @@ dependencies = [
 
 [[package]]
 name = "skippy-model-ref"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "skippy-model-resolver"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -5492,7 +5492,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-native-runtime"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -5504,7 +5504,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-package-builder"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -5527,7 +5527,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-package-format"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5536,7 +5536,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-protocol"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "prost",
  "prost-build",
@@ -5548,7 +5548,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-quantize"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -5563,7 +5563,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-runtime"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "crossbeam-queue",
@@ -5583,7 +5583,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-runtime-install"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "anyhow",
  "dirs",
@@ -5606,7 +5606,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-scheduler"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5617,7 +5617,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-serving"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5654,7 +5654,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-tokenizer"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5662,7 +5662,7 @@ dependencies = [
 
 [[package]]
 name = "skippy-topology"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "serde",
  "serde_json",

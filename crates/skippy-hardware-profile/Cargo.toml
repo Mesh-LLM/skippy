@@ -13,7 +13,7 @@ readme = "README.md"
 workspace = true
 
 [dependencies]
-skippy-native-runtime = { path = "../skippy-native-runtime", version = "0.80.0" }
+skippy-native-runtime = { path = "../skippy-native-runtime", version = "0.81.0" }
 sysinfo = "0.38"
 serde_json.workspace = true
 

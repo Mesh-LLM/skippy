@@ -11,4 +11,4 @@ homepage = "https://github.com/general-inference/skippy"
 
 [dependencies]
 thiserror = "2"
-skippy-model-artifact = { path = "../skippy-model-artifact", version = "0.80.0" }
+skippy-model-artifact = { path = "../skippy-model-artifact", version = "0.81.0" }

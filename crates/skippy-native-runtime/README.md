@@ -46,7 +46,7 @@ Each packaged runtime directory contains `manifest.json`:
   "schema_version": 2,
   "runtime": {
     "id": "skippy-native-runtime-linux-x86_64-cuda13-sm120",
-    "release_version": "0.80.0",
+    "release_version": "0.81.0",
     "skippy_abi": "0.1.25",
     "platform": {
       "os": "linux",
@@ -113,18 +113,18 @@ Release jobs publish `native-runtimes.json`:
 ```json
 {
   "schema_version": 2,
-  "release_version": "0.80.0",
+  "release_version": "0.81.0",
   "skippy_abi": "0.1.25",
   "artifacts": [
     {
       "id": "skippy-native-runtime-linux-x86_64-cpu",
-      "release_version": "0.80.0",
+      "release_version": "0.81.0",
       "skippy_abi": "0.1.25",
       "platform": { "os": "linux", "arch": "x86_64" },
       "backend": { "kind": "cpu" },
       "rank": 0,
       "libraries": ["lib/libllama.so"],
-      "url": "https://github.com/general-inference/skippy/releases/download/v0.80.0/skippy-native-runtime-linux-x86_64-cpu.tar.gz",
+      "url": "https://github.com/general-inference/skippy/releases/download/v0.81.0/skippy-native-runtime-linux-x86_64-cpu.tar.gz",
       "sha256": "2f1c..."
     }
   ]
@@ -220,7 +220,7 @@ use std::path::PathBuf;
 #     manifest: NativeRuntimeReleaseManifest,
 # ) -> anyhow::Result<()> {
 let cache = NativeRuntimeCache::new("/tmp/skippy/native-runtimes");
-let resolution = NativeRuntimeResolver::new("0.80.0", profile, manifest, cache)
+let resolution = NativeRuntimeResolver::new("0.81.0", profile, manifest, cache)
     .with_skippy_abi_version("0.1.25")
     .with_bundle_dirs(vec![PathBuf::from("./skippy-native-runtime-linux-x86_64-cpu")])
     .resolve(&RuntimeSelection::Recommended)?;
@@ -341,7 +341,7 @@ Generate the release manifest:
 
 ```bash
 scripts/generate-native-runtime-release-manifest.sh \
-  --tag v0.80.0 \
+  --tag v0.81.0 \
   --out dist/native-runtimes/native-runtimes.json \
   dist/native-runtimes/*.tar.gz
 ```
