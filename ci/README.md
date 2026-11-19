@@ -35,13 +35,13 @@ manifests/lockfiles, and any `Justfile` edit still count as changes to those fil
 Separate test files/directories and standalone tools are excluded from GPU
 qualification; `.gi/templates.yaml` is exact and `.gi/agents/**` is excluded.
 
-Code paths select formatting, Clippy, FFI, Rust and C++ tests, and CI
-automation tests. CI reads PR path rules from the base commit. PRs matching the
-inference filter also require Linux x64 CUDA 13 and macOS ARM64 Metal packages to
-build and serve a short inference request on real hardware. Both jobs wait for
-applicable code and automation checks. Docs-only and metadata-only PRs do not
-start CI. The CI result gate rejects missing, failed or unexpectedly skipped
-results.
+Code paths select Quality canary, which runs CI automation tests before
+formatting, Clippy, FFI, and Rust and C++ tests. CI reads PR path rules from the
+base commit. PRs matching the inference filter also require Linux x64 CUDA 13 and
+macOS ARM64 Metal packages to build and serve a short inference request on real
+hardware. Both jobs wait for Quality canary when code checks apply. Docs-only
+and metadata-only PRs do not start CI. The CI result gate rejects missing,
+failed or unexpectedly skipped results.
 
 The protected inference workflow uses native `pull_request_target` path filters
 for the same inference inputs. Relevant PRs retain same-repository/collaborator

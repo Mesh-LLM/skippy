@@ -24,11 +24,12 @@ contract; no downstream product's workflow topology applies here.
   CUDA 13 and macOS ARM64 Metal package and device smoke on inference PRs.
   The protected inference workflow uses the same inference paths in its native
   trigger for the seven Spark configurations. `PR checks` reads protected
-  workflow trigger paths to determine which runs it expects. The
-  quality and automation checks gate package jobs. Full CI runs Graph Contracts
-  in parallel with eight build, package and smoke jobs. Each CPU job supplies a
-  shared platform CLI to its backend jobs. Routine CI uses two device jobs and
-  checks the three remaining CUDA archives on hosted compiler-image runners.
+  workflow trigger paths to determine which runs it expects. Quality canary
+  runs CI automation tests before build checks and gates package jobs. Full CI
+  runs Graph Contracts in parallel with eight build, package and smoke jobs.
+  Each CPU job supplies a shared platform CLI to its backend jobs. Routine CI
+  uses two device jobs and checks the three remaining CUDA archives on hosted
+  compiler-image runners.
   Tagged releases add device smoke on those exact archives. The lightweight
   CI gate checks the validated matrix and requires all applicable results.
 - `.github/workflows/docs.yml` directly validates `docs-site/**` changes on PRs
