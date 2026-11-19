@@ -57,17 +57,20 @@ test('every failed or cancelled workflow blocks, including additional workflows'
   }
 });
 
-test('image workflow cannot be missed before it is scheduled', async () => {
-  const workflow = readFileSync(join(__dirname, '../workflows/ci-image.yml'), 'utf8');
+test('combined image workflow cannot be missed before it is scheduled', async () => {
+  const workflow = readFileSync(join(__dirname, '../workflows/ci-images.yml'), 'utf8');
   const triggers = [...workflow.matchAll(/paths: \[([^\]]+)\]/g)];
+  const expectedPaths = ['.github/workflows/ci-images.yml', 'ci/Dockerfile*', 'ci/targets.json', 'rust-toolchain.toml', 'Justfile'];
   assert.equal(triggers.length, 2);
-  for (const trigger of triggers) assert.deepEqual(JSON.parse(`[${trigger[1].replaceAll("'", '"')}]`),
-    ['.github/workflows/ci-image.yml', 'ci/Dockerfile*', 'rust-toolchain.toml']);
-  for (const filename of ['ci/Dockerfile', 'ci/Dockerfile.cuda', 'rust-toolchain.toml', '.github/workflows/ci-image.yml']) {
+  for (const trigger of triggers) assert.deepEqual(JSON.parse('[' + trigger[1].replaceAll("'", '"') + ']'), expectedPaths);
+  for (const filename of [
+    'ci/Dockerfile', 'ci/Dockerfile.cuda', 'ci/Dockerfile.gpu', 'ci/Dockerfile.gpu.dockerignore',
+    'ci/targets.json', 'rust-toolchain.toml', 'Justfile', '.github/workflows/ci-images.yml'
+  ]) {
     assert.equal((await evaluate({ files: [{ filename }] })).state, 'pending');
-    assert.equal((await evaluate({ files: [{ filename }], runs: [run('ci.yml'), run('inference.yml'), run('ci-image.yml')] })).state, 'success');
+    assert.equal((await evaluate({ files: [{ filename }], runs: [run('ci.yml'), run('inference.yml', 2), run('ci-images.yml', 3)] })).state, 'success');
   }
-  for (const filename of ['Justfile', '.gi/agents/code-review.yaml', 'docs-site/index.mdx']) {
+  for (const filename of ['.gi/agents/code-review.yaml', 'docs-site/index.mdx']) {
     assert.equal((await evaluate({ files: [{ filename }] })).state, 'success');
   }
   assert.equal((await evaluate({ files: [{ filename: 'archive/old-container', previous_filename: 'ci/Dockerfile' }] })).state, 'pending');

@@ -61,9 +61,10 @@ and refuses to replace results for a newer commit or workflow attempt.
 
 Scheduled, manual and reusable full/candidate validation bypass path selection.
 Tagged releases and manual llama upgrades retain their explicit triggers. The
-CPU image workflow retains its native paths for its workflow, `ci/Dockerfile*`,
-and `rust-toolchain.toml`. Protected inference and aggregate workflow
-changes take effect after they reach `main`.
+`CI images` workflow retains its native paths for its workflow,
+`ci/Dockerfile*`, `ci/targets.json`, `rust-toolchain.toml` and `Justfile`.
+Protected inference and aggregate workflow changes take effect after they
+reach `main`.
 The 308-test native family battery and complete host/runtime/package/smoke matrix
 run nightly and for releases. Reusable candidate validation defaults to `full`;
 release publication explicitly requests it. Manual dispatch from protected main selects either
@@ -157,12 +158,12 @@ the smoke command checks the installed tools in a read-only, offline container
 with a fresh `/github/home` mount, as used by GitHub container jobs.
 `just ci-image-export` saves the image to `target/ci-image/skippy-ci-cpu.tar`.
 
-One workflow, `.github/workflows/ci-image.yml`, builds and tests relevant PRs.
-Main pushes and manual main dispatches publish the exact tested image in a
-separate job with package-write permission. The publisher checks the image ID
-and source label, then pushes an immutable build tag and `latest` without
-rebuilding or running the image. Run manual refreshes with
-`gh workflow run ci-image.yml --ref main` after the workflow lands.
+The `.github/workflows/ci-images.yml` workflow is named `CI images` and builds
+and tests relevant PRs. Main pushes and manual main dispatches publish the exact
+tested CPU and GPU images in separate jobs with package-write permission. Each
+publisher verifies its tested artifact and metadata, then pushes immutable build
+tags and `latest` without rebuilding or running the image. Run manual refreshes
+with `gh workflow run ci-images.yml --ref main` after the workflow lands.
 
 This PR only bootstraps the image; consumer adoption follows after publication.
 Future consumers use `latest` and include `/etc/skippy-ci-image-id` in build-cache
@@ -170,7 +171,7 @@ keys. Private same-repository pulls use `GITHUB_TOKEN` with `packages: read`.
 
 ### CUDA and ROCm compiler images
 
-`.github/workflows/ci-gpu-images.yml` builds
+The `CI images` workflow also builds
 `ghcr.io/general-inference/skippy-ci-cuda12`,
 `ghcr.io/general-inference/skippy-ci-cuda13`, and
 `ghcr.io/general-inference/skippy-ci-rocm` from digest-pinned vendor development

@@ -3,7 +3,7 @@ on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_run:
-    workflows: [CI, Documentation, CPU CI image, Inference qualification]
+    workflows: [CI, Documentation, CI images, Inference qualification]
     types: [in_progress, completed]
   check_run:
     types: [created, completed]

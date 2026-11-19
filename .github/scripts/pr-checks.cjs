@@ -31,12 +31,13 @@ module.exports = async function aggregate({ github, context, core }) {
       const files = await github.paginate(github.rest.pulls.listFiles,
         { ...repo, pull_number: pr.number, per_page: 100 });
       const expected = new Set(['.github/workflows/ci.yml', '.github/workflows/inference.yml']);
-      // These are exactly the native PR trigger paths in ci-image.yml. The
-      // contract test checks parity so a not-yet-scheduled image run cannot be missed.
+      // Match the unified CI images workflow's native PR trigger paths. The
+      // contract test keeps this routing in sync so early aggregate results wait.
       if (files.some(file => [file.filename, file.previous_filename].some(filename =>
-          filename === '.github/workflows/ci-image.yml' || filename === 'rust-toolchain.toml' ||
+          filename === '.github/workflows/ci-images.yml' || filename === 'rust-toolchain.toml' ||
+          filename === 'Justfile' || filename === 'ci/targets.json' ||
           /^ci\/Dockerfile[^/]*$/.test(filename || '')))) {
-        expected.add('.github/workflows/ci-image.yml');
+        expected.add('.github/workflows/ci-images.yml');
       }
       const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo,
         { ...repo, head_sha: source, per_page: 100 });
