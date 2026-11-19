@@ -7,14 +7,20 @@ LABEL org.opencontainers.image.source="https://github.com/general-inference/skip
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential ca-certificates clang-22 clang-format-22 clang-tidy-22 \
-      cmake curl git libclang-22-dev libclang-rt-22-dev libcurl4-openssl-dev \
-      libedit-dev libssl-dev libzstd-dev lld-22 llvm-22-dev mold ninja-build \
+      cmake curl git libc++-22-dev libc++abi-22-dev libclang-22-dev \
+      libclang-cpp22-dev libclang-rt-22-dev libcurl4-openssl-dev \
+      libedit-dev libomp-22-dev libssl-dev libzstd-dev lld-22 llvm-22-dev mold ninja-build \
       patchelf pkg-config rustup xz-utils zlib1g-dev zstd \
     && rm -rf /var/lib/apt/lists/*
 
-ENV CARGO_HOME=/opt/rust/cargo \
-    RUSTUP_HOME=/opt/rust/rustup \
-    PATH=/opt/rust/cargo/bin:/usr/lib/llvm-22/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+# Cargo keeps its default $HOME/.cargo layout, including when Actions mounts a
+# fresh /github/home. Rustup's preinstalled toolchains stay outside that mount.
+ENV RUSTUP_HOME=/opt/rust/rustup \
+    PATH=/usr/lib/llvm-22/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    RUSTC_WRAPPER=/usr/local/bin/sccache \
+    SCCACHE=/usr/local/bin/sccache \
+    CMAKE_C_COMPILER_LAUNCHER=/usr/local/bin/sccache \
+    CMAKE_CXX_COMPILER_LAUNCHER=/usr/local/bin/sccache \
     CC=/usr/lib/llvm-22/bin/clang \
     CXX=/usr/lib/llvm-22/bin/clang++ \
     LIBCLANG_PATH=/usr/lib/llvm-22/lib \
@@ -35,8 +41,8 @@ RUN test "$(dpkg --print-architecture)" = amd64 \
 
 RUN groupadd --gid 1001 runner \
     && useradd --uid 1001 --gid 1001 --create-home runner \
-    && mkdir -p /opt/rust/cargo /opt/rust/rustup /workspace \
-    && chown runner:runner /opt/rust/cargo /opt/rust/rustup /workspace
+    && mkdir -p /opt/rust/rustup /workspace \
+    && chown runner:runner /opt/rust/rustup /workspace
 USER runner
 COPY rust-toolchain.toml /opt/skippy-ci/rust-toolchain.toml
 WORKDIR /opt/skippy-ci
@@ -44,15 +50,18 @@ WORKDIR /opt/skippy-ci
 RUN rustc --version \
     && rustup default "$(rustup show active-toolchain | cut -d ' ' -f 1)"
 
-# Compile and execute the required Rust/mold and C++23/lld contracts offline.
+# Compile and execute Rust/mold and C++23/OpenMP/lld contracts offline.
 RUN --network=none image_probe_dir="$(mktemp -d)" \
     && printf 'fn main() { assert_eq!(6 * 7, 42); }\n' > "$image_probe_dir/probe.rs" \
     && rustc -C linker=clang -C link-arg=-fuse-ld=mold "$image_probe_dir/probe.rs" -o "$image_probe_dir/rust-probe" \
     && "$image_probe_dir/rust-probe" \
-    && printf '#include <expected>\nint main() { std::expected<int,int> v{41}; auto r = v.and_then([](int n) { return std::expected<int,int>{n+1}; }); return r && *r == 42 ? 0 : 1; }\n' > "$image_probe_dir/probe.cpp" \
-    && clang++ -std=c++23 -Wall -Wextra -Werror -fuse-ld=lld -fsanitize=address,undefined \
+    && printf '#include <expected>\n#include <omp.h>\nint main() { std::expected<int,int> v{41}; auto r = v.and_then([](int n) { return std::expected<int,int>{n+1}; }); return r && *r == 42 && omp_get_max_threads() > 0 ? 0 : 1; }\n' > "$image_probe_dir/probe.cpp" \
+    && clang++ -std=c++23 -Wall -Wextra -Werror -fopenmp -fuse-ld=lld -fsanitize=address,undefined \
       "$image_probe_dir/probe.cpp" -o "$image_probe_dir/cpp-probe" \
     && "$image_probe_dir/cpp-probe" \
+    && clang++ -std=c++23 -stdlib=libc++ -Wall -Wextra -Werror -fopenmp -fuse-ld=lld \
+      -fsanitize=address,undefined "$image_probe_dir/probe.cpp" -o "$image_probe_dir/libcxx-probe" \
+    && "$image_probe_dir/libcxx-probe" \
     && rm -rf "$image_probe_dir"
 
 USER root

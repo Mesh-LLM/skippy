@@ -112,14 +112,22 @@ receive this secret.
 
 `ci/Dockerfile` builds the x86_64 CPU dependency image
 `ghcr.io/general-inference/skippy-ci-cpu:latest`. It includes **build-essential
-and mold**, LLVM/Clang 22 development packages and sanitizers, Rust/Clippy/rustfmt
+and mold**, LLVM/Clang 22 development packages (including `libclang-cpp22-dev`),
+libc++/libc++abi 22, OpenMP and sanitizers, Rust/Clippy/rustfmt
 from `rust-toolchain.toml`, Just, sccache, CMake, Ninja and system libraries.
 The Ubuntu base is digest-pinned and release binaries are checksum-verified.
-The image runs as uid 1001 to match GitHub-hosted workspace ownership.
+The image runs as uid 1001 to match GitHub-hosted workspace ownership. Cargo uses
+its default `$HOME/.cargo` directory so the existing dependency cache follows the
+job's home directory. Preinstalled Rust toolchains live at `/opt/rust/rustup`,
+outside GitHub's fresh `/github/home` mount.
+Cargo's Rust wrapper and CMake's C/C++ compiler launchers use the installed
+sccache by default. The repository's Linux Rust linker driver selects mold.
 
 Use `just ci-image-build` and `just ci-image-smoke` locally. The Docker build
-compiles and runs Rust with mold and sanitized C++23 with lld without networking;
-the smoke command checks the installed tools in a read-only, offline container.
+compiles and runs Rust with mold and sanitized C++23/OpenMP with both libstdc++
+and libc++ using lld without networking;
+the smoke command checks the installed tools in a read-only, offline container
+with a fresh `/github/home` mount, as used by GitHub container jobs.
 `just ci-image-export` saves the image to `target/ci-image/skippy-ci-cpu.tar`.
 
 One workflow, `.github/workflows/ci-image.yml`, builds and tests relevant PRs.
