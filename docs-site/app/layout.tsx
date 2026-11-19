@@ -30,7 +30,11 @@ const navbar = (
   <Navbar
     logo={logo}
     projectLink="https://github.com/general-inference/skippy"
-  />
+  >
+    <a className="skippy-nav-link" href="/blog/">
+      Blog
+    </a>
+  </Navbar>
 );
 
 export default async function RootLayout({

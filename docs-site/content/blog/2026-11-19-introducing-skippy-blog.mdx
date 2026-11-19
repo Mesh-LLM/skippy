@@ -1,0 +1,53 @@
+---
+title: Introducing the Skippy blog
+description: A new home for Skippy release notes and engineering updates.
+date: "2026-11-19"
+author: "General Inference"
+---
+
+# Introducing the Skippy blog
+
+The Skippy blog is the project’s source for release notes and engineering
+updates. It complements the task-focused documentation with a chronological
+record of what changed and why.
+
+## Why follow the blog
+
+Use release posts to understand new model support, serving behavior,
+configuration changes, performance work, and migration requirements before you
+upgrade. Engineering posts will share significant work that is useful to
+operators and contributors between releases.
+
+## Start with a working model
+
+Install the latest published Skippy release, then verify the runtime and serve a
+recommended model:
+
+```console
+skippy doctor
+skippy models recommended
+skippy serve --model Qwen3-0.6B-Q4_K_M
+```
+
+The [installation guide](/getting-started/) covers release downloads, source
+builds, runtime selection, and the first inference request.
+
+## How release posts are published
+
+Each release post is reviewed with the release source. Skippy validates that the
+tag has a matching post, builds it into the static documentation artifact, and
+publishes that exact artifact after the GitHub release succeeds. Release jobs do
+not generate or commit unreviewed documentation.
+
+## What commonly goes wrong
+
+A blog post explains a release, but it is not a substitute for verifying the
+published checksums or reading version-specific compatibility notes. Keep the
+`skippy` executable beside its matching `native-runtimes` directory, and run
+`skippy doctor` when a runtime or accelerator is rejected.
+
+## References
+
+- [Latest Skippy release](https://github.com/general-inference/skippy/releases/latest)
+- [Configuration reference](/configuration/reference/)
+- [Contribution guide](/contributing/)

@@ -5,5 +5,6 @@ export default {
   "pipeline-parallelism": "Pipeline Parallelism",
   "kv-caching": "KV Caching",
   configuration: "Configuration Reference",
+  blog: "Blog",
   contributing: "Contributing",
 };

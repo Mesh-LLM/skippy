@@ -45,6 +45,17 @@ body {
   filter: invert(1);
 }
 
+.skippy-nav-link {
+  color: inherit;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skippy-nav-link:hover {
+  color: var(--skippy-blue);
+}
+
 .nextra-content {
   font-size: 1rem;
   line-height: 1.72;
@@ -84,6 +95,60 @@ body {
   mix-blend-mode: screen;
 }
 
+.skippy-blog-list {
+  display: grid;
+  gap: 1rem;
+  margin: 2rem 0 3rem;
+}
+
+.skippy-blog-card {
+  display: block;
+  padding: 1.25rem 1.35rem;
+  color: inherit;
+  text-decoration: none;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 0.75rem;
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.skippy-blog-card:hover {
+  border-color: var(--skippy-blue);
+  transform: translateY(-1px);
+}
+
+.skippy-blog-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.45rem;
+  color: color-mix(in srgb, currentColor 68%, transparent);
+  font-size: 0.875rem;
+}
+
+.skippy-blog-card__release {
+  padding: 0.12rem 0.45rem;
+  color: var(--skippy-blue);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid color-mix(in srgb, var(--skippy-blue) 45%, transparent);
+  border-radius: 999px;
+}
+
+.skippy-blog-card h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.35;
+}
+
+.skippy-blog-card p {
+  margin: 0.55rem 0 0;
+  color: color-mix(in srgb, currentColor 75%, transparent);
+}
+
 .skippy-not-found {
   margin: 8rem auto;
   max-width: 36rem;
@@ -99,6 +164,10 @@ body {
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+
+  .skippy-blog-card {
+    transition: none;
   }
 }
 
