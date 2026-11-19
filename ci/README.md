@@ -45,23 +45,17 @@ In full qualification, host and runtime producers start after planning alongside
 quality; the final gate requires every producer and smoke result.
 Compilation never counts as device evidence.
 
-The CPU-only `quality` job runs on GitHub-hosted `ubuntu-24.04` in the public CPU
-toolchain container from `Mesh-LLM/mesh-llm-runner-images`, keeping lab capacity
-available for device qualification. Its immutable image is
-`ghcr.io/mesh-llm/mesh-llm-cuda-runner@sha256:2da4291a5021d6e99771c4d0f15ee3e90278c6de6fe59f0824a39433d9bab2ca`,
-from [the November 17 promotion](https://github.com/Mesh-LLM/mesh-llm-runner-images/actions/runs/44047250262).
-The package is public and pulls anonymously, without registry credentials or
-package permissions. The image selects Clang 19 and GCC 14's C++ library, with
-separate LLVM/Clang 22 development inputs at `/usr/lib/llvm-22` for bindings and
-the rewriter. Preserve the image's compiler selection on `PATH`; the rewriter
-uses the explicit LLVM 22 prefix. The job verifies compiler and development
-CMake inputs before running the existing checks. Missing prerequisites fail
-without installing system packages or skipping checks.
+The CPU-only `quality` job runs directly on GitHub-hosted `ubuntu-26.04`, keeping
+lab capacity available for device qualification. It selects the preinstalled
+LLVM/Clang 22 compiler and development inputs at `/usr/lib/llvm-22`. The job
+verifies the compiler and development CMake packages before running the existing
+checks. Missing prerequisites fail without installing system packages or
+skipping checks. No container-registry access or package credential is needed.
 
 Cargo and CMake compilation use two workers to fit standard private-repository
-hosted capacity. Cargo build and sccache identities include the image digest.
-Download caches honor the image's `CARGO_HOME`; shared dependency and native-source
-caches remain enabled.
+hosted capacity. Cargo and sccache identities include GitHub's image OS/version
+and the LLVM major so weekly hosted-image updates cannot reuse incompatible
+build snapshots. Shared dependency and native-source caches remain enabled.
 Metal/CUDA runtime and model inference jobs retain their dedicated lab routing.
 
 `docs.yml` runs one documentation job when `docs-site/**` changes. On a pull
