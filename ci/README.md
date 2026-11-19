@@ -79,19 +79,17 @@ In full qualification, host and runtime producers start after planning alongside
 quality; the final gate requires every producer and smoke result.
 Compilation never counts as device evidence.
 
-The CPU-only `quality` job runs on GitHub-hosted `ubuntu-24.04` in
-`ghcr.io/general-inference/skippy-ci-cpu:latest`, keeping lab capacity available
-for device qualification. This repository's image supplies Rust, Just, sccache,
-build-essential, mold and LLVM/Clang 22 development inputs at `/usr/lib/llvm-22`.
-The job verifies its tools and development CMake packages before running the
-existing checks. Missing prerequisites fail without installing system packages
-or skipping checks. The job pulls using its own read-only `GITHUB_TOKEN` with
-`packages: read`; no publication credentials are supplied.
+The CPU-only `quality` job runs directly on GitHub-hosted `ubuntu-26.04`, keeping
+lab capacity available for device qualification. It selects the preinstalled
+LLVM/Clang 22 compiler and development inputs at `/usr/lib/llvm-22`. The job
+verifies the compiler and development CMake packages before running the existing
+checks. Missing prerequisites fail without installing system packages or
+skipping checks. No container-registry access or package credential is needed.
 
 Cargo and CMake compilation use two workers to fit standard private-repository
-hosted capacity. Cargo and sccache identities include `/etc/skippy-ci-image-id`
-from the pulled image, so updates to `latest` use a new build-cache namespace.
-Shared dependency and native-source caches remain enabled.
+hosted capacity. Cargo and sccache identities include GitHub's image OS/version
+and the LLVM major so weekly hosted-image updates cannot reuse incompatible
+build snapshots. Shared dependency and native-source caches remain enabled.
 Metal/CUDA runtime and model inference jobs retain their dedicated lab routing.
 
 `docs.yml` runs one documentation job when `docs-site/**` changes. On a pull
