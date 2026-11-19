@@ -1,47 +1,77 @@
 name: KV cache correctness
-description: Run the complete correctness sequence for one pinned KV fixture.
+description: Qualify the exact native runtime in a Skippy package on its matching GPU.
 inputs:
-  backend:
-    description: Cache qualification profile
+  runtime-id:
+    description: Packaged runtime from ci/targets.json.
     required: true
-  fixture:
-    description: Pinned KV architecture case
+  profile:
+    description: Short dense fixture or full four-fixture qualification.
     required: true
-  candidate_artifact:
-    description: Protected candidate source artifact
-    default: ''
-  candidate_sha:
-    description: Immutable candidate source revision
-    default: ''
 runs:
   using: composite
   steps:
-    - uses: ./.github/actions/source
-      with:
-        artifact: ${{ inputs.candidate_artifact }}
-        sha: ${{ inputs.candidate_sha }}
-    - uses: ./.github/actions/cache
     - uses: ./.github/actions/setup-hf
-    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-      with:
-        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-kv-binaries-${{ inputs.backend }}
-        path: target/cache-qualification-binaries
-    - name: Run the cache correctness case
+    - name: Identify upstream reference build inputs
+      id: reference
+      if: inputs.profile == 'full' && env.SKIPPY_CACHE_QUAL_LLAMA_SERVER == ''
       shell: bash
       env:
-        BACKEND: ${{ inputs.backend }}
-        FIXTURE: ${{ inputs.fixture }}
-      run: just cache-correctness-shard "$BACKEND" "$FIXTURE" target/cache-qualification-binaries target/cache-qualification-results
-    - name: Retain the case evidence
+        RUNTIME_ID: ${{ inputs.runtime-id }}
+      run: |
+        set -euo pipefail
+        fingerprint() {
+          uname -r
+          c++ --version
+          cmake --version
+          if [[ "$RUNTIME_ID" == linux-aarch64-cuda13 ]]; then
+            nvcc --version
+            nvidia-smi --query-gpu=compute_cap --format=csv,noheader | sort -u
+          else
+            xcrun --show-sdk-version
+          fi
+        }
+        digest=$(fingerprint | git hash-object --stdin)
+        echo "toolchain=$digest" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      id: reference-cache
+      if: steps.reference.outcome == 'success'
+      with:
+        path: target/cache-qualification-reference/llama-server
+        key: kv-reference-v2-${{ runner.os }}-${{ runner.arch }}-${{ inputs.runtime-id }}-${{ steps.reference.outputs.toolchain }}-${{ hashFiles('llama_cpp/upstream.txt', 'Justfile', 'tools/xtask/src/cache_qualification/prepare.rs') }}
+    - uses: ./.github/actions/native-source
+      if: inputs.runtime-id == 'linux-aarch64-cuda13' && steps.reference.outcome == 'success' && steps.reference-cache.outputs.cache-hit != 'true'
+    - name: Test KV reuse against the shipped runtime
+      shell: bash
+      env:
+        RUNTIME_ID: ${{ inputs.runtime-id }}
+        KV_PROFILE: ${{ inputs.profile }}
+        SKIPPY_CACHE_QUAL_REFERENCE_CACHE: ${{ github.workspace }}/target/cache-qualification-reference/llama-server
+        CMAKE_BUILD_PARALLEL_LEVEL: '8'
+      run: |
+        just cache-correctness-package "$RUNTIME_ID" "$KV_PROFILE" "dist/products/$RUNTIME_ID" "target/cache-qualification-$RUNTIME_ID"
+    - name: Check for a newly built reference
+      id: reference-built
+      if: always() && steps.reference.outcome == 'success' && steps.reference-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        if [[ -x target/cache-qualification-reference/llama-server ]]; then
+          echo 'available=true' >> "$GITHUB_OUTPUT"
+        fi
+    - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      if: always() && steps.reference-built.outputs.available == 'true'
+      with:
+        path: target/cache-qualification-reference/llama-server
+        key: ${{ steps.reference-cache.outputs.cache-primary-key }}
+    - name: Retain reports and native logs
       if: always()
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
-        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-kv-shard-${{ inputs.backend }}-${{ inputs.fixture }}
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-cache-correctness-${{ inputs.runtime-id }}
         path: |
-          target/cache-qualification-results/batch-result.json
-          target/cache-qualification-results/*/*.json
-          target/cache-qualification-results/*/*.log
-          target/cache-qualification-results/*/template-identity/*.log
-        if-no-files-found: error
+          target/cache-qualification-${{ inputs.runtime-id }}/*.json
+          target/cache-qualification-${{ inputs.runtime-id }}/*/*.json
+          target/cache-qualification-${{ inputs.runtime-id }}/*/*.log
+          target/cache-qualification-${{ inputs.runtime-id }}/*/template-identity/*.log
+        if-no-files-found: ignore
         overwrite: true
         retention-days: 14

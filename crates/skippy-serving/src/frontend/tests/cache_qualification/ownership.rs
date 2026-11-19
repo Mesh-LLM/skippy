@@ -28,6 +28,7 @@ const INTERRUPTED_WRITE: &str = "l3/segments/.tmp-interrupted-qualification";
 #[derive(Clone, Copy)]
 enum Phase {
     Publish,
+    Reopen,
     CleanRestart,
     CrashRestart,
 }
@@ -36,6 +37,7 @@ impl Phase {
     fn name(self) -> &'static str {
         match self {
             Self::Publish => "publish",
+            Self::Reopen => "reopen",
             Self::CleanRestart => "clean-restart",
             Self::CrashRestart => "crash-restart",
         }
@@ -112,6 +114,25 @@ pub(super) async fn observe(
     Ok(())
 }
 
+pub(super) async fn reopen(
+    directory: &Path,
+    config: StageConfig,
+    family: Family,
+    backend: Backend,
+) -> Result<CleanRestartObservation> {
+    let input = ProcessInput {
+        config,
+        family,
+        backend,
+    };
+    fs::write(directory.join(REQUEST_FILE), serde_json::to_vec(&input)?)?;
+    let (mut child, pid) = start(directory, Phase::Reopen)?;
+    wait_success(&mut child, Phase::Reopen).await?;
+    let observation: CleanRestartObservation = read_observation(directory, Phase::Reopen)?;
+    ensure!(pid == observation.pid, "reopened cache PID mismatch");
+    Ok(observation)
+}
+
 fn start(directory: &Path, phase: Phase) -> Result<(Child, u32)> {
     let name = phase.name();
     let log = fs::File::create(directory.join(format!("l3-{name}-process.log")))?;
@@ -181,6 +202,7 @@ fn l3_owner() -> Result<()> {
     let directory = required_path("SKIPPY_CACHE_QUAL_OWNER_DIR")?;
     let phase = match env::var("SKIPPY_CACHE_QUAL_OWNER_PHASE")?.as_str() {
         "publish" => Phase::Publish,
+        "reopen" => Phase::Reopen,
         "clean-restart" => Phase::CleanRestart,
         "crash-restart" => Phase::CrashRestart,
         value => bail!("invalid L3 process phase {value}"),
@@ -191,6 +213,7 @@ fn l3_owner() -> Result<()> {
         input.config.model_id == fixture.model_id(),
         "model identity mismatch"
     );
+    skippy_runtime::test_support::require_native_runtime();
     let native_log = directory.join(format!("l3-{}-native.log", phase.name()));
     skippy_runtime::redirect_native_logs_to_file(&native_log)?;
     let result = run_phase(&directory, input, &fixture, phase, &native_log);
@@ -235,16 +258,18 @@ fn run_phase(
 
     let manager = tiers::open_store(directory)?;
     let mut runner = CandidateRunner::new(input.config, input.family)?;
-    if matches!(phase, Phase::CleanRestart) {
+    if matches!(phase, Phase::CleanRestart | Phase::Reopen) {
         let cache = runner.enable_cache(Some(manager.clone()))?;
         let replay = runner.generate(&request)?;
         tiers::drain_workers(&cache)?;
         drop(cache);
         drop(runner);
-        fs::write(
-            directory.join(INTERRUPTED_WRITE),
-            b"unpublished checkpoint bytes",
-        )?;
+        if matches!(phase, Phase::CleanRestart) {
+            fs::write(
+                directory.join(INTERRUPTED_WRITE),
+                b"unpublished checkpoint bytes",
+            )?;
+        }
         write_observation(
             directory,
             phase,
@@ -254,6 +279,9 @@ fn run_phase(
                 replay,
             },
         )?;
+        if matches!(phase, Phase::Reopen) {
+            return Ok(());
+        }
         // Retain exclusive ownership until the parent deliberately kills us.
         let mut line = String::new();
         let _ = std::io::stdin().read_line(&mut line)?;

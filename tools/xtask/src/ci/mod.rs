@@ -1,12 +1,10 @@
 pub(crate) mod artifacts;
 pub(crate) use crate::execution;
-mod gates;
-mod kv_scope;
 pub(crate) mod matrix;
 pub(crate) mod producers;
 mod profile;
 mod smoke;
-use crate::{cache_qualification, command::DynResult};
+use crate::command::DynResult;
 use std::{io::Write, path::Path};
 
 pub fn run(args: &[String]) -> DynResult<()> {
@@ -16,36 +14,24 @@ pub fn run(args: &[String]) -> DynResult<()> {
         ["runtime", id] => producers::runtime(id),
         ["package", id, host, runtime] => producers::package(id, Path::new(host), Path::new(runtime)),
         ["smoke", id, product] => smoke::run(id, Path::new(product)),
+        ["artifact-smoke", id, product] => smoke::artifact(id, Path::new(product)),
         ["model-fetch"] => smoke::prepare_model(),
-        ["summary"] => summary(),
-        ["runtime-summary"] => gates::run("runtime"),
-        ["smoke-summary"] => gates::run("smoke"),
-        _ => Err("usage: ci {plan|model-fetch|host ID|runtime ID|package ID HOST_DIR RUNTIME_DIR|smoke ID PRODUCT_DIR|summary|runtime-summary|smoke-summary}".into()),
+        _ => Err("usage: ci {plan|model-fetch|host ID|runtime ID|package ID HOST_DIR RUNTIME_DIR|smoke ID PRODUCT_DIR|artifact-smoke ID PRODUCT_DIR}".into()),
     }
 }
 fn plan() -> DynResult<()> {
     let profile = profile::Profile::from_environment()?;
     let matrix = matrix::Matrix::load()?;
     let (hosts, runtimes) = project_matrix(&matrix)?;
-    let cache_correctness = kv_scope::required(profile);
-    let manifest = std::fs::read_to_string(cache_qualification::MANIFEST)?;
-    let fixtures = cache_qualification::read_manifest(&manifest)?;
-    let cache_fixtures = serde_json::json!(
-        fixtures
-            .models
-            .iter()
-            .map(|model| model.family.as_str())
-            .collect::<Vec<_>>()
-    );
     println!(
         "{}",
-        serde_json::json!({"profile":profile.name(),"hosts": hosts, "runtimes": runtimes,"cache_correctness":cache_correctness,"cache_fixtures":cache_fixtures})
+        serde_json::json!({"profile":profile.name(),"hosts": hosts, "runtimes": runtimes})
     );
     if let Some(path) = std::env::var_os("GITHUB_OUTPUT") {
         let mut file = std::fs::OpenOptions::new().append(true).open(path)?;
         writeln!(
             file,
-            "profile={}\nhosts={hosts}\nruntimes={runtimes}\ncache_correctness={cache_correctness}\ncache_fixtures={cache_fixtures}",
+            "profile={}\nhosts={hosts}\nruntimes={runtimes}",
             profile.name()
         )?;
     }
@@ -65,92 +51,11 @@ fn project_matrix(matrix: &matrix::Matrix) -> DynResult<(serde_json::Value, serd
     let runtimes = serde_json::json!({"include": runtime_rows});
     Ok((hosts, runtimes))
 }
-fn summary() -> DynResult<()> {
-    let needs: serde_json::Value = serde_json::from_str(&std::env::var("SKIPPY_CI_NEEDS")?)?;
-    let required = needs["plan"]["outputs"]["cache_correctness"]
-        .as_str()
-        .ok_or("CI plan omitted the cache correctness requirement")?
-        .parse()?;
-    validate_summary(&needs, profile::Profile::from_environment()?, required)
-}
-fn validate_summary(
-    needs: &serde_json::Value,
-    profile: profile::Profile,
-    cache_correctness: bool,
-) -> DynResult<()> {
-    let jobs = needs.as_object().ok_or("needs must be an object")?;
-    let required = [
-        "plan",
-        "inference_contracts",
-        "quality",
-        "cache_correctness_metal",
-        "cache_correctness_cuda",
-        "host",
-        "runtime",
-        "product",
-        "smoke",
-    ];
-    if jobs.len() != required.len()
-        || required.iter().any(|job| {
-            let expected = if profile == profile::Profile::Pr
-                && (matches!(*job, "host" | "runtime" | "product" | "smoke")
-                    || !cache_correctness
-                        && matches!(*job, "cache_correctness_metal" | "cache_correctness_cuda"))
-            {
-                "skipped"
-            } else {
-                "success"
-            };
-            jobs.get(*job)
-                .is_none_or(|value| value["result"] != expected)
-        })
-    {
-        return Err(format!("CI results do not satisfy the {} profile", profile.name()).into());
-    }
-    Ok(())
-}
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn skipped_and_missing_jobs_fail_summary() {
-        let mut jobs = serde_json::json!({"plan":{"result":"success"},"inference_contracts":{"result":"success"},"quality":{"result":"success"},"cache_correctness_metal":{"result":"success"},"cache_correctness_cuda":{"result":"success"},"host":{"result":"success"},"runtime":{"result":"success"},"product":{"result":"success"},"smoke":{"result":"success"}});
-        validate_summary(&jobs, profile::Profile::Full, true).unwrap();
-        jobs["product"]["result"] = "skipped".into();
-        assert!(validate_summary(&jobs, profile::Profile::Full, true).is_err());
-        jobs.as_object_mut().unwrap().remove("product");
-        assert!(validate_summary(&jobs, profile::Profile::Full, true).is_err());
-    }
-    #[test]
-    fn short_profile_requires_quality_and_declared_extended_skips() {
-        let jobs = serde_json::json!({"plan":{"result":"success"},"inference_contracts":{"result":"success"},"quality":{"result":"success"},"cache_correctness_metal":{"result":"skipped"},"cache_correctness_cuda":{"result":"skipped"},"host":{"result":"skipped"},"runtime":{"result":"skipped"},"product":{"result":"skipped"},"smoke":{"result":"skipped"}});
-        validate_summary(&jobs, profile::Profile::Pr, false).unwrap();
-        assert!(validate_summary(&jobs, profile::Profile::Pr, true).is_err());
-        assert!(validate_summary(&jobs, profile::Profile::Full, false).is_err());
-        for job in ["plan", "inference_contracts", "quality"] {
-            for result in ["skipped", "failure", "cancelled"] {
-                let mut changed = jobs.clone();
-                changed[job]["result"] = result.into();
-                assert!(validate_summary(&changed, profile::Profile::Pr, false).is_err());
-            }
-        }
-        let mut missing = jobs.clone();
-        missing.as_object_mut().unwrap().remove("runtime");
-        assert!(validate_summary(&missing, profile::Profile::Pr, false).is_err());
-        let mut unexpected = jobs;
-        unexpected["runtime"]["result"] = "success".into();
-        assert!(validate_summary(&unexpected, profile::Profile::Pr, false).is_err());
-        unexpected["runtime"]["result"] = "skipped".into();
-        unexpected["cache_correctness_metal"]["result"] = "success".into();
-        unexpected["cache_correctness_cuda"]["result"] = "success".into();
-        validate_summary(&unexpected, profile::Profile::Pr, true).unwrap();
-        for outcome in ["failure", "cancelled", "skipped"] {
-            unexpected["cache_correctness_cuda"]["result"] = outcome.into();
-            assert!(validate_summary(&unexpected, profile::Profile::Pr, true).is_err());
-        }
-    }
-    #[test]
-    fn every_product_uses_its_hosted_target_runner() {
+    fn runtime_matrix_exports_host_and_accelerator_runner_metadata() {
         let matrix =
             matrix::Matrix::from_json(include_str!("../../../../ci/targets.json")).unwrap();
         let (_, runtimes) = project_matrix(&matrix).unwrap();

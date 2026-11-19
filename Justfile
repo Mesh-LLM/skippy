@@ -111,14 +111,8 @@ cache-correctness-cuda:
 cache-correctness-matrix backend output *options:
     @cargo xtool cache-qualification "{{ backend }}" "{{ output }}" {{ options }}
 
-cache-correctness-build-shards backend artifact:
-    @cargo xtool cache-qualification build-shards {{ quote(backend) }} {{ quote(artifact) }}
-
-cache-correctness-shard backend case artifact output:
-    @cargo xtool cache-qualification shard {{ quote(backend) }} {{ quote(case) }} {{ quote(artifact) }} {{ quote(output) }}
-
-cache-correctness-assemble backend shards output:
-    @cargo xtool cache-qualification assemble {{ quote(backend) }} {{ quote(shards) }} {{ quote(output) }}
+cache-correctness-package variant profile product output:
+    @cargo xtool cache-qualification package {{ quote(variant) }} {{ quote(profile) }} {{ quote(product) }} {{ quote(output) }}
 
 [unix]
 cache-correctness-verify backend report:
@@ -230,8 +224,53 @@ ci-image-export:
     @mkdir -p target/ci-image
     @docker image save --output target/ci-image/skippy-ci-cpu.tar skippy-ci-cpu:build
 
-ci-summary:
-    @cargo xtool ci summary
+ci-gpu-image-build backend toolkit_base toolkit_version arch="amd64":
+    @docker buildx build --load --platform "linux/{{ arch }}" --file ci/Dockerfile.gpu --tag skippy-ci-{{ backend }}:build --build-arg TOOLKIT_BASE="{{ toolkit_base }}" --build-arg BACKEND="{{ backend }}" --build-arg TOOLKIT_VERSION="{{ toolkit_version }}" --build-arg SKIPPY_CI_IMAGE_ID --build-arg SOURCE_REVISION .
+
+ci-gpu-image-smoke backend arch="amd64":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    docker run --rm --platform "linux/{{ arch }}" --network none --read-only "skippy-ci-{{ backend }}:build" bash -euc '
+      test "$(dpkg --print-architecture)" = "{{ arch }}"
+      rustc --version
+      cargo clippy --version
+      rustfmt --version
+      just --version
+      sccache --version
+      /usr/bin/clang --version
+      /usr/bin/clang++ --version
+      cmake --version
+      ninja --version
+      llvm-config --version
+      test -r /usr/lib/llvm-18/lib/cmake/llvm/LLVMConfig.cmake
+      test -r /usr/lib/llvm-18/lib/cmake/clang/ClangConfig.cmake
+      test -s /etc/skippy-ci-image-id
+      test "$(id -u)" = 1001
+      test "$SKIPPY_CI_BACKEND" = "{{ backend }}"
+      case "$SKIPPY_CI_BACKEND" in
+        cuda13)
+          /usr/local/cuda-13.1/bin/nvcc --version | grep -F "release 13.1,"
+          test -e /usr/local/cuda-13.1/lib64/libcudart.so
+          ;;
+        cuda12)
+          /usr/local/cuda-12.9/bin/nvcc --version | grep -F "release 12.9,"
+          test -e /usr/local/cuda-12.9/lib64/libcudart.so
+          ;;
+        rocm) hipcc --version ;;
+        *) exit 2 ;;
+      esac
+    '
+
+ci-gpu-image-export backend:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p target/ci-image
+    archive="target/ci-image/skippy-ci-{{ backend }}.tar.gz"
+    temporary_archive="$archive.tmp"
+    trap 'rm -f "$temporary_archive"' EXIT
+    docker image save skippy-ci-{{ backend }}:build | gzip -1 > "$temporary_archive"
+    mv "$temporary_archive" "$archive"
+    docker image inspect --format '{{"{{.Id}}"}}' skippy-ci-{{ backend }}:build > target/ci-image/skippy-ci-{{ backend }}.id
 
 ci-host host:
     @cargo xtool ci host "{{ host }}"
@@ -244,6 +283,9 @@ ci-package runtime host_dir runtime_dir:
 
 ci-smoke runtime product_dir:
     @cargo xtool ci smoke "{{ runtime }}" "{{ product_dir }}"
+
+ci-artifact-smoke runtime product_dir:
+    @cargo xtool ci artifact-smoke "{{ runtime }}" "{{ product_dir }}"
 
 ci: lint test llama-check
 

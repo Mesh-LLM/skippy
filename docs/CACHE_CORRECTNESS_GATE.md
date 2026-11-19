@@ -114,17 +114,19 @@ source. It verifies the fixture manifest, then checks each report digest and
 recomputes its decision. Dirty worktree results can still be used for
 diagnostics.
 
-The main CI workflow runs all four KV architecture cases on isolated Metal and Linux Arm64
-CUDA runners for source-changing pull requests, merge groups, and pushes to
-`main`. Full CI always requires both jobs, including nightly, release and llama
-upgrade runs. Each backend builds one source-bound bundle containing the Skippy
-test and pinned llama.cpp reference. Four independent jobs consume that bundle,
-one for each fixture. Each job uses `hf download` at the pinned revision with
-the runner's default Hugging Face cache on the NAS. It runs the full sequence
-for that model and retains its report and logs. The final summary checks each
-report's source, fixture manifest and digest, then publishes the existing
-per-backend `batch-result.json` and model reports. A failed model, missing
-fixture, absent GPU, or incomplete required job fails the CI summary.
+For KV-affecting PRs and pushes to `main`, CI runs one dense fixture inside
+the Metal and Linux x64 CUDA 13 package jobs after device smoke. It compares
+cold, warm L1, and L3 restart outputs and checks that the selected cache tier
+actually restored the expected tokens. Full CI, including nightly, release and
+llama upgrade validation, runs all four cases on Metal and Linux ARM64 CUDA 13
+on Spark. Each backend runs its models in sequence with separate cache roots
+and reports. Full runs build the pinned upstream reference only on a cache miss.
+
+The Rust test harness loads the verified runtime from the same source-bound
+package used for device smoke. It uses `hf download` at each pinned revision
+with the runner's Hugging Face cache on the NAS. CI retains the runtime
+manifest digest, fixture reports, and logs. A failed model, missing fixture,
+absent GPU, or incomplete required job fails CI.
 
 ## State handoff batch
 

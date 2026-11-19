@@ -15,16 +15,7 @@ pub(super) fn build(backend: Backend, output: &Path) -> DynResult<Builds> {
         ("LLAMA_STAGE_BACKEND", backend.runtime_backend().to_owned()),
         ("LLAMA_STAGE_LINK_MODE", "static".into()),
     ];
-    if matches!(backend, Backend::Cuda | Backend::CudaArm64) {
-        let matrix = crate::ci::matrix::Matrix::load()?;
-        let runtime = matrix.runtime(if matches!(backend, Backend::CudaArm64) {
-            "linux-aarch64-cuda13"
-        } else {
-            "linux-x86_64-cuda13"
-        })?;
-        environment.push(("SKIPPY_CUDA_VERSION", runtime.toolkit.clone()));
-        environment.push(("LLAMA_STAGE_CUDA_ARCHITECTURES", "native".into()));
-    }
+    environment.extend(reference_environment(backend)?);
     let native_build = if env::var_os("LLAMA_STAGE_BUILD_DIR").is_some() {
         existing_input("LLAMA_STAGE_BUILD_DIR", Path::is_dir)?
     } else {
@@ -48,6 +39,48 @@ pub(super) fn build(backend: Backend, output: &Path) -> DynResult<Builds> {
         reference,
         native_build,
     })
+}
+
+pub(super) fn packaged_reference(backend: Backend) -> DynResult<PathBuf> {
+    if env::var_os("SKIPPY_CACHE_QUAL_LLAMA_SERVER").is_some() {
+        return existing_input("SKIPPY_CACHE_QUAL_LLAMA_SERVER", Path::is_file);
+    }
+    let cache = PathBuf::from(
+        env::var_os("SKIPPY_CACHE_QUAL_REFERENCE_CACHE")
+            .ok_or("set SKIPPY_CACHE_QUAL_REFERENCE_CACHE or SKIPPY_CACHE_QUAL_LLAMA_SERVER")?,
+    );
+    if !cache.is_absolute() {
+        return Err("SKIPPY_CACHE_QUAL_REFERENCE_CACHE must be an absolute path".into());
+    }
+    if cache.is_file() {
+        return Ok(cache.canonicalize()?);
+    }
+    let environment = reference_environment(backend)?;
+    execution::run("just", &strings(&["llama-prepare"]), &environment, 600)?;
+    let staging = tempfile::tempdir()?;
+    let reference = build_reference(backend, &staging.path().canonicalize()?, &environment)?;
+    let parent = cache.parent().ok_or("missing reference cache directory")?;
+    fs::create_dir_all(parent)?;
+    let staged = tempfile::NamedTempFile::new_in(parent)?;
+    fs::copy(reference, staged.path())?;
+    staged.persist(&cache)?;
+    Ok(cache.canonicalize()?)
+}
+
+fn reference_environment(backend: Backend) -> DynResult<Vec<(&'static str, String)>> {
+    let variant = match backend {
+        Backend::Metal => return Ok(Vec::new()),
+        Backend::Cuda => "linux-x86_64-cuda13",
+        Backend::CudaArm64 => "linux-aarch64-cuda13",
+    };
+    let matrix = crate::ci::matrix::Matrix::load()?;
+    Ok(vec![
+        (
+            "SKIPPY_CUDA_VERSION",
+            matrix.runtime(variant)?.toolkit.clone(),
+        ),
+        ("LLAMA_STAGE_CUDA_ARCHITECTURES", "native".into()),
+    ])
 }
 
 fn build_reference(

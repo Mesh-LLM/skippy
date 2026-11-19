@@ -1,0 +1,98 @@
+# CI always overrides this with a digest-pinned vendor image.
+ARG TOOLKIT_BASE=ubuntu:24.04
+FROM ${TOOLKIT_BASE}
+
+ARG BACKEND
+ARG TOOLKIT_VERSION
+ARG TARGETARCH
+ARG SKIPPY_CI_IMAGE_ID=local
+ARG SOURCE_REVISION=local
+
+LABEL org.opencontainers.image.source="https://github.com/general-inference/skippy" \
+      org.opencontainers.image.description="Skippy ${BACKEND} CI toolchain" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      org.opencontainers.image.version="${TOOLKIT_VERSION}" \
+      io.skippy.ci.backend="${BACKEND}"
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential ca-certificates clang clang-format clang-tidy cmake curl \
+      git libclang-dev libclang-rt-dev libcurl4-openssl-dev libedit-dev \
+      libssl-dev libzstd-dev lld llvm-dev mold ninja-build patchelf pkg-config \
+      rustup xz-utils zlib1g-dev zstd \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV CARGO_HOME=/opt/rust/cargo \
+    RUSTUP_HOME=/opt/rust/rustup \
+    PATH=/opt/rust/cargo/bin:/usr/local/cuda/bin:/usr/local/cuda-13.1/bin:/usr/local/cuda-12.9/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/rocm/bin:/opt/rocm/llvm/bin \
+    CC=/usr/bin/clang \
+    CXX=/usr/bin/clang++ \
+    LIBCLANG_PATH=/usr/lib/llvm-18/lib \
+    SKIPPY_REWRITER_LLVM_PREFIX=/usr/lib/llvm-18 \
+    SKIPPY_CI_BACKEND=${BACKEND} \
+    SKIPPY_CI_TOOLKIT_VERSION=${TOOLKIT_VERSION}
+
+RUN test "$(dpkg --print-architecture)" = "$TARGETARCH" \
+    && case "$TARGETARCH" in \
+         amd64) \
+           rust_arch=x86_64; \
+           just_sha=4a5cc2f53e6f0f8c59092a6cc38291eb729d46a7dd95d3ae582008881b84931d; \
+           sccache_sha=aa73c7270c997894038c0d8f0d297865f57569e1687883322bc431713d4bb9dd ;; \
+         arm64) \
+           rust_arch=aarch64; \
+           just_sha=748237128c4c40cbdabc65e841d05ceba13cc23a91eaba395495894c1d9764df; \
+           sccache_sha=3e47fc4a71b1ddd1b4294a0de9d34498922fdf41e3cd0bda5df3954e3d6deb9d ;; \
+         *) echo "unsupported image architecture: $TARGETARCH" >&2; exit 1 ;; \
+       esac \
+    && sccache_release="sccache-v0.19.0-${rust_arch}-unknown-linux-musl" \
+    && curl --fail --location --retry 3 -o /tmp/just.tar.gz \
+      "https://github.com/casey/just/releases/download/1.58.0/just-1.58.0-${rust_arch}-unknown-linux-musl.tar.gz" \
+    && printf '%s  /tmp/just.tar.gz\n' "$just_sha" | sha256sum --check \
+    && tar -xzf /tmp/just.tar.gz -C /usr/local/bin just \
+    && curl --fail --location --retry 3 -o /tmp/sccache.tar.gz \
+      "https://github.com/mozilla/sccache/releases/download/v0.19.0/${sccache_release}.tar.gz" \
+    && printf '%s  /tmp/sccache.tar.gz\n' "$sccache_sha" | sha256sum --check \
+    && tar -xzf /tmp/sccache.tar.gz --strip-components=1 -C /usr/local/bin \
+      "${sccache_release}/sccache" \
+    && rm /tmp/just.tar.gz /tmp/sccache.tar.gz
+
+RUN groupadd --gid 1001 runner \
+    && useradd --uid 1001 --gid 1001 --create-home runner \
+    && mkdir -p /opt/rust/cargo /opt/rust/rustup /workspace \
+    && chown runner:runner /opt/rust/cargo /opt/rust/rustup /workspace
+USER runner
+COPY rust-toolchain.toml /opt/skippy-ci/rust-toolchain.toml
+WORKDIR /opt/skippy-ci
+RUN rustc --version \
+    && rustup default "$(rustup show active-toolchain | cut -d ' ' -f 1)"
+
+# Qualify the compiler toolchain without a GPU. Device evidence belongs to CI
+# runtime jobs and must not be inferred from image build or smoke results.
+RUN --network=none image_probe_dir="$(mktemp -d)" \
+    && printf 'fn main() { assert_eq!(6 * 7, 42); }\n' > "$image_probe_dir/probe.rs" \
+    && rustc -C linker=clang -C link-arg=-fuse-ld=mold "$image_probe_dir/probe.rs" -o "$image_probe_dir/rust-probe" \
+    && "$image_probe_dir/rust-probe" \
+    && printf '#include <expected>\nint main() { std::expected<int,int> v{41}; auto r = v.and_then([](int n) { return std::expected<int,int>{n+1}; }); return r && *r == 42 ? 0 : 1; }\n' > "$image_probe_dir/probe.cpp" \
+    && g++ -std=c++23 -Wall -Wextra -Werror -fuse-ld=lld -fsanitize=address,undefined \
+      "$image_probe_dir/probe.cpp" -o "$image_probe_dir/cpp-probe" \
+    && "$image_probe_dir/cpp-probe" \
+    && if [ "$BACKEND" = cuda12 ]; then \
+         printf '__global__ void probe() {}\n' > "$image_probe_dir/gpu.cu" \
+         && /usr/local/cuda-12.9/bin/nvcc --version | grep -F 'release 12.9,' \
+         && /usr/local/cuda-12.9/bin/nvcc -arch=sm_80 -c "$image_probe_dir/gpu.cu" -o "$image_probe_dir/gpu.o"; \
+       elif [ "$BACKEND" = cuda13 ]; then \
+         printf '__global__ void probe() {}\n' > "$image_probe_dir/gpu.cu" \
+         && /usr/local/cuda-13.1/bin/nvcc --version | grep -F 'release 13.1,' \
+         && /usr/local/cuda-13.1/bin/nvcc -arch=sm_80 -c "$image_probe_dir/gpu.cu" -o "$image_probe_dir/gpu.o"; \
+       elif [ "$BACKEND" = rocm ]; then \
+         printf '#include <hip/hip_runtime.h>\n__global__ void probe() {}\n' > "$image_probe_dir/gpu.hip" \
+         && hipcc --offload-arch=gfx942 -c "$image_probe_dir/gpu.hip" -o "$image_probe_dir/gpu.o"; \
+       else echo "unsupported GPU backend: $BACKEND" >&2; exit 1; fi \
+    && rm -rf "$image_probe_dir"
+
+USER root
+RUN test -n "$SKIPPY_CI_IMAGE_ID" \
+    && printf '%s\n' "$SKIPPY_CI_IMAGE_ID" > /etc/skippy-ci-image-id
+USER runner
+WORKDIR /workspace
+CMD ["bash"]

@@ -20,9 +20,8 @@ const STRUCTURED: [&str; 3] = ["json_schema", "named_tool", "long_retrieval"];
 const CELL_TIMEOUT_SECONDS: u64 = 1800;
 const TEST_CASE: &str = "frontend::tests::cache_qualification::cross_tier";
 
-mod bundle;
+mod packaged;
 mod prepare;
-mod shards;
 pub(crate) mod verify;
 
 const SUMMARY_VERSION: u32 = 2;
@@ -95,7 +94,7 @@ struct Inputs {
 
 enum TestRunner {
     Cargo(PathBuf),
-    Binary(PathBuf),
+    Packaged { binary: PathBuf, runtime: PathBuf },
 }
 
 enum Fixtures {
@@ -213,23 +212,8 @@ struct Summary {
 
 pub fn run(args: &[String]) -> DynResult<()> {
     let (backend, output, prepare_builds, download) = match args {
-        [command, backend, output] if command == "build-shards" => {
-            return bundle::build(Backend::parse(backend)?, Path::new(output));
-        }
-        [command, backend, family, bundle, output] if command == "shard" => {
-            return shards::run(
-                Backend::parse(backend)?,
-                family,
-                Path::new(bundle),
-                Path::new(output),
-            );
-        }
-        [command, backend, directory, output] if command == "assemble" => {
-            return shards::assemble(
-                Backend::parse(backend)?,
-                Path::new(directory),
-                Path::new(output),
-            );
+        [command, variant, profile, product, output] if command == "package" => {
+            return packaged::run(variant, profile, Path::new(product), Path::new(output));
         }
         [command, backend, source, directory] if command == "verify" => {
             return verify::run(Backend::parse(backend)?, source, Path::new(directory));
@@ -241,7 +225,7 @@ pub fn run(args: &[String]) -> DynResult<()> {
         }
         _ => {
             return Err(
-                "usage: cache-qualification BACKEND FRESH_REPORT_DIR [--build [--hf]] | build-shards BACKEND FRESH_ARTIFACT_DIR | shard BACKEND CASE ARTIFACT_DIR FRESH_REPORT_DIR | assemble BACKEND SHARDS_DIR FRESH_REPORT_DIR | verify BACKEND SOURCE_SHA REPORT_DIR".into(),
+                "usage: cache-qualification BACKEND FRESH_REPORT_DIR [--build [--hf]] | package VARIANT short|full PRODUCT_DIR FRESH_REPORT_DIR | verify BACKEND SOURCE_SHA REPORT_DIR".into(),
             );
         }
     };
@@ -338,12 +322,9 @@ fn run_cell(backend: Backend, output: &Path, model: &KvFixture, inputs: &Inputs)
                 CELL_TIMEOUT_SECONDS,
             )
         }
-        TestRunner::Binary(binary) => execution::run(
-            &binary.to_string_lossy(),
-            &strings(&[TEST_CASE, "--ignored", "--exact", "--nocapture"]),
-            &environment,
-            CELL_TIMEOUT_SECONDS,
-        ),
+        TestRunner::Packaged { binary, runtime } => {
+            packaged::run_test(binary, runtime, TEST_CASE, environment)
+        }
     };
     let path = output.join(&relative_report);
     let bytes = fs::read(&path).ok();

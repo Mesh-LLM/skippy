@@ -1,4 +1,5 @@
 // Protected-main controller. It reads candidate metadata but never executes it.
+const expectedWorkflows = require('./pr-trigger-paths.cjs');
 const workflowPath = run => run.path?.split('@')[0];
 const automaticPR = run => ['pull_request', 'pull_request_target'].includes(run.event);
 const accepted = new Set(['success', 'skipped', 'neutral']);
@@ -30,14 +31,10 @@ module.exports = async function aggregate({ github, context, core }) {
       await status('pending', 'Checking all applicable PR workflows');
       const files = await github.paginate(github.rest.pulls.listFiles,
         { ...repo, pull_number: pr.number, per_page: 100 });
-      const expected = new Set(['.github/workflows/ci.yml', '.github/workflows/inference.yml']);
-      // These are exactly the native PR trigger paths in ci-image.yml. The
-      // contract test checks parity so a not-yet-scheduled image run cannot be missed.
-      if (files.some(file => [file.filename, file.previous_filename].some(filename =>
-          filename === '.github/workflows/ci-image.yml' || filename === 'rust-toolchain.toml' ||
-          /^ci\/Dockerfile[^/]*$/.test(filename || '')))) {
-        expected.add('.github/workflows/ci-image.yml');
+      if (files.length < pr.changed_files) {
+        throw new Error('GitHub returned an incomplete PR file list');
       }
+      const expected = expectedWorkflows(files);
       const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo,
         { ...repo, head_sha: source, per_page: 100 });
       const latest = new Map();
@@ -50,7 +47,8 @@ module.exports = async function aggregate({ github, context, core }) {
       }
       let pending = false;
       for (const run of latest.values()) {
-        expected.delete(workflowPath(run));
+        const path = workflowPath(run);
+        if (expected.get(path) === run.event) expected.delete(path);
         if (run.status !== 'completed') pending = true;
         else if (!accepted.has(run.conclusion)) throw new Error(`${run.name}: ${run.conclusion || 'incomplete'}`);
       }

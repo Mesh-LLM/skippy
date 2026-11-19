@@ -4,6 +4,12 @@ inputs:
   runtime_id:
     description: Runtime from ci/targets.json
     required: true
+  download-package:
+    description: Restore the archived package for device smoke.
+    default: 'false'
+  kv-profile:
+    description: Run short or full KV qualification after device smoke.
+    default: ''
   candidate_artifact:
     description: Protected candidate source artifact
     default: ''
@@ -14,15 +20,25 @@ runs:
   using: composite
   steps:
     - uses: ./.github/actions/setup
-      if: runner.environment == 'github-hosted'
+      if: inputs.download-package == 'true' && runner.environment == 'github-hosted'
       with:
         cache: 'false'
     - uses: ./.github/actions/source
+      if: inputs.download-package == 'true'
       with:
         artifact: ${{ inputs.candidate_artifact }}
         sha: ${{ inputs.candidate_sha }}
     - uses: ./.github/actions/cache
+      if: inputs.download-package == 'true'
+      with:
+        scope: ${{ inputs.kv-profile != '' && format('package-qualification-{0}', inputs.runtime_id) || 'tools' }}
+        download-scope: ${{ inputs.kv-profile != '' && 'cache-tests' || 'tools' }}
+    - uses: ./.github/actions/sccache
+      if: inputs.download-package == 'true' && inputs.kv-profile != ''
+      with:
+        scope: package-qualification-${{ inputs.runtime_id }}
     - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      if: inputs.download-package == 'true'
       with:
         name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-package-${{ inputs.runtime_id }}
         path: dist/products/${{ inputs.runtime_id }}
@@ -36,10 +52,26 @@ runs:
       env:
         RUNTIME_ID: ${{ inputs.runtime_id }}
       run: just ci-smoke "$RUNTIME_ID" "dist/products/$RUNTIME_ID"
+    - uses: ./.github/actions/ci-cache-correctness
+      if: inputs.kv-profile != ''
+      with:
+        runtime-id: ${{ inputs.runtime_id }}
+        profile: ${{ inputs.kv-profile }}
     - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-      if: always()
+      if: inputs.download-package == 'true'
       with:
         name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-product-${{ inputs.runtime_id }}
         path: dist/products/${{ inputs.runtime_id }}
         if-no-files-found: error
+        compression-level: 0
+        overwrite: true
         retention-days: 7
+    - name: Upload device failure evidence
+      if: failure() && inputs.download-package == 'true'
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-device-${{ inputs.runtime_id }}-diagnostics
+        path: dist/products/${{ inputs.runtime_id }}/evidence/**
+        if-no-files-found: ignore
+        overwrite: true
+        retention-days: 14

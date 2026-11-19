@@ -35,6 +35,7 @@ mod evidence;
 mod fixture;
 mod ownership;
 mod reference;
+mod smoke;
 mod structured;
 mod template;
 mod tiers;
@@ -91,6 +92,7 @@ async fn cross_tier() -> Result<()> {
 async fn qualify(directory: &Path, report: &mut Report) -> Result<()> {
     let backend = report.backend;
     backend.require_host()?;
+    skippy_runtime::test_support::require_native_runtime();
     let model = required_path("SKIPPY_CACHE_QUAL_MODEL")?.canonicalize()?;
     let fixture = report.fixture.clone();
     let model_sha256 = fixture.verify_model(&model)?;
