@@ -68,6 +68,8 @@ runs:
         {
           echo "RUSTC_WRAPPER=$sccache_path"
           echo "SCCACHE=$sccache_path"
+          echo "CMAKE_C_COMPILER_LAUNCHER=$sccache_path"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=$sccache_path"
           echo "SCCACHE_BASEDIRS=$SCCACHE_BASEDIRS"
           echo "SCCACHE_GHA_VERSION=$SCCACHE_GHA_VERSION"
         } >> "$GITHUB_ENV"

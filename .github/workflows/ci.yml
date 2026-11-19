@@ -239,8 +239,20 @@ jobs:
       - uses: ./.github/actions/native-source
       - run: just llama-prepare
       - run: just skippy-ffi-bindgen-check
-      - run: just lint
-      - run: just test
+      - id: lint
+        run: just lint
+      - name: Report sccache statistics before tests
+        if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
+        uses: ./.github/actions/report-sccache
+        with:
+          phase: ${{ steps.lint.outcome == 'skipped' && 'setup' || 'lint' }}
+      - id: test
+        run: just test
+      - name: Report sccache statistics after tests
+        if: ${{ !cancelled() && (steps.test.outcome == 'success' || steps.test.outcome == 'failure') }}
+        uses: ./.github/actions/report-sccache
+        with:
+          phase: tests
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
@@ -284,11 +296,14 @@ jobs:
           scope: native-contracts-${{ runner.os }}-${{ runner.arch }}-llvm22-cpu
       - uses: ./.github/actions/native-source
       - run: just llama-check
+      - uses: ./.github/actions/report-sccache
+        if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
           name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-native-contracts-evidence
           path: |
+            target/ci-evidence/sccache-build.json
             target/skippy-stage-rewriter-check/*.log
             target/skippy-stage-rewriter-check/report*
             target/skippy-stage-rewriter-check/patch-drift.diff
