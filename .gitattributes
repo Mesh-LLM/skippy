@@ -6,4 +6,4 @@
 
 # Patch fixtures preserve mail-format signature separators and blank context
 # lines byte-for-byte; their trailing spaces are test data, not source style.
-tools/xtask/tests/fixtures/migration/** -whitespace
+scripts/tests/fixtures/rewriter-patch*/** -whitespace

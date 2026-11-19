@@ -8,7 +8,6 @@ concurrency:
   group: skippy-release-${{ github.ref }}
   cancel-in-progress: false
 env:
-  CARGO_INCREMENTAL: '0'
   CARGO_PROFILE_DEV_DEBUG: '0'
   CARGO_PROFILE_TEST_DEBUG: '0'
   CARGO_PROFILE_RELEASE_DEBUG: '0'
@@ -26,17 +25,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - uses: ./.github/actions/sccache
-        with:
-          scope: release-admission-${{ runner.os }}-${{ runner.arch }}
       - id: admit
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: just check-release "$RELEASE_TAG"
-      - uses: ./.github/actions/report-sccache
-        if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
-        with:
-          artifact-prefix: release-admission
   validation:
     needs: admission
     permissions:
@@ -75,9 +67,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - uses: ./.github/actions/sccache
-        with:
-          scope: release-publisher-${{ runner.os }}-${{ runner.arch }}
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: release-product-*
@@ -93,7 +82,7 @@ jobs:
       - id: existing
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        run: just automation-run release select "$RELEASE_TAG" release-index.json
+        run: just release-select "$RELEASE_TAG" release-index.json
       - name: Create source-bound private draft
         if: steps.existing.outputs.exists == 'false'
         env:
@@ -109,7 +98,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > remote-release.json
       - name: Admit existing assets and select missing uploads
-        run: just automation-run release upload-plan dist/release remote-release.json
+        run: just release-upload-plan dist/release remote-release.json
       - name: Upload only missing verified assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -130,10 +119,6 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
           PRERELEASE: ${{ needs.admission.outputs.prerelease }}
         run: gh release edit "$RELEASE_TAG" --draft=false --prerelease="$PRERELEASE"
-      - uses: ./.github/actions/report-sccache
-        if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
-        with:
-          artifact-prefix: release-publisher
   documentation:
     needs: [admission, validation, documentation_validation, publish]
     runs-on: ubuntu-24.04

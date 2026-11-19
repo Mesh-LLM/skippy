@@ -11,18 +11,13 @@ on:
       - 'llama_cpp/whisper-upstream.txt'
       - 'llama_cpp/patches/**'
       - 'tools/process-supervision/**'
-      - 'tools/xtask/src/main.rs'
-      - 'tools/xtask/src/command.rs'
-      - 'tools/xtask/src/execution.rs'
-      - 'tools/xtask/src/artifact.rs'
-      - 'tools/xtask/src/inference.rs'
-      - 'tools/xtask/src/inference/execute.rs'
-      - 'tools/xtask/src/inference/execute/**'
-      - 'tools/xtask/src/inference/artifacts.rs'
-      - 'tools/xtask/src/inference/build.rs'
-      - 'tools/xtask/src/inference/gpu.rs'
-      - 'tools/xtask/src/inference/provenance.rs'
-      - 'tools/xtask/src/inference/smoke.rs'
+      - 'scripts/automation-run.sh'
+      - 'scripts/inference-*.py'
+      - 'scripts/lib/inference_*.py'
+      - 'scripts/lib/jy_qualification.py'
+      - 'scripts/lib/ci_artifacts.py'
+      - 'scripts/lib/ci_process.py'
+      - 'scripts/artifact-file.sh'
       - 'scripts/build-llama.sh'
       - 'scripts/prepare-llama.sh'
       - 'scripts/prepare-whisper.sh'
@@ -36,7 +31,6 @@ on:
       - 'ci/inference-quality.json'
       - 'Cargo.toml'
       - 'Cargo.lock'
-      - 'tools/xtask/Cargo.toml'
       - '.cargo/**'
       - 'rust-toolchain.toml'
       - 'Justfile'
@@ -75,8 +69,6 @@ permissions:
   contents: read
   pull-requests: read
   statuses: write
-env:
-  CARGO_INCREMENTAL: '0'
 concurrency:
   group: inference-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
@@ -96,23 +88,16 @@ jobs:
           ref: main
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - uses: ./.github/actions/sccache
-        with:
-          scope: inference-controller-${{ runner.os }}-${{ runner.arch }}
       - id: admission
         env:
           GH_TOKEN: ${{ github.token }}
           QUALIFICATION_PROFILE: ${{ inputs.profile || 'release' }}
-        run: just automation-run inference admit
+        run: just inference-admit
       - id: matrix
         env:
           SOURCE_SHA: ${{ steps.admission.outputs.source }}
           PROFILE: ${{ steps.admission.outputs.profile }}
-        run: just automation-run inference matrix "$PROFILE" "$SOURCE_SHA"
-      - uses: ./.github/actions/report-sccache
-        if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
-        with:
-          artifact-prefix: inference-plan
+        run: just inference-matrix "$PROFILE" "$SOURCE_SHA"
   qualification:
     name: qualification (${{ matrix.id }})
     needs: plan
@@ -130,16 +115,13 @@ jobs:
           ref: main
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - uses: ./.github/actions/sccache
-        with:
-          scope: inference-controller-${{ runner.os }}-${{ runner.arch }}
       - name: Dispatch and await native Spark qualification
         env:
           SOURCE_SHA: ${{ needs.plan.outputs.source }}
           PROFILE: ${{ needs.plan.outputs.profile }}
           CONFIGURATION: ${{ matrix.id }}
           JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
-        run: just automation-run inference dispatch "$PROFILE" "$SOURCE_SHA" "$EVIDENCE" "$CONFIGURATION"
+        run: just inference-dispatch "$PROFILE" "$SOURCE_SHA" "$EVIDENCE" "$CONFIGURATION"
       - name: Cancel outstanding JY jobs and formations
         if: cancelled() || failure()
         env:
@@ -148,10 +130,6 @@ jobs:
           if test -f "$EVIDENCE/jobs.json"; then
             just inference-cancel "$EVIDENCE/jobs.json"
           fi
-      - uses: ./.github/actions/report-sccache
-        if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
-        with:
-          artifact-prefix: inference-controller-${{ matrix.id }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         if: always()
         with:

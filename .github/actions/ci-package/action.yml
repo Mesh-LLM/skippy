@@ -37,12 +37,9 @@ runs:
         test -n "$image_id"
         echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
     - uses: ./.github/actions/source
-      env:
-        RUSTC_WRAPPER: ''
       with:
         artifact: ${{ inputs.candidate-artifact }}
         sha: ${{ inputs.candidate-sha }}
-        cache-scope: package-admission-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY || inputs.runtime-id }}
     - uses: ./.github/actions/cache
       with:
         scope: package-${{ inputs.runtime-id }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}

@@ -27,9 +27,8 @@ binary=skippy
     echo "missing Skippy host import-policy report in $input_dir" >&2
     exit 1
 }
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source "$REPO_ROOT/scripts/lib/automation.sh"
-skippy_automation native skippy-cli-input "$input_dir/host-imports.json" "$input_dir/$binary" "$target"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"${SKIPPY_PYTHON:-python3}" "$SCRIPT_DIR/native-inspect.py" skippy-cli-input "$input_dir/host-imports.json" "$input_dir/$binary" "$target"
 if command -v sha256sum >/dev/null 2>&1; then
     (cd "$input_dir" && sha256sum --check "$binary.sha256")
 else

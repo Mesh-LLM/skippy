@@ -1,5 +1,5 @@
 name: Restore certified candidate source
-description: Restore an upgrade candidate using the protected checkout's typed admission command.
+description: Restore an upgrade candidate using the protected checkout's source admission command.
 inputs:
   artifact:
     description: Same-run immutable candidate artifact, empty for normal SHA checkout.
@@ -7,22 +7,9 @@ inputs:
   sha:
     description: Expected candidate commit.
     default: ''
-  cache-scope:
-    description: Toolchain-compatible protected admission build cache.
-    default: admission-tools
-  download-scope:
-    description: Compatible Cargo dependency cache layout for protected admission.
-    default: tools
 runs:
   using: composite
   steps:
-    - name: Restore protected command runner for candidate admission
-      uses: ./.github/actions/cache
-      if: inputs.artifact != ''
-      with:
-        scope: ${{ inputs.cache-scope }}
-        download-scope: ${{ inputs.download-scope }}
-        build-paths: target/ci-admission/debug
     - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       if: inputs.artifact != ''
       with:
@@ -32,7 +19,6 @@ runs:
       if: inputs.artifact != ''
       shell: bash
       env:
-        CARGO_TARGET_DIR: target/ci-admission
         CANDIDATE_SHA: ${{ inputs.sha }}
         CANDIDATE_DIRECTORY: ${{ runner.temp }}/skippy-candidate
       run: just automation-run upgrade restore "$CANDIDATE_DIRECTORY/candidate.bundle" "$CANDIDATE_SHA"
