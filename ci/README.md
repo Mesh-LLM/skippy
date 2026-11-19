@@ -48,11 +48,11 @@ docs-only PRs do not allocate native code builders. Documentation has its own
 job name, avoiding duplicate `CI` checks on mixed PRs.
 
 The protected inference workflow reads the same filters from `main`. Irrelevant
-PRs report a source-bound `Inference qualification` success without compiling
-xtask, dispatching lab jobs or posting lab-result comments. Relevant PRs retain
+PRs report a source-bound `Inference qualification` success without
+dispatching lab jobs or posting lab-result comments. Relevant PRs retain
 same-repository/collaborator admission, a fresh-head check and all seven GPU smoke
 configurations. No candidate source is executed by the credentialed controller.
-Rust admission verifies trust and source identity; it does not classify changes.
+Inference admission verifies trust and source identity; it does not classify changes.
 The syntax/dependency classifier and offline replay command have been removed.
 The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
 `gh` and `jq`; it needs no Rust setup or compilation. It checks receipt source,
@@ -83,7 +83,8 @@ to attribute queued Actions jobs and place capacity; labels alone are insufficie
 Hardware build and smoke jobs declare literal groups and labels in the workflow:
 JY cannot resolve a runner group hidden behind a matrix expression. Shared
 composite actions retain one implementation of each contract. The runtime and
-smoke aggregate gates require every active manifest row, rejecting missing,
+smoke aggregate gates use `scripts/ci-gate.sh` to require every active manifest
+row, rejecting missing,
 skipped, cancelled or failed jobs in full qualification. The PR summary instead
 requires those extended stages to be explicitly skipped; skipped unit or quality
 checks still fail, and no GPU package qualification is claimed by a short run.
@@ -99,7 +100,7 @@ verifies its tools before running the existing checks and pulls the private
 image with its own `GITHUB_TOKEN` using `packages: read`.
 
 Cargo and CMake compilation use two workers to fit standard private-repository
-hosted capacity. Cargo build snapshots, protected admission snapshots and
+hosted capacity. Cargo build snapshots and
 sccache include `/etc/skippy-ci-image-id`, so updates to `latest` use a new
 compiled-output namespace. Cargo downloads use separate container cache scopes
 to avoid restoring archives made with hosted-VM home/workspace paths. Native
@@ -139,7 +140,7 @@ receive this secret.
 `ghcr.io/general-inference/skippy-ci-cpu:latest`. It includes **build-essential
 and mold**, LLVM/Clang 22 development packages (including `libclang-cpp22-dev`),
 libc++/libc++abi 22, OpenMP and sanitizers, Rust/Clippy/rustfmt
-from `rust-toolchain.toml`, Just, sccache, CMake, Ninja, OpenSSH client tools and
+from `rust-toolchain.toml`, Just, sccache, CMake, Ninja, Python, jq, OpenSSH client tools and
 system libraries. `ssh-keygen` supports the offline private-key normalization
 test; the image build also generates and reloads a disposable Ed25519 fixture.
 The Ubuntu base is digest-pinned and release binaries are checksum-verified.
@@ -281,7 +282,7 @@ must be available on full family builders. A standard hosted image without those
 development packages cannot run these gates; no job downloads system packages
 to disguise that prerequisite.
 
-Qwen3 dense smoke preparation is explicit: `just automation-run ci model-fetch`
+Qwen3 dense smoke preparation is explicit: `just ci-model-fetch`
 resolves the immutable public model URL and verifies the family manifest's size
 and SHA-256. A runner-provided `SKIPPY_CI_MODEL` is verified without downloading.
 This command sets the path for subsequent Actions steps; locally export the path
@@ -296,19 +297,24 @@ row fails rather than passing as a skip.
 ## Artifact flow
 
 Cargo validates manifests and dependencies during ordinary checks and builds.
-`ci plan` validates the target/runner matrix before producing workflow outputs.
+`just ci-plan` runs `scripts/ci-plan.sh`, which validates the target/runner
+matrix with `jq` and produces workflow outputs without Rust setup or compilation.
+`just ci-host`, `just ci-runtime`, `just ci-package`, and `just ci-smoke`
+use Python 3.9 or later for artifact and process handling. Release inventory
+commands use Python 3.11 or later for TOML parsing. Set `SKIPPY_PYTHON` to
+select the interpreter used by Just.
 
-1. `ci host` builds each CLI once, verifies its imports, records its source and
+1. `just ci-host` builds each CLI once, verifies its imports, records its source and
    checksums, and archives executable permissions.
-2. `ci runtime` builds the selected native variant and verifies its manifest and
+2. `just ci-runtime` builds the selected native variant and verifies its manifest and
    dependency closure. The artifact is bound to the source, target and variant.
-3. `ci package` verifies and composes those producer archives without compiling,
+3. `just ci-package` verifies and composes those producer archives without compiling,
    then runs the bundled CLI on the target's hosted CPU machine. CUDA bundle
    startup is therefore checked without depending on a hardware runner's driver.
-4. `ci smoke` receives that exact archive, admits the pinned model and runs the
+4. `just ci-smoke` receives that exact archive, admits the pinned model and runs the
    packaged server on its required CPU/Metal/CUDA device.
-5. `ci summary` requires plan, inference contracts and quality in short CI. Full
-   CI also requires every host, runtime, product and smoke result. Failed,
+5. `just ci-summary` requires plan, automation contracts and quality in short
+   CI. Full CI also requires every host, runtime, product and smoke result. Failed,
    cancelled, absent and unexpectedly skipped required jobs all fail the
    summary. Docs-only changes skip code builders and run documentation validation.
 

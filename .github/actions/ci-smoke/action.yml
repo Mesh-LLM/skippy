@@ -31,9 +31,9 @@ runs:
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: target/ci-models/Qwen3-0.6B-Q8_0.gguf
-        key: smoke-model-v1-qwen3-dense-${{ hashFiles('ci/llama-canary/family-certified.json', 'tools/xtask/src/ci/smoke.rs') }}
+        key: smoke-model-v1-qwen3-dense-${{ hashFiles('ci/llama-canary/family-certified.json', 'scripts/ci-model-fetch.sh', 'scripts/lib/ci_smoke.py') }}
     - name: Admit pinned Qwen3 fixture
-      run: just automation-run ci model-fetch
+      run: just ci-model-fetch
       shell: bash
     - name: Execute packaged Qwen3 on the required backend
       shell: bash

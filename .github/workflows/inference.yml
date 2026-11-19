@@ -50,13 +50,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           QUALIFICATION_PROFILE: ${{ inputs.profile || 'release' }}
-        run: just automation-run inference admit
+        run: just inference-admit
       - id: matrix
         if: github.event_name != 'pull_request_target' || steps.paths.outputs.inference == 'true'
         env:
           SOURCE_SHA: ${{ steps.admission.outputs.source }}
           PROFILE: ${{ steps.admission.outputs.profile }}
-        run: just automation-run inference matrix "$PROFILE" "$SOURCE_SHA"
+        run: just inference-matrix "$PROFILE" "$SOURCE_SHA"
   qualification:
     name: qualification (${{ matrix.id }})
     needs: plan
@@ -81,7 +81,7 @@ jobs:
           PROFILE: ${{ needs.plan.outputs.profile }}
           CONFIGURATION: ${{ matrix.id }}
           JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
-        run: just automation-run inference dispatch "$PROFILE" "$SOURCE_SHA" "$EVIDENCE" "$CONFIGURATION"
+        run: just inference-dispatch "$PROFILE" "$SOURCE_SHA" "$EVIDENCE" "$CONFIGURATION"
       - name: Cancel outstanding JY jobs and formations
         if: cancelled() || failure()
         env:

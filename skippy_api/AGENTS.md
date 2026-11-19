@@ -356,9 +356,7 @@ just skippy-llama-api-planner-probe <model.gguf>      # plan/probe a model
 - **Fix the class, not the instance.** When the same defect appears twice, the
   second occurrence is evidence that a guard is missing.
 
-- **Do not write new Python tooling.** Benchmark report admission and comparison
-  belong to `cargo xtool automation skippy-benchmark-compare`. New automation belongs in a `just` recipe or a typed `tools/`
-  helper; the repository rule is in the root `AGENTS.md`.
+- Use Just recipes and shell or Python scripts for benchmark orchestration.
 - **Commit through the recipe**, never a bare `git commit` on this tree:
   `just skippy-api-checkpoint "<type(scope): subject>" [embed.gguf] [reranker.gguf]`.
   It runs format, tidy, the C++ suite and the Rust end-to-end suite first.

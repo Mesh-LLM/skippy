@@ -82,7 +82,7 @@ jobs:
       - id: existing
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        run: just automation-run release select "$RELEASE_TAG" release-index.json
+        run: just release-select "$RELEASE_TAG" release-index.json
       - name: Create source-bound private draft
         if: steps.existing.outputs.exists == 'false'
         env:
@@ -98,7 +98,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > remote-release.json
       - name: Admit existing assets and select missing uploads
-        run: just automation-run release upload-plan dist/release remote-release.json
+        run: just release-upload-plan dist/release remote-release.json
       - name: Upload only missing verified assets
         env:
           GH_TOKEN: ${{ github.token }}

@@ -122,7 +122,7 @@ jobs:
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
-      - run: just inference-tool-check
+      - run: just automation-contracts
       - name: Test inference results reporting
         run: bash scripts/tests/inference-report.sh
       - name: Test workflow result gates
@@ -175,13 +175,9 @@ jobs:
           echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
       - uses: ./.github/actions/source
         # Protected admission runs before GitHub compiler-cache credentials are exported.
-        env:
-          RUSTC_WRAPPER: ''
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
-          cache-scope: quality-container-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}-admission
-          download-scope: quality-container-admission
       - uses: ./.github/actions/cache
         with:
           scope: quality-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
@@ -399,7 +395,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - run: just automation-run ci runtime-summary
+        with:
+          cache: 'false'
+      - run: just ci-runtime-summary
         env:
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
   product:

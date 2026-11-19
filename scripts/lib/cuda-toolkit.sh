@@ -16,11 +16,7 @@ cuda_canonical_path() {
   if command -v realpath >/dev/null 2>&1; then
     realpath "$path" 2>/dev/null && return 0
   fi
-  if [[ -n "${SKIPPY_AUTOMATION_BIN:-}" ]]; then
-    "$SKIPPY_AUTOMATION_BIN" artifact file-projection canonical-path "$path"
-  else
-    just --justfile "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/Justfile" automation-run artifact file-projection canonical-path "$path"
-  fi
+  bash "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/artifact-file.sh" canonical-path "$path"
 }
 
 # Git Bash's `command -v nvcc` can report a Windows CUDA executable without
