@@ -83,24 +83,40 @@ jobs:
           docker image tag skippy-ci-cpu:build "$image:latest"
           docker image push "$image:latest"
   gpu-build:
-    name: Build and test ${{ matrix.backend }} image
-    runs-on: ubuntu-24.04
+    name: Build and test ${{ matrix.backend }} image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      matrix:
+      matrix: &gpu-image-matrix
         include:
           - backend: cuda12
+            arch: amd64
+            runner: ubuntu-24.04
             toolkit_version: '12.9.2'
             toolkit_base: 'nvidia/cuda:12.9.2-devel-ubuntu24.04@sha256:420850a3fd665171b3f1fd08946c51d50468d732a46d6c42345ea04444755048'
+          - backend: cuda12
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            toolkit_version: '12.9.2'
+            toolkit_base: 'nvidia/cuda:12.9.2-devel-ubuntu24.04@sha256:fd13aa4b2b769b9ffece066fbf6ca7cf733509f85fef4b5e432fe7c0b5782f70'
           - backend: cuda13
+            arch: amd64
+            runner: ubuntu-24.04
             toolkit_version: '13.1.2'
             toolkit_base: 'nvidia/cuda:13.1.2-devel-ubuntu24.04@sha256:952e42d23230610a2714c8484f38e9c934ed68e6f9c9c7fac62dcd5f98858a6e'
+          - backend: cuda13
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            toolkit_version: '13.1.2'
+            toolkit_base: 'nvidia/cuda:13.1.2-devel-ubuntu24.04@sha256:369b61cfc40a36830d246f0a14004a716aee72f4c520ee719b73d2b47e8bd9ce'
           - backend: rocm
+            arch: amd64
+            runner: ubuntu-24.04
             toolkit_version: '7.2.4'
             toolkit_base: 'rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054'
     env:
-      SKIPPY_CI_IMAGE_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.backend }}
+      SKIPPY_CI_IMAGE_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.backend }}-${{ matrix.arch }}
       SOURCE_REVISION: ${{ github.sha }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -109,59 +125,58 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           cache: 'false'
-      - name: Free unused runner disk space
+      - &gpu-disk-cleanup
+        name: Free unused runner disk space
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
           df -h /
       - name: Build image
         env:
           BACKEND: ${{ matrix.backend }}
+          ARCH: ${{ matrix.arch }}
           TOOLKIT_BASE: ${{ matrix.toolkit_base }}
           TOOLKIT_VERSION: ${{ matrix.toolkit_version }}
-        run: just ci-gpu-image-build "$BACKEND" "$TOOLKIT_BASE" "$TOOLKIT_VERSION"
+        run: just ci-gpu-image-build "$BACKEND" "$TOOLKIT_BASE" "$TOOLKIT_VERSION" "$ARCH"
       - name: Smoke test image
-        run: time just ci-gpu-image-smoke '${{ matrix.backend }}'
+        run: time just ci-gpu-image-smoke '${{ matrix.backend }}' '${{ matrix.arch }}'
       - name: Export tested image
         run: just ci-gpu-image-export '${{ matrix.backend }}'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: skippy-ci-${{ matrix.backend }}-${{ github.run_id }}-${{ github.run_attempt }}
+          # A publish-only retry can reuse the successful build's archive.
+          name: skippy-ci-${{ matrix.backend }}-${{ matrix.arch }}-${{ github.run_id }}
           path: |
             target/ci-image/skippy-ci-${{ matrix.backend }}.tar.gz
             target/ci-image/skippy-ci-${{ matrix.backend }}.id
           compression-level: 0
           if-no-files-found: error
+          overwrite: true
           retention-days: 7
   gpu-publish:
-    name: Publish tested ${{ matrix.backend }} image
+    name: Publish tested ${{ matrix.backend }} image (${{ matrix.arch }})
     needs: gpu-build
     if: >-
       github.repository == 'general-inference/skippy' &&
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - backend: cuda12
-            toolkit_version: '12.9.2'
-          - backend: cuda13
-            toolkit_version: '13.1.2'
-          - backend: rocm
-            toolkit_version: '7.2.4'
+      matrix: *gpu-image-matrix
     permissions:
       contents: read
       packages: write
     steps:
+      - *gpu-disk-cleanup
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: skippy-ci-${{ matrix.backend }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: skippy-ci-${{ matrix.backend }}-${{ matrix.arch }}-${{ github.run_id }}
           path: image
       - name: Load and verify tested image
         env:
           BACKEND: ${{ matrix.backend }}
+          ARCH: ${{ matrix.arch }}
           TOOLKIT_VERSION: ${{ matrix.toolkit_version }}
           SOURCE_REVISION: ${{ github.sha }}
         run: |
@@ -169,6 +184,7 @@ jobs:
           docker image load --input "image/skippy-ci-$BACKEND.tar.gz"
           image="skippy-ci-$BACKEND:build"
           test "$(docker image inspect --format '{{.Id}}' "$image")" = "$(cat "image/skippy-ci-$BACKEND.id")"
+          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$image")" = "linux/$ARCH"
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")" = "$SOURCE_REVISION"
           test "$(docker image inspect --format '{{index .Config.Labels "io.skippy.ci.backend"}}' "$image")" = "$BACKEND"
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image")" = "$TOOLKIT_VERSION"
@@ -180,11 +196,17 @@ jobs:
       - name: Publish immutable build and latest
         env:
           BACKEND: ${{ matrix.backend }}
+          ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           image="ghcr.io/general-inference/skippy-ci-$BACKEND"
           build_tag="build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          latest_tag=latest
+          if [[ "$ARCH" == arm64 ]]; then
+            build_tag+=-arm64
+            latest_tag+=-arm64
+          fi
           docker image tag "skippy-ci-$BACKEND:build" "$image:$build_tag"
           docker image push "$image:$build_tag"
-          docker image tag "skippy-ci-$BACKEND:build" "$image:latest"
-          docker image push "$image:latest"
+          docker image tag "skippy-ci-$BACKEND:build" "$image:$latest_tag"
+          docker image push "$image:$latest_tag"
