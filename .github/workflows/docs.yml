@@ -1,8 +1,5 @@
 name: Documentation
 on:
-  pull_request:
-    paths:
-      - 'docs-site/**'
   push:
     branches: [main]
     paths:
@@ -25,7 +22,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   documentation:
-    name: ${{ github.event_name == 'pull_request' && 'CI' || 'Documentation' }}
+    name: Documentation
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

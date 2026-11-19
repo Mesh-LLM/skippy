@@ -147,9 +147,6 @@ inference-plan profile source output="target/ci-evidence/inference-plan.json":
 inference-contracts:
     @cargo test --locked -p xtask inference::
 
-inference-inputs base head output="target/ci-evidence/inference-inputs.json":
-    @cargo xtool inference inputs "{{ base }}" "{{ head }}" "{{ output }}"
-
 inference-dispatch profile source output="target/ci-evidence/inference":
     @cargo xtool inference dispatch "{{ profile }}" "{{ source }}" "{{ output }}"
 
@@ -187,14 +184,11 @@ native-mimo2-contract:
     ctest --test-dir "$build_dir" -R '^skippy_generate_contract_mimo2$' --output-on-failure --no-tests=error
     /usr/bin/time -v ctest --test-dir "$build_dir" -R '^skippy_graph_contract_mimo2$' --output-on-failure --no-tests=error
 
-ci-contracts:
-    @cargo xtool ci contracts
-
 ci-image-build:
     @docker buildx build --load --platform linux/amd64 --file ci/Dockerfile --tag skippy-ci-cpu:build --build-arg SKIPPY_CI_IMAGE_ID --build-arg SOURCE_REVISION .
 
 ci-image-smoke:
-    @docker run --rm --platform linux/amd64 --network none --read-only --tmpfs /github/home:uid=1001,gid=1001 --env HOME=/github/home skippy-ci-cpu:build bash -euc 'test -z "${CARGO_HOME:-}"; rustc --version; cargo clippy --version; rustfmt --version; just --version; sccache --version; gcc --version; g++ --version; make --version; mold --version; clang++ --version; cmake --version; ninja --version; test -r /usr/lib/llvm-22/lib/cmake/llvm/LLVMConfig.cmake; test -r /usr/lib/llvm-22/lib/cmake/clang/ClangConfig.cmake; test -s /etc/skippy-ci-image-id; test "$(id -u)" = 1001'
+    @docker run --rm --platform linux/amd64 --network none --read-only --tmpfs /github/home:uid=1001,gid=1001 --env HOME=/github/home skippy-ci-cpu:build bash -euc 'test -z "${CARGO_HOME:-}"; rustc --version; cargo clippy --version; rustfmt --version; just --version; sccache --version; gcc --version; g++ --version; make --version; mold --version; clang++ --version; cmake --version; ninja --version; ssh -V; command -v ssh-keygen; test -r /usr/lib/llvm-22/lib/cmake/llvm/LLVMConfig.cmake; test -r /usr/lib/llvm-22/lib/cmake/clang/ClangConfig.cmake; test -s /etc/skippy-ci-image-id; test "$(id -u)" = 1001'
 
 ci-image-export:
     @mkdir -p target/ci-image
@@ -215,7 +209,7 @@ ci-package runtime host_dir runtime_dir:
 ci-smoke runtime product_dir:
     @cargo xtool ci smoke "{{ runtime }}" "{{ product_dir }}"
 
-ci: lint ci-contracts test llama-check
+ci: lint test llama-check
 
 check-release tag:
     @cargo xtool release validate "{{ tag }}"

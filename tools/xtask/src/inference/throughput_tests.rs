@@ -33,7 +33,7 @@ fn aggregates_phase_times_excludes_cached_tokens_and_ignores_repeats() {
     assert_eq!(rates.prefill_tokens, 300);
     assert_eq!(rates.prefill_ms, 600.0);
     assert_eq!(rates.decode_tokens, 30);
-    assert_eq!(rates.display(), ("500.0".into(), "100.0".into()));
+    assert_eq!(rates.decode_ms, 300.0);
 }
 
 #[test]
@@ -51,13 +51,12 @@ fn incomplete_or_invalid_timings_never_become_partial_rates() {
                 &quality,
             )
             .unwrap();
-            let (prefill, decode) = rates.display();
             if field.starts_with("prompt") {
-                assert_eq!(prefill, "Unavailable");
-                assert_eq!(decode, "100.0");
+                assert_eq!((rates.prefill_tokens, rates.prefill_ms), (0, 0.0));
+                assert_eq!((rates.decode_tokens, rates.decode_ms), (30, 300.0));
             } else {
-                assert_eq!(decode, "Unavailable");
-                assert_eq!(prefill, "500.0");
+                assert_eq!((rates.decode_tokens, rates.decode_ms), (0, 0.0));
+                assert_eq!((rates.prefill_tokens, rates.prefill_ms), (300, 600.0));
             }
         }
     }
@@ -72,10 +71,7 @@ fn incomplete_or_invalid_timings_never_become_partial_rates() {
             &quality,
         )
         .unwrap();
-        assert_eq!(rates.display().0, "Unavailable");
-    }
-    for ms in [f64::NAN, f64::INFINITY, -1.0, 0.0] {
-        assert_eq!(rate(10, ms), "Unavailable");
+        assert_eq!((rates.prefill_tokens, rates.prefill_ms), (0, 0.0));
     }
 }
 
@@ -132,29 +128,7 @@ fn rejects_cross_source_cross_configuration_and_incomplete_evidence() {
 }
 
 #[test]
-fn comment_receipts_are_bound_to_the_job_attempt_and_configuration() {
-    let (plan, job, qualification, quality) = fixture();
-    let row = &plan.rows[0];
-    let directory = tempfile::tempdir().unwrap();
-    assert_eq!(
-        read(directory.path(), row, plan.source_sha).unwrap().0,
-        "Unavailable"
-    );
-    write_json_file(&directory.path().join(format!("{}-job.json", row.id)), &job).unwrap();
-    let rates = summarize(&job, row, plan.source_sha, &qualification, &quality).unwrap();
-    let path = directory.path().join(format!("{}-throughput.json", row.id));
-    write_json_file(&path, &rates).unwrap();
-    assert_eq!(
-        read(directory.path(), row, plan.source_sha).unwrap(),
-        rates.display()
-    );
-    let good = serde_json::to_value(rates).unwrap();
-    for field in ["source_sha", "configuration", "job_id", "run_id"] {
-        let mut bad = good.clone();
-        bad[field] = json!("wrong");
-        write_json_file(&path, &bad).unwrap();
-        assert!(read(directory.path(), row, plan.source_sha).is_err());
-    }
+fn rejects_invalid_native_attempts() {
     assert!(successful_run(&json!({"runs":[{"id":"run_bad/../","status":"succeeded"}]})).is_err());
     assert!(successful_run(&json!({"runs":[{"id":"run_ok","status":"failed"}]})).is_err());
 }

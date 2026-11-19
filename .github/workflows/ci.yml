@@ -1,12 +1,8 @@
 name: CI
 on:
   pull_request:
-    paths-ignore:
-      - 'docs-site/**'
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs-site/**'
   schedule:
     - cron: '0 14 * * *'
   workflow_dispatch:
@@ -54,7 +50,35 @@ env:
   SKIPPY_CUDA_ARCHITECTURE_MODE: ${{ inputs.cuda_architecture_mode || 'native' }}
   SKIPPY_ARTIFACT_SCOPE: ${{ inputs.artifact_scope || 'ci' }}
 jobs:
+  changes:
+    name: Select checks by path
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ inputs.profile != '' || (github.event_name != 'pull_request' && github.event_name != 'push') || steps.paths.outputs.code == 'true' }}
+      docs: ${{ inputs.profile == '' && github.event_name == 'pull_request' && steps.paths.outputs.docs == 'true' }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        if: inputs.profile == '' && (github.event_name == 'pull_request' || github.event_name == 'push')
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: paths
+        if: inputs.profile == '' && (github.event_name == 'pull_request' || github.event_name == 'push')
+        with:
+          predicate-quantifier: some-with-excludes
+          filters: .github/path-filters.yml
+  documentation:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    uses: ./.github/workflows/docs.yml
   plan:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -99,6 +123,10 @@ jobs:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
       - run: just inference-tool-check
+      - name: Test inference results reporting
+        run: bash scripts/tests/inference-report.sh
+      - name: Test workflow result gates
+        run: node --test .github/scripts/*.test.cjs
   quality:
     needs: plan
     env:
@@ -164,7 +192,6 @@ jobs:
       - uses: ./.github/actions/sccache
         with:
           scope: quality-${{ runner.os }}-${{ runner.arch }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
-      - run: just ci-contracts
       - uses: ./.github/actions/native-source
       - run: just llama-prepare
       - run: just skippy-ffi-bindgen-check
@@ -549,19 +576,29 @@ jobs:
     needs: [plan, smoke_darwin_aarch64_cpu, smoke_darwin_aarch64_metal, smoke_linux_x86_64_cpu, smoke_linux_x86_64_cuda12, smoke_linux_x86_64_cuda13, smoke_linux_aarch64_cpu, smoke_linux_aarch64_cuda12, smoke_linux_aarch64_cuda13]
     if: always() && needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-      - run: just automation-run ci smoke-summary
+      - name: Validate all runtime smoke-test results
         env:
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
+          RUNTIME_MATRIX: ${{ needs.plan.outputs.runtimes }}
+        run: |
+          jq -en --argjson needs "$SKIPPY_CI_NEEDS" --argjson matrix "$RUNTIME_MATRIX" '
+            ($matrix.include | map("smoke_" + (.id | gsub("-"; "_")))) as $jobs |
+            ($jobs + ["plan"] | sort) as $expected |
+            ($jobs | length) > 0 and
+            ($needs | keys) == $expected and
+            all($expected[]; $needs[.].result == "success")
+          ' || {
+            echo '::error::Plan and every active runtime smoke test must succeed, with no missing or unexpected jobs.'
+            exit 1
+          }
   summary:
-    name: ${{ needs.plan.outputs.profile == 'full' && 'Full qualification' || 'CI' }}
+    name: ${{ needs.plan.outputs.profile == 'full' && 'Full qualification' || 'Code checks' }}
     needs: [plan, inference_contracts, quality, host, runtime, product, smoke]
-    if: always()
+    if: always() && needs.plan.result != 'skipped'
+    outputs:
+      profile: ${{ needs.plan.outputs.profile }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -573,3 +610,27 @@ jobs:
         env:
           SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
+  gate:
+    name: ${{ needs.summary.outputs.profile == 'full' && 'Full CI gate' || 'CI' }}
+    needs: [changes, documentation, summary]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          CHECK_RESULTS: ${{ toJSON(needs) }}
+        with:
+          script: |
+            const needs = JSON.parse(process.env.CHECK_RESULTS);
+            if (needs.changes.result !== 'success') {
+              core.setFailed('Path selection failed or was cancelled');
+              return;
+            }
+            for (const [filter, job] of [['code', 'summary'], ['docs', 'documentation']]) {
+              const required = needs.changes.outputs[filter];
+              const expected = required === 'true' ? 'success' : 'skipped';
+              if (!['true', 'false'].includes(required) || needs[job].result !== expected) {
+                core.setFailed(`${job} must be ${expected}; got ${needs[job].result}`);
+              }
+            }

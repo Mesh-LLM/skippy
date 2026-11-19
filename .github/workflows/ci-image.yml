@@ -1,10 +1,10 @@
 name: CPU CI image
 on:
   pull_request:
-    paths: ['.github/workflows/ci-image.yml', 'ci/Dockerfile*', 'rust-toolchain.toml', 'Justfile']
+    paths: ['.github/workflows/ci-image.yml', 'ci/Dockerfile*', 'rust-toolchain.toml']
   push:
     branches: [main]
-    paths: ['.github/workflows/ci-image.yml', 'ci/Dockerfile*', 'rust-toolchain.toml', 'Justfile']
+    paths: ['.github/workflows/ci-image.yml', 'ci/Dockerfile*', 'rust-toolchain.toml']
   workflow_dispatch:
 permissions:
   contents: read

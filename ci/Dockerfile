@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       cmake curl git libc++-22-dev libc++abi-22-dev libclang-22-dev \
       libclang-cpp22-dev libclang-rt-22-dev libcurl4-openssl-dev \
       libedit-dev libomp-22-dev libssl-dev libzstd-dev lld-22 llvm-22-dev mold ninja-build \
-      patchelf pkg-config rustup xz-utils zlib1g-dev zstd \
+      openssh-client patchelf pkg-config rustup xz-utils zlib1g-dev zstd \
     && rm -rf /var/lib/apt/lists/*
 
 # Cargo keeps its default $HOME/.cargo layout, including when Actions mounts a
@@ -62,6 +62,9 @@ RUN --network=none image_probe_dir="$(mktemp -d)" \
     && clang++ -std=c++23 -stdlib=libc++ -Wall -Wextra -Werror -fopenmp -fuse-ld=lld \
       -fsanitize=address,undefined "$image_probe_dir/probe.cpp" -o "$image_probe_dir/libcxx-probe" \
     && "$image_probe_dir/libcxx-probe" \
+    && ssh-keygen -q -t ed25519 -N '' -C skippy-ci-smoke -f "$image_probe_dir/key" \
+    && ssh-keygen -y -f "$image_probe_dir/key" > "$image_probe_dir/loaded.pub" \
+    && cmp "$image_probe_dir/key.pub" "$image_probe_dir/loaded.pub" \
     && rm -rf "$image_probe_dir"
 
 USER root
