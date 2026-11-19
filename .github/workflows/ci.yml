@@ -164,26 +164,6 @@ jobs:
           sha: ${{ inputs.candidate_sha }}
       - id: plan
         run: just ci-plan
-  automation:
-    name: Test CI automation
-    needs: [changes, plan]
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-      - uses: ./.github/actions/source
-        with:
-          artifact: ${{ inputs.candidate_artifact }}
-          sha: ${{ inputs.candidate_sha }}
-      - run: just automation-contracts
-      - name: Test inference results reporting
-        run: bash scripts/tests/inference-report.sh
-      - name: Test workflow result gates
-        run: node --test .github/scripts/*.test.cjs
   quality:
     name: Quality canary
     needs: [changes, plan]
@@ -216,6 +196,19 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+      - uses: ./.github/actions/source
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
+      - run: just automation-contracts
+      - name: Test inference results reporting
+        run: bash scripts/tests/inference-report.sh
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.0'
+          package-manager-cache: false
+      - name: Test workflow result gates
+        run: node --test .github/scripts/*.test.cjs
       - name: Verify image toolchain and cache identity
         shell: bash
         run: |
@@ -233,10 +226,6 @@ jobs:
           image_id="$(cat /etc/skippy-ci-image-id)"
           test -n "$image_id"
           echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
-      - uses: ./.github/actions/source
-        with:
-          artifact: ${{ inputs.candidate_artifact }}
-          sha: ${{ inputs.candidate_sha }}
       - uses: ./.github/actions/cache
         with:
           scope: quality-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
@@ -265,7 +254,7 @@ jobs:
           retention-days: 7
   native_contracts:
     name: Check llama.cpp Graph Contracts, patches, and API docs
-    needs: [plan, quality, automation]
+    needs: [plan, quality]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
       group: jy-rnr_vfnz8k5p4yrh334
@@ -312,7 +301,7 @@ jobs:
           retention-days: 7
   package_darwin_aarch64_cpu:
     name: Build, package, and smoke · macOS ARM64 CPU
-    needs: [plan, quality, automation]
+    needs: [plan, quality]
     if: needs.plan.outputs.profile == 'full'
     runs-on: macos-15
     timeout-minutes: 240
@@ -331,11 +320,11 @@ jobs:
           candidate-sha: ${{ inputs.candidate_sha }}
   package_darwin_aarch64_metal:
     name: Build, package, and smoke · macOS ARM64 Metal
-    needs: [plan, quality, automation, package_darwin_aarch64_cpu, changes]
+    needs: [plan, quality, package_darwin_aarch64_cpu, changes]
     if: >-
       ${{ !cancelled() && needs.plan.result == 'success' &&
-      ((needs.changes.outputs.code == 'true' && needs.quality.result == 'success' && needs.automation.result == 'success') ||
-      (needs.changes.outputs.code == 'false' && needs.quality.result == 'skipped' && needs.automation.result == 'skipped')) &&
+      ((needs.changes.outputs.code == 'true' && needs.quality.result == 'success') ||
+      (needs.changes.outputs.code == 'false' && needs.quality.result == 'skipped')) &&
       ((needs.plan.outputs.profile == 'full' && needs.package_darwin_aarch64_cpu.result == 'success') ||
       (needs.plan.outputs.profile == 'pr' && needs.changes.outputs.inference == 'true')) }}
     runs-on:
@@ -357,7 +346,7 @@ jobs:
           candidate-sha: ${{ inputs.candidate_sha }}
   package_linux_x86_64_cpu:
     name: Build, package, and smoke · Linux x64 CPU
-    needs: [plan, quality, automation]
+    needs: [plan, quality]
     if: needs.plan.outputs.profile == 'full'
     # The shared CLI must also run in the Ubuntu 24.04 CUDA toolchain images.
     runs-on: ubuntu-24.04
@@ -377,7 +366,7 @@ jobs:
           candidate-sha: ${{ inputs.candidate_sha }}
   package_linux_x86_64_cuda12:
     name: Build, package, and smoke · Linux x64 CUDA 12
-    needs: [plan, quality, automation, package_linux_x86_64_cpu]
+    needs: [plan, quality, package_linux_x86_64_cpu]
     if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04
     permissions:
@@ -423,11 +412,11 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   package_linux_x86_64_cuda13:
     name: Build, package, and smoke · Linux x64 CUDA 13
-    needs: [plan, quality, automation, package_linux_x86_64_cpu, changes]
+    needs: [plan, quality, package_linux_x86_64_cpu, changes]
     if: >-
       ${{ !cancelled() && needs.plan.result == 'success' &&
-      ((needs.changes.outputs.code == 'true' && needs.quality.result == 'success' && needs.automation.result == 'success') ||
-      (needs.changes.outputs.code == 'false' && needs.quality.result == 'skipped' && needs.automation.result == 'skipped')) &&
+      ((needs.changes.outputs.code == 'true' && needs.quality.result == 'success') ||
+      (needs.changes.outputs.code == 'false' && needs.quality.result == 'skipped')) &&
       ((needs.plan.outputs.profile == 'full' && needs.package_linux_x86_64_cpu.result == 'success') ||
       (needs.plan.outputs.profile == 'pr' && needs.changes.outputs.inference == 'true')) }}
     runs-on:
@@ -449,7 +438,7 @@ jobs:
           candidate-sha: ${{ inputs.candidate_sha }}
   package_linux_aarch64_cpu:
     name: Build, package, and smoke · Linux ARM64 CPU
-    needs: [plan, quality, automation]
+    needs: [plan, quality]
     if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 240
@@ -468,7 +457,7 @@ jobs:
           candidate-sha: ${{ inputs.candidate_sha }}
   package_linux_aarch64_cuda12:
     name: Build, package, and smoke · Linux ARM64 CUDA 12
-    needs: [plan, quality, automation, package_linux_aarch64_cpu]
+    needs: [plan, quality, package_linux_aarch64_cpu]
     if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04-arm
     permissions:
@@ -514,7 +503,7 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   package_linux_aarch64_cuda13:
     name: Build, package, and smoke · Linux ARM64 CUDA 13
-    needs: [plan, quality, automation, package_linux_aarch64_cpu]
+    needs: [plan, quality, package_linux_aarch64_cpu]
     if: needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04-arm
     permissions:
@@ -561,7 +550,7 @@ jobs:
   gate:
     name: ${{ needs.plan.outputs.profile == 'full' && 'Full CI gate' || 'CI' }}
     needs: [
-      changes, plan, automation, quality, native_contracts,
+      changes, plan, quality, native_contracts,
       package_darwin_aarch64_cpu, package_darwin_aarch64_metal,
       package_linux_x86_64_cpu, package_linux_x86_64_cuda12, package_linux_x86_64_cuda13,
       package_linux_aarch64_cpu, package_linux_aarch64_cuda12, package_linux_aarch64_cuda13,
@@ -613,7 +602,7 @@ jobs:
               }
             };
             requireResult('plan', selected);
-            for (const job of ['automation', 'quality']) requireResult(job, code);
+            requireResult('quality', code);
             requireResult('native_contracts', full);
             for (const job of prPackages) if (!packageJobs.includes(job)) throw new Error(`Missing package job ${job}`);
             for (const job of packageJobs) requireResult(job, full || (inference && prPackages.includes(job)));

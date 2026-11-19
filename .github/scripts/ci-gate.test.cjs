@@ -18,7 +18,7 @@ function results({ code = true, inference = false, full = false, release = false
   const selected = code || inference;
   const required = ['changes'];
   if (selected) required.push('plan');
-  if (code) required.push('automation', 'quality');
+  if (code) required.push('quality');
   if (full) required.push('native_contracts', ...packageJobs);
   else if (inference) required.push(...prPackages);
   if (release) required.push(...releaseSmokes);
@@ -38,7 +38,7 @@ test('all eight runtime packages match the planned matrix and depend on the cana
   for (const row of rows) {
     const job = `package_${row.id.replaceAll('-', '_')}`;
     const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
-    assert.match(body, /^    needs: \[plan, quality, automation[\],]/m);
+    assert.match(body, /^    needs: \[plan, quality[\],]/m);
     assert.ok(body.includes(`runtime-id: ${row.id}\n`));
     if (row.backend !== 'cpu') assert.ok(body.includes(`package_${row.host.replaceAll('-', '_')}_cpu`));
     assert.equal(body.includes("needs.changes.outputs.inference == 'true'"), prPackages.includes(job));
@@ -62,7 +62,7 @@ test('only inference pull requests require the two package and smoke jobs', () =
 });
 
 test('missing, skipped, failed and cancelled required work cannot pass full CI', () => {
-  for (const job of ['changes', 'plan', 'automation', 'quality', 'native_contracts', ...packageJobs]) {
+  for (const job of ['changes', 'plan', 'quality', 'native_contracts', ...packageJobs]) {
     for (const result of ['skipped', 'failure', 'cancelled', undefined]) {
       const needs = results({ full: true });
       if (result === undefined) delete needs[job];
