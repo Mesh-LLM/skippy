@@ -1,9 +1,34 @@
 # Skippy continuous integration
 
-`ci.yml` has explicit `pr` and `full` profiles. `CI` is the required short-profile
-summary; extended runs report `Full qualification`, so an optional full run on a
-PR commit does not replace its short merge gate. Release callers require the
-full workflow result independently of the check name.
+`ci.yml` has explicit `pr` and `full` profiles. `CI` reports the short-profile
+code/documentation result; extended runs report `Full qualification` and
+`Full CI gate`. Release callers require the full workflow result independently
+of the check name. The single intended branch requirement is `PR checks`, the
+aggregate of all applicable PR workflows, checks and statuses.
+
+`pr-checks.yml` evaluates that aggregate on a standard GitHub-hosted
+`ubuntu-24.04` runner, using protected-main code and no Rust setup, candidate
+execution, model inputs or lab credentials. It re-evaluates on PR events and
+producer workflow starts/completions, including reruns. Failed, cancelled,
+timed-out and startup-failed runs fail the gate; queued/running or missing
+applicable workflows leave it pending. Successful, neutral and intentionally
+skipped results are accepted. Results bind to the current PR head; older runs
+and attempts cannot override newer results. It includes additional automatic PR
+workflows and independent checks/statuses, rather than requiring their names
+in branch protection. Source code owns the expected CI/inference producers and
+the native CPU-image trigger paths so a scheduling delay cannot produce an
+early pass. New PR producers must also be added to the `workflow_run` trigger
+list so their reruns re-evaluate the aggregate.
+
+The controller reports pending and exits while producers work; it does not
+hold a hosted runner open waiting for native hardware. Repository `GITHUB_TOKEN`
+status updates cannot recursively trigger the controller. No separate
+`Inference qualification` branch requirement is needed after activation.
+
+For rollout, retain the existing `CI` and `Inference qualification` requirements
+until this workflow has reached `main` and reported a verified aggregate on an
+open PR. Then replace only the required-status-check list with `PR checks`, from
+the GitHub Actions app; retain reviews and all other protection settings.
 
 `.github/path-filters.yml` declares the code, documentation and inference paths.
 A pinned `dorny/paths-filter` action uses `some-with-excludes`: a changed file must
@@ -13,7 +38,7 @@ manifests/lockfiles, and any `Justfile` edit still count as changes to those fil
 Separate test files/directories and standalone tools are excluded from GPU
 qualification; `.gi/templates.yaml` is exact and `.gi/agents/**` is excluded.
 
-`ci.yml` always runs a lightweight result gate: short runs report the required
+`ci.yml` always runs a lightweight result gate: short runs report the
 `CI` check and full runs report `Full CI gate`. Code paths select the existing
 short code checks on PRs and main pushes. Documentation paths select reusable
 `docs.yml` validation on PRs. The gate accepts only successful selected groups
@@ -37,8 +62,7 @@ and refuses to replace results for a newer commit or workflow attempt.
 Scheduled, manual and reusable full/candidate validation bypass path selection.
 Tagged releases and manual llama upgrades retain their explicit triggers. The
 CPU image workflow retains its native paths for its workflow, `ci/Dockerfile*`,
-and `rust-toolchain.toml`. The two existing required status names are
-preserved without changing branch protection. Protected inference workflow
+and `rust-toolchain.toml`. Protected inference and aggregate workflow
 changes take effect after they reach `main`.
 The 308-test native family battery and complete host/runtime/package/smoke matrix
 run nightly and for releases. Reusable candidate validation defaults to `full`;
@@ -233,7 +257,7 @@ row fails rather than passing as a skip.
 5. `ci summary` requires plan, inference contracts and quality in short CI. Full
    CI also requires every host, runtime, product and smoke result. Failed,
    cancelled, absent and unexpectedly skipped required jobs all fail the
-   summary. Docs-only changes do not start this workflow.
+   summary. Docs-only changes skip code builders and run documentation validation.
 
 Native runtime manifests retain the upstream pin, patch digest, ABI and backend
 metadata. Product provenance hashes the complete file roster. Actions artifacts

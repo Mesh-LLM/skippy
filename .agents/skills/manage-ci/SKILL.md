@@ -8,6 +8,16 @@ description: Maintain standalone Skippy CI, native hardware qualification, llama
 Read this file before inspecting or changing CI. This is the standalone Skippy
 contract; no downstream product's workflow topology applies here.
 
+- `.github/workflows/pr-checks.yml` owns the single intended required `PR checks`
+  aggregate on a standard GitHub-hosted Ubuntu runner. Protected-main code reads
+  workflow/check/status results without executing candidate code or using lab
+  credentials. Failures/cancellations fail it; pending or missing applicable work
+  stays pending; success/neutral/intentional skips pass. Producer starts and
+  completions re-evaluate reruns; latest exact-head results govern. Add new PR
+  producer workflows to its event list. Activate the one-check branch rule only
+  after the controller reaches main and its real aggregate is verified; preserve
+  the previous two required checks until then, and retain all review protections.
+
 - `.github/workflows/ci.yml` is the single implementation with explicit `pr`
   and `full` profiles. Declarative paths in `.github/path-filters.yml` select
   code checks and reusable PR documentation validation; a lightweight result gate
@@ -91,7 +101,8 @@ contract; no downstream product's workflow topology applies here.
   image-provided tooling does not make fresh containers retain compiler outputs.
 - Cancel superseded PR validation only. Release and upgrade concurrency must
   retain evidence and never cancel another release or an independent CI run.
-- A stable `CI` summary rejects failed, cancelled, or missing required jobs.
+- The code workflow's `CI` summary rejects failed, cancelled, or missing selected jobs;
+  `PR checks` additionally covers the separate inference and image workflows.
   Upload diagnostic evidence on failure before cleanup.
 - Runtime metadata includes the source SHA, llama pin, patch digest, ABI,
   architecture, backend, toolkit and file hashes. Signing, if configured, runs

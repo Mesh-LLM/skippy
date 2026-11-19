@@ -125,6 +125,8 @@ jobs:
       - run: just inference-tool-check
       - name: Test inference results reporting
         run: bash scripts/tests/inference-report.sh
+      - name: Test aggregate PR gate
+        run: node --test .github/scripts/pr-checks.test.cjs
   quality:
     needs: plan
     env:
