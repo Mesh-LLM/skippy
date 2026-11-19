@@ -1,5 +1,8 @@
 name: Documentation
 on:
+  pull_request:
+    paths:
+      - 'docs-site/**'
   push:
     branches: [main]
     paths:
@@ -45,6 +48,7 @@ jobs:
           name: ${{ inputs.artifact_scope || 'ci' }}-docs-site
           path: docs-site/out
           if-no-files-found: error
+          overwrite: true
           retention-days: 7
       - name: Deploy beta documentation
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

@@ -1,6 +1,5 @@
 pub(crate) mod artifacts;
 pub(crate) use crate::execution;
-mod gates;
 pub(crate) mod matrix;
 pub(crate) mod producers;
 mod profile;
@@ -15,11 +14,9 @@ pub fn run(args: &[String]) -> DynResult<()> {
         ["runtime", id] => producers::runtime(id),
         ["package", id, host, runtime] => producers::package(id, Path::new(host), Path::new(runtime)),
         ["smoke", id, product] => smoke::run(id, Path::new(product)),
+        ["artifact-smoke", id, product] => smoke::artifact(id, Path::new(product)),
         ["model-fetch"] => smoke::prepare_model(),
-        ["summary"] => summary(),
-        ["runtime-summary"] => gates::run("runtime"),
-        ["smoke-summary"] => gates::run("smoke"),
-        _ => Err("usage: ci {plan|model-fetch|host ID|runtime ID|package ID HOST_DIR RUNTIME_DIR|smoke ID PRODUCT_DIR|summary|runtime-summary|smoke-summary}".into()),
+        _ => Err("usage: ci {plan|model-fetch|host ID|runtime ID|package ID HOST_DIR RUNTIME_DIR|smoke ID PRODUCT_DIR|artifact-smoke ID PRODUCT_DIR}".into()),
     }
 }
 fn plan() -> DynResult<()> {
@@ -54,103 +51,11 @@ fn project_matrix(matrix: &matrix::Matrix) -> DynResult<(serde_json::Value, serd
     let runtimes = serde_json::json!({"include": runtime_rows});
     Ok((hosts, runtimes))
 }
-fn summary() -> DynResult<()> {
-    let needs: serde_json::Value = serde_json::from_str(&std::env::var("SKIPPY_CI_NEEDS")?)?;
-    validate_summary(&needs, profile::Profile::from_environment()?)
-}
-fn validate_summary(needs: &serde_json::Value, profile: profile::Profile) -> DynResult<()> {
-    let jobs = needs.as_object().ok_or("needs must be an object")?;
-    let required = [
-        "plan",
-        "inference_contracts",
-        "quality",
-        "native_contracts",
-        "host",
-        "runtime",
-        "product",
-        "smoke",
-    ];
-    if jobs.len() != required.len()
-        || required.iter().any(|job| {
-            let expected = if profile == profile::Profile::Pr
-                && matches!(
-                    *job,
-                    "native_contracts" | "host" | "runtime" | "product" | "smoke"
-                ) {
-                "skipped"
-            } else {
-                "success"
-            };
-            jobs.get(*job)
-                .is_none_or(|value| value["result"] != expected)
-        })
-    {
-        return Err(format!("CI results do not satisfy the {} profile", profile.name()).into());
-    }
-    Ok(())
-}
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn skipped_and_missing_jobs_fail_summary() {
-        let mut jobs = serde_json::json!({
-            "plan": {"result": "success"},
-            "inference_contracts": {"result": "success"},
-            "quality": {"result": "success"},
-            "native_contracts": {"result": "success"},
-            "host": {"result": "success"},
-            "runtime": {"result": "success"},
-            "product": {"result": "success"},
-            "smoke": {"result": "success"}
-        });
-        validate_summary(&jobs, profile::Profile::Full).unwrap();
-        for result in ["skipped", "failure", "cancelled"] {
-            let mut changed = jobs.clone();
-            changed["native_contracts"]["result"] = result.into();
-            assert!(validate_summary(&changed, profile::Profile::Full).is_err());
-        }
-        let mut missing = jobs.clone();
-        missing.as_object_mut().unwrap().remove("native_contracts");
-        assert!(validate_summary(&missing, profile::Profile::Full).is_err());
-        jobs["product"]["result"] = "skipped".into();
-        assert!(validate_summary(&jobs, profile::Profile::Full).is_err());
-        jobs.as_object_mut().unwrap().remove("product");
-        assert!(validate_summary(&jobs, profile::Profile::Full).is_err());
-    }
-    #[test]
-    fn short_profile_requires_quality_and_declared_extended_skips() {
-        let jobs = serde_json::json!({
-            "plan": {"result": "success"},
-            "inference_contracts": {"result": "success"},
-            "quality": {"result": "success"},
-            "native_contracts": {"result": "skipped"},
-            "host": {"result": "skipped"},
-            "runtime": {"result": "skipped"},
-            "product": {"result": "skipped"},
-            "smoke": {"result": "skipped"}
-        });
-        validate_summary(&jobs, profile::Profile::Pr).unwrap();
-        assert!(validate_summary(&jobs, profile::Profile::Full).is_err());
-        for job in ["plan", "inference_contracts", "quality"] {
-            for result in ["skipped", "failure", "cancelled"] {
-                let mut changed = jobs.clone();
-                changed[job]["result"] = result.into();
-                assert!(validate_summary(&changed, profile::Profile::Pr).is_err());
-            }
-        }
-        let mut unexpected_native = jobs.clone();
-        unexpected_native["native_contracts"]["result"] = "success".into();
-        assert!(validate_summary(&unexpected_native, profile::Profile::Pr).is_err());
-        let mut missing = jobs.clone();
-        missing.as_object_mut().unwrap().remove("runtime");
-        assert!(validate_summary(&missing, profile::Profile::Pr).is_err());
-        let mut unexpected = jobs;
-        unexpected["runtime"]["result"] = "success".into();
-        assert!(validate_summary(&unexpected, profile::Profile::Pr).is_err());
-    }
-    #[test]
-    fn every_product_uses_its_hosted_target_runner() {
+    fn runtime_matrix_exports_host_and_accelerator_runner_metadata() {
         let matrix =
             matrix::Matrix::from_json(include_str!("../../../../ci/targets.json")).unwrap();
         let (_, runtimes) = project_matrix(&matrix).unwrap();

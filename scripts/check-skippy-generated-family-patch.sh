@@ -233,7 +233,7 @@ fi
 run_native_tests() {
   if [[ "${CTEST_PARALLEL_LEVEL:-1}" == 1 ]]; then
     ctest "${NATIVE_TEST_ARGS[@]}"
-    return
+    return $?
   fi
 
   # Each production-sized graph fits the bounded CI runner alone, but not
@@ -241,8 +241,10 @@ run_native_tests() {
   # let CTest admit these contracts and their fixtures exactly once, serially.
   local high_memory_tests='^skippy_(generate_contract|graph_contract)_(qwen4exp|nemotron)$'
   local high_memory_contracts='^skippy_graph_contract_(qwen4exp|nemotron)$'
-  ctest "${NATIVE_TEST_ARGS[@]}" -E "$high_memory_tests"
-  CTEST_PARALLEL_LEVEL=1 ctest "${NATIVE_TEST_ARGS[@]}" -R "$high_memory_contracts"
+  local result=0
+  ctest "${NATIVE_TEST_ARGS[@]}" -E "$high_memory_tests" || result=$?
+  CTEST_PARALLEL_LEVEL=1 ctest "${NATIVE_TEST_ARGS[@]}" -R "$high_memory_contracts" || return $?
+  return "$result"
 }
 
 if [[ "$compile_result" == pass ]] && \

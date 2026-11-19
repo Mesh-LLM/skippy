@@ -70,10 +70,23 @@ test('combined image workflow cannot be missed before it is scheduled', async ()
     assert.equal((await evaluate({ files: [{ filename }] })).state, 'pending');
     assert.equal((await evaluate({ files: [{ filename }], runs: [run('ci.yml'), run('inference.yml', 2), run('ci-images.yml', 3)] })).state, 'success');
   }
-  for (const filename of ['.gi/agents/code-review.yaml', 'docs-site/index.mdx']) {
+  for (const filename of ['.gi/agents/code-review.yaml', 'docs/site/index.mdx']) {
     assert.equal((await evaluate({ files: [{ filename }] })).state, 'success');
   }
   assert.equal((await evaluate({ files: [{ filename: 'archive/old-container', previous_filename: 'ci/Dockerfile' }] })).state, 'pending');
+});
+
+test('docs-only and mixed pull requests wait for the independently triggered documentation workflow', async () => {
+  const workflow = readFileSync(join(__dirname, '../workflows/docs.yml'), 'utf8');
+  assert.match(workflow, /pull_request:\n    paths:\n      - 'docs-site\/\*\*'/);
+  const normal = [run('ci.yml'), run('inference.yml', 2)];
+  for (const file of [{ filename: 'docs-site/index.mdx' },
+    { filename: 'archive/index.mdx', previous_filename: 'docs-site/index.mdx' }]) {
+    assert.equal((await evaluate({ files: [file], runs: normal })).state, 'pending');
+    assert.equal((await evaluate({ files: [file], runs: [...normal, run('docs.yml', 3, { event: 'push' })] })).state, 'pending');
+    assert.equal((await evaluate({ files: [file], runs: [...normal, run('docs.yml', 3)] })).state, 'success');
+    assert.equal((await evaluate({ files: [file], runs: [...normal, run('docs.yml', 3, { conclusion: 'failure' })] })).state, 'failure');
+  }
 });
 
 test('latest run and attempt govern reruns; old cancellations do not poison new results', async () => {

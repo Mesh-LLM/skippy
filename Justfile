@@ -242,9 +242,6 @@ ci-gpu-image-export backend:
     mv "$temporary_archive" "$archive"
     docker image inspect --format '{{"{{.Id}}"}}' skippy-ci-{{ backend }}:build > target/ci-image/skippy-ci-{{ backend }}.id
 
-ci-summary:
-    @cargo xtool ci summary
-
 ci-host host:
     @cargo xtool ci host "{{ host }}"
 
@@ -256,6 +253,9 @@ ci-package runtime host_dir runtime_dir:
 
 ci-smoke runtime product_dir:
     @cargo xtool ci smoke "{{ runtime }}" "{{ product_dir }}"
+
+ci-artifact-smoke runtime product_dir:
+    @cargo xtool ci artifact-smoke "{{ runtime }}" "{{ product_dir }}"
 
 ci: lint test llama-check
 
