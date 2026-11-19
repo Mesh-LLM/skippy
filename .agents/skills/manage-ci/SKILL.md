@@ -19,9 +19,12 @@ contract; no downstream product's workflow topology applies here.
   the previous two required checks until then, and retain all review protections.
 
 - `.github/workflows/ci.yml` owns code checks and package builds. Declarative
-  filters select code checks and require Linux x64 CUDA 13 and macOS ARM64 Metal
-  package and device smoke on inference PRs. The protected inference workflow
-  uses those same inference paths for the seven Spark configurations. The
+  native paths trigger CI on code or inference PRs and on code pushes to main.
+  Inside CI, declarative PR filters select code checks and require Linux x64
+  CUDA 13 and macOS ARM64 Metal package and device smoke on inference PRs.
+  The protected inference workflow uses the same inference paths in its native
+  trigger for the seven Spark configurations. `PR checks` reads protected
+  workflow trigger paths to determine which runs it expects. The
   quality and automation checks gate package jobs. Full CI runs Graph Contracts
   in parallel with eight build, package and smoke jobs. Each CPU job supplies a
   shared platform CLI to its backend jobs. Routine CI uses two device jobs and
