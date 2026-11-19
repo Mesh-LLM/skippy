@@ -109,6 +109,10 @@ runs:
         compression-level: 0
         overwrite: true
         retention-days: 7
+    - uses: ./.github/actions/report-sccache
+      if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
+      with:
+        artifact-prefix: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-package-${{ inputs.runtime-id }}
     - name: Upload build and smoke failure evidence
       if: failure()
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0

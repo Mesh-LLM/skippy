@@ -75,6 +75,8 @@ permissions:
   contents: read
   pull-requests: read
   statuses: write
+env:
+  CARGO_INCREMENTAL: '0'
 concurrency:
   group: inference-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
@@ -94,6 +96,9 @@ jobs:
           ref: main
           persist-credentials: false
       - uses: ./.github/actions/setup
+      - uses: ./.github/actions/sccache
+        with:
+          scope: inference-controller-${{ runner.os }}-${{ runner.arch }}
       - id: admission
         env:
           GH_TOKEN: ${{ github.token }}
@@ -104,6 +109,10 @@ jobs:
           SOURCE_SHA: ${{ steps.admission.outputs.source }}
           PROFILE: ${{ steps.admission.outputs.profile }}
         run: just automation-run inference matrix "$PROFILE" "$SOURCE_SHA"
+      - uses: ./.github/actions/report-sccache
+        if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
+        with:
+          artifact-prefix: inference-plan
   qualification:
     name: qualification (${{ matrix.id }})
     needs: plan
@@ -121,6 +130,9 @@ jobs:
           ref: main
           persist-credentials: false
       - uses: ./.github/actions/setup
+      - uses: ./.github/actions/sccache
+        with:
+          scope: inference-controller-${{ runner.os }}-${{ runner.arch }}
       - name: Dispatch and await native Spark qualification
         env:
           SOURCE_SHA: ${{ needs.plan.outputs.source }}
@@ -136,6 +148,10 @@ jobs:
           if test -f "$EVIDENCE/jobs.json"; then
             just inference-cancel "$EVIDENCE/jobs.json"
           fi
+      - uses: ./.github/actions/report-sccache
+        if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
+        with:
+          artifact-prefix: inference-controller-${{ matrix.id }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         if: always()
         with:

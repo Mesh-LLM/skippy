@@ -213,6 +213,11 @@ packages and qualification evidence. Dependency downloads are separate from
 compiled outputs, and the GitHub-backed sccache is not redundantly archived as a
 local disk cache.
 
+Jobs that initialize the shared compiler cache send Cargo and CMake C/C++
+compilation through sccache. The job logs and summary show cumulative compiler
+cache counters. The evidence artifacts include the JSON counters, and Quality
+canary captures them after lint and again after tests.
+
 Native jobs separately cache prepared llama.cpp sources by upstream pin, complete
 ordered patch queues and preparation recipe, and whisper.cpp sources by their
 pin and preparation recipe. Existing preparation commands still validate or
