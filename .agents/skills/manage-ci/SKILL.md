@@ -9,9 +9,13 @@ Read this file before inspecting or changing CI. This is the standalone Skippy
 contract; no downstream product's workflow topology applies here.
 
 - `.github/workflows/ci.yml` is the single implementation with explicit `pr`
-  and `full` profiles. Docs-only pull requests and main pushes do not start it.
-  Other changes run formatting, Clippy, unit/API tests, FFI freshness and
-  repository contracts. The separate protected inference workflow runs the
+  and `full` profiles. Declarative paths in `.github/path-filters.yml` select
+  code checks and reusable PR documentation validation; a lightweight result gate
+  always reports (`CI` for short runs, `Full CI gate` for full runs) and rejects
+  failed selection or missing selected results.
+  Code changes run formatting, Clippy, unit/API tests, FFI freshness and
+  repository contracts. The separate protected inference workflow uses the same
+  path filters from protected main and runs the
   seven short serving configurations for relevant trusted PRs. Nightly,
   release and reusable candidate validation use `full`, adding the complete
   native battery, host/runtime producers, packaging and hardware smoke. A short
@@ -19,9 +23,9 @@ contract; no downstream product's workflow topology applies here.
   requires every stage to succeed.
 - `.github/workflows/docs.yml` owns documentation validation. Docs pull requests
   build without credentials or publication, while protected-main docs changes
-  deploy the validated output to the beta site. Its pull-request job reports the
-  required `CI` check because path-filtered required workflows otherwise remain
-  pending. Release validation calls the same workflow to create the production
+  deploy the validated output to the beta site. PR CI calls this reusable workflow
+  for `docs-site/**` changes and waits for its uniquely named documentation job.
+  Release validation calls the same workflow to create the production
   documentation artifact.
 - `.github/workflows/ci-image.yml` owns the standalone `skippy-ci-cpu` dependency
   image. PRs build and qualify offline without publication credentials; main
@@ -42,8 +46,9 @@ contract; no downstream product's workflow topology applies here.
   artifacts for disabled hosts or describe those hosts as qualified.
   Keep CLI builds backend-neutral and build each host once. Package by copying
   exact verified producer outputs; consumers must not rebuild missing inputs.
-- Keep policy and orchestration in typed Rust under `tools/xtask`. Just recipes
-  and platform adapters are thin. Do not add Python or generic shell policy.
+- Keep workflow path routing declarative in YAML. Build and qualification
+  commands remain typed Rust under `tools/xtask`; Just recipes and platform
+  adapters stay thin. Do not add Python or generic shell policy.
 - All builds use Just. Run Cargo serially within one checkout. Include both
   Rust workspaces, full crate tests, FFI contracts, and native API contracts.
 - Ordinary tests are offline. Model admission is explicit and digest-bound.

@@ -2,7 +2,6 @@
 mod admission;
 mod artifacts;
 mod build;
-mod changes;
 mod comment;
 mod corpus;
 mod dispatch;
@@ -70,8 +69,6 @@ pub fn run(args: &[String]) -> DynResult<()> {
     {
         ["build"] => build::run(),
         ["admit"] => admission::run(),
-        ["inputs", base, head, output] => changes::inspect(base, head, Path::new(output)),
-        ["summary"] => summary::run(),
         ["comment", directory] => comment::run(Path::new(directory)),
         ["control-preflight"] => {
             let result = dispatch::api("GET", "/v1/repos/skippy", None)?;

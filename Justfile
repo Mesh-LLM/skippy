@@ -147,9 +147,6 @@ inference-plan profile source output="target/ci-evidence/inference-plan.json":
 inference-contracts:
     @cargo test --locked -p xtask inference::
 
-inference-inputs base head output="target/ci-evidence/inference-inputs.json":
-    @cargo xtool inference inputs "{{ base }}" "{{ head }}" "{{ output }}"
-
 inference-dispatch profile source output="target/ci-evidence/inference":
     @cargo xtool inference dispatch "{{ profile }}" "{{ source }}" "{{ output }}"
 
