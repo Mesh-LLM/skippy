@@ -1,6 +1,9 @@
 """Offline checks for inference planning and protected placement."""
 
+import os
 import unittest
+from pathlib import Path
+from runpy import run_path
 from unittest.mock import patch
 
 from lib import inference_ladder
@@ -59,6 +62,30 @@ class PlacementTests(unittest.TestCase):
         self.assertEqual(placement(agents, "controller", 0, source), ("first", "second"))
         with self.assertRaises(ValueError):
             placement(agents, "controller", 0, "b" * 40)
+
+
+class ReleaseAdmissionTests(unittest.TestCase):
+    def test_only_the_staged_commit_from_protected_release_dispatch_is_admitted(self):
+        admission = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))
+        admit = admission["admit_release_candidate"]
+        candidate, base = "a" * 40, "b" * 40
+        env = {
+            "GITHUB_EVENT_NAME": "workflow_dispatch",
+            "GITHUB_REF": "refs/heads/main",
+            "GITHUB_WORKFLOW_REF": "general-inference/skippy/.github/workflows/release.yml@refs/heads/main",
+            "GITHUB_RUN_ID": "123",
+            "GITHUB_SHA": base,
+        }
+        ref = {"object": {"sha": candidate}}
+        commit = {"parents": [{"sha": base}], "message": "Release\n\nSkippy-Release-Run: 123"}
+        with patch.dict(os.environ, env):
+            with patch.dict(admit.__globals__, github=lambda path: ref if "/ref/" in path else commit):
+                admit(candidate)
+                with self.assertRaisesRegex(ValueError, "does not belong"):
+                    admit("c" * 40)
+                with patch.dict(os.environ, GITHUB_REF="refs/heads/branch"):
+                    with self.assertRaisesRegex(ValueError, "protected Release dispatch"):
+                        admit(candidate)
 
 
 if __name__ == "__main__":

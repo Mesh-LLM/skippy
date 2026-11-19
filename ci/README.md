@@ -107,9 +107,9 @@ logs and patch reports.
 `main`. It installs the lockfile, builds Nextra, generates the Pagefind index
 and retains `docs-site/out`. The protected PR aggregate waits for this workflow
 on docs-only and mixed PRs. Only the main push deploys to `beta.skippy.sh`.
-The tagged release calls the workflow to create the `release-docs-site` artifact.
+Release validation calls the workflow to create the `release-docs-site` artifact.
 
-For a version tag, the release workflow downloads that exact
+The release workflow downloads that exact
 `release-docs-site` artifact after validation and GitHub release publication,
 then deploys it to `skippy.sh` with `just docs-publish`. The publication job
 does not rebuild the site. It installs the lockfile-pinned `cf` CLI and exposes
@@ -120,7 +120,7 @@ secret. Create it from Cloudflare's **Edit Cloudflare Workers** token template
 and scope it to the account that owns the `skippy-docs`, `skippy-docs-beta`,
 `skippy.sh` and `beta.skippy.sh` resources. The workflow maps it to the
 `CLOUDFLARE_API_TOKEN` environment variable expected by `cf` only in the
-protected-main beta deploy step and the tagged-release production deploy step.
+protected-main beta deploy step and the release production deploy step.
 Pull requests, documentation builds and shared release validation do not
 receive this secret.
 
@@ -318,6 +318,39 @@ metadata. Product provenance hashes the complete file roster. Actions artifacts
 are same-run transfer inputs, never cross-run cache authority. CI has no
 publication or signing secrets.
 
+## Cut a release
+
+Run `just release vX.Y.Z`, or dispatch **Release** from `main` in GitHub
+Actions. For a rehearsal, run `just release vX.Y.Z true`. The canary stages a
+temporary candidate and runs the full package, device, inference and docs
+matrix. It leaves `main`, version tags, GitHub releases and deployed docs
+untouched.
+
+The workflow creates one version commit from the dispatched main SHA. The
+commit updates workspace crate versions, internal path dependency pins and
+`Cargo.lock`. The candidate ref under `release-candidates/` lets native
+runners fetch the same SHA as hosted builds. The full matrix produces the
+release manifest before the publisher receives any credentials.
+
+Set up a repository-scoped release GitHub App with Contents write permission
+and authorize it to fast-forward protected `main`. Configure the `release`
+environment to accept deployments from `main`, with `SKIPPY_RELEASE_APP_ID` as
+a variable and `SKIPPY_RELEASE_APP_PRIVATE_KEY` as a secret. The temporary
+candidate namespace must be writable by the repository Actions token. Keep
+the release tag deletion and non-fast-forward protections in place.
+
+Once the candidate passes, the publisher advances `main` and creates the new
+tag in one atomic push, then publishes the verified archives and deploys the
+prebuilt docs. Main CI reuses the protected Release run's validation receipt
+for that exact commit. An ordinary push without a matching receipt runs
+ordinary CI.
+
+If `main` moves before promotion, dispatch again from the new `main`. If
+publication fails after promotion, rerun the failed jobs in the original run
+while its artifacts remain available. This reuses the same commit, tag and
+archives. Completed runs remove their temporary refs. Failed runs retain
+theirs for retry and diagnosis.
+
 ## Llama upgrades
 
 `llama-upgrade.yml` runs from protected main. The controller resolves a release
@@ -346,8 +379,9 @@ and label are fixture compatibility data, not a downstream product dependency.
 ## Bring-up evidence
 
 Before requiring CI, execute a complete PR and main run and prove the summary
-rejects a failed row. Then exercise a prerelease tag, verify all enabled bundles,
-private authenticated downloads, clean installation and CPU/Metal/CUDA serving.
+rejects a failed row. Then exercise a canary and a dispatched prerelease. Verify
+all enabled bundles, private authenticated downloads, clean installation and
+CPU/Metal/CUDA serving.
 Exercise partial draft upload recovery and published-release overwrite refusal.
 Only after source regeneration, both full candidate passes and exact-commit PR
 publication work should the llama schedule be enabled.
