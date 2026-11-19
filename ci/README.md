@@ -167,7 +167,31 @@ rebuilding or running the image. Run manual refreshes with
 This PR only bootstraps the image; consumer adoption follows after publication.
 Future consumers use `latest` and include `/etc/skippy-ci-image-id` in build-cache
 keys. Private same-repository pulls use `GITHUB_TOKEN` with `packages: read`.
-Future GPU images can use `skippy-ci-rocm` and `skippy-ci-cuda`.
+
+### CUDA and ROCm compiler images
+
+`.github/workflows/ci-gpu-images.yml` builds
+`ghcr.io/general-inference/skippy-ci-cuda12`,
+`ghcr.io/general-inference/skippy-ci-cuda13`, and
+`ghcr.io/general-inference/skippy-ci-rocm` from digest-pinned vendor development
+images. CUDA 12.9.2 and 13.1.2 use separate images, matching `targets.json`, so
+each image carries one complete toolkit without exceeding hosted-runner disk
+capacity. Each CUDA image compiles a small kernel with its toolkit. All three
+images carry the Rust and native build tools used by the CPU image; the ROCm
+image also compiles a backend-specific kernel during the image build. PRs build,
+smoke, and stream each exact image into a gzip-compressed archive without
+publication credentials. Protected-main publication loads those same
+artifacts, checks their image IDs, source revisions, backend and toolkit labels,
+then pushes immutable build tags and `latest`.
+
+The kernel compiler probes and container smoke establish compiler/toolkit image
+contents only. They do not execute GPU kernels and cannot qualify a GPU runtime;
+device evidence still comes from the matching CUDA/ROCm inference jobs.
+Run `just ci-gpu-image-build cuda12 BASE_IMAGE 12.9.2`,
+`just ci-gpu-image-build cuda13 BASE_IMAGE 13.1.2`, or
+`just ci-gpu-image-build rocm BASE_IMAGE 7.2.4`, then the matching smoke and
+export recipes. The exact, digest-pinned base references are in the workflow
+matrix.
 
 ### Source and build caches
 
