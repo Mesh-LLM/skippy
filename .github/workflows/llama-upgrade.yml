@@ -91,6 +91,9 @@ jobs:
   candidate_ci:
     needs: candidate
     if: needs.candidate.outputs.certify == 'true'
+    permissions:
+      contents: read
+      packages: read
     uses: ./.github/workflows/ci.yml
     with:
       artifact_scope: upgrade-candidate
@@ -147,6 +150,9 @@ jobs:
           retention-days: 14
   independent_ci:
     needs: [candidate, candidate_ci, candidate_families]
+    permissions:
+      contents: read
+      packages: read
     uses: ./.github/workflows/ci.yml
     with:
       artifact_scope: upgrade-independent
