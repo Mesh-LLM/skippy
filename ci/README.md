@@ -93,11 +93,11 @@ quality; the final gate requires every producer and smoke result.
 Compilation never counts as device evidence.
 
 The CPU-only `quality` job runs on GitHub-hosted `ubuntu-24.04` inside
-`ghcr.io/general-inference/skippy-ci-cpu:latest`, keeping lab capacity available
-for device qualification. The image supplies the pinned Rust toolchain, Just,
-sccache, build-essential, mold and LLVM/Clang 22 development inputs. The job
-verifies its tools before running the existing checks and pulls the private
-image with its own `GITHUB_TOKEN` using `packages: read`.
+`ghcr.io/general-inference/skippy-ci-cpu:latest` for lint, tests and FFI binding
+freshness. The image supplies the pinned Rust toolchain, Just, sccache,
+build-essential, mold and LLVM/Clang 22 development inputs. The job verifies
+its tools and pulls the private image with its own `GITHUB_TOKEN` using
+`packages: read`.
 
 Cargo and CMake compilation use two workers to fit standard private-repository
 hosted capacity. Cargo build snapshots, protected admission snapshots and
@@ -106,6 +106,11 @@ compiled-output namespace. Cargo downloads use separate container cache scopes
 to avoid restoring archives made with hosted-VM home/workspace paths. Native
 source caches remain shared. Protected candidate admission precedes build-cache
 restoration and compiler-cache credential export.
+
+In full CI, `Llama native contracts` runs `just llama-check` in parallel with
+`quality` on the existing ephemeral Linux JY `native-contracts` runner group.
+It uploads graph verification logs and generated patch reports under the
+`native-contracts-evidence` artifact suffix.
 Metal/CUDA runtime and model inference jobs retain their dedicated lab routing.
 
 `docs.yml` validates `docs-site/**` changes through a reusable call from PR CI.
@@ -273,14 +278,11 @@ only orchestrates these jobs, so the 6 GiB runner-container limit does not bound
 model execution. Split jobs reserve both Sparks atomically. This policy does not
 prove live JY configuration.
 
-Quality and upstream candidate generation are the toolchain-specific exceptions
-to ordinary hosted CPU work. Quality accepts either 64-bit Linux architecture;
-candidate generation retains its Linux x86_64 lane. Both request a
-`native-contracts` builder with LLVM/Clang 22 development and CMake packages,
-Ninja, lld and `SKIPPY_REWRITER_LLVM_PREFIX` configured. The same generator tools
-must be available on full family builders. A standard hosted image without those
-development packages cannot run these gates; no job downloads system packages
-to disguise that prerequisite.
+Llama native contracts and upstream candidate generation use preprovisioned
+JY builders with LLVM/Clang 22 development and CMake packages, Ninja and lld.
+The contracts job accepts either 64-bit Linux architecture; candidate
+generation uses its Linux x86_64 lane. The same generator tools must be
+available on full family builders.
 
 Qwen3 dense smoke preparation is explicit: `just automation-run ci model-fetch`
 resolves the immutable public model URL and verifies the family manifest's size
@@ -309,9 +311,10 @@ Cargo validates manifests and dependencies during ordinary checks and builds.
 4. `ci smoke` receives that exact archive, admits the pinned model and runs the
    packaged server on its required CPU/Metal/CUDA device.
 5. `ci summary` requires plan, inference contracts and quality in short CI. Full
-   CI also requires every host, runtime, product and smoke result. Failed,
-   cancelled, absent and unexpectedly skipped required jobs all fail the
-   summary. Docs-only changes skip code builders and run documentation validation.
+   CI also requires llama native contracts and every host, runtime, product and
+   smoke result. Failed, cancelled, absent and unexpectedly skipped required
+   jobs all fail the summary. Docs-only changes skip code builders and run
+   documentation validation.
 
 The full-profile `Runtime test summary` checks `needs` using `jq` on hosted
 Ubuntu, without checkout, Rust setup or compilation. It uses the active runtime
