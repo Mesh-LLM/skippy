@@ -26,9 +26,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
-      source: ${{ steps.admission.outputs.source }}
-      required: ${{ steps.admission.outputs.required }}
-      profile: ${{ steps.admission.outputs.profile }}
+      source: ${{ steps.admission.outputs.source || github.event.pull_request.head.sha || github.sha }}
+      required: ${{ github.event_name != 'pull_request_target' || steps.paths.outputs.inference == 'true' }}
+      profile: ${{ steps.admission.outputs.profile || 'pr' }}
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       # Credentialed controller source always comes from protected main.
@@ -37,14 +37,22 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: paths
+        if: github.event_name == 'pull_request_target'
+        with:
+          predicate-quantifier: some-with-excludes
+          filters: .github/path-filters.yml
       - uses: ./.github/actions/setup
+        if: github.event_name != 'pull_request_target' || steps.paths.outputs.inference == 'true'
       - id: admission
+        if: github.event_name != 'pull_request_target' || steps.paths.outputs.inference == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           QUALIFICATION_PROFILE: ${{ inputs.profile || 'release' }}
         run: just automation-run inference admit
       - id: matrix
-        if: steps.admission.outputs.required == 'true'
+        if: github.event_name != 'pull_request_target' || steps.paths.outputs.inference == 'true'
         env:
           SOURCE_SHA: ${{ steps.admission.outputs.source }}
           PROFILE: ${{ steps.admission.outputs.profile }}
@@ -95,12 +103,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          ref: main
-          persist-credentials: false
-      - uses: ./.github/actions/setup
       - name: Publish the source-bound conditional qualification gate
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ needs.plan.outputs.source || github.event.pull_request.head.sha || github.sha }}
@@ -108,11 +112,26 @@ jobs:
           REQUIRED: ${{ needs.plan.outputs.required }}
           RESULT: ${{ needs.qualification.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: just automation-run inference summary
+        with:
+          script: |
+            const { SOURCE_SHA: sha, PLAN: plan, REQUIRED: required, RESULT: result, RUN_URL: url } = process.env;
+            if (!/^[a-f0-9]{40}$/i.test(sha)) throw new Error('Invalid qualification source SHA');
+            const passed = plan === 'success' && (
+              (required === 'true' && result === 'success') ||
+              (required === 'false' && result === 'skipped')
+            );
+            const description = passed
+              ? (required === 'true' ? 'Native Spark lab qualification' : 'No inference inputs changed; model tests not required')
+              : 'Inference admission or qualification incomplete or failed';
+            await github.rest.repos.createCommitStatus({
+              ...context.repo, sha, context: 'Inference qualification',
+              state: passed ? 'success' : 'failure', description, target_url: url
+            });
+            if (!passed) core.setFailed(description);
 
   report:
     needs: [plan, qualification, summary]
-    if: always() && github.event_name == 'pull_request_target'
+    if: always() && github.event_name == 'pull_request_target' && needs.plan.outputs.required == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -124,7 +143,6 @@ jobs:
         with:
           ref: main
           persist-credentials: false
-      - uses: ./.github/actions/setup
       - name: Collect controller receipts when available
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         continue-on-error: true
@@ -139,4 +157,4 @@ jobs:
           PLAN: ${{ needs.plan.result }}
           REQUIRED: ${{ needs.plan.outputs.required }}
           RESULT: ${{ needs.qualification.result }}
-        run: just automation-run inference comment target/inference-comment
+        run: bash scripts/inference-report.sh target/inference-comment
