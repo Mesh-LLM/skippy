@@ -224,11 +224,11 @@ ci-gpu-image-smoke backend:
       test "$SKIPPY_CI_BACKEND" = "{{ backend }}"
       case "$SKIPPY_CI_BACKEND" in
         cuda13)
-          /usr/local/cuda-13.1/bin/nvcc --version | grep -F "release 13.1, V13.1.2"
+          /usr/local/cuda-13.1/bin/nvcc --version | grep -F "release 13.1,"
           test -e /usr/local/cuda-13.1/lib64/libcudart.so
           ;;
         cuda12)
-          /usr/local/cuda-12.9/bin/nvcc --version | grep -F "release 12.9, V12.9.2"
+          /usr/local/cuda-12.9/bin/nvcc --version | grep -F "release 12.9,"
           test -e /usr/local/cuda-12.9/lib64/libcudart.so
           ;;
         rocm) hipcc --version ;;

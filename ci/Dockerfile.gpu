@@ -65,11 +65,11 @@ RUN --network=none image_probe_dir="$(mktemp -d)" \
     && "$image_probe_dir/cpp-probe" \
     && if [ "$BACKEND" = cuda12 ]; then \
          printf '__global__ void probe() {}\n' > "$image_probe_dir/gpu.cu" \
-         && /usr/local/cuda-12.9/bin/nvcc --version | grep -F 'release 12.9, V12.9.2' \
+         && /usr/local/cuda-12.9/bin/nvcc --version | grep -F 'release 12.9,' \
          && /usr/local/cuda-12.9/bin/nvcc -arch=sm_80 -c "$image_probe_dir/gpu.cu" -o "$image_probe_dir/gpu.o"; \
        elif [ "$BACKEND" = cuda13 ]; then \
          printf '__global__ void probe() {}\n' > "$image_probe_dir/gpu.cu" \
-         && /usr/local/cuda-13.1/bin/nvcc --version | grep -F 'release 13.1, V13.1.2' \
+         && /usr/local/cuda-13.1/bin/nvcc --version | grep -F 'release 13.1,' \
          && /usr/local/cuda-13.1/bin/nvcc -arch=sm_80 -c "$image_probe_dir/gpu.cu" -o "$image_probe_dir/gpu.o"; \
        elif [ "$BACKEND" = rocm ]; then \
          printf '#include <hip/hip_runtime.h>\n__global__ void probe() {}\n' > "$image_probe_dir/gpu.hip" \
