@@ -57,8 +57,9 @@ jobs:
         with:
           name: skippy-ci-${{ matrix.backend }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            target/ci-image/skippy-ci-${{ matrix.backend }}.tar
+            target/ci-image/skippy-ci-${{ matrix.backend }}.tar.gz
             target/ci-image/skippy-ci-${{ matrix.backend }}.id
+          compression-level: 0
           if-no-files-found: error
           retention-days: 7
   publish:
@@ -95,7 +96,7 @@ jobs:
           SOURCE_REVISION: ${{ github.sha }}
         run: |
           set -euo pipefail
-          docker image load --input "image/skippy-ci-$BACKEND.tar"
+          docker image load --input "image/skippy-ci-$BACKEND.tar.gz"
           image="skippy-ci-$BACKEND:build"
           test "$(docker image inspect --format '{{.Id}}' "$image")" = "$(cat "image/skippy-ci-$BACKEND.id")"
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")" = "$SOURCE_REVISION"

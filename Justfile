@@ -237,9 +237,15 @@ ci-gpu-image-smoke backend:
     '
 
 ci-gpu-image-export backend:
-    @mkdir -p target/ci-image
-    @docker image save --output target/ci-image/skippy-ci-{{ backend }}.tar skippy-ci-{{ backend }}:build
-    @docker image inspect --format '{{"{{.Id}}"}}' skippy-ci-{{ backend }}:build > target/ci-image/skippy-ci-{{ backend }}.id
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p target/ci-image
+    archive="target/ci-image/skippy-ci-{{ backend }}.tar.gz"
+    temporary_archive="$archive.tmp"
+    trap 'rm -f "$temporary_archive"' EXIT
+    docker image save skippy-ci-{{ backend }}:build | gzip -1 > "$temporary_archive"
+    mv "$temporary_archive" "$archive"
+    docker image inspect --format '{{"{{.Id}}"}}' skippy-ci-{{ backend }}:build > target/ci-image/skippy-ci-{{ backend }}.id
 
 ci-summary:
     @cargo xtool ci summary

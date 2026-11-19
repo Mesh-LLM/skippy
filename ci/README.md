@@ -152,7 +152,7 @@ each image carries one complete toolkit without exceeding hosted-runner disk
 capacity. Each CUDA image compiles a small kernel with its toolkit. All three
 images carry the Rust and native build tools used by the CPU image; the ROCm
 image also compiles a backend-specific kernel during the image build. PRs build,
-smoke, and export each exact image without
+smoke, and stream each exact image into a gzip-compressed archive without
 publication credentials. Protected-main publication loads those same
 artifacts, checks their image IDs, source revisions, backend and toolkit labels,
 then pushes immutable build tags and `latest`.
