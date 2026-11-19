@@ -20,12 +20,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - backend: cuda
-            toolkit_version: '12.9.2,13.1.2'
+          - backend: cuda12
+            toolkit_version: '12.9.2'
+            toolkit_base: 'nvidia/cuda:12.9.2-devel-ubuntu24.04@sha256:420850a3fd665171b3f1fd08946c51d50468d732a46d6c42345ea04444755048'
+          - backend: cuda13
+            toolkit_version: '13.1.2'
             toolkit_base: 'nvidia/cuda:13.1.2-devel-ubuntu24.04@sha256:952e42d23230610a2714c8484f38e9c934ed68e6f9c9c7fac62dcd5f98858a6e'
           - backend: rocm
             toolkit_version: '7.2.4'
-            toolkit_base: 'rocm/dev-ubuntu-24.04:7.2.4-complete@sha256:92f309c51b52cef8762867848f1529dee821624f23cd5df38455e819538f762f'
+            toolkit_base: 'rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054'
     env:
       SKIPPY_CI_IMAGE_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.backend }}
       SOURCE_REVISION: ${{ github.sha }}
@@ -36,6 +39,10 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           cache: 'false'
+      - name: Free unused runner disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h /
       - name: Build image
         env:
           BACKEND: ${{ matrix.backend }}
@@ -66,7 +73,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        backend: [cuda, rocm]
+        include:
+          - backend: cuda12
+            toolkit_version: '12.9.2'
+          - backend: cuda13
+            toolkit_version: '13.1.2'
+          - backend: rocm
+            toolkit_version: '7.2.4'
     permissions:
       contents: read
       packages: write
@@ -78,7 +91,7 @@ jobs:
       - name: Load and verify tested image
         env:
           BACKEND: ${{ matrix.backend }}
-          TOOLKIT_VERSION: ${{ matrix.backend == 'cuda' && '12.9.2,13.1.2' || '7.2.4' }}
+          TOOLKIT_VERSION: ${{ matrix.toolkit_version }}
           SOURCE_REVISION: ${{ github.sha }}
         run: |
           set -euo pipefail

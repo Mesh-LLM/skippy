@@ -143,13 +143,16 @@ keys. Private same-repository pulls use `GITHUB_TOKEN` with `packages: read`.
 
 ### CUDA and ROCm compiler images
 
-`.github/workflows/ci-gpu-images.yml` builds `ghcr.io/general-inference/skippy-ci-cuda`
-and `ghcr.io/general-inference/skippy-ci-rocm` from separate digest-pinned NVIDIA
-CUDA 13.1.2 and AMD ROCm 7.2.4 development images. The CUDA image includes both
-supported CUDA toolkits from `targets.json`: 12.9.2 and 13.1.2. It compiles a
-small kernel with each toolkit. Both images carry the Rust and native build tools
-used by the CPU image. The ROCm image also compiles a backend-specific kernel
-during the image build. PRs build, smoke, and export both exact images without
+`.github/workflows/ci-gpu-images.yml` builds
+`ghcr.io/general-inference/skippy-ci-cuda12`,
+`ghcr.io/general-inference/skippy-ci-cuda13`, and
+`ghcr.io/general-inference/skippy-ci-rocm` from digest-pinned vendor development
+images. CUDA 12.9.2 and 13.1.2 use separate images, matching `targets.json`, so
+each image carries one complete toolkit without exceeding hosted-runner disk
+capacity. Each CUDA image compiles a small kernel with its toolkit. All three
+images carry the Rust and native build tools used by the CPU image; the ROCm
+image also compiles a backend-specific kernel during the image build. PRs build,
+smoke, and export each exact image without
 publication credentials. Protected-main publication loads those same
 artifacts, checks their image IDs, source revisions, backend and toolkit labels,
 then pushes immutable build tags and `latest`.
@@ -157,7 +160,8 @@ then pushes immutable build tags and `latest`.
 The kernel compiler probes and container smoke establish compiler/toolkit image
 contents only. They do not execute GPU kernels and cannot qualify a GPU runtime;
 device evidence still comes from the matching CUDA/ROCm inference jobs.
-Run `just ci-gpu-image-build cuda BASE_IMAGE 12.9.2,13.1.2` or
+Run `just ci-gpu-image-build cuda12 BASE_IMAGE 12.9.2`,
+`just ci-gpu-image-build cuda13 BASE_IMAGE 13.1.2`, or
 `just ci-gpu-image-build rocm BASE_IMAGE 7.2.4`, then the matching smoke and
 export recipes. The exact, digest-pinned base references are in the workflow
 matrix.

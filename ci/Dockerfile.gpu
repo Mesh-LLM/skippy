@@ -19,14 +19,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git libclang-dev libclang-rt-dev libcurl4-openssl-dev libedit-dev \
       libssl-dev libzstd-dev lld llvm-dev mold ninja-build patchelf pkg-config \
       rustup xz-utils zlib1g-dev zstd \
-    && if [ "$BACKEND" = cuda ]; then \
-         apt-get install -y --no-install-recommends cuda-toolkit-12-9=12.9.2-1; \
-       fi \
     && rm -rf /var/lib/apt/lists/*
 
 ENV CARGO_HOME=/opt/rust/cargo \
     RUSTUP_HOME=/opt/rust/rustup \
-    PATH=/opt/rust/cargo/bin:/usr/local/cuda-13.1/bin:/usr/local/cuda-12.9/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/rocm/bin:/opt/rocm/llvm/bin \
+    PATH=/opt/rust/cargo/bin:/usr/local/cuda/bin:/usr/local/cuda-13.1/bin:/usr/local/cuda-12.9/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/rocm/bin:/opt/rocm/llvm/bin \
     CC=/usr/bin/clang \
     CXX=/usr/bin/clang++ \
     LIBCLANG_PATH=/usr/lib/llvm-18/lib \
@@ -66,12 +63,14 @@ RUN --network=none image_probe_dir="$(mktemp -d)" \
     && clang++ -std=c++23 -Wall -Wextra -Werror -fuse-ld=lld -fsanitize=address,undefined \
       "$image_probe_dir/probe.cpp" -o "$image_probe_dir/cpp-probe" \
     && "$image_probe_dir/cpp-probe" \
-    && if [ "$BACKEND" = cuda ]; then \
+    && if [ "$BACKEND" = cuda12 ]; then \
+         printf '__global__ void probe() {}\n' > "$image_probe_dir/gpu.cu" \
+         && /usr/local/cuda-12.9/bin/nvcc --version | grep -F 'release 12.9, V12.9.2' \
+         && /usr/local/cuda-12.9/bin/nvcc -arch=sm_80 -c "$image_probe_dir/gpu.cu" -o "$image_probe_dir/gpu.o"; \
+       elif [ "$BACKEND" = cuda13 ]; then \
          printf '__global__ void probe() {}\n' > "$image_probe_dir/gpu.cu" \
          && /usr/local/cuda-13.1/bin/nvcc --version | grep -F 'release 13.1, V13.1.2' \
-         && /usr/local/cuda-12.9/bin/nvcc --version | grep -F 'release 12.9, V12.9.2' \
-         && /usr/local/cuda-13.1/bin/nvcc -arch=sm_80 -c "$image_probe_dir/gpu.cu" -o "$image_probe_dir/gpu-13.o" \
-         && /usr/local/cuda-12.9/bin/nvcc -arch=sm_80 -c "$image_probe_dir/gpu.cu" -o "$image_probe_dir/gpu-12.o"; \
+         && /usr/local/cuda-13.1/bin/nvcc -arch=sm_80 -c "$image_probe_dir/gpu.cu" -o "$image_probe_dir/gpu.o"; \
        elif [ "$BACKEND" = rocm ]; then \
          printf '__global__ void probe() {}\n' > "$image_probe_dir/gpu.hip" \
          && hipcc --offload-arch=gfx942 -c "$image_probe_dir/gpu.hip" -o "$image_probe_dir/gpu.o"; \
