@@ -259,6 +259,11 @@ row fails rather than passing as a skip.
    cancelled, absent and unexpectedly skipped required jobs all fail the
    summary. Docs-only changes skip code builders and run documentation validation.
 
+The full-profile `Runtime test summary` checks `needs` using `jq` on hosted
+Ubuntu, without checkout, Rust setup or compilation. It uses the active runtime
+matrix already validated by `plan` and requires that exact smoke-job roster plus
+the successful plan; missing, extra, skipped, failed or cancelled jobs fail it.
+
 Native runtime manifests retain the upstream pin, patch digest, ABI and backend
 metadata. Product provenance hashes the complete file roster. Actions artifacts
 are same-run transfer inputs, never cross-run cache authority. CI has no

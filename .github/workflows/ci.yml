@@ -125,8 +125,8 @@ jobs:
       - run: just inference-tool-check
       - name: Test inference results reporting
         run: bash scripts/tests/inference-report.sh
-      - name: Test aggregate PR gate
-        run: node --test .github/scripts/pr-checks.test.cjs
+      - name: Test workflow result gates
+        run: node --test .github/scripts/*.test.cjs
   quality:
     needs: plan
     env:
@@ -546,15 +546,23 @@ jobs:
     needs: [plan, smoke_darwin_aarch64_cpu, smoke_darwin_aarch64_metal, smoke_linux_x86_64_cpu, smoke_linux_x86_64_cuda12, smoke_linux_x86_64_cuda13, smoke_linux_aarch64_cpu, smoke_linux_aarch64_cuda12, smoke_linux_aarch64_cuda13]
     if: always() && needs.plan.outputs.profile == 'full'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-      - run: just automation-run ci smoke-summary
+      - name: Validate all runtime smoke-test results
         env:
           SKIPPY_CI_NEEDS: ${{ toJSON(needs) }}
+          RUNTIME_MATRIX: ${{ needs.plan.outputs.runtimes }}
+        run: |
+          jq -en --argjson needs "$SKIPPY_CI_NEEDS" --argjson matrix "$RUNTIME_MATRIX" '
+            ($matrix.include | map("smoke_" + (.id | gsub("-"; "_")))) as $jobs |
+            ($jobs + ["plan"] | sort) as $expected |
+            ($jobs | length) > 0 and
+            ($needs | keys) == $expected and
+            all($expected[]; $needs[.].result == "success")
+          ' || {
+            echo '::error::Plan and every active runtime smoke test must succeed, with no missing or unexpected jobs.'
+            exit 1
+          }
   summary:
     name: ${{ needs.plan.outputs.profile == 'full' && 'Full qualification' || 'Code checks' }}
     needs: [plan, inference_contracts, quality, host, runtime, product, smoke]

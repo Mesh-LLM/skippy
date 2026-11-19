@@ -31,6 +31,8 @@ contract; no downstream product's workflow topology applies here.
   native battery, host/runtime producers, packaging and hardware smoke. A short
   summary accepts only its explicitly skipped extended stages; a full summary
   requires every stage to succeed.
+  The full-profile Runtime test summary uses `jq` and the already validated
+  plan matrix; it requires every expected smoke result without checkout or Rust setup.
 - `.github/workflows/docs.yml` owns documentation validation. Docs pull requests
   build without credentials or publication, while protected-main docs changes
   deploy the validated output to the beta site. PR CI calls this reusable workflow
