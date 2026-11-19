@@ -1,13 +1,15 @@
 """Offline checks for inference planning and protected placement."""
 
+import io
 import os
 import unittest
 from pathlib import Path
 from runpy import run_path
+from urllib.error import HTTPError
 from unittest.mock import patch
 
 from lib import inference_ladder
-from lib.jy_qualification import placement
+from lib.jy_qualification import Pilot, placement
 
 
 class LadderTests(unittest.TestCase):
@@ -44,6 +46,25 @@ class LadderTests(unittest.TestCase):
         with patch.object(inference_ladder, "read_json", return_value=ladder):
             with self.assertRaises(ValueError):
                 inference_ladder.plan("pr", self.sha)
+
+
+class PilotRequestTests(unittest.TestCase):
+    def test_jy_requests_identify_the_client(self):
+        pilot = Pilot()
+        with patch.object(pilot.opener, "open") as send:
+            send.return_value.__enter__.return_value.read.return_value = b'{"ok":true}'
+            self.assertEqual(pilot.request("POST", "/v1/auth/challenge", {}), {"ok": True})
+        request = send.call_args.args[0]
+        self.assertEqual(request.get_header("User-agent"), "skippy-inference-ci/1.0")
+
+    def test_authentication_failures_name_the_endpoint_and_redact_the_response(self):
+        pilot = Pilot()
+        response = HTTPError("https://pilot.jianyang.cloud/v1/auth/login", 403, "Forbidden",
+                             {}, io.BytesIO(b"sensitive authentication response"))
+        with patch.object(pilot.opener, "open", side_effect=response):
+            with self.assertRaisesRegex(RuntimeError,
+                                        r"^JY HTTP 403: /v1/auth/login authentication request failed$"):
+                pilot.request("POST", "/v1/auth/login", {})
 
 
 class PlacementTests(unittest.TestCase):
