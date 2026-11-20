@@ -11,6 +11,8 @@ use std::{
 };
 
 const COMMIT: &str = "0123456789012345678901234567890123456789";
+mod inspection;
+
 fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
@@ -83,6 +85,7 @@ struct PackageServer {
     endpoint: String,
     stop: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
+    requests: Arc<Mutex<Vec<String>>>,
 }
 impl PackageServer {
     fn new(files: BTreeMap<String, Vec<u8>>) -> Self {
@@ -90,6 +93,20 @@ impl PackageServer {
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
         let stop = Arc::new(AtomicBool::new(false));
         let shutdown = stop.clone();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let request_log = requests.clone();
+        let tree = serde_json::to_vec(
+            &files
+                .iter()
+                .map(|(path, bytes)| {
+                    serde_json::json!({
+                        "type": "file", "oid": sha256_hex(bytes), "size": bytes.len(), "path": path
+                    })
+                })
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        let revision_info = serde_json::to_vec(&serde_json::json!({ "sha": COMMIT })).unwrap();
         let worker = std::thread::spawn(move || {
             for stream in listener.incoming() {
                 if shutdown.load(Ordering::SeqCst) {
@@ -109,8 +126,17 @@ impl PackageServer {
                     }
                 }
                 let path = request.split_whitespace().nth(1).unwrap();
-                let name = path.split_once("/resolve/main/").map(|(_, name)| name);
-                let body = name.and_then(|name| files.get(name));
+                request_log.lock().unwrap().push(path.to_owned());
+                let path = path.split('?').next().unwrap();
+                let body = if path == "/api/models/owner/repo/revision/main" {
+                    Some(&revision_info)
+                } else if path.starts_with("/api/models/owner/repo/tree/") {
+                    Some(&tree)
+                } else {
+                    path.split_once("/resolve/")
+                        .and_then(|(_, rest)| rest.split_once('/'))
+                        .and_then(|(_, name)| files.get(name))
+                };
                 if let Some(body) = body {
                     write!(stream, "HTTP/1.1 200 OK\r\nETag: \"{}\"\r\nX-Repo-Commit: {COMMIT}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", sha256_hex(body), body.len()).unwrap();
                     if !request.starts_with("HEAD ") {
@@ -125,6 +151,7 @@ impl PackageServer {
             endpoint,
             stop,
             worker: Some(worker),
+            requests,
         }
     }
 }
