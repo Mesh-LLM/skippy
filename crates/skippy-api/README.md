@@ -97,6 +97,18 @@ owns publisher-declared live-KV dtype selection and model compatibility fallback
 conservative automatic pairing. Standalone Skippy and embedding applications consume these same
 policies. Explicit caller settings take precedence.
 
+### Serving profiles
+
+Use `serving_profile::resolve` with an existing stage and frontend baseline,
+shared defaults and model-specific overrides. `Setting::Inherit` leaves the
+previous layer in effect, `Setting::Set` carries an explicit value, and
+`Setting::Reset` restores the baseline. The result includes per-setting
+provenance. Request defaults and speculative policy are typed replacements.
+Mesh can translate its own configuration into these inputs.
+
+Standalone `serve --print-effective-config` and the pre-load path use the
+same stage validation. Single-model TOML, environment variables, CLI
+precedence and the report fields remain compatible.
 ## Resolving a package for stage planning
 
 Use `PackageAcquisition::resolve_and_inspect_package` with the original local or Hugging Face reference. Mesh and other embedding hosts can replace their schema checks, cache fallback, and metadata inspection calls with this operation. Keep passing the existing explicit cache root, lazy Hub client factory, and progress observer to `PackageAcquisition`.

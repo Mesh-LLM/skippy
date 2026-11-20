@@ -115,7 +115,7 @@ impl ModelOptions {
         self.stage.model_path = model_path.clone();
         let runtime = self.runtime.activate()?;
         let identity =
-            crate::source::synthetic_direct_gguf_package(&self.stage.model_id, &model_path, None)
+            crate::source::synthetic_direct_gguf_package(&self.stage.model_id, &model_path)
                 .map_err(|cause| ExecutionError::new(ExecutionErrorKind::InvalidPackage, cause))?;
         let scope = InferenceExecutionScope::new();
         let config = single_stage_config(&self.stage, identity.into(), scope.to_string())

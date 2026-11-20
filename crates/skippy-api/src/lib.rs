@@ -19,6 +19,7 @@ pub mod stage_load;
 
 pub mod native_runtime;
 pub mod serving;
+pub mod serving_profile;
 
 #[cfg(feature = "dynamic-native-runtime")]
 pub mod execution;

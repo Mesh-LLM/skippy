@@ -31,7 +31,7 @@ impl SplitOptions {
         let path = local_model_path(&options.model_path)?;
         let runtime = self.model.runtime.activate()?;
         runtime.stage_compatibility().require_peer(&self.peer)?;
-        let identity = synthetic_direct_gguf_package(&options.model_id, &path, None)
+        let identity = synthetic_direct_gguf_package(&options.model_id, &path)
             .map_err(|cause| ExecutionError::new(ExecutionErrorKind::InvalidPackage, cause))?;
         let scope = InferenceExecutionScope::new();
         let (configs, topology) = self
