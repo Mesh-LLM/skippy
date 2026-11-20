@@ -56,6 +56,12 @@ pub enum Command {
     Prompt(PromptArgs),
     /// Serve OpenAI and Anthropic APIs, or an explicitly selected stage transport.
     Serve(Box<ServeCommandArgs>),
+    /// Run an inference listener with local model lifecycle controls.
+    #[cfg(unix)]
+    ServeManaged(crate::managed::ServerArgs),
+    /// Operate a running server over its private Unix control socket.
+    #[cfg(unix)]
+    Manage(crate::managed::ClientArgs),
     ExampleConfig,
     /// Download models or inspect the shared Hugging Face cache.
     Models {
