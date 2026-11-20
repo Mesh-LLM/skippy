@@ -18,6 +18,8 @@ fn serve_rejects_an_explicit_checkpoint_before_resolving_it() {
         .env("HF_HOME", temp.path())
         .env("HF_ENDPOINT", "http://127.0.0.1:1")
         .args([
+            "--output",
+            "human",
             "serve",
             "--model",
             "owner/repo/model.safetensors.index.json",
