@@ -332,6 +332,13 @@ impl ServeSettings {
         Ok(plan)
     }
 
+    pub(crate) fn allows_default_draft(&self) -> bool {
+        OPTIONS
+            .iter()
+            .filter(|spec| spec.target.starts_with("spec.") && self.values.contains_key(spec.name))
+            .all(|spec| spec.name == "speculative-strategy" && self.text(spec.name) == Some("auto"))
+    }
+
     pub fn has_speculative_overrides(&self) -> bool {
         OPTIONS
             .iter()

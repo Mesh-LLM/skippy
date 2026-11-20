@@ -136,9 +136,20 @@ async fn serve_public(args: ServeCommandArgs) -> Result<()> {
     let startup_timeout = Duration::from_secs(args.public.startup_timeout_secs.max(1));
     console::status("🧠 Preparing model")?;
     let settings = args.public.settings.clone();
+    let discover_draft = args.public.speculative_config.is_none();
     let mut options = conversion::local_openai_options(args.public)?;
+    let draft = if discover_draft {
+        crate::draft::prepare_default_draft(&mut options, &settings, args.print_effective_config)
+            .await
+    } else {
+        None
+    };
     if args.print_effective_config {
-        let frontend = options.resolved_openai_options()?;
+        let mut frontend = options.resolved_openai_options()?;
+        if let Some(draft) = &draft {
+            draft.apply_to(&mut frontend);
+            options.config.native_mtp_enabled = false;
+        }
         return console::write_json(&settings.report(
             &options.config,
             Some(&frontend),
@@ -156,7 +167,14 @@ async fn serve_public(args: ServeCommandArgs) -> Result<()> {
     let (shutdown, shutdown_requested) = track_shutdown_request(async move {
         tokio::select! { _ = shutdown => {}, _ = stopped => {} }
     });
-    let server = skippy_api::serving::serve_local_openai_with_shutdown(options, shutdown);
+    let server = async move {
+        skippy_api::serving::serve_local_openai_with_default_draft(
+            options,
+            draft.as_ref(),
+            shutdown,
+        )
+        .await
+    };
     serve_with_readiness(
         ReadinessServer {
             future: server,

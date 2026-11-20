@@ -493,6 +493,11 @@ fn auto_speculation_preserves_local_and_binary_discovered_draft_paths() {
         } else {
             assert_eq!(frontend.draft_model_path, Some(expected_draft.clone()));
             assert_eq!(binary_frontend.draft_model_path, Some(expected_draft));
+            assert_eq!(frontend.speculative.effective_strategy, "draft-model");
+            assert_eq!(
+                binary_frontend.speculative.effective_strategy,
+                "draft-model"
+            );
         }
     }
 }

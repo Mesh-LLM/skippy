@@ -49,5 +49,6 @@ Shared serving defaults are defined by `SingleStageOptions` and `InferenceOption
 using [`skippy-config`](../skippy-config/README.md). [`kv_cache`](src/kv_cache.rs)
 owns publisher-declared live-KV dtype selection and model compatibility fallback;
 [`speculative`](src/speculative.rs) owns installed sibling draft discovery and
-conservative automatic pairing. Standalone Skippy and embedding applications consume these same
-policies. Explicit caller settings take precedence.
+the default DFlash-family pairing catalog, compatibility checks, and preparation
+policy. Standalone Skippy and embedding applications use the same resolver.
+See the [draft pairing policy and adapter guide](../../docs/design/SKIPPY_DRAFT_PAIRING.md).

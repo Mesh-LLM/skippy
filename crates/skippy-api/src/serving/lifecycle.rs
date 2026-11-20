@@ -18,12 +18,14 @@ use skippy_serving::{
 use super::{InferenceOptions, ServingTelemetryOptions};
 
 /// Whether the caller needs the native model-open event path, even without a sink.
+#[derive(Clone)]
 pub enum ModelOpenEvents {
     Disabled,
     Enabled(Option<Arc<skippy_runtime::ModelOpenEventQueue>>),
 }
 
 /// Explicit inputs; product configuration, plugin loading and event storage stay outside Skippy.
+#[derive(Clone)]
 pub struct ModelLoadRequest {
     pub runtime: EmbeddedRuntimeOptions,
     pub openai: InferenceOptions,
@@ -54,6 +56,25 @@ pub struct LoadedModelBackend {
 }
 
 impl ModelLoadRequest {
+    /// Try a verified default DFlash draft, then retry the original plan only
+    /// when the runtime cannot attach the draft.
+    pub fn load_with_default_draft(
+        self,
+        draft: &crate::speculative::PreparedDraft,
+    ) -> Result<LoadedModelBackend> {
+        let mut candidate = self.clone();
+        draft.apply_to(&mut candidate.openai);
+        candidate.runtime.config.native_mtp_enabled = false;
+        candidate.runtime.mtp_source = skippy_runtime::MtpSource::Disabled;
+        match candidate.load() {
+            Err(error) if skippy_serving::DFlashDraftAttachFailed::caused(&error) => {
+                tracing::warn!(%error, provenance = ?draft.provenance(), "default DFlash draft could not attach");
+                self.load()
+            }
+            result => result,
+        }
+    }
+
     pub fn load(mut self) -> Result<LoadedModelBackend> {
         self.size_recurrent_rollback();
         let config = self.runtime.config.clone();

@@ -58,6 +58,21 @@ pub struct LocalOpenAiOptions {
 }
 
 impl LocalOpenAiOptions {
+    /// Keep the target's native MTP or plain decode baseline when a higher
+    /// priority package or catalog default owns the draft choice.
+    pub fn keep_native_speculation_default(&mut self) {
+        self.speculative = Some(
+            InferenceOptions::embedded_stage_defaults(
+                None,
+                self.default_max_tokens,
+                1,
+                0,
+                self.config.native_mtp_enabled,
+            )
+            .speculative,
+        );
+    }
+
     pub fn resolved_openai_options(&self) -> Result<InferenceOptions> {
         self.tuning.validate()?;
         skippy_config::validate_config(&self.config, self.topology.as_ref())?;
@@ -214,11 +229,21 @@ pub async fn serve_local_openai_with_shutdown(
     options: LocalOpenAiOptions,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
+    serve_local_openai_with_default_draft(options, None, shutdown).await
+}
+
+/// Serve using a caller-prepared default draft and the existing fallback plan.
+pub async fn serve_local_openai_with_default_draft(
+    options: LocalOpenAiOptions,
+    draft: Option<&crate::speculative::PreparedDraft>,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
     let (bind_addr, request) = options.into_request()?;
-    request
-        .load()?
-        .serve_http_with_shutdown(bind_addr, shutdown)
-        .await
+    let loaded = match draft {
+        Some(draft) => request.load_with_default_draft(draft),
+        None => request.load(),
+    }?;
+    loaded.serve_http_with_shutdown(bind_addr, shutdown).await
 }
 
 #[cfg(test)]
