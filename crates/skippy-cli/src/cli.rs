@@ -52,6 +52,12 @@ impl From<OutputFormat> for skippy_commands::console::OutputMode {
 pub enum Command {
     /// Inspect hardware, caches, and the selected native runtime.
     Doctor,
+    /// Measure bandwidth and compute on the selected runtime's GPUs.
+    GpuBenchmark {
+        /// Maximum benchmark execution time in seconds.
+        #[arg(long, default_value_t = 120)]
+        timeout_secs: u64,
+    },
     /// Prompt a running Skippy OpenAI endpoint interactively.
     Prompt(PromptArgs),
     /// Serve OpenAI and Anthropic APIs, or an explicitly selected stage transport.
