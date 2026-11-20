@@ -65,14 +65,26 @@ def next_patch(version, tags):
     return f"{series}{max([patch, *(number + 1 for number in released)])}"
 
 
+def parents(commit):
+    git("fetch", "--no-tags", "--depth=1", "origin", commit, remote=True)
+    # The raw commit keeps its parents even where a shallow fetch cut history.
+    header = git("cat-file", "commit", commit, output=True).split("\n\n", 1)[0]
+    return [line.split()[1] for line in header.splitlines() if line.startswith("parent ")]
+
+
 def next_release():
     prefix = "refs/tags/"
     # A peeled entry sorts after its tag and gives an annotated tag's commit.
     rows = git("ls-remote", "--tags", "origin", f"{prefix}v*", remote=True, output=True)
     refs = sorted(row.split("\t")[::-1] for row in rows.splitlines())
     tags = {ref.removeprefix(prefix).removesuffix("^{}"): sha for ref, sha in refs}
-    if revision(os.environ["GITHUB_SHA"]) not in tags.values():
-        print(next_patch(workspace_version(), tags))
+    head = revision(os.environ["GITHUB_SHA"])
+    tag = next_patch(workspace_version(), tags)
+    series, patch = tag.rsplit(".", 1)
+    # A release tagged beside main is a version commit whose parent is the released head.
+    newest = tags.get(f"{series}.{int(patch) - 1}")
+    if head not in tags.values() and not (newest and head in parents(newest)):
+        print(tag)
 
 
 def stage(tag):

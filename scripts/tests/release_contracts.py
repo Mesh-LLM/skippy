@@ -108,6 +108,19 @@ class ReleaseContract(unittest.TestCase):
         self.env["GITHUB_SHA"] = self.git("rev-parse", "HEAD")
         self.assertEqual(self.release("next").stdout.strip(), "v0.80.1")
 
+    def test_automatic_release_skips_a_main_released_by_a_tag_beside_it(self):
+        self.git("tag", "v0.80.0")
+        self.git("commit", "--allow-empty", "-m", "change")
+        head = self.env["GITHUB_SHA"] = self.git("rev-parse", "HEAD")
+        self.git("push", "origin", "main", "refs/tags/v0.80.0")
+        self.git("commit", "--allow-empty", "-m", "release: prepare v0.80.1")
+        self.git("push", "origin", "HEAD:refs/tags/v0.80.1")
+        self.git("reset", "--hard", head)
+        self.assertEqual(self.release("next").stdout.strip(), "")
+        self.git("commit", "--allow-empty", "-m", "change")
+        self.env["GITHUB_SHA"] = self.git("rev-parse", "HEAD")
+        self.assertEqual(self.release("next").stdout.strip(), "v0.80.2")
+
     def test_stage_retry_and_atomic_promotion(self):
         candidate = self.stage()
         tag_ref = f"refs/tags/{TAG}"
