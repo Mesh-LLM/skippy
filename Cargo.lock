@@ -5235,6 +5235,7 @@ dependencies = [
  "skippy-config",
  "skippy-coordinator",
  "skippy-events",
+ "skippy-gpu-bench",
  "skippy-inference-api",
  "skippy-model-artifact",
  "skippy-model-hf",
@@ -5345,8 +5346,11 @@ dependencies = [
 name = "skippy-gpu-bench"
 version = "0.80.0"
 dependencies = [
+ "process-supervision",
  "serde",
  "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
  "tracing",
 ]
 
@@ -5464,6 +5468,7 @@ dependencies = [
  "hex",
  "libc",
  "regex-lite",
+ "reqwest 0.13.5",
  "rustls",
  "serde",
  "serde_json",
