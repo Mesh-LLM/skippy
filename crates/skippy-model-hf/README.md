@@ -13,6 +13,13 @@ The pure identity and selection crates stay registry-agnostic. This crate owns
 the Hugging Face edge: endpoint, token, cache layout, repo metadata, downloads,
 configured model catalog refresh and caching, and cache path identity recovery.
 
+`search` owns catalog and Hub discovery, bounded repository inspection, and
+shared response fields with an explicit fit budget. Its synchronous observer
+reports progress and inspection warnings; callers own rendering and command
+hints. `details` and `capabilities` inspect remote model metadata. `startup`
+preserves package passthrough, existing path, bare-name catalog, installed cache,
+then canonicalization and download selection, using resolver-owned source values.
+
 ```mermaid
 flowchart TB
     C["caller<br/>model resolver<br/>skippy-package-builder<br/>runtime package loader"] --> H["HfModelRepository"]
@@ -80,7 +87,7 @@ unchanged.
 - list model repository files at a resolved revision
 - download the selected artifact file set
 - download complete SafeTensors checkpoints (indexed shards, config, tokenizer,
-  and available sidecars) while returning named snapshot paths to model loaders
+  and available sidecars) for offline conversion using named snapshot paths
 - locate the default Hugging Face cache directory
 - derive `HfModelIdentity` and `ModelIdentity` from cached snapshot paths
 - scan local GGUF inventory and cache compact metadata for both products

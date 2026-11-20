@@ -146,9 +146,7 @@ pub(in crate::runner) fn run_full_model_decode(args: &RuntimeArgs) -> Result<Ful
         activation_import_bindings: Vec::new(),
         activation_export_identities: Vec::new(),
         activation_export_bindings: Vec::new(),
-        checkpoint_quantization: skippy_runtime::CheckpointQuantization::Preserve,
-        checkpoint_imatrix: None,
-        checkpoint_imatrix_sha256: None,
+
         cache_type_k: GGML_TYPE_F16,
         cache_type_v: GGML_TYPE_F16,
         flash_attn_type: runtime_flash_attn(args.flash_attn),
@@ -265,9 +263,7 @@ pub(in crate::runner) fn run_binary_split(args: BinarySplitConfig) -> Result<Bin
         activation_import_bindings: runtime_plans[0].activation_import_bindings.clone(),
         activation_export_identities: runtime_plans[0].activation_export_identities.clone(),
         activation_export_bindings: runtime_plans[0].activation_export_bindings.clone(),
-        checkpoint_quantization: skippy_runtime::CheckpointQuantization::Preserve,
-        checkpoint_imatrix: None,
-        checkpoint_imatrix_sha256: None,
+
         cache_type_k: GGML_TYPE_F16,
         cache_type_v: GGML_TYPE_F16,
         flash_attn_type: runtime_flash_attn(args.flash_attn),

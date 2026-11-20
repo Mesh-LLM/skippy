@@ -1,12 +1,15 @@
 pub mod blocking;
 mod cache_paths;
+pub mod capabilities;
 mod checkpoint;
+pub mod details;
 pub mod inventory;
 pub mod local_cache;
 pub mod package_cache;
 pub mod remote_catalog;
 pub mod repository_settings;
 pub mod search;
+pub mod startup;
 pub mod store;
 mod tls;
 
@@ -34,7 +37,7 @@ use hf_hub::{
 };
 use serde::{Deserialize, Serialize};
 use skippy_model_artifact::{
-    ModelArtifactFile, ModelFormat, ModelIdentity, ModelRepository, ResolvedModelArtifact,
+    ModelArtifactFile, ModelIdentity, ModelRepository, ResolvedModelArtifact,
 };
 use skippy_model_ref::{
     format_canonical_ref, format_model_ref, normalize_gguf_distribution_id,
@@ -105,21 +108,15 @@ impl HfModelRepository {
         artifact: &ResolvedModelArtifact,
         progress: Option<hf_hub::progress::Progress>,
     ) -> Result<Vec<PathBuf>> {
-        if artifact.format == ModelFormat::Safetensors {
-            let checkpoint = self
-                .download_checkpoint_with_progress(artifact, progress)
-                .await?;
-            return artifact
-                .files
-                .iter()
-                .map(|file| {
-                    checkpoint
-                        .iter()
-                        .find(|downloaded| downloaded.file.path == file.path)
-                        .map(|downloaded| downloaded.path.clone())
-                        .with_context(|| format!("checkpoint download omitted {}", file.path))
-                })
-                .collect();
+        for file in &artifact.files {
+            anyhow::ensure!(
+                Path::new(&file.path)
+                    .extension()
+                    .is_some_and(|ext| ext == "gguf"),
+                "expected a GGUF artifact file: {}. {}",
+                file.path,
+                skippy_model_ref::SAFETENSORS_SERVING_GUIDANCE
+            );
         }
         let mut paths = Vec::with_capacity(artifact.files.len());
         for file in &artifact.files {

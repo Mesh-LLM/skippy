@@ -129,6 +129,7 @@ mod tests {
     #[test]
     fn checkpoint_directory_fails_before_native_planning_or_publication() {
         let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("model.safetensors"), b"weights").unwrap();
         let args = PlanSplitCommand {
             model_path: root.path().to_owned(),
             model_id: None,
@@ -146,7 +147,7 @@ mod tests {
             run(args)
                 .unwrap_err()
                 .to_string()
-                .contains("requires a GGUF file")
+                .contains("Convert the SafeTensors checkpoint to GGUF")
         );
         assert!(!root.path().join("plan").exists());
     }

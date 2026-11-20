@@ -28,9 +28,10 @@ pub fn plan_direct_gguf(args: &SplitRequest) -> Result<AdmittedSplit> {
     } else {
         std::env::current_dir()?.join(&args.model_path)
     };
+    skippy_model_ref::validate_gguf_model_path(&path).map_err(anyhow::Error::msg)?;
     ensure!(
         path.is_file(),
-        "plan-split requires a GGUF file (the first shard for multipart models); safetensors directories are not supported"
+        "plan-split requires a GGUF file (the first shard for multipart models)"
     );
     let model_id = args.model_id.clone().unwrap_or_else(|| {
         path.file_stem()
@@ -38,7 +39,7 @@ pub fn plan_direct_gguf(args: &SplitRequest) -> Result<AdmittedSplit> {
             .unwrap_or("local-model")
             .into()
     });
-    let identity = source::synthetic_direct_gguf_package(&model_id, &path, None)?;
+    let identity = source::synthetic_direct_gguf_package(&model_id, &path)?;
     ensure!(
         args.expected_manifest_sha256
             .as_ref()

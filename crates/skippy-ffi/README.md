@@ -105,10 +105,13 @@ same Rust crate.
 
 ## ABI Contract
 
-The staged ABI is versioned as `0.1.86`. The patch header in
+The staged ABI is versioned as `0.1.87`. The patch header in
 `llama_cpp/patches/` and the Rust constants in
 `crates/skippy-ffi/src/lib.rs` are the source of truth, so keep this README
 aligned with those files instead of treating it as canonical prose.
+
+ABI `0.1.87` removes the callback-backed checkpoint loader. The staged
+model loaders accept GGUF files and GGUF package parts.
 
 ABI `0.1.80` adds `mtmd_helper_get_decode_budget`, the load-time probe a caller
 uses to cap a non-causal projector's vision token budget to its decode batch
@@ -233,7 +236,6 @@ read it directly:
 | `NATIVE_MTP_N1` | `1 << 25` | Typed, non-frame native MTP draft sideband |
 | `NGRAM_CACHE_DRAFT` | `1 << 26` | Stateful request-local llama.cpp `ngram-cache` proposer |
 | `ACTIVATION_BOUNDARY` | `1 << 29` | Graph activation-boundary negotiation between adjacent stages (main-owned, unrelated to runtime events) |
-| `MODEL_SOURCE` | `1 << 30` | Callback-backed `ModelTensorSourceV1` model source for direct SafeTensors loading (main-owned, unrelated to runtime events) |
 | `RUNTIME_EVENT_REPORTER` | `1 << 31` | `skippy_set_runtime_event_reporter`/`skippy_clear_runtime_event_reporter` process-global reporter |
 | `MODEL_LOAD_EVENTS_V2` | `1 << 32` | `skippy_emit_model_load_event_v2` coarse load-phase/memory/tensor/tokenizer facts |
 | `KV_EVENTS` | `1 << 33` | `skippy_emit_kv_event` KV/cache init, pressure, and capacity facts |

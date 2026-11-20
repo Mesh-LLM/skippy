@@ -5,14 +5,14 @@ use super::formatters::{
     huggingface_cache_dir, huggingface_repo_url, installed_model_kind, model_kind_code, sort_label,
     variant_selector_label,
 };
-use crate::models::details::{
-    ModelDetails, remote_catalog_model_draft_ref, remote_catalog_model_ref,
-};
-use crate::models::search::{SearchArtifactFilter, SearchHit, SearchSort};
 use crate::models::storage::{
     DeleteResult as CliDeleteResult, ResolvedModel as CliResolvedModel, remote_catalog,
 };
 use anyhow::Result;
+use skippy_model_hf::details::{
+    ModelDetails, remote_catalog_model_draft_ref, remote_catalog_model_ref,
+};
+use skippy_model_hf::search::{SearchArtifactFilter, SearchHit, SearchSort};
 use std::fmt::Write as FmtWrite;
 use std::io::Write;
 use std::time::Duration;
@@ -98,7 +98,6 @@ fn styled_label(value: &str, colors: bool) -> String {
 fn plain_model_kind(kind: &str) -> &'static str {
     match model_kind_code(kind) {
         "gguf" => "GGUF",
-        "mlx" => "MLX",
         _ => "unknown",
     }
 }
@@ -400,7 +399,7 @@ impl ModelsFormatter for ConsoleFormatter {
         writeln!(&mut output)?;
         for row in rows {
             writeln!(&mut output, "📦 {}", row.name)?;
-            writeln!(&mut output, "   type: {}", installed_model_kind(&row.path))?;
+            writeln!(&mut output, "   type: {}", installed_model_kind())?;
             if let Some(layer_count) = row.layer_count {
                 writeln!(&mut output, "   layers: {} 🧩", layer_count)?;
             }
@@ -469,11 +468,7 @@ impl ModelsFormatter for ConsoleFormatter {
 
     fn render_show(&self, details: &ModelDetails, variants: Option<&[ModelDetails]>) -> Result<()> {
         let mut out = crate::models::output::console_out();
-        if model_kind_code(details.kind) == "mlx" {
-            writeln!(out, "🔎 {}", details.exact_ref)?;
-        } else {
-            writeln!(out, "🔎 {}", details.display_name)?;
-        }
+        writeln!(out, "🔎 {}", details.display_name)?;
         if let Some(summary) = super::formatters::local_capacity_summary() {
             writeln!(out, "{}", summary)?;
         }
@@ -508,16 +503,7 @@ impl ModelsFormatter for ConsoleFormatter {
             writeln!(out, "  🧠 reasoning ({label})")?;
         }
         writeln!(out, "📥 Download:")?;
-        if model_kind_code(details.kind) == "mlx" {
-            writeln!(
-                out,
-                "   {program} models download {}",
-                details.exact_ref,
-                program = crate::models::output::program()
-            )?;
-        } else {
-            writeln!(out, "   {}", details.download_url)?;
-        }
+        writeln!(out, "   {}", details.download_url)?;
 
         if let Some(variants) = variants
             && !variants.is_empty()
