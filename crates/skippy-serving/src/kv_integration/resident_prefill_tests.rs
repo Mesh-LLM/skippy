@@ -21,6 +21,8 @@ fn config(capacity: u32) -> StageConfig {
             shared_prefix_record_limit: 32,
             exact_max_bytes: None,
             codec: skippy_protocol::StageKvCacheCodec::Native,
+            prefill_admission: Default::default(),
+            retention: Default::default(),
         }),
         ..StageConfig::default()
     }
@@ -32,6 +34,8 @@ fn integration(config: &StageConfig) -> Result<KvStageIntegration> {
         Some(ModelStateKind::Dense),
         Some(MemoryCacheCapabilities {
             resident: true,
+            resident_checkpoint: false,
+            resident_attention: true,
             kv_recurrent: true,
             full_state: true,
         }),
