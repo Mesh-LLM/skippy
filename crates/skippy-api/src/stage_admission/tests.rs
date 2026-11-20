@@ -18,14 +18,14 @@ fn unavailable_native_runtime_rejects_stage_planning_before_reading_package() {
     assert!(
         error
             .to_string()
-            .contains("require a MeshLLM native runtime")
+            .contains("require a Skippy native runtime")
     );
     let error = realize_native_stage_chain(missing, &[(0, 1)], &[], "graph", "cpu", &[Vec::new()])
         .unwrap_err();
     assert!(
         error
             .to_string()
-            .contains("require a MeshLLM native runtime")
+            .contains("require a Skippy native runtime")
     );
 }
 

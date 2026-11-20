@@ -9,6 +9,7 @@ use serde_json::Value;
 #[derive(Debug, Clone)]
 pub struct InferenceError {
     status: StatusCode,
+    kind: InferenceErrorKind,
     message: String,
     error_type: String,
     param: Option<String>,
@@ -41,6 +42,7 @@ impl InferenceError {
         let (error_type, code) = kind_to_openai_fields(kind);
         Self {
             status,
+            kind,
             message: message.into(),
             error_type: error_type.to_string(),
             param: None,
@@ -142,6 +144,11 @@ impl InferenceError {
 
     pub fn status(&self) -> StatusCode {
         self.status
+    }
+
+    /// Semantic error category before any frontend-specific wire projection.
+    pub fn kind(&self) -> InferenceErrorKind {
+        self.kind
     }
 
     /// The human-readable error message carried by this error.
