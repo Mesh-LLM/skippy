@@ -69,6 +69,21 @@ pub enum Command {
         #[command(subcommand)]
         command: RuntimeCommand,
     },
+    /// Show or change anonymous usage analytics.
+    Analytics {
+        #[command(subcommand)]
+        command: AnalyticsCommand,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Subcommand)]
+pub enum AnalyticsCommand {
+    /// Show whether this machine reports anonymous usage, and why.
+    Status,
+    /// Turn anonymous usage analytics on.
+    Enable,
+    /// Turn anonymous usage analytics off, permanently.
+    Disable,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]

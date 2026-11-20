@@ -21,6 +21,7 @@ tracy = ["skippy-serving/tracy"]
 anyhow.workspace = true
 dirs = "6.0.0"
 clap.workspace = true
+skippy-analytics = { path = "../skippy-analytics", version = "0.80.0" }
 skippy-api = { path = "../skippy-api", version = "0.80.0" }
 skippy-cache = { path = "../skippy-cache", version = "0.80.0" }
 skippy-commands = { path = "../skippy-commands", version = "0.80.0" }
