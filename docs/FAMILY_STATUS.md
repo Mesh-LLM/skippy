@@ -21,6 +21,13 @@ continuation. The support record must name the tested artifact, KV cache types,
 lane count, and stage plan. Do not infer native-context support from a small
 correctness smoke or from GGUF metadata alone.
 
+## Served weights
+
+Skippy serves GGUF weights from local files, Hugging Face, and admitted
+immutable packages. Use a published GGUF or convert SafeTensors offline before
+running any of the models below. Split certification applies to the exact
+native recipe recorded with the qualification evidence.
+
 ## Customer Support Matrix
 
 | Family | Support Level | Recommended Artifact | Stage Plan | Activation Wire | Speculative | Topology Constraint | Other Required Policy |

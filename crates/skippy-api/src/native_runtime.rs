@@ -36,6 +36,13 @@ pub struct NativeRuntimeOptions {
 
 /// Resolve without entering native code, using the native runtime selection contract.
 pub fn local_native_runtime_plan(args: &NativeRuntimeOptions) -> Result<NativeRuntimeLoadPlan> {
+    local_native_runtime_install(args)?.load_plan()
+}
+
+/// Resolve a verified local runtime without loading it or downloading artifacts.
+pub fn local_native_runtime_install(
+    args: &NativeRuntimeOptions,
+) -> Result<skippy_native_runtime::InstalledNativeRuntime> {
     let release = args
         .release
         .as_deref()
@@ -52,9 +59,9 @@ pub fn local_native_runtime_plan(args: &NativeRuntimeOptions) -> Result<NativeRu
         discover_local_native_runtimes_in(&args.bundle_dirs, &cache, release, |runtime| {
             has_startup_compatibility_metadata(&runtime.manifest.runtime, &profile)
         })?;
-    skippy_runtime_install::startup::select_local_native_runtime_plan(
+    skippy_runtime_install::startup::select_local_native_runtime(
         &runtimes, &profile, release, Some(&abi), &selection,
-    )?.with_context(|| format!(
+    ).cloned().with_context(|| format!(
         "no compatible local Skippy runtime for release {release}, ABI {abi}; supply --runtime-bundle or --runtime-cache containing a verified runtime"
     ))
 }

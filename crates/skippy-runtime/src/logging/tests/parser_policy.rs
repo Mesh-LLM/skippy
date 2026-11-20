@@ -79,17 +79,6 @@ fn auto_disables_every_parsed_category_with_full_structured_coverage() {
 }
 
 #[test]
-fn auto_keeps_only_the_dedicated_model_fallback_note() {
-    let report = crate::CapabilityReport {
-        confirmed: FULL_STRUCTURED_COVERAGE,
-        health_messages: Vec::new(),
-    };
-    let policy = NativeLogParserPolicy::new(NativeLogParserMode::Auto, &report);
-    assert!(policy.forwards_model_fallback_note());
-    assert!(!policy.forwards("model"));
-}
-
-#[test]
 fn auto_forwards_everything_without_reporter_family() {
     assert_eq!(
         forwarded_categories(
@@ -111,69 +100,12 @@ fn auto_forwards_everything_on_legacy_runtime() {
 #[test]
 fn enabled_and_disabled_ignore_capabilities() {
     for confirmed in [0, FULL_STRUCTURED_COVERAGE, u64::MAX] {
-        let report = crate::CapabilityReport {
-            confirmed,
-            health_messages: Vec::new(),
-        };
         assert_eq!(
             forwarded_categories(NativeLogParserMode::Enabled, confirmed),
             CATEGORIES.to_vec()
         );
-        assert!(
-            NativeLogParserPolicy::new(NativeLogParserMode::Enabled, &report)
-                .forwards_model_fallback_note()
-        );
         assert!(forwarded_categories(NativeLogParserMode::Disabled, confirmed).is_empty());
-        assert!(
-            !NativeLogParserPolicy::new(NativeLogParserMode::Disabled, &report)
-                .forwards_model_fallback_note()
-        );
     }
-}
-
-#[test]
-fn auto_keeps_only_safetensors_fallback_note_with_full_coverage() {
-    let _native_log_guard = native_log_test_guard();
-    struct ResetForwarding;
-    impl Drop for ResetForwarding {
-        fn drop(&mut self) {
-            unregister_filtered_native_logs();
-            set_filtered_native_logs_enabled(false);
-        }
-    }
-    let _reset = ResetForwarding;
-    let mut receiver = register_filtered_native_logs();
-    let line =
-        CString::new("init_tokenizer: initializing tokenizer for type 2\n").expect("cstring");
-
-    configure_native_log_parser(NativeLogParserPolicy::new(
-        NativeLogParserMode::Auto,
-        &crate::CapabilityReport {
-            confirmed: FULL_STRUCTURED_COVERAGE,
-            health_messages: Vec::new(),
-        },
-    ));
-    unsafe { write_native_log(log_level(0), line.as_ptr(), ptr::null_mut()) };
-    write_native_log_note("ordinary GGUF model note");
-    write_native_log_fallback_note(
-        "SafeTensors source loading does not yet emit native model-open events",
-    );
-    let note = receiver
-        .try_recv()
-        .expect("SafeTensors model-open fallback note should be forwarded");
-    assert_eq!(note.category, "model");
-    assert!(note.message.contains("SafeTensors source loading"));
-    assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
-
-    configure_native_log_parser(NativeLogParserPolicy::new(
-        NativeLogParserMode::Auto,
-        &crate::CapabilityReport::default(),
-    ));
-    unsafe { write_native_log(log_level(0), line.as_ptr(), ptr::null_mut()) };
-    assert_eq!(
-        receiver.try_recv().map(|event| event.category),
-        Ok("tokenizer")
-    );
 }
 
 #[test]
@@ -211,10 +143,4 @@ mod native_log {
         env!("CARGO_MANIFEST_DIR"),
         "/src/tests/native_log.rs"
     ));
-}
-
-#[cfg(test)]
-fn log_level(level: i32) -> skippy_ffi::bindings::llama::ggml_log_level {
-    // Test helper: the generated enum mirrors the C values verbatim.
-    unsafe { std::mem::transmute(level) }
 }
