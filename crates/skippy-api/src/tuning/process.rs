@@ -101,7 +101,7 @@ impl TrialRunner for ProcessTrialRunner {
             .unwrap_or_default()
             .split(|byte| *byte == b'\n')
             .filter_map(|line| line.strip_prefix(RESULT_PREFIX.as_bytes()))
-            .last()
+            .next_back()
             .ok_or_else(|| TrialError::Failed("trial produced no measurement".into()))?;
         serde_json::from_slice(result).map_err(failed)
     }
