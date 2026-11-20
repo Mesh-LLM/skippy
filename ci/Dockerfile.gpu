@@ -5,11 +5,13 @@ FROM ${TOOLKIT_BASE} AS toolkit
 # Drop vendor content CI never uses so consumers can pull the image onto
 # hosted runners with a 14 GB disk budget: profilers, docs, samples, the
 # compute sanitizer, and every static archive (builds link the shared
-# runtime; nvvm, stubs, and compat stay). Deleting here, before the final
-# stage copies the surviving tree, actually shrinks the pulled image;
-# deleting in the final stage would only mask files inside retained layers.
+# runtime; nvvm, stubs, and compat stay). Never create either toolkit
+# root here: on the ROCm base a bare /usr/local/cuda makes ROCm's clang
+# detect a phantom CUDA SDK and lose the device math declarations the
+# HIP probe needs. Deleting in the toolkit stage, before the final stage
+# copies the surviving tree, actually shrinks the pulled image; deleting
+# in the final stage would only mask files inside retained layers.
 RUN set -eu \
-    && mkdir -p /usr/local/cuda /opt/rocm \
     && rm -rf \
       /usr/local/cuda/nsight-compute* \
       /usr/local/cuda/nsight-systems* \
@@ -21,7 +23,11 @@ RUN set -eu \
       /usr/local/cuda/compute-sanitizer* \
       /opt/rocm/share \
       /opt/rocm/docs \
-    && find /usr/local/cuda /opt/rocm -name '*.a' -type f -delete \
+    && for tree in /usr/local/cuda /opt/rocm; do \
+         if [ -e "$tree" ]; then \
+           find "$(readlink -f "$tree")" -name '*.a' -type f -delete; \
+         fi; \
+       done \
     && if [ -L /opt/rocm ]; then \
          ln -sfn "$(readlink -f /opt/rocm)" /opt/rocm; \
        fi
@@ -65,7 +71,6 @@ ENV CARGO_HOME=/opt/rust/cargo \
     SKIPPY_REWRITER_LLVM_PREFIX=/usr/lib/llvm-18 \
     SKIPPY_CI_BACKEND=${BACKEND} \
     SKIPPY_CI_TOOLKIT_VERSION=${TOOLKIT_VERSION} \
-    CUDA_PATH=/usr/local/cuda \
     ROCM_PATH=/opt/rocm \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64:/opt/rocm/lib \
     NVIDIA_VISIBLE_DEVICES=all \
