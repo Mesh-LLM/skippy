@@ -302,19 +302,7 @@ fn verify_package_v2_metadata(package_dir: &Path, manifest_bytes: &[u8]) -> Resu
     manifest
         .validate_root()
         .context("validate package-v2 manifest")?;
-    let computed = manifest
-        .computed_package_id()
-        .context("compute package-v2 identity")?;
-    anyhow::ensure!(
-        manifest.package_id == computed,
-        "package-v2 manifest package_id does not match its content"
-    );
-    let artifact = manifest
-        .artifact_catalog
-        .entries
-        .iter()
-        .find(|artifact| artifact.id == manifest.source_model.metadata_artifact_id)
-        .context("package-v2 metadata artifact is absent")?;
+    let artifact = super::metadata::metadata_artifact(&manifest)?;
     verify_package_v2_artifact(package_dir, artifact)?;
     skippy_model::package_carrier::resolve_package_carrier_from_dir(manifest, package_dir)
         .context("resolve package-v2 metadata carrier")?;

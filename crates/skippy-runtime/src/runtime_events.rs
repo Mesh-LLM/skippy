@@ -1,13 +1,15 @@
-use std::ffi::c_char;
-#[cfg(not(feature = "dynamic-native-runtime"))]
-use std::ffi::c_void;
 use std::ptr;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, OnceLock};
 
 use skippy_ffi::{
     Error as RawError, Model as RawModel, SkippyRuntimeEventReporterV1 as RawRuntimeEventReporter,
     Status,
+};
+pub(crate) use skippy_ffi::{
+    skippy_model_open_from_parts_with_events_fn as model_open_from_parts_with_events_symbol,
+    skippy_model_open_with_events_fn as model_open_with_events_symbol,
+    try_abi_features as abi_features_bitmask,
 };
 
 mod model_open_queue;
@@ -37,23 +39,6 @@ pub fn next_operation_id() -> OperationId {
     static NEXT: AtomicU64 = AtomicU64::new(1);
     OperationId(NEXT.fetch_add(1, Ordering::Relaxed))
 }
-
-pub(crate) type RawModelOpenWithEventsFn = unsafe extern "C" fn(
-    path: *const c_char,
-    config: *const skippy_ffi::RuntimeConfig,
-    reporter: *const RawRuntimeEventReporter,
-    out_model: *mut *mut RawModel,
-    out_error: *mut *mut RawError,
-) -> Status;
-
-pub(crate) type RawModelOpenFromPartsWithEventsFn = unsafe extern "C" fn(
-    paths: *const *const c_char,
-    path_count: usize,
-    config: *const skippy_ffi::RuntimeConfig,
-    reporter: *const RawRuntimeEventReporter,
-    out_model: *mut *mut RawModel,
-    out_error: *mut *mut RawError,
-) -> Status;
 
 fn collect_model_open_events<OpenFn>(
     queue: &Arc<ModelOpenEventQueue>,
@@ -95,54 +80,6 @@ where
     }
 }
 
-#[cfg(all(unix, not(feature = "dynamic-native-runtime")))]
-fn lookup_model_open_with_events_symbol(name: &[u8]) -> Option<*mut c_void> {
-    let symbol = unsafe { libc::dlsym(libc::RTLD_DEFAULT, name.as_ptr().cast()) };
-    (!symbol.is_null()).then_some(symbol)
-}
-
-#[cfg(all(not(unix), not(feature = "dynamic-native-runtime")))]
-fn lookup_model_open_with_events_symbol(_name: &[u8]) -> Option<*mut c_void> {
-    None
-}
-
-pub(crate) fn model_open_with_events_symbol() -> Option<RawModelOpenWithEventsFn> {
-    static SYMBOL: OnceLock<Option<RawModelOpenWithEventsFn>> = OnceLock::new();
-    *SYMBOL.get_or_init(|| {
-        #[cfg(feature = "dynamic-native-runtime")]
-        {
-            skippy_ffi::skippy_model_open_with_events_fn()
-        }
-        #[cfg(not(feature = "dynamic-native-runtime"))]
-        {
-            lookup_model_open_with_events_symbol(b"skippy_model_open_with_events\0").map(
-                |symbol| unsafe {
-                    std::mem::transmute::<*mut c_void, RawModelOpenWithEventsFn>(symbol)
-                },
-            )
-        }
-    })
-}
-
-pub(crate) fn model_open_from_parts_with_events_symbol() -> Option<RawModelOpenFromPartsWithEventsFn>
-{
-    static SYMBOL: OnceLock<Option<RawModelOpenFromPartsWithEventsFn>> = OnceLock::new();
-    *SYMBOL.get_or_init(|| {
-        #[cfg(feature = "dynamic-native-runtime")]
-        {
-            skippy_ffi::skippy_model_open_from_parts_with_events_fn()
-        }
-        #[cfg(not(feature = "dynamic-native-runtime"))]
-        {
-            lookup_model_open_with_events_symbol(b"skippy_model_open_from_parts_with_events\0").map(
-                |symbol| unsafe {
-                    std::mem::transmute::<*mut c_void, RawModelOpenFromPartsWithEventsFn>(symbol)
-                },
-            )
-        }
-    })
-}
-
 // Gates purely on runtime-observable capability (native library loaded,
 // feature bit advertised, `_with_events` symbols resolved) rather than a
 // hardcoded ABI patch window. Exact-compatible loader probing is added by a
@@ -153,17 +90,6 @@ pub(crate) fn model_open_events_supported() -> bool {
             .is_some_and(|features| (features & skippy_ffi::FEATURE_RUNTIME_EVENTS) != 0)
         && model_open_with_events_symbol().is_some()
         && model_open_from_parts_with_events_symbol().is_some()
-}
-
-pub(crate) fn abi_features_bitmask() -> Option<u64> {
-    #[cfg(feature = "dynamic-native-runtime")]
-    {
-        skippy_ffi::skippy_abi_features_optional().map(|features| unsafe { features() })
-    }
-    #[cfg(not(feature = "dynamic-native-runtime"))]
-    {
-        Some(skippy_ffi::abi_features())
-    }
 }
 
 #[cfg(test)]
