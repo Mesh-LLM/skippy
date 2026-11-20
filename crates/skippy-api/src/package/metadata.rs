@@ -6,7 +6,7 @@ use super::{
 use crate::hash_cache::SidecarDigestCache;
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
-use skippy_package_format::PackageManifest as PackageManifestV2;
+use skippy_package_format::{Artifact, PackageManifest as PackageManifestV2};
 use std::path::{Path, PathBuf};
 
 /// Probe the schema marker before choosing a package resolver.
@@ -36,33 +36,40 @@ pub fn identity_from_package_v2_metadata(
         .with_context(|| format!("read package-v2 manifest {}", manifest_path.display()))?;
     let manifest: PackageManifestV2 =
         serde_json::from_slice(&manifest_bytes).context("parse package-v2 manifest")?;
-    let manifest =
-        skippy_model::package_carrier::resolve_package_carrier_from_dir(manifest, &package_dir)
-            .context("resolve package-v2 metadata carrier")?;
-    let computed_package_id = manifest
-        .computed_package_id()
-        .context("compute package-v2 identity")?;
-    anyhow::ensure!(
-        manifest.package_id == computed_package_id,
-        "package-v2 manifest package_id does not match its content"
-    );
-    // Producer ABI is provenance; schema, carrier, and artifact validation
-    // govern package compatibility. Runtime ABI is checked when loading.
-    let metadata_artifact = manifest
+    manifest
+        .validate_root()
+        .context("validate package-v2 manifest")?;
+    let source_model_path = package_dir.join(crate::materialization::safe_manifest_file_path(
+        &metadata_artifact(&manifest)?.path,
+    )?);
+    verified_metadata_identity(
+        canonical_layer_package_ref(package_ref, local_ref),
+        &manifest_bytes,
+        manifest,
+        source_model_path,
+        digest_cache,
+    )
+}
+
+pub(super) fn metadata_artifact(manifest: &PackageManifestV2) -> Result<&Artifact> {
+    manifest
         .artifact_catalog
         .entries
         .iter()
         .find(|artifact| artifact.id == manifest.source_model.metadata_artifact_id)
-        .context("package-v2 metadata artifact is absent")?;
-    let metadata_relative = Path::new(&metadata_artifact.path);
-    anyhow::ensure!(
-        !metadata_relative.as_os_str().is_empty()
-            && metadata_relative
-                .components()
-                .all(|component| matches!(component, std::path::Component::Normal(_))),
-        "package-v2 artifact path is not a safe relative path: {metadata_relative:?}"
-    );
-    let source_model_path = package_dir.join(metadata_relative);
+        .context("package-v2 metadata artifact is absent")
+}
+
+pub(super) fn verified_metadata_identity(
+    package_ref: String,
+    manifest_bytes: &[u8],
+    manifest: PackageManifestV2,
+    source_model_path: PathBuf,
+    digest_cache: Option<&SidecarDigestCache>,
+) -> Result<SkippyPackageIdentity> {
+    // Producer ABI is provenance; schema, carrier, and artifact validation
+    // govern package compatibility. Runtime ABI is checked when loading.
+    let metadata_artifact = metadata_artifact(&manifest)?;
     let source_metadata = source_model_path
         .metadata()
         .with_context(|| format!("stat package-v2 source {}", source_model_path.display()))?;
@@ -75,6 +82,9 @@ pub fn identity_from_package_v2_metadata(
         source_sha256 == metadata_artifact.sha256,
         "package-v2 metadata artifact SHA-256 differs from manifest"
     );
+    let manifest =
+        skippy_model::package_carrier::resolve_package_carrier(manifest, &source_model_path)
+            .context("resolve package-v2 metadata carrier")?;
     let architecture = manifest
         .model_metadata
         .get("general.architecture")
@@ -104,11 +114,10 @@ pub fn identity_from_package_v2_metadata(
     let layer_weight_bytes = package_v2_layer_weight_bytes(&manifest)?;
     let tensor_count = u64::try_from(manifest.tensor_catalog.entries.len())
         .context("package-v2 tensor count exceeds u64")?;
-    let manifest_sha256 = hex_lower(&Sha256::digest(&manifest_bytes));
-    let canonical_package_ref = canonical_layer_package_ref(package_ref, local_ref);
+    let manifest_sha256 = hex_lower(&Sha256::digest(manifest_bytes));
     super::warn_if_mtp_without_generation(&manifest);
     Ok(SkippyPackageIdentity {
-        package_ref: canonical_package_ref,
+        package_ref,
         manifest_sha256,
         source_model_path,
         source_model_sha256: manifest.source_model.sha256,

@@ -146,7 +146,11 @@ async fn run_main(
             })
             .await?
         }
-        Command::Serve(args) => serve::run(*args).await,
+        Command::Serve(args) => {
+            let served = serve::run(*args).await;
+            skippy_serving::telemetry::finish_process_telemetry();
+            served
+        }
         #[cfg(unix)]
         Command::ServeManaged(args) => managed::serve(args, native_options).await,
         #[cfg(unix)]
