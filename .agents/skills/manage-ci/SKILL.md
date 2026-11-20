@@ -45,7 +45,8 @@ contract; no downstream product's workflow topology applies here.
   pushes the exact tested image. The package jobs use the matching x86_64 or
   ARM64 CUDA image. Bootstrap image publication before changing consumers, and
   require actual device results for GPU qualification.
-- `.github/workflows/release.yml` dispatches on protected main, stages the
+- `.github/workflows/release.yml` runs daily and on dispatch from protected main
+  (a daily run takes the next patch version and skips an already released main), stages the
   version-only candidate, and calls the shared validation implementations on
   its exact SHA. Only the publisher can promote the verified commit and create
   its tag together. It cannot move an existing tag or publish an incomplete
