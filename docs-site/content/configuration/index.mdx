@@ -69,6 +69,119 @@ Environment variables use the CLI representation and the
 `SKIPPY_SERVE_<OPTION_NAME>` form. For example,
 `SKIPPY_SERVE_THREADS=8` sets `[execution].threads`; `--threads 4` overrides it.
 
+`--print-effective-config` reports resolved values and their sources, then
+exits before loading the model or opening the listener. Skippy can still
+acquire or verify local model files and plan memory. A prepared stage config
+can be inspected without loading a native runtime.
+
+## Serve multiple local models
+
+Place the local GGUF files beside `serving.toml` in its `models/` directory.
+
+```toml
+version = 1
+bind_addr = "127.0.0.1:9337"
+
+[defaults]
+ctx_size = 4096
+
+[[models]]
+id = "small"
+path = "models/small.gguf"
+
+[models.settings]
+ctx_size = 2048
+
+[[models]]
+id = "large"
+path = "models/large.gguf"
+```
+
+```console
+skippy serve --settings serving.toml
+```
+
+Each entry needs a unique ID and an unsplit local model path. Relative paths
+resolve from the settings file.
+Put per-model controls directly under `[defaults]` or `[models.settings]`.
+Model entries override shared defaults. Environment variables and explicit
+CLI options override the same setting for every model. Configure the listener
+with top-level `bind_addr` and shared runtime options under `[runtime]`.
+
+Skippy opens one listener after all models load successfully. A failed load
+aborts startup and releases the models already opened. `GET /v1/models` lists
+the configured IDs. Use the exact ID in each inference request. Add
+`--print-effective-config` to inspect the settings resolved for each model.
+
+## Benchmark serving settings
+
+Use `skippy tune` to compare candidate settings on a representative workload
+before changing a serving configuration. Save the following example as
+`sweep.json` and replace the absolute paths and runtime ID with values for your
+installation. `skippy doctor --output json` reports the selected runtime ID and
+cache path. The hardware identity records which machine produced the results.
+
+```json
+{
+  "targets": [{"id": "demo", "path": "/models/model.gguf"}],
+  "runtime": {
+    "identity": "darwin-aarch64-metal",
+    "bundle_dirs": ["/opt/skippy/native-runtimes"],
+    "cache_dir": "/path/to/runtime-cache"
+  },
+  "hardware": {"identity": "local Metal workstation"},
+  "workload": {
+    "prompts": ["Say hello."],
+    "warmup_runs": 1,
+    "repetitions": 2,
+    "max_tokens": 16,
+    "seed": 0
+  },
+  "candidates": [
+    {
+      "context": 2048,
+      "batch": 256,
+      "microbatch": 128,
+      "mmap": true,
+      "mlock": false,
+      "flash_attention": "auto",
+      "speculative": {"strategy": "disabled"}
+    },
+    {
+      "context": 2048,
+      "batch": 512,
+      "microbatch": 256,
+      "mmap": true,
+      "mlock": false,
+      "flash_attention": "auto",
+      "speculative": {"strategy": "disabled"}
+    }
+  ],
+  "timeout_secs": 120
+}
+```
+
+```console
+skippy tune --config sweep.json
+```
+
+Each trial loads a model in its own process using the declared runtime. The
+JSON report records trial failures and recommends the successful candidate
+with the highest completion tokens per second for each model. A mismatched
+runtime ID fails its trial. Use `--apply serve.toml` to write the winning
+settings to an existing serving file after a successful one-model sweep.
+
+| Sweep field | Requirements |
+| --- | --- |
+| `targets` | One or more entries with unique `id` values and absolute local model `path` values. |
+| `runtime` | Expected runtime `identity`, absolute `cache_dir`, and `bundle_dirs` containing absolute paths. Optional `release` and `selection` constrain runtime selection. |
+| `hardware` | Nonempty `identity` for provenance and optional `backend_device` for device selection. |
+| `workload` | Nonempty `prompts`, `warmup_runs`, positive `repetitions` and `max_tokens`, and a `seed`. |
+| `candidates` | Positive `context`, `batch`, and `microbatch` sizes, with `microbatch` at most `batch`. Include `mmap` and `mlock` booleans. |
+| Candidate `flash_attention` | `auto`, `enabled`, or `disabled`. |
+| Candidate `speculative.strategy` | `auto`, `disabled`, `native_mtp`, `ngram`, `draft_model`, or `dflash`. Include an absolute `speculative.path` for `draft_model` or `dflash`. |
+| `timeout_secs` | Per-trial timeout from 1 to 86,400 seconds. |
+
 ## Configuration surfaces
 
 | Surface | Best for | Example |
@@ -76,6 +189,7 @@ Environment variables use the CLI representation and the
 | CLI | One run or a measured override | `--temperature 0.2` |
 | Environment | Deployment-level process settings | `SKIPPY_SERVE_THREADS=8` |
 | TOML | Versioned complete serving policy | `--settings serve.toml` |
+| Sweep JSON | Isolated comparison of candidate settings | `skippy tune --config sweep.json` |
 | Admitted stage plan | Planner-owned split identity and tensor closure | `--config stage-0.json` |
 
 Continue to the [option reference](/configuration/reference/).

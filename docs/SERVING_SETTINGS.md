@@ -116,6 +116,12 @@ The `options` map includes CLI defaults; `null` marks an automatic or omitted
 operator value whose resolved behavior is represented by the stage/frontend or
 selected after loading. `overrides` contains only explicitly supplied settings.
 
+For `[[models]]`, the file supplies unique local model IDs and paths, shared
+`[defaults]`, and per-model `[models.settings]`. The per-model settings take
+precedence over shared defaults. CLI options and `SKIPPY_SERVE_*` override the
+same setting across the list. The top-level `bind_addr` and `[runtime]` apply
+to the listener. See the [multi-model settings example](../docs-site/content/configuration/index.mdx#serve-multiple-local-models).
+
 ## Mode and resource constraints
 
 Local and split-stage serving consume the same operator controls. Sampling,
@@ -136,9 +142,17 @@ to measured verify cost and acceptance, up to `--dflash-max-tokens`;
 `SKIPPY_DFLASH_ADAPTIVE=0` is an off switch that pins blocks at the cap. DSpark
 drafts (DFlash with a Markov head) run the same way. LiliCorr drafts are rejected
 unless `SKIPPY_DFLASH_LILICORR_HEADLESS=1`, which runs one as plain DFlash without
-its correlation head. DFlash is opt-in: `--dflash-max-tokens` without
-`--speculative-strategy dflash` is an error, but a `--speculative-config` plan
-that already has a `dflash` field runs under `auto`.
+its correlation head. An explicit `--dflash-max-tokens` requires
+`--speculative-strategy dflash` or a speculative plan with DFlash enabled.
+For unsplit serving under `auto`, the package policy and release-pinned draft
+catalog can select a compatible DFlash draft. The resolver uses target
+metadata and the actual runtime backend, and verifies the chosen draft.
+When `HF_HUB_OFFLINE=1` or `--print-effective-config` is set, draft preparation
+only considers cached assets. Explicit speculative options take precedence.
+
+Compatible concurrent DFlash requests can share draft and verification
+forwards. Set `SKIPPY_SHARED_DRAFT=0` or `SKIPPY_SHARED_VERIFY=0` to disable
+sharing for the corresponding phase.
 
 Live K/V precision is independent of weight quantization. Supported explicit
 values are `f16`, `q8_0`, and `q4_0`. Quantized V requires compatible Flash
@@ -194,12 +208,19 @@ with their runtime purpose; existing controls follow in the same sections.
 | `--split-mode` | `split_mode` | Multi-GPU split mode: auto, none, layer, row, tensor |
 | `--glm-dsa-policy` | `glm_dsa_policy` | GLM DSA execution policy: auto or v1 |
 | `--main-gpu` | `main_gpu` | GPU index for an unsplit model |
-| `--batch-size` | `batch_size` | Native batch token limit |
-| `--microbatch-size` | `microbatch_size` | Native microbatch token limit |
+| `--batch-size` | `batch_size` | Native batch token limit. Local preparation defaults to 2048. |
+| `--microbatch-size` | `microbatch_size` | Native microbatch token limit. Local preparation defaults to 512. |
 | `--threads` | `threads` | CPU threads for generation |
 | `--threads-batch` | `threads_batch` | CPU threads for prompt processing |
 | `--op-offload` | `op_offload` | Offload supported host operations to the backend |
 | `--n-gpu-layers` | `n_gpu_layers` | See `skippy serve --help` for values and defaults. |
+| `--gpu-id` | `gpu_id` | Pin an offloaded local model to a stable GPU ID. Conflicts with `--device` and `--config`. |
+| `--on-demand` | `on_demand` | Defer native loading until the first inference request. Defaults to `false` (eager loading). |
+| `--idle-evict-secs` | `idle_evict_secs` | Evict an unsplit model after 1–86,400 idle seconds. Omit to disable eviction. |
+| `--residency-budget-bytes` | `residency_budget_bytes` | Positive native-load admission budget in bytes. Defaults to the model's identified source size. |
+
+The residency options require an unsplit public server and a local model of
+known size. Use them without `--prompt` or `--stage-transport`.
 
 ### [kv]
 
@@ -232,7 +253,7 @@ with their runtime purpose; existing controls follow in the same sections.
 | `--prefix-cache-retention-tokens` | `prefix_cache_retention_tokens` | KV cells finished requests keep resident for reuse: a token count or unbounded |
 | `--prefill-admission` | `prefill_admission` | How a prompt's uncached suffix is prefilled: cooperative or serialized |
 | `--prefix-cache-exact-budget` | `prefix_cache_exact_budget` | Exact-state retention ceiling: auto, unbounded, or IEC size; one snapshot may exceed it |
-| `--kv-cache-disk` | `kv_cache_disk` | See `skippy serve --help` for values and defaults. |
+| `--kv-cache-disk` | `kv_cache_disk` | `auto` (default, up to 64 GiB), `off`, or a fixed IEC size. |
 | `--kv-cache-disk-dir` | `kv_cache_disk_dir` | See `skippy serve --help` for values and defaults. |
 | `--kv-cache-min-free` | `kv_cache_min_free` | See `skippy serve --help` for values and defaults. |
 
@@ -413,7 +434,7 @@ with their runtime purpose; existing controls follow in the same sections.
 | `--metrics-otlp-grpc` | `metrics_otlp_grpc` | See `skippy serve --help` for values and defaults. |
 | `--telemetry-queue-capacity` | `telemetry_queue_capacity` | See `skippy serve --help` for values and defaults. |
 | `--telemetry-level` | `telemetry_level` | See `skippy serve --help` for values and defaults. |
-| `--startup-timeout-secs` | `startup_timeout_secs` | See `skippy serve --help` for values and defaults. |
+| `--startup-timeout-secs` | `startup_timeout_secs` | Defaults to 60 seconds. With model residency enabled, bounds every native load. In that mode, `0` acts as one second and values above 86,400 are rejected. |
 
 Two local telemetry sinks need no collector and are enabled by environment
 rather than settings. `SKIPPY_TELEMETRY_STDERR=1` writes Skippy's own event
