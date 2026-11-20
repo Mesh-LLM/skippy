@@ -21,10 +21,16 @@ RUN set -eu \
       /usr/local/cuda/compute-sanitizer* \
       /opt/rocm/share \
       /opt/rocm/docs \
-    && find /usr/local/cuda /opt/rocm -name '*.a' -type f -delete
+    && find /usr/local/cuda /opt/rocm -name '*.a' -type f -delete \
+    && if [ -L /opt/rocm ]; then \
+         ln -sfn "$(readlink -f /opt/rocm)" /opt/rocm; \
+       fi
 
-# Copy the parent directories so symlinks survive: the vendor trees use
-# /usr/local/cuda -> /usr/local/cuda-<version> and /opt/rocm ->
+# ROCm resolves /opt/rocm through /etc/alternatives, which is not part of
+# the copied trees; the toolkit stage flattens that chain to a direct
+# symlink so the final image does not dangle. Copy the parent directories
+# so symlinks survive: the vendor trees use /usr/local/cuda ->
+# /usr/local/cuda-<version> and the flattened /opt/rocm ->
 # /opt/rocm-<version>, and scripts call the versioned paths.
 FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8
 COPY --from=toolkit /usr/local/ /usr/local/
