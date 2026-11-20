@@ -1,8 +1,10 @@
 # Skippy
 
-Skippy is a standalone model server for local and distributed staged inference.
-It owns model management, native runtimes, layer-package execution, scheduling,
-and OpenAI-compatible serving. This repository contains no MeshLLM product code.
+Skippy is an AI inference engine for local and distributed workloads. It is the inference engine that powers Mesh LLM.
+
+Built on llama.cpp, Skippy adds production-focused model and runtime management, OpenAI- and Anthropic-compatible APIs, explicit pipeline parallelism, multi-tier KV caching, memory-aware scheduling, and hardware-specific optimizations.
+
+Skippy supports CPU inference and GPU acceleration through Metal, CUDA, ROCm, and Vulkan. Run it on a single machine or divide one verified model across an ordered set of workers. A single CLI and configuration model takes you from local inference to multi-machine serving.
 
 ## Build and run
 
