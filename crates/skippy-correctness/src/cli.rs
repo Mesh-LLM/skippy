@@ -559,6 +559,13 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(debug_assertions)]
+    fn cli_definition_is_internally_consistent() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+    }
+
+    #[test]
     fn remote_handoff_listener_defaults_to_loopback() {
         let cli = Cli::try_parse_from([
             "skippy-correctness",

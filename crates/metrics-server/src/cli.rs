@@ -40,3 +40,15 @@ pub(crate) struct EmitFixtureArgs {
     #[arg(long, default_value = "stage-0")]
     pub(crate) stage_id: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn cli_definition_is_internally_consistent() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+    }
+}

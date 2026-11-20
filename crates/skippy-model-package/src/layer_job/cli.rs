@@ -255,3 +255,15 @@ mod output_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn cli_definition_is_internally_consistent() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+    }
+}

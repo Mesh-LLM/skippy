@@ -799,3 +799,15 @@ fn prompt_case_from_value(value: &Value, line_index: usize) -> Result<PromptCase
 fn elapsed_ms(started: Instant) -> f64 {
     started.elapsed().as_secs_f64() * 1000.0
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn cli_definition_is_internally_consistent() {
+        use clap::CommandFactory;
+        Args::command().debug_assert();
+    }
+}
