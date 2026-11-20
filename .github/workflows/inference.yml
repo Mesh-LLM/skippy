@@ -169,19 +169,25 @@ jobs:
           script: |
             const { SOURCE_SHA: sha, PLAN: plan, RESULT: result, RUN_URL: url } = process.env;
             if (!/^[a-f0-9]{40}$/i.test(sha)) throw new Error('Invalid qualification source SHA');
+            // A skipped plan is an intentional opt-out: the PR carries no
+            // qualify label, so no Spark pair was reserved. Report it green
+            // instead of failing unlabeled PRs.
+            const skipped = plan === 'skipped';
             const passed = plan === 'success' && result === 'success';
             const description = passed
               ? 'Native Spark lab qualification'
+              : skipped
+              ? 'Intentionally skipped (no qualify label)'
               : 'Inference admission or qualification incomplete or failed';
             await github.rest.repos.createCommitStatus({
               ...context.repo, sha, context: 'Inference qualification',
-              state: passed ? 'success' : 'failure', description, target_url: url
+              state: passed || skipped ? 'success' : 'failure', description, target_url: url
             });
-            if (!passed) core.setFailed(description);
+            if (!passed && !skipped) core.setFailed(description);
 
   report:
     needs: [plan, qualification, summary]
-    if: always() && github.event_name == 'pull_request_target'
+    if: always() && github.event_name == 'pull_request_target' && needs.plan.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
