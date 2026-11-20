@@ -5,6 +5,7 @@ pub(crate) use skippy_ffi::TensorRole;
 mod activation;
 mod capability_probe;
 mod chat_sampling_metadata;
+mod checkpoint_shape;
 pub mod clef;
 mod config;
 pub mod decision;
@@ -41,6 +42,7 @@ pub use activation::{
     DecodeFrameBatchRequest, IterationBatchPhase, IterationBatchRequest, PartialBatchExecution,
 };
 pub use capability_probe::{CapabilityReport, probe_capabilities};
+pub use checkpoint_shape::CheckpointShape;
 pub use clef::{ClefModel, ClefModelInfo};
 pub use config::{
     FlashAttentionType, GGML_TYPE_F16, GGML_TYPE_F32, GGML_TYPE_I32, GGML_TYPE_Q4_0,
@@ -65,7 +67,7 @@ pub use gguf_writer::{
     ModelInfo, write_gguf_from_parts, write_gguf_from_parts_consuming,
     write_gguf_metadata_from_parts,
 };
-pub use kv_pages::{decode_cachegen_kv_page, encode_cachegen_kv_page};
+pub use kv_pages::{CheckpointParts, decode_cachegen_kv_page, encode_cachegen_kv_page};
 pub use laya::{LayaMemory, LayaModel, LayaModelInfo};
 pub use logging::{
     LLAMA_LOG_LEVEL_DEBUG, MeasuredNativeBuffers, NativeLogEvent, NativeLogParserMode,
