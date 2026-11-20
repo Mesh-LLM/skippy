@@ -155,6 +155,7 @@ inference-contracts:
 
 automation-contracts: inference-contracts
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/automation_contracts.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/release_contracts.py
 
 [positional-arguments]
 inference-dispatch profile source output="target/ci-evidence/inference" *configuration:
@@ -274,12 +275,28 @@ ci-artifact-smoke runtime product_dir:
 ci: lint test llama-check
 
 [positional-arguments]
+release version canary="false":
+    @bash scripts/release-dispatch.sh "$@"
+
+[positional-arguments]
+release-version tag:
+    @"{{ automation_python }}" scripts/ci-release.py bump "$@"
+
+[positional-arguments]
+release-candidate *args:
+    @"{{ automation_python }}" scripts/ci-release-candidate.py "$@"
+
+[positional-arguments]
 check-release tag:
     @"{{ automation_python }}" scripts/ci-release.py validate "$@"
 
 [positional-arguments]
 release-prepare tag input_dir:
     @"{{ automation_python }}" scripts/ci-release.py prepare "$@"
+
+[positional-arguments]
+release-prepare-candidate tag input_dir:
+    @"{{ automation_python }}" scripts/ci-release.py prepare-candidate "$@"
 
 [positional-arguments]
 release-verify directory="dist/release":

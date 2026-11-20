@@ -91,3 +91,54 @@ test('release validation requires the three other GPU smokes', () => {
   assert.throws(() => gate(results({ full: true, release: true })), /release_smoke_/);
   assert.throws(() => gate(results(), true), /requires full CI/);
 });
+
+test('main can reuse only a receipt for the exact release dispatch and candidate', async () => {
+  const changes = workflow.split('\n  changes:\n')[1].split('\n  plan:\n')[0];
+  const receiptScript = changes.split('          script: |\n')[1].split('\n      - uses:')[0];
+  const evaluateReceipt = new Function('github', 'context', 'core',
+    'return (async () => {\n' + receiptScript + '\n})()');
+  const sha = 'a'.repeat(40);
+  const base = 'b'.repeat(40);
+  const full_name = 'general-inference/skippy';
+  const commit = {
+    commit: { message: 'release: prepare v0.81.0\n\nSkippy-Release-Run: 123' },
+    parents: [{ sha: base }],
+  };
+  const run = {
+    path: '.github/workflows/release.yml',
+    event: 'workflow_dispatch',
+    head_branch: 'main',
+    head_sha: base,
+    head_repository: { full_name },
+  };
+  const receipt = { name: 'validated-release-' + sha, expired: false };
+  const context = { sha, repo: {}, payload: { before: base, repository: { full_name } } };
+  async function checked(candidate, workflowRun, artifact) {
+    const out = {};
+    const github = { rest: {
+      repos: { getCommit: async () => ({ data: candidate }) },
+      actions: {
+        getWorkflowRun: async ({ run_id }) => {
+          assert.equal(run_id, '123');
+          return { data: workflowRun };
+        },
+        listWorkflowRunArtifacts: async ({ name }) => {
+          assert.equal(name, receipt.name);
+          return { data: { artifacts: [artifact] } };
+        },
+      },
+    } };
+    const core = {
+      info() {},
+      warning(message) { assert.fail(message); },
+      setOutput(key, value) { out[key] = value; },
+    };
+    await evaluateReceipt(github, context, core);
+    return out.verified;
+  }
+  assert.equal(await checked(commit, run, receipt), 'true');
+  assert.equal(await checked({ ...commit, parents: [{ sha }] }, run, receipt), undefined);
+  assert.equal(await checked(commit, { ...run, head_branch: 'other' }, receipt), undefined);
+  assert.equal(await checked(commit, run, { ...receipt, name: 'other-receipt' }), undefined);
+  assert.equal(await checked(commit, run, { ...receipt, expired: true }), undefined);
+});

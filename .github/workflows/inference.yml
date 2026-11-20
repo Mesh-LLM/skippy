@@ -62,6 +62,11 @@ on:
         options: [pr, nightly, release]
         default: pr
   workflow_call:
+    inputs:
+      release_candidate:
+        description: Exact version commit staged by the protected Release workflow.
+        type: string
+        default: ''
     secrets:
       JIANYANG_INFERENCE_SSH_KEY:
         required: true
@@ -92,6 +97,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           QUALIFICATION_PROFILE: ${{ inputs.profile || 'release' }}
+          RELEASE_CANDIDATE: ${{ inputs.release_candidate }}
         run: just inference-admit
       - id: matrix
         env:

@@ -43,9 +43,11 @@ contract; no downstream product's workflow topology applies here.
   pushes the exact tested image. The package jobs use the matching x86_64 or
   ARM64 CUDA image. Bootstrap image publication before changing consumers, and
   require actual device results for GPU qualification.
-- `.github/workflows/release.yml` starts only on version-tag pushes and calls
-  both validation implementations. A release never edits source, bumps
-  versions, moves a tag, or publishes an incomplete artifact matrix.
+- `.github/workflows/release.yml` dispatches on protected main, stages the
+  version-only candidate, and calls the shared validation implementations on
+  its exact SHA. Only the publisher can promote the verified commit and create
+  its tag together. It cannot move an existing tag or publish an incomplete
+  artifact matrix. Canary runs leave main, tags, and publication untouched.
 - `.github/workflows/llama-upgrade.yml` keeps control on protected main, prepares
   an immutable candidate, certifies it, independently repeats certification,
   and opens an ordinary PR. Failed or incomplete qualification cannot publish.
@@ -90,8 +92,9 @@ contract; no downstream product's workflow topology applies here.
   limit. Split runs reserve both machines atomically. Publisher credentials
   remain separate from all build and inference jobs.
 - Pin third-party actions by full commit SHA. Default permissions are read-only.
-  Only the release publisher receives contents write; only the upgrade publisher
-  receives a scoped App credential. Do not expose publisher secrets to builds.
+  Only release controller jobs may write the candidate refs. Release promotion
+  and upgrade publication each use a scoped App credential. Do not expose
+  publisher secrets to builds.
 - The protected inference results-comment job alone receives pull-requests write
   permission for PR comments, plus read-only contents/actions. It receives no
   native dispatch credential and never executes candidate code.

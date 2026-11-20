@@ -3,36 +3,21 @@
 
 import argparse
 import os
-import re
 import shutil
 import subprocess
 import sys
 import tempfile
-import tomllib
 from pathlib import Path
 
 from lib import ci_artifacts as artifacts
 from lib.ci_process import cancel_on_signal, capture, command
 from lib.ci_targets import targets, validate_native_identity
+from lib.release_version import bump, parse_tag, workspace_version
 
 
 def version(tag):
-    match = re.fullmatch(
-        r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
-        r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
-        r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?", tag,
-    )
-    if not match or any(int(part) >= 2**64 for part in match.groups()[:3]):
-        raise ValueError("release tag is not canonical SemVer")
-    prerelease = match.group(4)
-    if prerelease and any(
-        len(part) > 1 and part.startswith("0") and part.isdigit()
-        for part in prerelease.split(".")
-    ):
-        raise ValueError("release tag is not canonical SemVer")
-    with open("Cargo.toml", "rb") as stream:
-        committed = tomllib.load(stream)["workspace"]["package"]["version"]
-    if committed != tag[1:]:
+    prerelease = parse_tag(tag)
+    if workspace_version() != tag[1:]:
         raise ValueError("tag version differs from committed workspace version")
     return "true" if prerelease else "false"
 
@@ -69,7 +54,15 @@ def verify_package_evidence(directory, runtime, source, archive_digest):
 
 
 def prepare(tag, input_dir):
-    source = validate(tag)
+    inventory(tag, input_dir, validate(tag))
+
+
+def prepare_candidate(tag, input_dir):
+    version(tag)
+    inventory(tag, input_dir, artifacts.source())
+
+
+def inventory(tag, input_dir, source):
     hosts, runtimes = targets()
     output = Path("dist/release")
     if output.exists() and any(output.iterdir()):
@@ -149,10 +142,11 @@ def select(tag, path):
     releases = artifacts.read_json(path)
     if not isinstance(releases, list):
         raise ValueError("expected a release list")
-    matches = sum(release.get("tagName") == tag for release in releases)
-    if matches > 1:
+    matches = [release for release in releases if release.get("tagName") == tag]
+    if len(matches) > 1:
         raise ValueError("duplicate release tags in API response")
     github_output("exists", "true" if matches else "false")
+    github_output("published", "true" if matches and matches[0]["isDraft"] is False else "false")
 
 
 def upload_plan(directory, path):
@@ -178,8 +172,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     actions = parser.add_subparsers(dest="action", required=True)
     for func, arguments in (
+        (bump, (("tag", str),)),
         (validate, (("tag", str),)),
         (prepare, (("tag", str), ("input_dir", Path))),
+        (prepare_candidate, (("tag", str), ("input_dir", Path))),
         (verify, (("directory", Path),)),
         (admit_draft, (("path", Path),)),
         (select, (("tag", str), ("path", Path))),

@@ -45,10 +45,32 @@ def output(**values):
             stream.write(f"{key}={value}\n")
 
 
+def admit_release_candidate(sha):
+    if (os.environ["GITHUB_EVENT_NAME"] != "workflow_dispatch"
+            or os.environ["GITHUB_REF"] != "refs/heads/main"
+            or os.environ["GITHUB_WORKFLOW_REF"] != f"{REPO}/.github/workflows/release.yml@refs/heads/main"):
+        raise ValueError("release candidates require a protected Release dispatch")
+    run = os.environ["GITHUB_RUN_ID"]
+    if not re.fullmatch(r"[1-9][0-9]*", run):
+        raise ValueError("invalid release run ID")
+    ref = github(f"repos/{REPO}/git/ref/heads/release-candidates/{run}")
+    commit = github(f"repos/{REPO}/git/commits/{sha}")
+    if (ref["object"]["sha"] != sha
+            or [parent["sha"] for parent in commit["parents"]] != [os.environ["GITHUB_SHA"]]
+            or not commit["message"].rstrip().endswith(f"\n\nSkippy-Release-Run: {run}")):
+        raise ValueError("inference candidate does not belong to this release run")
+
+
 def admit():
     event = read_json(Path(os.environ["GITHUB_EVENT_PATH"]))
     name = os.environ["GITHUB_EVENT_NAME"]
     is_pr = name in {"workflow_run", "pull_request_target"}
+    candidate = os.environ.get("RELEASE_CANDIDATE")
+    if candidate:
+        plan("release", candidate)
+        admit_release_candidate(candidate)
+        output(source=candidate, profile="release")
+        return
     if name == "workflow_run":
         run = event["workflow_run"]
         if run["conclusion"] != "success":
