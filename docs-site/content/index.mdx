@@ -20,13 +20,19 @@ local inference to multi-machine serving.
 
 ## Serve your first model
 
-Build the development product and start a recommended model:
+In a new directory, download the Skippy release bundle for your platform using
+an authorized GitHub CLI session. This example uses Metal on Apple silicon.
 
 ```console
-just build
-./target/debug/skippy models recommended
-./target/debug/skippy serve --model Qwen3-0.6B-Q4_K_M --prompt
+gh release download --repo general-inference/skippy \
+  --pattern 'skippy-*-darwin-aarch64-metal.tar.gz*'
+shasum -a 256 -c skippy-*-darwin-aarch64-metal.tar.gz.sha256 && \
+  tar -xzf skippy-*-darwin-aarch64-metal.tar.gz
+./skippy serve --model Qwen3-0.6B-Q4_K_M --prompt
 ```
+
+Keep `native-runtimes/` alongside the unpacked `skippy` executable. For other
+platforms, choose the matching release bundle. [Install and run Skippy](/getting-started/#download-a-release)
 
 The prompt and HTTP API are available together. From another terminal:
 

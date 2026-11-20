@@ -1,6 +1,6 @@
 ---
 title: Install and run Skippy
-description: Build Skippy, inspect the runtime, and serve a first model.
+description: Download a Skippy release, inspect the runtime, and serve a first model.
 ---
 
 # Install and run Skippy
@@ -9,44 +9,37 @@ Skippy consists of a backend-neutral CLI and a verified native runtime selected
 for the host, architecture, accelerator, and Skippy ABI. Install both parts
 before serving a model.
 
-Download a release when you want to run a published version. Build from source
-when developing Skippy or testing the current checkout.
+The release archive bundles the executable and native runtime for its platform
+and backend.
 
 ## Download a release
 
-Download the archive for your platform from the
-[latest Skippy release](https://github.com/general-inference/skippy/releases/latest),
-or use the GitHub CLI:
+From a new directory, use an authorized GitHub CLI session to download the
+archive and checksum for your platform. Replace `VARIANT` with a bundle from
+the release, such as `darwin-aarch64-metal` or `linux-x86_64-cpu`.
 
 ```console
-gh release download --repo general-inference/skippy
+gh release download --repo general-inference/skippy \
+  --pattern 'skippy-*-VARIANT.tar.gz*'
 ```
 
-Verify and extract the archive, then place the `skippy` executable and its
-adjacent `native-runtimes` directory together. Confirm the installation before
-serving a model:
+You can also download the matching archive and checksum from GitHub.
+[Latest Skippy release](https://github.com/general-inference/skippy/releases/latest)
+
+Check the archive against its `.sha256` sidecar using `shasum -a 256 -c` on
+macOS or `sha256sum -c` on Linux. On Windows, compare the result of
+`Get-FileHash -Algorithm SHA256` for the archive with the digest in the sidecar.
+Once verified, replace `ARCHIVE` with the downloaded `.tar.gz` filename and run:
 
 ```console
-skippy --version
-skippy doctor
+tar -xzf ARCHIVE
+./skippy --version
+./skippy doctor
 ```
 
-## Build from source
-
-Skippy uses Just for repository builds. From the repository root:
-
-```console
-just build
-./target/debug/skippy --version
-./target/debug/skippy doctor
-```
-
-`just build` produces the CLI and a verified adjacent native runtime. The CLI
-automatically discovers `target/debug/native-runtimes` from that build.
-
-A source checkout may require a newer native ABI than the latest release. Use
-`--runtime-bundle /path/to/bundle` when you need to select a compatible local
-bundle explicitly.
+Keep the executable and its `native-runtimes/` directory together. Run
+`./skippy` from the extracted directory on macOS and Linux or `.\skippy.exe`
+in PowerShell on Windows. [Contributing guide for source builds](/contributing/#build-from-source)
 
 ## How runtime discovery works
 
@@ -61,8 +54,8 @@ installed runtimes, supported backends, and the reason a candidate was rejected.
 ## Serve a model
 
 ```console
-skippy models recommended
-skippy serve --model Qwen3-0.6B-Q4_K_M
+./skippy models recommended
+./skippy serve --model Qwen3-0.6B-Q4_K_M
 ```
 
 Wait for the ready message or, in JSONL mode, the `ready` event before sending
@@ -81,8 +74,8 @@ identifier clients must send in inference requests.
 
 | Task | Command |
 | --- | --- |
-| Download the latest release | `gh release download --repo general-inference/skippy` |
-| Build the development product | `just build` |
+| Download the latest bundle and checksum | `gh release download --repo general-inference/skippy --pattern 'skippy-*-VARIANT.tar.gz*'` |
+| Unpack the release | `tar -xzf ARCHIVE` |
 | Inspect the installation | `skippy doctor` |
 | List installed runtimes | `skippy runtime list` |
 | Install a compatible runtime | `skippy runtime install` |
