@@ -122,12 +122,7 @@ async fn download_primary_model(
     use_catalog: bool,
     progress: bool,
 ) -> Result<DownloadedModel> {
-    if skippy_model_ref::is_safetensors_model_ref(model_ref) {
-        anyhow::bail!(
-            "{model_ref}: {}",
-            skippy_model_ref::SAFETENSORS_SERVING_GUIDANCE
-        );
-    }
+    super::reject_safetensors_model_ref(model_ref)?;
     validate_digest(sha256)?;
     use std::io::Write;
     if progress {

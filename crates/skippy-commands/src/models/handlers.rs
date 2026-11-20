@@ -328,12 +328,7 @@ pub async fn run_model_download(
     direct: bool,
     json_output: bool,
 ) -> Result<()> {
-    if skippy_model_ref::is_safetensors_model_ref(model_ref) {
-        bail!(
-            "{model_ref}: {}",
-            skippy_model_ref::SAFETENSORS_SERVING_GUIDANCE
-        );
-    }
+    super::reject_safetensors_model_ref(model_ref)?;
     let formatter = models_formatter(json_output);
     let progress = !json_output || super::output::context().byte_progress.is_some();
     if !direct

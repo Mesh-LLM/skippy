@@ -398,12 +398,7 @@ async fn discover_hf_repo_for_bare_name(name: &str) -> Result<Option<String>> {
 }
 
 pub(super) async fn canonicalize_model_ref_input(input: &str) -> Result<String> {
-    if skippy_model_ref::is_safetensors_model_ref(input) {
-        bail!(
-            "{input}: {}",
-            skippy_model_ref::SAFETENSORS_SERVING_GUIDANCE
-        );
-    }
+    super::reject_safetensors_model_ref(input)?;
 
     if parse_exact_model_ref(input).is_ok() {
         return Ok(input.to_string());

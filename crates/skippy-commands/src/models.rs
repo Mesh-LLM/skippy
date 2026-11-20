@@ -23,6 +23,16 @@ mod updates;
 pub use download::{DownloadedModel, download_model, model_cache_dir};
 pub use output::ModelCommandContext;
 
+/// Reject explicit checkpoint references before resolving a model for serving.
+pub fn reject_safetensors_model_ref(model_ref: &str) -> Result<()> {
+    anyhow::ensure!(
+        !skippy_model_ref::is_safetensors_model_ref(model_ref),
+        "{model_ref}: {}",
+        skippy_model_ref::SAFETENSORS_SERVING_GUIDANCE
+    );
+    Ok(())
+}
+
 /// Execute the shared model-command contract for a product's console.
 pub async fn run(command: &cli::ModelsCommand, context: ModelCommandContext) -> Result<()> {
     output::scope(context, dispatch::dispatch_models_command(command)).await

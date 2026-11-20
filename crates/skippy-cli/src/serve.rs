@@ -103,6 +103,9 @@ fn installed_model_path(model: &str) -> Option<std::path::PathBuf> {
 }
 
 pub(crate) fn validate(args: &ServeCommandArgs) -> Result<()> {
+    if let Some(model) = args.model.as_deref() {
+        skippy_commands::models::reject_safetensors_model_ref(model)?;
+    }
     args.public.settings.validate_mode(args)?;
     args.public.settings.tuning(args.public.openai_guardrails)?;
     let mut stage = skippy_protocol::StageConfig::default();
