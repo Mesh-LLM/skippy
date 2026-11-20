@@ -1,6 +1,33 @@
 # CI always overrides this with a digest-pinned vendor image.
 ARG TOOLKIT_BASE=ubuntu:24.04
-FROM ${TOOLKIT_BASE}
+FROM ${TOOLKIT_BASE} AS toolkit
+
+# Drop vendor content CI never uses so consumers can pull the image onto
+# hosted runners with a 14 GB disk budget: profilers, docs, samples, the
+# compute sanitizer, and every static archive (builds link the shared
+# runtime; nvvm, stubs, and compat stay). Deleting here, before the final
+# stage copies the surviving tree, actually shrinks the pulled image;
+# deleting in the final stage would only mask files inside retained layers.
+RUN set -eu \
+    && rm -rf \
+      /usr/local/cuda/nsight-compute* \
+      /usr/local/cuda/nsight-systems* \
+      /usr/local/cuda/extras \
+      /usr/local/cuda/share \
+      /usr/local/cuda/doc \
+      /usr/local/cuda/samples \
+      /usr/local/cuda/bin/compute-sanitizer* \
+      /usr/local/cuda/compute-sanitizer* \
+      /opt/rocm/share \
+      /opt/rocm/docs \
+    && find /usr/local/cuda /opt/rocm -name '*.a' -type f -delete
+
+# Copy the parent directories so symlinks survive: the vendor trees use
+# /usr/local/cuda -> /usr/local/cuda-<version> and /opt/rocm ->
+# /opt/rocm-<version>, and scripts call the versioned paths.
+FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8
+COPY --from=toolkit /usr/local/ /usr/local/
+COPY --from=toolkit /opt/ /opt/
 
 ARG BACKEND
 ARG TOOLKIT_VERSION
@@ -30,7 +57,12 @@ ENV CARGO_HOME=/opt/rust/cargo \
     LIBCLANG_PATH=/usr/lib/llvm-18/lib \
     SKIPPY_REWRITER_LLVM_PREFIX=/usr/lib/llvm-18 \
     SKIPPY_CI_BACKEND=${BACKEND} \
-    SKIPPY_CI_TOOLKIT_VERSION=${TOOLKIT_VERSION}
+    SKIPPY_CI_TOOLKIT_VERSION=${TOOLKIT_VERSION} \
+    CUDA_PATH=/usr/local/cuda \
+    ROCM_PATH=/opt/rocm \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64:/opt/rocm/lib \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 RUN test "$(dpkg --print-architecture)" = "$TARGETARCH" \
     && case "$TARGETARCH" in \
