@@ -216,6 +216,53 @@ fn model_digest(path: &std::path::Path) -> Result<String> {
 
 #[test]
 #[ignore = "requires SKIPPY_RECURRENT_CACHE_TEST_MODEL and _LAYERS; run explicitly with --ignored"]
+fn recurrent_prefill_can_use_its_context_without_a_decode_batch_reserve() -> Result<()> {
+    let (backend, speculative) = recurrent_test_backend(
+        "full-context-prefill",
+        "full-context-prefill",
+        512,
+        64,
+        1,
+        512,
+    )?;
+    let prompt = vec![7; 511];
+    let ids = InferenceGenerationIds::new_with_trust(
+        InferenceCacheHints::default(),
+        Some("full-context-prefill"),
+        true,
+        None,
+    );
+    let sampling = skippy_runtime::SamplingConfig {
+        temperature: 0.0,
+        ..Default::default()
+    };
+    let mut output = Vec::new();
+    backend.generate_local_tokens(
+        LocalGeneration {
+            prompt_token_ids: &prompt,
+            recurrent_cache_prefix_token_ids: None,
+            shared_system_prefix_tokens: None,
+            max_tokens: 1,
+            sampling: &sampling,
+            chat_sampling_metadata: None,
+            speculative: &speculative,
+            native_mtp_enabled: false,
+            hook_request: None,
+            hook_runtime: None,
+            cancellation: None,
+            ids: &ids,
+        },
+        |token| {
+            output.push(token);
+            Ok(TokenControl::Continue)
+        },
+    )?;
+    assert_eq!(output.len(), 1);
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires SKIPPY_RECURRENT_CACHE_TEST_MODEL and _LAYERS; run explicitly with --ignored"]
 fn loaded_runtime_admission_uses_aggregate_pool_across_frontends() -> Result<()> {
     use crate::frontend::admission::{GenerationTokenBudget, GenerationTokenBudgetRequest};
     let (backend, _) = recurrent_test_backend_with_lanes(

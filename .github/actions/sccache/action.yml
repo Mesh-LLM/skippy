@@ -11,6 +11,7 @@ runs:
       uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
       with:
         script: |
+          core.exportVariable('ACTIONS_CACHE_SERVICE_V2', 'true');
           core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
           core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
     - name: Prepare pinned sccache
@@ -56,8 +57,9 @@ runs:
         fi
 
         recipe_digest="$({
-          git ls-files -z Cargo.lock rust-toolchain.toml scripts/build-llama.sh \
-            llama_cpp/upstream.txt llama_cpp/patches
+          git ls-files -z Cargo.lock skippy-api-rs/Cargo.lock rust-toolchain.toml \
+            .cargo/config.toml Justfile scripts/build-llama.sh scripts/cargo-linker\* \
+            llama_cpp/upstream.txt llama_cpp/whisper-upstream.txt llama_cpp/patches
         } | xargs -0 git hash-object | shasum -a 256 | awk '{print $1}')"
         export SCCACHE_BASEDIRS="$GITHUB_WORKSPACE"
         export SCCACHE_GHA_VERSION="skippy-v1-$SCCACHE_SCOPE-$recipe_digest"
@@ -67,6 +69,8 @@ runs:
         {
           echo "RUSTC_WRAPPER=$sccache_path"
           echo "SCCACHE=$sccache_path"
+          echo "CMAKE_C_COMPILER_LAUNCHER=$sccache_path"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=$sccache_path"
           echo "SCCACHE_BASEDIRS=$SCCACHE_BASEDIRS"
           echo "SCCACHE_GHA_VERSION=$SCCACHE_GHA_VERSION"
         } >> "$GITHUB_ENV"

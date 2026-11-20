@@ -1,5 +1,5 @@
 use super::*;
-use crate::kv_integration::{PrefillKvIdentity, SessionEndCapture};
+use crate::kv_integration::SessionEndCapture;
 use crate::kv_integration::{ResidentPrefixRecord, ResidentRecordOutcome, ResidentRecordSkip};
 
 /// Owns one unit of the test-only outstanding-capture counter for a single

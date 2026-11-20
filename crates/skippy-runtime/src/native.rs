@@ -271,14 +271,7 @@ impl StageModel {
         event_queue: Option<&Arc<ModelOpenEventQueue>>,
     ) -> Result<Self> {
         let path = path.as_ref();
-        if crate::checkpoint::is_safetensors_checkpoint(path) {
-            if event_queue.is_some() {
-                crate::logging::write_native_log_fallback_note(
-                    "SafeTensors source loading does not yet emit native model-open events",
-                );
-            }
-            return Self::open_safetensors(path, config.checkpoint_quantization, config);
-        }
+        skippy_model_ref::validate_gguf_model_path(path).map_err(anyhow::Error::msg)?;
         let use_events = event_queue.is_some() && runtime_events::model_open_events_supported();
         let begin_label = if use_events {
             "skippy_model_open_with_events begin"
@@ -366,6 +359,10 @@ impl StageModel {
     ) -> Result<Self> {
         if paths.is_empty() {
             return Err(anyhow!("at least one GGUF part path is required"));
+        }
+        for path in paths {
+            skippy_model_ref::validate_gguf_model_path(path.as_ref())
+                .map_err(anyhow::Error::msg)?;
         }
         let use_events = event_queue.is_some() && runtime_events::model_open_events_supported();
         let begin_label = if use_events {
@@ -464,22 +461,6 @@ impl StageModel {
 
     pub fn open(path: impl AsRef<Path>, config: &RuntimeConfig) -> Result<Self> {
         Self::open_path_with_optional_event_queue(path, config, None)
-    }
-
-    /// Opens an official Hugging Face SafeTensors checkpoint without writing an
-    /// intermediate GGUF. Quantization, when requested, happens per tensor as
-    /// llama.cpp allocates the model's destination buffers.
-    pub fn open_safetensors(
-        source: impl AsRef<Path>,
-        quantization: crate::CheckpointQuantization,
-        config: &RuntimeConfig,
-    ) -> Result<Self> {
-        let raw = crate::checkpoint::open_safetensors(source.as_ref(), quantization, config)?;
-        Self::from_opened_raw(
-            raw,
-            config,
-            "skippy_model_open_from_source returned a null handle",
-        )
     }
 
     /// Opens with native model-open events delivered into `event_queue`.

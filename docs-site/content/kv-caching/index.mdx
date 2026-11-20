@@ -73,6 +73,35 @@ Supported explicit live K/V values are `f16`, `q8_0`, and `q4_0`. Quantized V
 requires compatible Flash Attention and model geometry. An incompatible
 explicit choice fails rather than silently changing precision.
 
+## Unified-memory systems
+
+Native resident caching keeps attention cells in the shared KV pool. Hybrid and
+recurrent models also retain immutable checkpoints in a separate, bounded
+host-RAM budget. This works with disk caching disabled. Set `prefix_cache_ram`
+to an IEC size to bound those checkpoints; `off` or an unset value selects the
+1 GiB default. Disable prefix caching itself to retain no checkpoints.
+
+For serialized runtimes, **keep the optional L2 tier disabled on unified-memory
+systems**. It competes with L1 for the same physical memory and adds restore
+overhead. This tier remains disabled by default.
+
+Bound finished requests' attention retention with
+`--prefix-cache-retention-tokens` (16,384 by default), and bound entries with
+`--prefix-cache-max-entries`. These limits do not enlarge an individual
+request's context window.
+
+## Shared KV placement
+
+Requests share a unified pool while keeping their own context limits.
+`--kv-pool-tokens` caps the aggregate pool; it must hold at least one full
+request context. Batch-aware placement keeps each request's rows together so
+supported attention kernels can read consecutive runs efficiently.
+
+`--kv-lazy-clear=false` zeroes the pool eagerly.
+`--kv-release-pages=false` keeps freed pages resident, and
+`--kv-row-attention=false` selects ordinary attention. Use these controls for
+matched backend measurements; page-release costs depend on the platform.
+
 ## Observe cache behavior
 
 OpenAI responses report reused tokens as
@@ -85,7 +114,11 @@ status, matched prefix tokens, suffix prefill tokens, and restore source.
 | --- | --- |
 | `prefix_cache` | Select `auto`, `on`, `off`, or record-only mode |
 | `prefix_cache_budget` | Set the resident retention target |
+| `prefix_cache_exact_budget` | Set the exact-state retention ceiling; one snapshot may exceed it |
 | `prefix_cache_max_entries` | Limit retained prefix entries |
+| `prefix_cache_ram` | Bound native recurrent checkpoints; serialized runtimes use optional L2 |
+| `prefix_cache_retention_tokens` | Bound attention cells retained after requests finish |
+| `prefill_admission` | Cooperatively batch uncached suffixes, or serialize their prefill |
 | `prefix_cache_min_tokens` | Avoid recording prefixes below a token threshold |
 | `prefix_cache_stride_tokens` | Set shared-prefix checkpoint spacing |
 | `kv_cache_type_k`, `kv_cache_type_v` | Choose live key/value precision |

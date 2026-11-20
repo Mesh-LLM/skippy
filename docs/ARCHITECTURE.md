@@ -11,19 +11,17 @@ change Skippy's defaults or build graph.
 |---|---|---|
 | `skippy` CLI | `skippy-cli`, `skippy-commands` | Operators running model management, local OpenAI serving, or explicit stage workers. |
 | HTTP inference frontend | `skippy-inference-api` | OpenAI-compatible, Anthropic Messages, and SystemOne routes share one backend and lifecycle contract. |
-| Rust model lifecycle | `skippy-api::serving` | Embedding hosts load a model with `ModelLoadRequest` and retain `LoadedModelBackend` while serving. The options are currently a low-level integration contract, not a small stable SDK facade. |
+| Production Rust embedding | `skippy-api::execution` | Hosts load an explicitly pinned dynamic runtime and own model or admitted stage handles. See [production embedding](PRODUCTION_EMBEDDING.md). |
+| Specialist Rust lifecycle | `skippy-api::serving`, `stage_load`, `stage_admission` | Hosts compose advanced serving policy and admitted stage controls at a pinned revision. |
 | Native runtime selection | `skippy-api::native_runtime` | The caller supplies bundle and cache locations. The API neither chooses a product home directory nor downloads implicitly. |
 | Package-v2 format | `skippy-package-format` | Producers and consumers share validated manifests and content identities. Format compatibility is separate from the native ABI. |
 | Stage wire protocol | `skippy-protocol` | Internal, generation-gated stage traffic. Mixed generations fail closed; it is not a backwards-compatible public network API. |
 | C ABI | `llama_cpp/patches`, `skippy-ffi` | Experimental version-0 capability API. The patched native header and Rust version constants advance together. |
 
-`skippy-serving`, `skippy-runtime`, `skippy-cache`, and `skippy-scheduler` are
-implementation layers. Embedding hosts may currently use their advanced types
-through `ModelLoadRequest`, but those types are not a promise of a stable,
-single-crate embedding SDK. A future narrower facade should accept validated
-model/runtime locations and a small serving policy, then retain native resources
-behind an opaque handle. Keep advanced controls available to specialist callers;
-do not duplicate the execution engine or add a crate merely to hide it.
+The production execution handle owns the model, listener, scheduler and cache
+resources. Specialist callers can opt into deeper Skippy types for a pinned
+source revision. Mesh and other embedding hosts own coordination, transport
+identity, and product configuration.
 
 ## Ownership flow
 

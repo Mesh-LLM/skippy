@@ -1,7 +1,6 @@
 use anyhow::Result;
 
 mod acquisition;
-mod capabilities;
 pub mod cli;
 mod details;
 mod dispatch;
@@ -22,6 +21,8 @@ mod transfer;
 mod updates;
 pub use download::{DownloadedModel, download_model, model_cache_dir};
 pub use output::ModelCommandContext;
+
+pub use skippy_model_hf::details::reject_safetensors_model_ref;
 
 /// Execute the shared model-command contract for a product's console.
 pub async fn run(command: &cli::ModelsCommand, context: ModelCommandContext) -> Result<()> {

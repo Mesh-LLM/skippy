@@ -1,7 +1,5 @@
 //! Checkpoint-aware prefill yields native iterations between exact boundaries.
 use super::*;
-use crate::kv_integration::PrefillKvIdentity;
-use crate::kv_integration::scheduling::CacheSchedulingPolicy;
 
 pub(super) fn deferred_suffix_prefill_enabled(
     scheduling: Option<CacheSchedulingPolicy>,
@@ -10,7 +8,7 @@ pub(super) fn deferred_suffix_prefill_enabled(
     scheduling.is_some_and(CacheSchedulingPolicy::cooperative)
 }
 
-pub(super) fn deferred_suffix_split(
+fn deferred_suffix_split(
     restored_prefill_tokens: usize,
     prompt_token_count: usize,
     checkpoint_token_count: Option<usize>,
@@ -569,9 +567,6 @@ impl StageOpenAiBackend {
             };
         ensure_cache_operation_active(runtime, session_id, cache_operation)?;
         let capacity = if let Some(kv) = self.kv.as_ref() {
-            let decode_batch_tokens = u64::from(self.config.n_batch.unwrap_or(2048));
-            let target_free_tokens =
-                decode_batch_tokens.saturating_add(u64::from(max_tokens).min(decode_batch_tokens));
             let request_tokens = if kv.payload == StagePrefixCachePayload::ResidentKv {
                 prefill_tokens
                     .len()
@@ -584,8 +579,11 @@ impl StageOpenAiBackend {
                 runtime,
                 session_id,
                 request_tokens,
-                decode_batch_tokens,
-                target_free_tokens,
+                // Prefill reserves its actual suffix and final prompt token.
+                // Decode admission owns any later batch watermark; reserving
+                // it here would reject prompts that fit the context exactly.
+                0,
+                0,
                 protected_resident_seq_id,
             )
             .map_err(openai_backend_error)?

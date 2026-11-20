@@ -220,6 +220,13 @@ impl BindingGenerator {
                     // Only sampler pointers cross this surface. Libclang versions
                     // disagree about traversing its internal callback vtable.
                     .blocklist_type("llama_sampler")
+                    // Some libclang versions traverse the blocklisted
+                    // llama_sampler definition and emit its vtable internals as
+                    // dependents; others do not. Pin them out so generation is
+                    // identical across platforms.
+                    .blocklist_type("^llama_sampler_(i|data|context_t)$")
+                    .blocklist_type("^llama_token_data(_array)?$")
+                    .blocklist_type("^(ggml_context|ggml_cgraph)$")
                     .raw_line("pub enum llama_sampler {}")
                     .allowlist_function(
                         "^(llama_model_quantize|llama_model_quantize_default_params|\

@@ -356,9 +356,7 @@ just skippy-llama-api-planner-probe <model.gguf>      # plan/probe a model
 - **Fix the class, not the instance.** When the same defect appears twice, the
   second occurrence is evidence that a guard is missing.
 
-- **Do not write new Python tooling.** Benchmark report admission and comparison
-  belong to `cargo xtool automation skippy-benchmark-compare`. New automation belongs in a `just` recipe or a typed `tools/`
-  helper; the repository rule is in the root `AGENTS.md`.
+- Use Just recipes and shell or Python scripts for benchmark orchestration.
 - **Commit through the recipe**, never a bare `git commit` on this tree:
   `just skippy-api-checkpoint "<type(scope): subject>" [embed.gguf] [reranker.gguf]`.
   It runs format, tidy, the C++ suite and the Rust end-to-end suite first.
@@ -369,6 +367,17 @@ just skippy-llama-api-planner-probe <model.gguf>      # plan/probe a model
 
 ## Traps that have already bitten us
 
+- **An invalid fixture span aborts before the rejection path runs.** Hosted
+  Ubuntu 26.04's GCC 15 caught `output(7)` and `output(8)` taking `first(n)`
+  from the embedding fixture's six-element buffer in PR #48. Earlier standard
+  libraries did not diagnose that precondition violation, so the tests looked
+  green without valid backing storage. Batch rejection tests now own arrays of
+  the requested sizes and construct their output spans directly from those
+  arrays; a short API buffer is still a valid span. Rung 1: array-to-span
+  construction in `EmbedTest.BatchRejectsAnEmptyRowBeforeTheBackend` and
+  `EmbedTest.BatchRejectsAShortBuffer`; both also reproduce the original abort
+  with libc++ debug hardening before the fix. Do not disable library bounds
+  checks to make a rejection fixture pass.
 - **Cargo must track the selected native checkout.** At `aa627bb692`, adding an
   untracked native header after a fresh build still reported `Fresh skippy-sys`:
   only facade inputs had `rerun-if-changed` directives, so preparing a new native

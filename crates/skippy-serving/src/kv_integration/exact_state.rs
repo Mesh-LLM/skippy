@@ -513,6 +513,9 @@ impl KvStageIntegration {
         l3_cost: Option<skippy_cache::policy::CostSample>,
         write_through_l3: bool,
     ) -> Result<Option<ExactStateRecord>> {
+        if self.records_resident_prefixes() {
+            return Ok(None);
+        }
         let Some((exact_state_payload, admission_credit)) = self.begin_exact_state_capture(
             runtime,
             session_id,
@@ -601,6 +604,9 @@ impl KvStageIntegration {
         l3_cost: Option<skippy_cache::policy::CostSample>,
         write_through_l3: bool,
     ) -> Result<SessionEndCapture> {
+        if self.records_resident_prefixes() {
+            return Ok(SessionEndCapture::Skipped);
+        }
         let token_count = identity.identity.token_count;
         if !self.defers_kv_copy(runtime, session_id, token_count) {
             return self
@@ -718,9 +724,6 @@ impl KvStageIntegration {
         write_through_l3: bool,
         retained: Option<snapshot_headroom::SnapshotReservation>,
     ) -> Result<Option<(StagePrefixCachePayload, ExactStateAdmissionCredit)>> {
-        if self.records_resident_prefixes() {
-            return Ok(None);
-        }
         let Some(exact_state_payload) = self.exact_state_payload() else {
             return Ok(None);
         };

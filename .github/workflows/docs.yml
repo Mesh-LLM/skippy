@@ -25,7 +25,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   documentation:
-    name: ${{ github.event_name == 'pull_request' && 'CI' || 'Documentation' }}
+    name: Documentation
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -48,6 +48,7 @@ jobs:
           name: ${{ inputs.artifact_scope || 'ci' }}-docs-site
           path: docs-site/out
           if-no-files-found: error
+          overwrite: true
           retention-days: 7
       - name: Deploy beta documentation
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

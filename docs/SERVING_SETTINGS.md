@@ -26,7 +26,7 @@ flags, so file settings can be disabled explicitly. Unknown keys, incorrect
 sections and invalid values are rejected. Conflicting model sources are errors;
 override the same source option when changing the model from a settings file.
 With a prepared `--config`, model preparation options (`ctx_size`,
-`n_gpu_layers`, `quant`, `checkpoint_imatrix`, `mmproj`, `hash_cache`) retain
+`n_gpu_layers`, `mmproj`) retain
 their existing conflicts; those values belong in the prepared stage plan.
 
 Use snake_case option names in TOML, under the section shown below. CLI-only
@@ -185,9 +185,6 @@ with their runtime purpose; existing controls follow in the same sections.
 | `--no-host-buffer` | `no_host_buffer` | Bypass the model host buffer |
 | `--model` | `model` | See `skippy serve --help` for values and defaults. |
 | `--model-path` | `model_path` | See `skippy serve --help` for values and defaults. |
-| `--quant` | `quant` | See `skippy serve --help` for values and defaults. |
-| `--checkpoint-imatrix` | `checkpoint_imatrix` | See `skippy serve --help` for values and defaults. |
-| `--hash-cache` | `hash_cache` | See `skippy serve --help` for values and defaults. |
 
 ### [execution]
 
@@ -227,7 +224,7 @@ with their runtime purpose; existing controls follow in the same sections.
 | `--prefix-cache` | `prefix_cache` | Prompt reuse: auto, on, off, record |
 | `--prefix-cache-codec` | `prefix_cache_codec` | Durable representation: native or experimental cachegen |
 | `--prefix-cache-budget` | `prefix_cache_budget` | Retention target: auto, unbounded, or IEC size; exact snapshots may exceed it |
-| `--prefix-cache-ram` | `prefix_cache_ram` | Host-RAM tier: off or IEC size; requires disk caching |
+| `--prefix-cache-ram` | `prefix_cache_ram` | Native recurrent-checkpoint RAM budget, independent of disk; off/unset selects the bounded default. Serialized runtimes use an optional host-RAM tier requiring disk caching |
 | `--prefix-cache-max-entries` | `prefix_cache_max_entries` | Maximum retained prefix entries |
 | `--prefix-cache-min-tokens` | `prefix_cache_min_tokens` | Minimum prefix length to record or reuse |
 | `--prefix-cache-stride-tokens` | `prefix_cache_stride_tokens` | Shared-prefix checkpoint spacing in tokens |

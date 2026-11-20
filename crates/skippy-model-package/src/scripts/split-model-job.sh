@@ -257,8 +257,7 @@ if [ "$REPUBLISH" = "true" ]; then
             --source-revision "$SOURCE_REVISION" \
             --token "$(date -u +%Y%m%d%H%M%S)-$$"
     )"
-    SNAPSHOT_STATE=()
-    while IFS= read -r line; do SNAPSHOT_STATE+=("$line"); done <<< "$SNAPSHOT_OUTPUT"
+    mapfile -t SNAPSHOT_STATE <<< "$SNAPSHOT_OUTPUT"
     TARGET_UPLOAD_REVISION="${SNAPSHOT_STATE[0]:?missing staging revision}"
     TARGET_MAIN_PARENT="${SNAPSHOT_STATE[1]:?missing target main parent}"
     echo "  Staging replacement on ${TARGET_UPLOAD_REVISION} from ${TARGET_MAIN_PARENT}"
@@ -422,8 +421,7 @@ LAYER_PROJECTION_OUTPUT="$("$LAYER_JOB" project --manifest "$PACKAGE_DIR/model-p
     --source-admission-file "$SOURCE_ADMISSION_DIR/source.json" \
     --target-repo "$TARGET_REPO" --pipeline-tag "${SOURCE_PIPELINE_TAG:-text-generation}" \
     --output-directory "$LAYER_PROJECTION_DIR" "${LAYER_JOB_EXPERIMENTAL_ARGS[@]}")"
-LAYER_PROJECTION_SUMMARY=()
-while IFS= read -r line; do LAYER_PROJECTION_SUMMARY+=("$line"); done <<< "$LAYER_PROJECTION_OUTPUT"
+mapfile -t LAYER_PROJECTION_SUMMARY <<< "$LAYER_PROJECTION_OUTPUT"
 if [ "${#LAYER_PROJECTION_SUMMARY[@]}" -ne 3 ]; then echo "ERROR: native projection summary refused" >&2; exit 1; fi
 SOURCE_IDENTITY="${LAYER_PROJECTION_SUMMARY[0]}"
 LAYER_COUNT="${LAYER_PROJECTION_SUMMARY[1]}"

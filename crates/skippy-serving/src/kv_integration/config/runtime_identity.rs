@@ -44,7 +44,6 @@ impl KvStageIntegration {
         proof_config.model_path = Some(path.to_string_lossy().into_owned());
         proof_config.model_part_paths.clear();
         proof_config.projector_path = None;
-        proof_config.checkpoint_imatrix = None;
         let content =
             crate::runtime_state::model_content::VerifiedModelContent::observe(&proof_config)?
                 .map(Arc::new);

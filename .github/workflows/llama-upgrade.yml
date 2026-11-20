@@ -19,10 +19,13 @@ concurrency:
   group: skippy-llama-upgrade
   cancel-in-progress: false
 env:
+  CARGO_INCREMENTAL: '0'
   CARGO_PROFILE_DEV_DEBUG: '0'
   CARGO_PROFILE_TEST_DEBUG: '0'
   CARGO_PROFILE_RELEASE_DEBUG: '0'
   CARGO_PROFILE_BENCH_DEBUG: '0'
+  SCCACHE_GHA_ENABLED: 'true'
+  SKIPPY_REQUIRE_SCCACHE: '1'
 jobs:
   candidate:
     if: github.ref == 'refs/heads/main'
@@ -45,6 +48,13 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - uses: ./.github/actions/cache
+        with:
+          scope: upgrade-tools
+          download-scope: upgrade-candidate
+      - uses: ./.github/actions/sccache
+        with:
+          scope: upgrade-candidate-${{ runner.os }}-${{ runner.arch }}
       - name: Resolve immutable upstream source
         id: resolve
         env:
@@ -58,6 +68,10 @@ jobs:
         env:
           UPSTREAM_SHA: ${{ steps.resolve.outputs.upstream_sha }}
         run: just automation-run upgrade prepare "$UPSTREAM_SHA"
+      - uses: ./.github/actions/report-sccache
+        if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
+        with:
+          artifact-prefix: llama-candidate-preparation
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: steps.prepare.outcome == 'success'
         with:
@@ -81,6 +95,10 @@ jobs:
   candidate_ci:
     needs: candidate
     if: needs.candidate.outputs.certify == 'true'
+    permissions:
+      contents: read
+      packages: read
+      actions: read
     uses: ./.github/workflows/ci.yml
     with:
       artifact_scope: upgrade-candidate
@@ -109,10 +127,22 @@ jobs:
         with:
           artifact: llama-candidate
           sha: ${{ needs.candidate.outputs.candidate_sha }}
+      - uses: ./.github/actions/cache
+        with:
+          scope: upgrade-tools
+          download-scope: upgrade-family
+      - uses: ./.github/actions/sccache
+        with:
+          scope: upgrade-family-${{ matrix.backend }}-${{ runner.os }}-${{ runner.arch }}
+      - uses: ./.github/actions/native-source
       - name: Certify supported family roster
         env:
           BACKEND: ${{ matrix.backend }}
         run: just automation-run upgrade certify --backend "$BACKEND" --suite supported --pass candidate
+      - uses: ./.github/actions/report-sccache
+        if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
+        with:
+          artifact-prefix: llama-candidate-${{ matrix.backend }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
@@ -129,6 +159,10 @@ jobs:
           retention-days: 14
   independent_ci:
     needs: [candidate, candidate_ci, candidate_families]
+    permissions:
+      contents: read
+      packages: read
+      actions: read
     uses: ./.github/workflows/ci.yml
     with:
       artifact_scope: upgrade-independent
@@ -157,10 +191,22 @@ jobs:
         with:
           artifact: llama-candidate
           sha: ${{ needs.candidate.outputs.candidate_sha }}
+      - uses: ./.github/actions/cache
+        with:
+          scope: upgrade-tools
+          download-scope: upgrade-family
+      - uses: ./.github/actions/sccache
+        with:
+          scope: upgrade-family-${{ matrix.backend }}-${{ runner.os }}-${{ runner.arch }}
+      - uses: ./.github/actions/native-source
       - name: Independently rebuild and certify identical candidate
         env:
           BACKEND: ${{ matrix.backend }}
         run: just automation-run upgrade certify --backend "$BACKEND" --suite supported --pass independent
+      - uses: ./.github/actions/report-sccache
+        if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
+        with:
+          artifact-prefix: llama-independent-${{ matrix.backend }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:

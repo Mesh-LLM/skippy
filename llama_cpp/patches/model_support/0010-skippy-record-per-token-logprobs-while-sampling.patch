@@ -1,7 +1,7 @@
-From 2f937b08f33a88c5eef3a37ba2e0a0cf9f2a5797 Mon Sep 17 00:00:00 2001
+From 8e35697c719ba37463b8c2e00e678b2cef436682 Mon Sep 17 00:00:00 2001
 From: Virgile-pct <pourchetvirgile@gmail.com>
 Date: Wed, 21 Oct 2026 23:42:33 +0200
-Subject: [PATCH] skippy: record per-token logprobs while sampling
+Subject: [PATCH 26/32] skippy: record per-token logprobs while sampling
 
 A sampling config with SKIPPY_SAMPLING_FLAG_LOGPROBS records, for every
 token skippy_sample_token_ith samples, the token's log-probability under the
@@ -31,10 +31,10 @@ to touch common.h it carries the queue's ABI version, 0.1.77.
  create mode 100644 src/skippy/logprobs.cpp
 
 diff --git a/include/skippy.h b/include/skippy.h
-index fb2e80806..37a15eea3 100644
+index 4e33847d9..9497734b7 100644
 --- a/include/skippy.h
 +++ b/include/skippy.h
-@@ -25,6 +25,7 @@
+@@ -24,6 +24,7 @@
  #include "skippy/tokenization.h"
  #include "skippy/model_package.h"
  #include "skippy/signals.h"
@@ -43,7 +43,7 @@ index fb2e80806..37a15eea3 100644
  #include "skippy/system_one.h"
  #include "skippy/laya.h"
 diff --git a/include/skippy/common.h b/include/skippy/common.h
-index cc08d3899..d014c10da 100644
+index 80710eb3b..93232a2b8 100644
 --- a/include/skippy/common.h
 +++ b/include/skippy/common.h
 @@ -46,7 +46,7 @@ extern "C" {
@@ -144,10 +144,10 @@ index 1b42f32c0..c1a755c4c 100644
  
  #ifdef __cplusplus
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 63eee8ee1..9d7022c1a 100644
+index 19ba7e532..db89cc245 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -90,6 +90,7 @@ add_library(llama
+@@ -84,6 +84,7 @@ add_library(llama
              skippy/sampling_config.cpp
              skippy/chat_sampling.cpp
              skippy/sampling_vocab.cpp
@@ -281,10 +281,10 @@ index 3a2e3147e..e610e8205 100644
      std::vector<int32_t> prefill_n_seq_ids;
      std::vector<llama_seq_id> prefill_seq_ids;
 diff --git a/src/skippy/sampling.cpp b/src/skippy/sampling.cpp
-index 06f9a4735..662ed08ab 100644
+index b688fce73..f26e2194f 100644
 --- a/src/skippy/sampling.cpp
 +++ b/src/skippy/sampling.cpp
-@@ -431,6 +431,9 @@ static bool skippy_sampling_chain_is_reusable_for(
+@@ -429,6 +429,9 @@ static bool skippy_sampling_chain_is_reusable_for(
              session->sampling_backend_retired) {
          return false;
      }
@@ -294,7 +294,7 @@ index 06f9a4735..662ed08ab 100644
      if (sampling != nullptr &&
              skippy_sampling_configs_equal(session->sampling_config, *sampling)) {
          return true;
-@@ -619,13 +622,14 @@ void skippy_refresh_backend_sampling(
+@@ -565,13 +568,14 @@ void skippy_refresh_backend_sampling(
              session->sampling_chain != nullptr &&
              !session->sampling_has_grammar &&
              !session->sampling_has_reasoning_budget &&
@@ -310,7 +310,7 @@ index 06f9a4735..662ed08ab 100644
          skippy_session * session,
          const skippy_sampling_config * sampling,
          int32_t logits_index) {
-@@ -652,6 +656,21 @@ llama_token skippy_sample_token_ith(
+@@ -601,6 +605,21 @@ llama_token skippy_sample_token_ith(
      return LLAMA_TOKEN_NULL;
  }
  
@@ -333,7 +333,7 @@ index 06f9a4735..662ed08ab 100644
          skippy_session * session,
          const skippy_sampling_config * sampling) {
 diff --git a/src/skippy/sampling_internal.h b/src/skippy/sampling_internal.h
-index 38621b6e9..9847f95f0 100644
+index 7bbf16016..81bc26ff5 100644
 --- a/src/skippy/sampling_internal.h
 +++ b/src/skippy/sampling_internal.h
 @@ -18,6 +18,13 @@ struct skippy_session;
@@ -351,10 +351,10 @@ index 38621b6e9..9847f95f0 100644
          skippy_session * session,
          const llama_token * token_ids,
 diff --git a/src/skippy/session.cpp b/src/skippy/session.cpp
-index d5ac795e9..a08cd599f 100644
+index 9d0ba6ee5..ce5a349e7 100644
 --- a/src/skippy/session.cpp
 +++ b/src/skippy/session.cpp
-@@ -381,6 +381,7 @@ enum skippy_status skippy_session_reset(
+@@ -384,6 +384,7 @@ enum skippy_status skippy_session_reset(
          session->token_history.clear();
      }
      session->signal_history.clear();
@@ -374,6 +374,3 @@ index d3de66cbe..3ca967bf3 100644
  }
  
  namespace {
--- 
-2.54.0 (Apple Git-157)
-

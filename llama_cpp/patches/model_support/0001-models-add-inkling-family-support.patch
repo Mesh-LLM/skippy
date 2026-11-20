@@ -1,4 +1,4 @@
-From 284c6cd53ff900c1b3a91fd1390a87117a9594d5 Mon Sep 17 00:00:00 2001
+From b50c61ac8677a96dc1cf76e2cd398c75916d8816 Mon Sep 17 00:00:00 2001
 From: James Dumay <jameswdumay@gmail.com>
 Date: Fri, 6 Nov 2026 10:32:22 -0800
 Subject: [PATCH] models: add inkling family support
@@ -50,7 +50,7 @@ Subject: [PATCH] models: add inkling family support
  create mode 100644 tools/mtmd/models/inkling.cpp
 
 diff --git a/common/chat.cpp b/common/chat.cpp
-index f2e3ad37bcef7fa459a045a076b871292129b048..a54d8a23f96d08f208fa95765b03e22e2092edd5 100644
+index f2e3ad37b..a54d8a23f 100644
 --- a/common/chat.cpp
 +++ b/common/chat.cpp
 @@ -1390,6 +1390,14 @@ static common_chat_params_init_fn common_chat_template_detect_params_init(const
@@ -70,7 +70,7 @@ index f2e3ad37bcef7fa459a045a076b871292129b048..a54d8a23f96d08f208fa95765b03e22e
          return common_chat_params_init_lfm2_tokens;
 diff --git a/common/parsers/inkling.cpp b/common/parsers/inkling.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..6bf2ed611fde049908e3fcece675b026638761d1
+index 000000000..6bf2ed611
 --- /dev/null
 +++ b/common/parsers/inkling.cpp
 @@ -0,0 +1,117 @@
@@ -192,7 +192,7 @@ index 0000000000000000000000000000000000000000..6bf2ed611fde049908e3fcece675b026
 +    return data;
 +}
 diff --git a/common/parsers/parsers.h b/common/parsers/parsers.h
-index b1b6d166a124e78f56dc1bef1b30c08e25487bc7..917a1a66957495e0808e3aa727ed596cd16d148d 100644
+index b1b6d166a..917a1a669 100644
 --- a/common/parsers/parsers.h
 +++ b/common/parsers/parsers.h
 @@ -63,6 +63,8 @@ common_chat_params common_chat_params_init_kimi_k3(const common_chat_template &
@@ -205,7 +205,7 @@ index b1b6d166a124e78f56dc1bef1b30c08e25487bc7..917a1a66957495e0808e3aa727ed596c
  common_chat_params common_chat_params_init_lfm2(const common_chat_template & tmpl, const autoparser::generation_params & inputs, bool tool_list_tokens);
  
 diff --git a/common/parsers/sources.cmake b/common/parsers/sources.cmake
-index 2174f4519a64ad1195f5982cde49eb81570e68b8..7bbf85a85ee4ba119302db37c4696907d5704312 100644
+index 2174f4519..7bbf85a85 100644
 --- a/common/parsers/sources.cmake
 +++ b/common/parsers/sources.cmake
 @@ -14,6 +14,7 @@ set(LLAMA_CHAT_PARSERS_SOURCES
@@ -218,7 +218,7 @@ index 2174f4519a64ad1195f5982cde49eb81570e68b8..7bbf85a85ee4ba119302db37c4696907
      ${CMAKE_CURRENT_LIST_DIR}/minicpm5.cpp
 diff --git a/models/templates/Inkling.jinja b/models/templates/Inkling.jinja
 new file mode 100644
-index 0000000000000000000000000000000000000000..95874d23d765ab04484e5e1162f78181b861ddd1
+index 000000000..95874d23d
 --- /dev/null
 +++ b/models/templates/Inkling.jinja
 @@ -0,0 +1,514 @@
@@ -737,7 +737,7 @@ index 0000000000000000000000000000000000000000..95874d23d765ab04484e5e1162f78181
 +{%- endif -%}
 +{#- Unsloth translation to jinja from TML's parser #}
 diff --git a/src/llama-arch.cpp b/src/llama-arch.cpp
-index 05875a8a84624cb82700579975b8f5c083c55635..e659ba84a8d3ad48c705f08450c070d6ec7e3e9c 100644
+index 05875a8a8..e659ba84a 100644
 --- a/src/llama-arch.cpp
 +++ b/src/llama-arch.cpp
 @@ -179,6 +179,7 @@ static const std::map<llm_arch, const char *> LLM_ARCH_NAMES = {
@@ -784,7 +784,7 @@ index 05875a8a84624cb82700579975b8f5c083c55635..e659ba84a8d3ad48c705f08450c070d6
              return false;
          default:
 diff --git a/src/llama-arch.h b/src/llama-arch.h
-index cd34e36a9fd4709bdc73a6e2df5f16dd4bee687f..4ee49d708c02b4b6b5d685c16da883648c269ac5 100644
+index cd34e36a9..4ee49d708 100644
 --- a/src/llama-arch.h
 +++ b/src/llama-arch.h
 @@ -183,6 +183,7 @@ enum llm_arch {
@@ -840,10 +840,10 @@ index cd34e36a9fd4709bdc73a6e2df5f16dd4bee687f..4ee49d708c02b4b6b5d685c16da88364
      LLM_TENSOR_VISEXP_ATTN_OUT,
      LLM_TENSOR_VISEXP_FFN_GATE,
 diff --git a/src/llama-context.cpp b/src/llama-context.cpp
-index 57b96a094afce3f30679bb450e52f6ada3033e4c..34dea9eddf9ceebd0ca246c530fc94799badd70c 100644
+index bc031e147..dff74dde9 100644
 --- a/src/llama-context.cpp
 +++ b/src/llama-context.cpp
-@@ -282,6 +282,12 @@ llama_context::llama_context(
+@@ -281,6 +281,12 @@ llama_context::llama_context(
          }
      }
  
@@ -857,7 +857,7 @@ index 57b96a094afce3f30679bb450e52f6ada3033e4c..34dea9eddf9ceebd0ca246c530fc9479
      // the trunk tensors through ctx_other (see graph_mtp in nemotron-h-moe.cpp).
      // Without this clause the constructor silently drops params.ctx_other and
 diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
-index 1c032bb27a9ef6ce8e8765c3e3d41343ee9a31b4..3d810cddc33e3a156665e336b3f8333ea0c8c0e7 100644
+index dd066de24..1358811e8 100644
 --- a/src/llama-graph.cpp
 +++ b/src/llama-graph.cpp
 @@ -3617,10 +3617,27 @@ ggml_tensor * llm_graph_context::build_attn_mha(
@@ -904,7 +904,7 @@ index 1c032bb27a9ef6ce8e8765c3e3d41343ee9a31b4..3d810cddc33e3a156665e336b3f8333e
          }
          res->add_fused_node({kv_rows ? LLM_FUSED_OP_FLASH_ATTN_KV_ROWS : LLM_FUSED_OP_FLASH_ATTN, cur, il});
 diff --git a/src/llama-hparams.cpp b/src/llama-hparams.cpp
-index 1a554d2048ceb4f34f86c11fb08817c6a53aa5dc..08b81a067033bb19efdc4b060e3e7dcfed177540 100644
+index 1a554d204..08b81a067 100644
 --- a/src/llama-hparams.cpp
 +++ b/src/llama-hparams.cpp
 @@ -217,7 +217,7 @@ uint32_t llama_hparams::n_embd_k_idx(uint32_t il) const {
@@ -917,7 +917,7 @@ index 1a554d2048ceb4f34f86c11fb08817c6a53aa5dc..08b81a067033bb19efdc4b060e3e7dcf
      }
  
 diff --git a/src/llama-hparams.h b/src/llama-hparams.h
-index 53810f36f5794fbfde7e951654eb95676e7f1240..e685800f355a13753bc3a0c9126c90fcca023312 100644
+index 53810f36f..e685800f3 100644
 --- a/src/llama-hparams.h
 +++ b/src/llama-hparams.h
 @@ -106,9 +106,17 @@ struct llama_hparams {
@@ -940,10 +940,10 @@ index 53810f36f5794fbfde7e951654eb95676e7f1240..e685800f355a13753bc3a0c9126c90fc
      std::array<uint32_t, LLAMA_MAX_LAYERS> n_head_kv_arr;
      std::array<uint32_t, LLAMA_MAX_LAYERS> n_ff_arr;
 diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
-index 6602cc5bb888e94d954f7c275a0a48b3faecd873..8dd006f9e8fcf6fe54180f839cd207bb5fabe7f9 100644
+index b8fdbd578..f0f2be6fc 100644
 --- a/src/llama-kv-cache.cpp
 +++ b/src/llama-kv-cache.cpp
-@@ -3595,7 +3595,7 @@ void llama_kv_cache::set_input_pos_bucket(ggml_tensor * dst, const llama_ubatch
+@@ -3315,7 +3315,7 @@ void llama_kv_cache::set_input_pos_bucket(ggml_tensor * dst, const llama_ubatch
      }
  }
  
@@ -952,7 +952,7 @@ index 6602cc5bb888e94d954f7c275a0a48b3faecd873..8dd006f9e8fcf6fe54180f839cd207bb
      const int64_t n_tokens = ubatch->n_tokens;
  
      GGML_ASSERT(ggml_backend_buffer_is_host(dst->buffer));
-@@ -3605,7 +3605,16 @@ void llama_kv_cache::set_input_pos_rel_flat(ggml_tensor * dst, const llama_ubatc
+@@ -3325,7 +3325,16 @@ void llama_kv_cache::set_input_pos_rel_flat(ggml_tensor * dst, const llama_ubatc
      const int64_t n_kv = dst->ne[0];
      GGML_ASSERT(dst->ne[1] == n_tokens);
  
@@ -970,7 +970,7 @@ index 6602cc5bb888e94d954f7c275a0a48b3faecd873..8dd006f9e8fcf6fe54180f839cd207bb
      for (int64_t i = 0; i < n_tokens; ++i) {
          const llama_seq_id seq_id = ubatch->seq_id[i][0];
  
-@@ -3616,8 +3625,10 @@ void llama_kv_cache::set_input_pos_rel_flat(ggml_tensor * dst, const llama_ubatc
+@@ -3336,8 +3345,10 @@ void llama_kv_cache::set_input_pos_rel_flat(ggml_tensor * dst, const llama_ubatc
          for (int64_t j = 0; j < n_kv; ++j) {
              // use the ACTUAL absolute position in the KV cell; physical slot order is not monotonic
              int32_t rel = (int32_t) extent; // zero-bias column
@@ -983,7 +983,7 @@ index 6602cc5bb888e94d954f7c275a0a48b3faecd873..8dd006f9e8fcf6fe54180f839cd207bb
                  if (d >= 0 && d < (llama_pos) extent) {
                      rel = (int32_t) d;
                  }
-@@ -4874,8 +4885,9 @@ void llama_kv_cache_context::set_input_pos_bucket(ggml_tensor * dst, const llama
+@@ -4592,8 +4603,9 @@ void llama_kv_cache_context::set_input_pos_bucket(ggml_tensor * dst, const llama
      kv->set_input_pos_bucket(dst, ubatch);
  }
  
@@ -996,10 +996,10 @@ index 6602cc5bb888e94d954f7c275a0a48b3faecd873..8dd006f9e8fcf6fe54180f839cd207bb
  
  void llama_kv_cache_context::get_prev_tokens(const llama_ubatch & ubatch, uint32_t n, std::vector<llama_token> & res) const {
 diff --git a/src/llama-kv-cache.h b/src/llama-kv-cache.h
-index 1f9c607277ea8907e7b71014346b793c679a4a43..d17215ddab19da3dee0b6415fd470c2f79506711 100644
+index 47ed977c4..4bc80bb96 100644
 --- a/src/llama-kv-cache.h
 +++ b/src/llama-kv-cache.h
-@@ -344,7 +344,7 @@ public:
+@@ -302,7 +302,7 @@ public:
  
      // inkling: fill dst I32 [n_kv, n_tokens] with flat rel-bias gather indices,
      // idx(i, j) = i*(extent + 1) + rel; empty/out-of-band cells map to the zero-bias column `extent`
@@ -1008,7 +1008,7 @@ index 1f9c607277ea8907e7b71014346b793c679a4a43..d17215ddab19da3dee0b6415fd470c2f
  
      // true if llama_kv_cell_ext holds information that has to survive a state save/restore
      bool has_cell_ext() const;
-@@ -571,7 +571,7 @@ public:
+@@ -529,7 +529,7 @@ public:
      void set_input_k_shift   (ggml_tensor * dst) const;
      void set_input_attn_mask (const llm_attn_mask & attn_mask, const llama_ubatch * ubatch, bool causal_attn) const;
      void set_input_pos_bucket(ggml_tensor * dst, const llama_ubatch * ubatch) const;
@@ -1018,10 +1018,10 @@ index 1f9c607277ea8907e7b71014346b793c679a4a43..d17215ddab19da3dee0b6415fd470c2f
      // see llama_kv_cache::get_prev_tokens()
      void get_prev_tokens(const llama_ubatch & ubatch, uint32_t n, std::vector<llama_token> & res) const;
 diff --git a/src/llama-model.cpp b/src/llama-model.cpp
-index 0f4d15e68674e63978ebda3c6891873ee06936a3..3220ac44eb23195792bb230ae9c12afd65647d0e 100644
+index 143c1f895..d614d1a0a 100644
 --- a/src/llama-model.cpp
 +++ b/src/llama-model.cpp
-@@ -386,6 +386,8 @@ static llama_model * llama_model_mapping(llm_arch arch, const llama_model_params
+@@ -385,6 +385,8 @@ static llama_model * llama_model_mapping(llm_arch arch, const llama_model_params
              return new llama_model_k2_horizon(params);
          case LLM_ARCH_KOLIBRI1:
              return new llama_model_kolibri1(params);
@@ -1030,7 +1030,7 @@ index 0f4d15e68674e63978ebda3c6891873ee06936a3..3220ac44eb23195792bb230ae9c12afd
          default:
              throw std::runtime_error(std::string("unsupported model architecture: '") + llm_arch_name(arch) + "'");
      }
-@@ -3433,8 +3435,19 @@ llama_memory_i * llama_model::create_memory(
+@@ -3430,8 +3432,19 @@ llama_memory_i * llama_model::create_memory(
                              return il < hparams.n_layer() && !hparams.is_recr(il) && hparams.is_indexer_full(il);
                          };
                      } else if (arch == LLM_ARCH_FALCON_H1) {
@@ -1050,7 +1050,7 @@ index 0f4d15e68674e63978ebda3c6891873ee06936a3..3220ac44eb23195792bb230ae9c12afd
                      } else if (arch == LLM_ARCH_NEMOTRON_H || arch == LLM_ARCH_NEMOTRON_H_MOE) {
                          filter_attn = [&](uint32_t il) {
                              return !hparams.is_recr(il) && hparams.n_ff(il) == 0;
-@@ -3827,6 +3840,7 @@ llama_rope_type llama_model_rope_type(const llama_model * model) {
+@@ -3824,6 +3837,7 @@ llama_rope_type llama_model_rope_type(const llama_model * model) {
          case LLM_ARCH_KIMI_K31:
          case LLM_ARCH_GLM5_NEXT:
          case LLM_ARCH_STARCODER:
@@ -1059,7 +1059,7 @@ index 0f4d15e68674e63978ebda3c6891873ee06936a3..3220ac44eb23195792bb230ae9c12afd
  
          // use what we call a normal RoPE, operating on pairs of consecutive head values
 diff --git a/src/llama-model.h b/src/llama-model.h
-index 06cd32f6220c0455311d0cb3cbb0e657ff960904..a5d8e9ac3049584dff532957be952915e471b247 100644
+index 06cd32f62..a5d8e9ac3 100644
 --- a/src/llama-model.h
 +++ b/src/llama-model.h
 @@ -681,6 +681,15 @@ struct llama_layer {
@@ -1079,10 +1079,10 @@ index 06cd32f6220c0455311d0cb3cbb0e657ff960904..a5d8e9ac3049584dff532957be952915
  };
  
 diff --git a/src/llama-quant.cpp b/src/llama-quant.cpp
-index 2cbe4e5668376c1242eda99929182a4e1d57c081..785823b3dca0585d400d1ed27c3c056d2009d89a 100644
+index 69379305b..2c90b2331 100644
 --- a/src/llama-quant.cpp
 +++ b/src/llama-quant.cpp
-@@ -358,6 +358,16 @@ static bool tensor_allows_quantization(const llama_model_quantize_params * param
+@@ -357,6 +357,16 @@ static bool tensor_allows_quantization(const llama_model_quantize_params * param
      quantize &= name.find("conv_dw") == std::string::npos;
      quantize &= name.rfind("a.gen.wav.quant.", 0) != 0;
  
@@ -1100,10 +1100,10 @@ index 2cbe4e5668376c1242eda99929182a4e1d57c081..785823b3dca0585d400d1ed27c3c056d
      quantize &= name.find("indexer.k_proj.weight") == std::string::npos;
      quantize &= name.find("indexer.q_proj.weight") == std::string::npos;
 diff --git a/src/llama-vocab.cpp b/src/llama-vocab.cpp
-index 4008012df1f54ac734bde295085111796781a65f..9487e9f5ee8a50f89fe4c221d16d0b6e04f48b19 100644
+index 229a051e0..4f2e601d8 100644
 --- a/src/llama-vocab.cpp
 +++ b/src/llama-vocab.cpp
-@@ -460,6 +460,12 @@ struct llm_tokenizer_bpe : llm_tokenizer {
+@@ -459,6 +459,12 @@ struct llm_tokenizer_bpe : llm_tokenizer {
                      "[^\\r\\n\\p{L}\\p{N}]?((?=[\\p{L}\\p{M}])([^a-z]))*((?=[\\p{L}\\p{M}])([^A-Z]))+(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|[^\\r\\n\\p{L}\\p{N}]?((?=[\\p{L}\\p{M}])([^a-z]))+((?=[\\p{L}\\p{M}])([^A-Z]))*(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n/]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+",
                  };
                  break;
@@ -1116,7 +1116,7 @@ index 4008012df1f54ac734bde295085111796781a65f..9487e9f5ee8a50f89fe4c221d16d0b6e
              case LLAMA_VOCAB_PRE_TYPE_GRANITE_EMB_MULTI:
                  // Same lookaheads as GPT4O but with \p{M} added so combining marks
                  // (diacritics) attach to their base letters. Avoids excessive
-@@ -2678,6 +2684,10 @@ void llama_vocab::impl::load(llama_model_loader & ml, const LLM_KV & kv) {
+@@ -2677,6 +2683,10 @@ void llama_vocab::impl::load(llama_model_loader & ml, const LLM_KV & kv) {
                  tokenizer_pre == "talkie") {
                  pre_type = LLAMA_VOCAB_PRE_TYPE_GPT4O;
                  clean_spaces = false;
@@ -1128,7 +1128,7 @@ index 4008012df1f54ac734bde295085111796781a65f..9487e9f5ee8a50f89fe4c221d16d0b6e
                  tokenizer_pre == "granite-embed-multi-97m") {
                  pre_type = LLAMA_VOCAB_PRE_TYPE_GRANITE_EMB_MULTI;
 diff --git a/src/llama-vocab.h b/src/llama-vocab.h
-index 1ae5b65f6e0a2a370045b41f80c2985c6ea2e086..29190ca386228b6de50bb911bcd3b54ff76be658 100644
+index 1ae5b65f6..29190ca38 100644
 --- a/src/llama-vocab.h
 +++ b/src/llama-vocab.h
 @@ -75,6 +75,7 @@ enum llama_vocab_pre_type {
@@ -1141,7 +1141,7 @@ index 1ae5b65f6e0a2a370045b41f80c2985c6ea2e086..29190ca386228b6de50bb911bcd3b54f
  // HF Metaspace pre-tokenizer prepend_scheme
 diff --git a/src/models/inkling.cpp b/src/models/inkling.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..c6c9e223a66a7fde6cb8a3e24890ec4eaaad70ea
+index 000000000..c6c9e223a
 --- /dev/null
 +++ b/src/models/inkling.cpp
 @@ -0,0 +1,691 @@
@@ -1837,7 +1837,7 @@ index 0000000000000000000000000000000000000000..c6c9e223a66a7fde6cb8a3e24890ec4e
 +    ggml_build_forward_expand(gf, cur);
 +}
 diff --git a/src/models/models.h b/src/models/models.h
-index 39dbd99bc533c963a54e45599f24a14e4a5d635c..272b6dadfe0505b0b551ec87c6cfd0eb6b6f9bb0 100644
+index 39dbd99bc..272b6dadf 100644
 --- a/src/models/models.h
 +++ b/src/models/models.h
 @@ -2398,6 +2398,18 @@ struct llama_model_lfm3 : public llama_model_base {
@@ -1860,7 +1860,7 @@ index 39dbd99bc533c963a54e45599f24a14e4a5d635c..272b6dadfe0505b0b551ec87c6cfd0eb
      llama_model_smallthinker(const struct llama_model_params & params) : llama_model_base(params) {}
      void load_arch_hparams(llama_model_loader & ml) override;
 diff --git a/src/models/nemotron-h-moe.cpp b/src/models/nemotron-h-moe.cpp
-index 26b0ba7cf0064f1f73caa4f63c932a5553be1994..1d5da2af1a37efbd257dc70912e7ac3007c7184d 100644
+index 26b0ba7cf..1d5da2af1 100644
 --- a/src/models/nemotron-h-moe.cpp
 +++ b/src/models/nemotron-h-moe.cpp
 @@ -23,7 +23,7 @@ llama_model_nemotron_h_moe::graph_mtp::graph_mtp(const llm_graph_params & params
@@ -1873,7 +1873,7 @@ index 26b0ba7cf0064f1f73caa4f63c932a5553be1994..1d5da2af1a37efbd257dc70912e7ac30
      ggml_tensor * tok_embd_w = layer.nextn.embed_tokens ? layer.nextn.embed_tokens
                            : (model.tok_embd          ? model.tok_embd
 diff --git a/src/skippy/speculative_decoding.cpp b/src/skippy/speculative_decoding.cpp
-index 3fb86667d61e1c68748faa9133a7952ebd4af596..8a53ceb51250d70a1f6d47d3d08314069355fc3f 100644
+index 3fb86667d..8a53ceb51 100644
 --- a/src/skippy/speculative_decoding.cpp
 +++ b/src/skippy/speculative_decoding.cpp
 @@ -8,6 +8,7 @@
@@ -2020,7 +2020,7 @@ index 3fb86667d61e1c68748faa9133a7952ebd4af596..8a53ceb51250d70a1f6d47d3d0831406
          draft_limit = std::min<size_t>(draft_limit, mtp_depth_scope.depth_count);
      }
 diff --git a/tests/test-chat.cpp b/tests/test-chat.cpp
-index 4a15d1e719b6549b5cfbfdbef9bff92a19420492..175a951504cdcc6bbc945f9d142c0e1967095e8c 100644
+index 4a15d1e71..175a95150 100644
 --- a/tests/test-chat.cpp
 +++ b/tests/test-chat.cpp
 @@ -3135,6 +3135,97 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
@@ -2160,7 +2160,7 @@ index 4a15d1e719b6549b5cfbfdbef9bff92a19420492..175a951504cdcc6bbc945f9d142c0e19
  }
  
 diff --git a/tests/test-llama-archs.cpp b/tests/test-llama-archs.cpp
-index 4f5fb29d6f86f57f60f239ad41731b26ffd22c8f..0b3812728fc6fa8e734be18ab9803f684f5789b2 100644
+index 4f5fb29d6..0b3812728 100644
 --- a/tests/test-llama-archs.cpp
 +++ b/tests/test-llama-archs.cpp
 @@ -1274,6 +1274,10 @@ static bool arch_supported(const llm_arch arch) {
@@ -2175,7 +2175,7 @@ index 4f5fb29d6f86f57f60f239ad41731b26ffd22c8f..0b3812728fc6fa8e734be18ab9803f68
  #ifdef GGML_USE_WEBGPU
      if (arch == LLM_ARCH_DEEPSEEK32 || arch == LLM_ARCH_GLM_DSA || arch == LLM_ARCH_DOTS3NOTE || arch == LLM_ARCH_QWEN4EXP ||
 diff --git a/tests/test-mtmd-impl.cpp b/tests/test-mtmd-impl.cpp
-index 3fd72008865e27a4998399f2e39821c3c09a7181..0e019bfc7badb752658328c315f3206351c2f618 100644
+index 3fd720088..0e019bfc7 100644
 --- a/tests/test-mtmd-impl.cpp
 +++ b/tests/test-mtmd-impl.cpp
 @@ -2,6 +2,7 @@
@@ -2253,7 +2253,7 @@ index 3fd72008865e27a4998399f2e39821c3c09a7181..0e019bfc7badb752658328c315f32063
      mtmd_hparams hparams;
      hparams.image_longest_edge = 1540;
 diff --git a/tests/test-skippy-kv-page-export.cpp b/tests/test-skippy-kv-page-export.cpp
-index 17b7e5bbf0c8d477a6f3574967c8a4559da17a66..8fc8367fc4e27142bc6f0198819e10f164bead79 100644
+index 30c88b490..0fb9f036a 100644
 --- a/tests/test-skippy-kv-page-export.cpp
 +++ b/tests/test-skippy-kv-page-export.cpp
 @@ -1,4 +1,8 @@
@@ -2265,7 +2265,7 @@ index 17b7e5bbf0c8d477a6f3574967c8a4559da17a66..8fc8367fc4e27142bc6f0198819e10f1
  #include "../src/skippy/state_memory.h"
  
  #include "../src/llama-batch.h"
-@@ -92,7 +96,61 @@ static bool graph_cache_capabilities_cover_complete_state() {
+@@ -77,7 +81,61 @@ static bool graph_cache_capabilities_cover_complete_state() {
      return skippy_graph_cache_capabilities(result) == 0;
  }
  
@@ -2328,7 +2328,7 @@ index 17b7e5bbf0c8d477a6f3574967c8a4559da17a66..8fc8367fc4e27142bc6f0198819e10f1
          fprintf(stderr, "graph cache capabilities do not cover complete state\n");
          return 1;
 diff --git a/tools/mtmd/CMakeLists.txt b/tools/mtmd/CMakeLists.txt
-index c19815d67114778c19723f31abd35ac3c28e39f0..3fa9f0cbec74bb0b4dbf7007cce67d782d05ad5f 100644
+index c19815d67..3fa9f0cbe 100644
 --- a/tools/mtmd/CMakeLists.txt
 +++ b/tools/mtmd/CMakeLists.txt
 @@ -51,6 +51,7 @@ add_library(mtmd
@@ -2341,7 +2341,7 @@ index c19815d67114778c19723f31abd35ac3c28e39f0..3fa9f0cbec74bb0b4dbf7007cce67d78
              models/nemotron-v2-vl.cpp
 diff --git a/tools/mtmd/models/inkling.cpp b/tools/mtmd/models/inkling.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..71041023a3b7918852dcb7fc884ae7a98e30cfdd
+index 000000000..71041023a
 --- /dev/null
 +++ b/tools/mtmd/models/inkling.cpp
 @@ -0,0 +1,105 @@
@@ -2451,7 +2451,7 @@ index 0000000000000000000000000000000000000000..71041023a3b7918852dcb7fc884ae7a9
 +    return gf;
 +}
 diff --git a/tools/mtmd/models/models.h b/tools/mtmd/models/models.h
-index 4f68462ba9ee815df30dfa35d6a82c894766f012..68a4e8f26385c618d737f37c4852057513ca9c56 100644
+index 4f68462ba..68a4e8f26 100644
 --- a/tools/mtmd/models/models.h
 +++ b/tools/mtmd/models/models.h
 @@ -18,6 +18,17 @@ struct mtmd_graph_siglip : mtmd_graph {
@@ -2473,7 +2473,7 @@ index 4f68462ba9ee815df30dfa35d6a82c894766f012..68a4e8f26385c618d737f37c48520575
      mtmd_graph_gemma4v(mtmd_subcontext * ctx, const mtmd_image_f32 & img) : mtmd_graph(ctx, img) {}
      ggml_cgraph * build() override;
 diff --git a/tools/mtmd/mtmd-audio.cpp b/tools/mtmd/mtmd-audio.cpp
-index aceaf5391d6960b00bf5fa4d059b25e502a68899..b909c7431ec75392f774d07b1bf3bb747b23be83 100644
+index aceaf5391..b909c7431 100644
 --- a/tools/mtmd/mtmd-audio.cpp
 +++ b/tools/mtmd/mtmd-audio.cpp
 @@ -497,6 +497,78 @@ static bool log_mel_spectrogram(
@@ -2556,7 +2556,7 @@ index aceaf5391d6960b00bf5fa4d059b25e502a68899..b909c7431ec75392f774d07b1bf3bb74
  // mtmd_audio_preprocessor_whisper
  //
 diff --git a/tools/mtmd/mtmd-audio.h b/tools/mtmd/mtmd-audio.h
-index 5ffeca401892fb308d827a0ca592dc735f3c6b42..3ca95129b3fed75b80601e53d16662f30676cd68 100644
+index 5ffeca401..3ca95129b 100644
 --- a/tools/mtmd/mtmd-audio.h
 +++ b/tools/mtmd/mtmd-audio.h
 @@ -128,6 +128,18 @@ struct mtmd_audio_preprocessor_muse_spark_audio : mtmd_audio_preprocessor {
@@ -2579,7 +2579,7 @@ index 5ffeca401892fb308d827a0ca592dc735f3c6b42..3ca95129b3fed75b80601e53d16662f3
      mtmd_audio_preprocessor_conformer(const mtmd_model * model) : mtmd_audio_preprocessor(model) {}
      mtmd_audio_preprocessor_conformer(const mtmd_hparams & hparams, ggml_backend_sched_t sched) : mtmd_audio_preprocessor(hparams, sched) {}
 diff --git a/tools/mtmd/mtmd-graph.cpp b/tools/mtmd/mtmd-graph.cpp
-index 738837152cc241969e99601263f6aba464ade2bc..5c7e8389a4f7c76488e0874e97063c934bd38971 100644
+index 738837152..5c7e8389a 100644
 --- a/tools/mtmd/mtmd-graph.cpp
 +++ b/tools/mtmd/mtmd-graph.cpp
 @@ -752,6 +752,10 @@ std::unique_ptr<mtmd_graph> mtmd_get_graph_builder(mtmd_subcontext * ctx, const
@@ -2594,7 +2594,7 @@ index 738837152cc241969e99601263f6aba464ade2bc..5c7e8389a4f7c76488e0874e97063c93
          case PROJECTOR_TYPE_IDEFICS3:
          case PROJECTOR_TYPE_COHERE2V:
 diff --git a/tools/mtmd/mtmd-image.cpp b/tools/mtmd/mtmd-image.cpp
-index 33ce243d5291de5eeeab7031713c6e90345a2dc9..af307e5413e4adb460be49521878bf8201a732f4 100644
+index 33ce243d5..af307e541 100644
 --- a/tools/mtmd/mtmd-image.cpp
 +++ b/tools/mtmd/mtmd-image.cpp
 @@ -512,6 +512,78 @@ private:
@@ -2677,7 +2677,7 @@ index 33ce243d5291de5eeeab7031713c6e90345a2dc9..af307e5413e4adb460be49521878bf82
  // mtmd_image_preprocessor_llava_uhd
  //
 diff --git a/tools/mtmd/mtmd-image.h b/tools/mtmd/mtmd-image.h
-index 3e0b127e9e2fe84e08132ba72a4f654e9b0bdd60..4f8201a9f553d74f70a1e2cc581cffcf937a0bae 100644
+index 3e0b127e9..4f8201a9f 100644
 --- a/tools/mtmd/mtmd-image.h
 +++ b/tools/mtmd/mtmd-image.h
 @@ -26,6 +26,20 @@ struct mtmd_image_preproc_out {
@@ -2715,7 +2715,7 @@ index 3e0b127e9e2fe84e08132ba72a4f654e9b0bdd60..4f8201a9f553d74f70a1e2cc581cffcf
  // if image_resize_pad is true, the resized image will be padded, otherwise it will be either stretched or center-cropped depending on image_resize_pad
  // this is used by models with native support for dynamic image size, for example: Qwen-VL, Pixtral, Kimi-VL, etc
 diff --git a/tools/mtmd/mtmd-impl.h b/tools/mtmd/mtmd-impl.h
-index 9d447a05e09d2864d2fb9551a284511c2929ad5f..69f88f81e714ff52569c5554f9ce5df77ba03fd6 100644
+index 9d447a05e..69f88f81e 100644
 --- a/tools/mtmd/mtmd-impl.h
 +++ b/tools/mtmd/mtmd-impl.h
 @@ -422,6 +422,13 @@
@@ -2749,7 +2749,7 @@ index 9d447a05e09d2864d2fb9551a284511c2929ad5f..69f88f81e714ff52569c5554f9ce5df7
      { PROJECTOR_TYPE_LDP,               "ldp" },
      { PROJECTOR_TYPE_LDPV2,             "ldpv2"},
 diff --git a/tools/mtmd/mtmd-model.cpp b/tools/mtmd/mtmd-model.cpp
-index da74ed38334030e24b740c909f76ff0b0bd4fb01..b8576e6c9fc3b510047919274b8240ae83a83119 100644
+index da74ed383..b8576e6c9 100644
 --- a/tools/mtmd/mtmd-model.cpp
 +++ b/tools/mtmd/mtmd-model.cpp
 @@ -293,6 +293,21 @@ struct mtmd_model_loader {
@@ -2847,7 +2847,7 @@ index da74ed38334030e24b740c909f76ff0b0bd4fb01..b8576e6c9fc3b510047919274b8240ae
              return mm_model_block_1_block_2_1_b->ne[0];
          case PROJECTOR_TYPE_LDPV2:
 diff --git a/tools/mtmd/mtmd-model.h b/tools/mtmd/mtmd-model.h
-index 0d975ba36147e54e415bd9b47c2b033d4cfb5aaf..9f8cfc8ef80a935ff3e05248bb9558837608e21f 100644
+index 0d975ba36..9f8cfc8ef 100644
 --- a/tools/mtmd/mtmd-model.h
 +++ b/tools/mtmd/mtmd-model.h
 @@ -629,6 +629,12 @@ struct mtmd_code2wav {
@@ -2877,7 +2877,7 @@ index 0d975ba36147e54e415bd9b47c2b033d4cfb5aaf..9f8cfc8ef80a935ff3e05248bb955883
      ggml_tensor * patch_norm_1_w = nullptr;
      ggml_tensor * patch_norm_1_b = nullptr;
 diff --git a/tools/mtmd/mtmd-subcontext.cpp b/tools/mtmd/mtmd-subcontext.cpp
-index 64eb1b6909d7aff71aebae62486c6ef9191b8583..bb47ca8a589d2b1368ec6c3a842a97d94aaa84e2 100644
+index 64eb1b690..bb47ca8a5 100644
 --- a/tools/mtmd/mtmd-subcontext.cpp
 +++ b/tools/mtmd/mtmd-subcontext.cpp
 @@ -170,6 +170,11 @@ mtmd_image_f32_batch mtmd_subcontext::get_dummy_batch() const {
@@ -2904,7 +2904,7 @@ index 64eb1b6909d7aff71aebae62486c6ef9191b8583..bb47ca8a589d2b1368ec6c3a842a97d9
              {
                  const int grid_w = pos_w;            // image_size_width  / patch_size
 diff --git a/tools/mtmd/mtmd.cpp b/tools/mtmd/mtmd.cpp
-index 9b45d3de312a27f5890d4ebf2759559421db6612..a5289cf639956d4ea581823919dfd7a03d38c32b 100644
+index 9b45d3de3..a5289cf63 100644
 --- a/tools/mtmd/mtmd.cpp
 +++ b/tools/mtmd/mtmd.cpp
 @@ -807,6 +807,12 @@ struct mtmd_context {
@@ -2977,5 +2977,5 @@ index 9b45d3de312a27f5890d4ebf2759559421db6612..a5289cf639956d4ea581823919dfd7a0
                      // other models, we only need the total number of tokens
                      image_tokens->nx = n_tokens;
 -- 
-2.54.0 (Apple Git-157)
+2.56.0
 

@@ -9,10 +9,9 @@ use std::{any::Any, collections::BTreeMap, time::Duration};
 use opentelemetry_proto::tonic::metrics::v1::Metric;
 use serde_json::Value;
 
-use super::{
-    active_span::SpanLevel,
-    trace_context::{Frame, SpanContext, SpanEvent},
-};
+#[cfg(test)]
+use super::active_span::SpanLevel;
+use super::trace_context::{Frame, SpanContext, SpanEvent};
 
 /// A finished span, placed in the process trace.
 #[derive(Clone)]
@@ -54,9 +53,11 @@ impl SpanRecord {
 #[cfg_attr(not(feature = "tracy"), allow(dead_code))]
 pub(crate) struct SpanStart {
     pub(crate) name: &'static str,
+    #[cfg(test)]
     pub(crate) level: SpanLevel,
     pub(crate) context: SpanContext,
     pub(crate) parent: Option<[u8; 8]>,
+    #[cfg(test)]
     pub(crate) start_time_unix_nanos: u64,
 }
 
@@ -189,8 +190,6 @@ mod tests {
         capture_stage_config, trace_context,
     };
 
-    type StartedSpan = (&'static str, SpanLevel, SpanContext, Option<[u8; 8]>);
-
     #[test]
     fn an_open_span_returns_what_the_sink_kept() {
         assert_eq!(OpenSpan::keep(7_u32).take::<u32>(), Some(7));
@@ -198,10 +197,12 @@ mod tests {
         assert_eq!(OpenSpan::NONE.take::<u32>(), None);
     }
 
+    type StartedSpanRecord = (&'static str, SpanLevel, SpanContext, Option<[u8; 8]>);
+
     /// A sink that acts at both ends of a live span, as Tracy must.
     #[derive(Default)]
     struct Seen {
-        started: Mutex<Vec<StartedSpan>>,
+        started: Mutex<Vec<StartedSpanRecord>>,
         ended: Mutex<Vec<(String, SpanContext, Option<u64>)>>,
         discarded: Mutex<Vec<Option<u64>>>,
     }

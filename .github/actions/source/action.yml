@@ -1,5 +1,5 @@
 name: Restore certified candidate source
-description: Restore an upgrade candidate using the protected checkout's typed admission command.
+description: Restore an upgrade candidate using the protected checkout's source admission command.
 inputs:
   artifact:
     description: Same-run immutable candidate artifact, empty for normal SHA checkout.

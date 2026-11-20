@@ -25,16 +25,15 @@ verification semantics are unchanged.
 for a complete local target with strictly ordered capture layers. The draft
 consumes the capture buffer before the next target forward; upstream device
 events protect its lifetime. Unsupported layouts or missing optional exports
-keep the host feature path. This requires native ABI `0.1.81`, whose graph
-admission explicitly validates auxiliary capture writes. Both optimizations
+keep the host feature path. Native graph admission validates auxiliary capture writes. Both optimizations
 remain opt-in pending repeatable end-to-end gains.
 
 `StageSession::verify_batch_sampled` accepts requests from
 `verification_batch::VerifyBatchRequest` and shares a target forward across
 equal-length speculative windows. Each lane retains its own sampling history,
 checkpoint and rejection boundary. Callers must resolve every window through
-trim or retirement. This API is initially exercised by the concurrent DFlash
-diagnostic. Serving coalesces compatible windows by default;
+trim or retirement. The concurrent DFlash diagnostic exercises this API.
+Serving coalesces compatible windows by default;
 `SKIPPY_SHARED_VERIFY=0` retains independent submissions for diagnostics.
 See the serving crate's README.
 
@@ -60,7 +59,7 @@ ragged fallback. It requires local GGUF paths and a packaged Metal runtime:
 ```sh
 SKIPPY_DRAFT_LAYOUT_TARGET_MODEL=/path/to/target.gguf \
 SKIPPY_DRAFT_LAYOUT_DRAFT_MODEL=/path/to/selector-draft.gguf \
-MESH_LLM_NATIVE_RUNTIME_BUNDLE_DIR="$PWD/dist/native-runtimes" \
+SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR="$PWD/dist/native-runtimes" \
 just with-lld cargo test -p skippy-runtime --features dynamic-native-runtime \
   --lib selector_noise_blocks_match_independent_lanes_and_remove_scratch -- --ignored
 ```
@@ -76,9 +75,8 @@ flowchart TB
     Host["embedding application<br/>embedded serving + lifecycle"] --> R["skippy-runtime"]
     P["bench / prompt / correctness<br/>tokenization and local checks"] --> R
     S["skippy-serving<br/>prefill/decode requests"] --> R
-    ST["HF SafeTensors checkpoint<br/>config + tokenizer + shards"] --> M["skippy-model<br/>mapping + transforms"]
-    M --> R
-    R --> PS["package selector<br/>manifest + selected parts<br/>direct GGUF fake packages"]
+    G["Single or multipart GGUF"] --> R
+    R --> PS["package selector<br/>manifest + selected parts<br/>direct GGUF identities"]
     PS --> R
     R --> F["skippy-ffi"]
     F --> L["llama_cpp<br/>stage ABI"]
@@ -92,9 +90,7 @@ native exact-cache movement.
 
 ## Responsibilities
 
-- open staged model views
-- open local Hugging Face SafeTensors checkpoints directly, with optional
-  tensor-by-tensor load-time quantization and no intermediate GGUF
+- open staged model views from GGUF files or admitted GGUF package parts
 - create runtime sessions
 - tokenize and detokenize through llama
 - run prefill/decode calls
@@ -110,24 +106,3 @@ native exact-cache movement.
 - open selected package parts directly through the ABI for server runtime loads
 
 Keep service lifecycle, transport, and telemetry in higher-level crates.
-
-## Direct SafeTensors loading
-
-`StageModel::open` recognizes a local checkpoint directory containing
-`config.json` plus either `model.safetensors` or
-`model.safetensors.index.json`. It also accepts a `.safetensors` file and uses
-its parent directory for the checkpoint metadata. Set
-`RuntimeConfig::checkpoint_quantization` to preserve the canonical checkpoint
-types or select a supported llama.cpp quantization recipe such as `Bf16`,
-`Q4KM`, `IQ2XXS`, or `Q8_0`. Importance-aware recipes use
-`RuntimeConfig::checkpoint_imatrix`; relative paths resolve from the checkpoint
-directory, and required tensor entries are validated before model allocation.
-The shipped runtime exposes the same settings as
-`skippy serve --quant <RECIPE>` and `--checkpoint-imatrix <PATH>`; explicit
-CLI values take precedence over both default and model-local configuration.
-
-The runtime validates immutable shards with the official Rust `safetensors`
-crate. `skippy-model` maps and transforms source tensors, while the native
-Skippy ABI chooses destination tensor types and quantizes each stage-owned
-tensor as it is loaded. This initial direct path does not materialize a derived
-artifact cache and does not emit the GGUF model-open progress events.

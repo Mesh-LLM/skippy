@@ -18,6 +18,10 @@ never changes versions or pushes source. Tags created with an ordinary workflow
 `GITHUB_TOKEN` do not trigger another push workflow; use a maintainer or a scoped
 App if tag creation is automated.
 
+The workspace version is also the native runtime release identity and cache
+directory. Every release therefore makes hosts download its runtime, and changed
+runtime contents can never ship under an earlier release's identity.
+
 `release.yml` checks the tag against the committed Cargo version and main
 ancestry, then calls the same `ci.yml` used by PRs and main in release CUDA
 architecture mode. It requires all three enabled hosts and eight complete

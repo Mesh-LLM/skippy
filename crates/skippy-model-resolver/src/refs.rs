@@ -73,24 +73,6 @@ fn parse_model_ref_tuple(input: &str) -> Option<(String, Option<String>, Option<
     Some((parsed.repo, parsed.revision, parsed.selector))
 }
 
-pub fn is_split_mlx_first_shard(file: &str) -> bool {
-    let Some(rest) = file.strip_prefix("model-") else {
-        return false;
-    };
-    let Some(rest) = rest.strip_suffix(".safetensors") else {
-        return false;
-    };
-    let Some((left, right)) = rest.split_once("-of-") else {
-        return false;
-    };
-    left == "00001" && right.len() == 5 && right.bytes().all(|byte| byte.is_ascii_digit())
-}
-
-pub fn is_primary_mlx_weight_file(file: &str) -> bool {
-    let basename = file.rsplit('/').next().unwrap_or(file);
-    basename.eq_ignore_ascii_case("model.safetensors") || is_split_mlx_first_shard(basename)
-}
-
 pub fn format_huggingface_exact_ref(repo: &str, revision: Option<&str>, file: &str) -> String {
     match revision {
         Some(revision) => format!("{repo}@{revision}/{file}"),
@@ -101,12 +83,6 @@ pub fn format_huggingface_exact_ref(repo: &str, revision: Option<&str>, file: &s
 pub fn format_huggingface_display_ref(repo: &str, revision: Option<&str>, file: &str) -> String {
     if let Some(selector) = skippy_model_ref::quant_selector_from_gguf_file(file) {
         return skippy_model_ref::format_model_ref(repo, revision, Some(&selector));
-    }
-    if is_primary_mlx_weight_file(file) {
-        return match revision {
-            Some(revision) => format!("{repo}@{revision}"),
-            None => repo.to_string(),
-        };
     }
     format_huggingface_exact_ref(repo, revision, file)
 }
@@ -130,6 +106,47 @@ pub fn file_basename(input: &str) -> &str {
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or(input)
+}
+
+pub fn split_bare_name_selector(input: &str) -> (&str, Option<&str>) {
+    match input.split_once(':') {
+        Some((name, selector))
+            if !name.is_empty()
+                && !selector.is_empty()
+                && !name.contains('/')
+                && !name.contains('@')
+                && !name.contains("://") =>
+        {
+            (name, Some(selector))
+        }
+        _ => (input, None),
+    }
+}
+
+fn normalize_repo_leaf_name(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .map(|ch| ch.to_ascii_lowercase())
+        .collect()
+}
+
+pub fn select_strong_repo_hit(query: &str, repo_ids: &[String]) -> Option<String> {
+    let query_norm = normalize_repo_leaf_name(query);
+    if query_norm.is_empty() {
+        return None;
+    }
+    let mut exact = Vec::new();
+    for repo_id in repo_ids {
+        let leaf = repo_id.rsplit('/').next().unwrap_or(repo_id);
+        if normalize_repo_leaf_name(leaf) == query_norm {
+            exact.push(repo_id.clone());
+        }
+    }
+    if let Some(first) = exact.into_iter().next() {
+        return Some(first);
+    }
+    None
 }
 
 #[cfg(test)]
@@ -161,14 +178,14 @@ mod tests {
     }
 
     #[test]
-    fn formats_quant_and_mlx_display_refs() {
+    fn formats_quant_and_exact_file_display_refs() {
         assert_eq!(
             format_huggingface_display_ref("org/repo", Some("main"), "repo-Q4_K_M.gguf"),
             "org/repo@main:Q4_K_M"
         );
         assert_eq!(
             format_huggingface_display_ref("org/repo", Some("main"), "model.safetensors"),
-            "org/repo@main"
+            "org/repo@main/model.safetensors"
         );
     }
 

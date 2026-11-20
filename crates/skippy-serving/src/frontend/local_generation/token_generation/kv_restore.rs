@@ -1,7 +1,5 @@
 use super::*;
-use crate::kv_integration::{
-    KvLifecycleEvent, KvStageIntegration, ResidentMissDiagnosis, ResidentMissReason,
-};
+use crate::kv_integration::{KvLifecycleEvent, ResidentMissDiagnosis, ResidentMissReason};
 
 impl StageOpenAiBackend {
     #[allow(clippy::too_many_arguments)]

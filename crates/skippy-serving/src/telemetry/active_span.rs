@@ -90,9 +90,11 @@ impl ActiveSpan {
         let open = telemetry.as_ref().map(|telemetry| {
             telemetry.begin_span(&SpanStart {
                 name,
+                #[cfg(test)]
                 level,
                 context: frame.context(),
                 parent: frame.parent_span_id(),
+                #[cfg(test)]
                 start_time_unix_nanos: start_unix_nanos,
             })
         });
@@ -173,8 +175,7 @@ impl ActiveSpan {
             self.start_unix_nanos.saturating_add(elapsed),
         );
         record.links = std::mem::take(&mut self.links);
-        record.events = self.frame.take_events();
-        telemetry.end_span(open, record);
+        telemetry.end_span(open, &self.frame, record);
     }
 }
 

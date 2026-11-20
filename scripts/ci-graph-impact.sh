@@ -25,7 +25,8 @@ if [[ "$event" == "pull_request" ]] \
       scripts/build-llama.sh | scripts/prepare-llama.sh | \
       scripts/check-skippy-generated-family-patch.sh | scripts/check-skippy-public-headers.sh | \
       scripts/family-certify.sh | scripts/skippy-workload-certify.sh | \
-      tools/xtask/src/automation/native* | tools/xtask/src/automation/rewriter* | \
+      scripts/generate-skippy-*.py | scripts/lib/rewriter_report.py | scripts/rewriter-report.py | \
+      scripts/verify-skippy-family-generator-coverage.py | scripts/select-skippy-family-shards.py | \
       .github/workflows/llama-upgrade.yml | Cargo.toml | Cargo.lock | \
       rust-toolchain.toml | .cargo/*)
         required=true

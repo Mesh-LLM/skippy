@@ -154,9 +154,9 @@ local audit. This is another small isolated contribution, not an explanation
 of the full main-to-PR gain.
 
 Two API tests remain unqualified because the bundled split-certification roster
-still targets ABI 0.1.80 and its old recipe. The candidate is ABI 0.1.85. Do not
-relabel the roster or claim full API/family certification from these serving
-measurements. Broader rollout qualification remains outstanding.
+was recorded against ABI 0.1.80 and its original recipe. The measured candidate
+used ABI 0.1.85. The integration against current Skippy main uses ABI 0.1.88.
+Split and family certification require qualification of the exact recipe.
 
 Cached Metal dispatch prototypes, including serialized/deduplicated signatures
 and in-place snapshots, remain outside this PR. Their correctness/profile

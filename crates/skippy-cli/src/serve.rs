@@ -13,8 +13,11 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+use skippy_api::serving::{
+    ModelOpenEvent, ModelOpenEventKind, ModelOpenEvents, ModelOpenObservation,
+    ModelOpenProgressUnit,
+};
 use skippy_commands::console::{self, OutputMode};
-use skippy_runtime::{ModelOpenEventQueue, RuntimeEventKind, RuntimeEventProgressUnit};
 use tokio::{process::Command, sync::oneshot, task::JoinHandle};
 
 use crate::{
@@ -52,6 +55,7 @@ pub async fn run(mut args: ServeCommandArgs) -> Result<()> {
                 })
             })
             .flatten();
+        let catalog_name = catalog_model.as_ref().map(|entry| entry.name.clone());
         let (path, downloaded_projector) = if let Some(local_path) = existing {
             console::status("📂 Using cached model")?;
             (local_path, None)
@@ -79,6 +83,19 @@ pub async fn run(mut args: ServeCommandArgs) -> Result<()> {
         if !Path::new(&model).exists() {
             args.public.model_id.get_or_insert(model);
         }
+        // Only a catalog entry is named on analytics events, by its catalog
+        // name, whatever the model is served as. Anything else stays
+        // `redacted`.
+        if let (Some(catalog_name), Some(served)) = (catalog_name, args.public.model_id.as_deref())
+        {
+            skippy_analytics::models::register(
+                served,
+                skippy_analytics::models::ModelIdentity {
+                    model: skippy_analytics::Label::sanitize_or_redact(&catalog_name),
+                    ..skippy_analytics::models::ModelIdentity::redacted()
+                },
+            );
+        }
     }
     match args.stage_transport {
         Some(StageTransport::Binary) => serve_binary_stage(args).await,
@@ -103,6 +120,9 @@ fn installed_model_path(model: &str) -> Option<std::path::PathBuf> {
 }
 
 pub(crate) fn validate(args: &ServeCommandArgs) -> Result<()> {
+    if let Some(model) = args.model.as_deref() {
+        skippy_commands::models::reject_safetensors_model_ref(model)?;
+    }
     args.public.settings.validate_mode(args)?;
     args.public.settings.tuning(args.public.openai_guardrails)?;
     let mut stage = skippy_protocol::StageConfig::default();
@@ -145,8 +165,11 @@ async fn serve_public(args: ServeCommandArgs) -> Result<()> {
             &options.tuning,
         ));
     }
-    let model_open_events = ModelOpenEventQueue::new(skippy_runtime::next_operation_id());
-    options.model_open_events = Some(Arc::clone(&model_open_events));
+    options.model_open_events = ModelOpenEvents::observe(|observation| {
+        if let ModelOpenObservation::Event(event) = observation {
+            let _ = report_model_open_event(event);
+        }
+    });
     let model_id = options
         .model_id
         .clone()
@@ -167,7 +190,6 @@ async fn serve_public(args: ServeCommandArgs) -> Result<()> {
         args.prompt,
         stop,
         startup_timeout,
-        Some(model_open_events),
     )
     .await
 }
@@ -287,7 +309,6 @@ async fn serve_binary_stage(mut args: ServeCommandArgs) -> Result<()> {
         args.prompt,
         stop,
         startup_timeout,
-        None,
     )
     .await
 }
@@ -390,25 +411,27 @@ async fn serve_with_readiness(
     prompt: bool,
     stop: oneshot::Sender<()>,
     startup_timeout: Duration,
-    model_open_events: Option<Arc<ModelOpenEventQueue>>,
 ) -> Result<()> {
     if bind_addr.port() == 0 {
         bail!("--bind-addr must use a fixed port so readiness can be reported");
     }
     let api_base = format!("http://{}/v1", readiness_addr(bind_addr));
     let shutdown_requested = server.shutdown_requested;
-    let mut server = tokio::spawn(server.future);
     console::status("🧠 Loading model and starting the API")?;
+    let load_started = std::time::Instant::now();
+    let mut server = tokio::spawn(server.future);
     let readiness = wait_for_ready(
         &api_base,
         &model_id,
         &mut server,
         startup_timeout,
-        model_open_events.as_deref(),
         &shutdown_requested,
     )
-    .await?;
-    if readiness == ReadinessOutcome::ShutdownRequested {
+    .await;
+    if !matches!(readiness, Ok(ReadinessOutcome::ShutdownRequested)) {
+        record_model_load(&model_id, load_started.elapsed(), readiness.is_ok());
+    }
+    if readiness? == ReadinessOutcome::ShutdownRequested {
         return Ok(());
     }
     console::event(
@@ -425,6 +448,8 @@ async fn serve_with_readiness(
     // process so server shutdown can terminate and join the prompt reliably.
     let mut prompt_process =
         Command::new(std::env::current_exe().context("locate skippy executable")?)
+            // Part of this serve session, which is already reported.
+            .env(skippy_analytics::ENV_ANALYTICS, "0")
             .args([
                 "--output",
                 "human",
@@ -454,6 +479,18 @@ async fn serve_with_readiness(
             Ok(())
         }
     }
+}
+
+/// Report `model_load` for the public API's model.
+fn record_model_load(model_id: &str, elapsed: Duration, succeeded: bool) {
+    let properties = skippy_analytics::models::lookup(model_id)
+        .apply(skippy_analytics::Properties::new())
+        .with(
+            "load_ms",
+            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
+        )
+        .with("outcome", if succeeded { "loaded" } else { "failed" });
+    skippy_analytics::capture(skippy_analytics::Event::ModelLoad, properties);
 }
 
 fn readiness_addr(bind_addr: SocketAddr) -> SocketAddr {
@@ -490,15 +527,11 @@ async fn wait_for_ready(
     model_id: &str,
     server: &mut JoinHandle<Result<()>>,
     startup_timeout: Duration,
-    model_open_events: Option<&ModelOpenEventQueue>,
     shutdown_requested: &AtomicBool,
 ) -> Result<ReadinessOutcome> {
     let client = readiness_client()?;
     let deadline = Instant::now() + startup_timeout;
     loop {
-        if let Some(queue) = model_open_events {
-            report_model_open_events(queue)?;
-        }
         // AN ALREADY-FINISHED TASK IS NOT A RACE TO SAMPLE. `tokio::select!`
         // polls its branches in random order, so when the serving task has
         // already exited its outcome competes with the API probe's connection
@@ -530,9 +563,6 @@ async fn wait_for_ready(
                     let body: serde_json::Value = response.json().await.context("read ready model list")?;
                     let listed = body["data"].as_array().is_some_and(|items| items.iter().any(|item| item["id"] == model_id));
                     if listed && !server.is_finished() {
-                        if let Some(queue) = model_open_events {
-                            report_model_open_events(queue)?;
-                        }
                         return Ok(ReadinessOutcome::Ready);
                     }
                 }
@@ -548,45 +578,33 @@ async fn wait_for_ready(
     }
 }
 
-fn report_model_open_events(queue: &ModelOpenEventQueue) -> Result<()> {
-    let mut records = Vec::new();
-    queue.drain(&mut records, usize::MAX);
-    for record in records {
-        let event = record.to_event();
-        match event.kind {
-            RuntimeEventKind::ModelOpenProgress if event.progress_total > 0 => {
-                let unit = match event.progress_unit {
-                    RuntimeEventProgressUnit::Bytes => "bytes",
-                    RuntimeEventProgressUnit::Items => "items",
-                    RuntimeEventProgressUnit::Tensors => "tensors",
-                    RuntimeEventProgressUnit::Steps => "steps",
-                    RuntimeEventProgressUnit::None | RuntimeEventProgressUnit::Unknown(_) => {
-                        "units"
-                    }
-                };
-                console::progress_with_unit(
-                    "Model load",
-                    event.progress_current,
-                    event.progress_total,
-                    unit,
-                )?;
-            }
-            RuntimeEventKind::BackendDeviceSelected => {
-                console::event(
-                    "backend_device_selected",
-                    &serde_json::json!({"detail": String::from_utf8_lossy(&event.detail_bytes)}),
-                )?;
-            }
-            RuntimeEventKind::ModelOpenFailedHandled => {
-                console::event(
-                    "model_open_failed_handled",
-                    &serde_json::json!({"detail": String::from_utf8_lossy(&event.detail_bytes)}),
-                )?;
-            }
-            _ => {}
+fn report_model_open_event(event: ModelOpenEvent) -> std::io::Result<()> {
+    match event.kind {
+        ModelOpenEventKind::Progress(progress) => {
+            let unit = match progress.unit {
+                ModelOpenProgressUnit::Bytes => "bytes",
+                ModelOpenProgressUnit::Items => "items",
+                ModelOpenProgressUnit::Tensors => "tensors",
+                ModelOpenProgressUnit::Steps => "steps",
+                _ => "units",
+            };
+            console::progress_with_unit(
+                "Model load",
+                progress.current,
+                progress.total.unwrap_or(0),
+                unit,
+            )
         }
+        ModelOpenEventKind::BackendDeviceSelected => console::event(
+            "backend_device_selected",
+            &serde_json::json!({"detail": String::from_utf8_lossy(&event.detail)}),
+        ),
+        ModelOpenEventKind::FailedHandled(_) => console::event(
+            "model_open_failed_handled",
+            &serde_json::json!({"detail": String::from_utf8_lossy(&event.detail)}),
+        ),
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -694,7 +712,6 @@ mod tests {
             "never-ready",
             &mut server,
             Duration::from_secs(1),
-            None,
             &shutdown_requested,
         )
         .await
@@ -707,7 +724,6 @@ mod tests {
             "never-ready",
             &mut server,
             Duration::from_secs(1),
-            None,
             &AtomicBool::new(false),
         )
         .await
@@ -731,7 +747,6 @@ mod tests {
             "never-ready",
             &mut server,
             Duration::from_secs(1),
-            None,
             &shutdown_requested,
         )
         .await

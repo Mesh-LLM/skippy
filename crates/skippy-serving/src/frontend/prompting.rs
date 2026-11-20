@@ -18,11 +18,11 @@ use skippy_inference_api::GenerationHookSignals;
 use skippy_inference_api::InferenceError;
 use skippy_inference_api::InferenceRequestContext;
 use skippy_inference_api::InferenceResult;
-use skippy_inference_api::MessageContent;
 use skippy_inference_api::PrefillHookSignals;
 use skippy_inference_api::apply_chat_hook_outcome;
 use skippy_inference_api::chat_skippy_hooks_enabled;
 use skippy_inference_api::generation::GenerationRequest;
+use skippy_inference_api::generation::MessageContent;
 use skippy_runtime::ChatTemplateJsonOptions;
 use skippy_runtime::ChatTemplateOptions;
 use skippy_runtime::GenerationSignalWindow;
@@ -145,8 +145,8 @@ impl StageOpenAiBackend {
                 media: emulated.media,
                 chat_parse_metadata: Some(emulated.metadata_json),
                 recurrent_cache_prefix_text,
-                shape,
                 recurrent_system_prefix_text,
+                shape,
             });
         }
 
@@ -164,8 +164,8 @@ impl StageOpenAiBackend {
             media: native.media,
             chat_parse_metadata: Some(native.metadata_json),
             recurrent_cache_prefix_text,
-            shape,
             recurrent_system_prefix_text,
+            shape,
         })
     }
 

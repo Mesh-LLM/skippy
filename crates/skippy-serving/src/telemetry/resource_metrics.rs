@@ -748,7 +748,7 @@ mod tests {
         let attributes = window.close();
         assert_eq!(attributes["skippy.span.gpu_execute_ms"], json!(10.0));
         assert_eq!(attributes["skippy.span.gpu_command_buffers"], json!(2));
-        assert!(attributes["skippy.span.runtime_busy_ms"].as_f64().unwrap() >= 3.0);
+        assert_eq!(attributes["skippy.span.runtime_busy_ms"], json!(3.0));
         if let Some(cpu) = attributes.get("skippy.span.cpu_ms") {
             assert!(cpu.as_f64().unwrap() >= 0.0);
             assert!(attributes.contains_key("skippy.span.footprint_delta_bytes"));

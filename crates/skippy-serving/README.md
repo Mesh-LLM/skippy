@@ -18,7 +18,8 @@ from the host build.
 With `dynamic-native-runtime`, serving commands resolve and load a verified local
 native runtime before opening any model. `--runtime-bundle` accepts a bundle root
 (repeatable), `--runtime-cache` selects a cache, and `--runtime-release` defaults
-to Skippy's `RUNTIME_VERSION`. `--runtime-selection` accepts a backend or exact
+to the Skippy
+release version. `--runtime-selection` accepts a backend or exact
 artifact ID. These global flags work with `skippy serve`;
 `skippy example-config` does not load native code.
 
@@ -33,7 +34,7 @@ This adds native startup, not model-reference resolution or clean-install proof.
 
 The iteration scheduler combines equal-length
 verification windows from independent sessions on a complete causal target.
-The combined implementation requires native ABI `0.1.85`. Each lane keeps its own sampler, checkpoint,
+The combined implementation requires native ABI `0.1.88`. Each lane keeps its own sampler, checkpoint,
 rejection boundary and repair. Unsupported models and batches exceeding the
 actual native microbatch capacity use independent verification.
 
@@ -42,7 +43,7 @@ useful draft and repair work does not consume that waiting budget. Repairs are
 barriers for their own session; unscoped runtime mutations remain global
 barriers. Cancellation and stale-position checks run before target execution.
 `stage.shared_verification` telemetry records actual shared forwards and their
-batch size. Mesh embeds this same scheduler. Sharing is enabled by default;
+batch size. Sharing is enabled by default;
 `SKIPPY_SHARED_VERIFY=0` retains independent verification for diagnostics.
 
 The scheduler also collects ready DFlash proposals for one draft
@@ -112,32 +113,12 @@ flowchart LR
 ```
 
 Stage configs bind `stage_id`, `stage_index`, `layer_start`, `layer_end`,
-`model_path`, `checkpoint_quantization`, `upstream`, `downstream`, optional K/V
+`model_path`, `upstream`, `downstream`, optional K/V
 cache type settings, and runtime settings into one loaded stage. Model execution flows through
 `skippy-runtime` and the staged llama.cpp ABI.
 
-For a direct Hugging Face checkpoint, point `model_path` at the local checkpoint
-directory and optionally select load-time quantization:
-
-```json
-{
-  "model_path": "/srv/models/Qwen2.5-0.5B-Instruct",
-  "checkpoint_quantization": "IQ2_XXS",
-  "checkpoint_imatrix": "/srv/models/Qwen2.5-0.5B-Instruct/imatrix.gguf"
-}
-```
-
-The supported values are `preserve` (the default), `F32`, `F16`, `BF16`,
-and every quantization advertised by the pinned llama.cpp `llama-quantize`
-tool: `Q1_0`, `Q2_0`, `Q4_0`, `Q4_1`, `Q5_0`, `Q5_1`, `IQ2_XXS`, `IQ2_XS`,
-`IQ2_S`, `IQ2_M`, `IQ1_S`, `IQ1_M`, `TQ1_0`, `TQ2_0`, `Q2_K`, `Q2_K_S`,
-`IQ3_XS`, `IQ3_XXS`, `IQ3_S`, `IQ3_M`, `Q3_K_S`, `Q3_K_M`, `Q3_K_L`,
-`IQ4_NL`, `IQ4_XS`, `Q4_K_S`, `Q4_K_M`, `Q5_K_S`, `Q5_K_M`, `Q6_K`,
-`Q8_0`, and `MXFP4_MOE`. Importance-aware formats require
-`checkpoint_imatrix`. The checkpoint must contain `config.json`, tokenizer
-metadata, and a single or indexed set of SafeTensors shards. Quantization
-happens as each stage-owned tensor loads; no intermediate model-sized GGUF is
-written.
+Stage configs load a GGUF path or the selected GGUF parts of an admitted
+immutable package. Prepare the GGUF before configuring a stage.
 
 ## Commands
 
@@ -150,7 +131,7 @@ skippy serve --config stage-0.json --stage-transport binary --topology topology.
 ```
 
 `serve --model-path` prepares a local GGUF (including multipart sources)
-or safetensors checkpoint through the same `skippy-api` identity and stage
+through the same `skippy-api` identity and stage
 builder used by embedding applications. It does not require a stage JSON file or another host process.
 Choose exactly one of `--model-path` and `--config`. Local preparation uses
 VRAM-aware context planning and four generation lanes by default.

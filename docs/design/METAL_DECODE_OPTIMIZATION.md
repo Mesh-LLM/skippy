@@ -1,6 +1,6 @@
 # Metal decode optimization work
 
-Status: draft port, 2026-11-17. The standalone M3 Ultra result is confirmed across three process campaigns; the three-way vanilla comparison is complete as a fixed-budget observation, with cross-engine text drift documented separately. See [benchmark evidence](METAL_DECODE_BENCHMARKS.md).
+The November 17, 2026 M3 Ultra measurements cover the original port across three process campaigns. The vanilla comparison uses a fixed token budget and records cross-engine text differences. See [the benchmark evidence](METAL_DECODE_BENCHMARKS.md).
 
 ## Baseline migration
 
@@ -28,7 +28,12 @@ context-capacity implementation, prompt shape statistics, and current sampling
 state. Native API bindings are regenerated from the prepared source at ABI
 0.1.85 rather than copied from the older upstream pin.
 
-## Evidence and remaining gates
+Skippy PR #71 subsequently landed the placement, batching, and resident-cache
+baseline on standalone main. PR #9 now adds the remaining shared verification
+and draft execution paths and nine native decode patches to that baseline, with
+native ABI 0.1.88. The measurements below refer to the historical snapshots.
+
+## Historical validation and remaining gates
 
 Local evidence is under `target/migration-audit/`; those artifacts are ignored
 and are not a published benchmark report.
