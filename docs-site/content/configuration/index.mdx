@@ -76,7 +76,16 @@ can be inspected without loading a native runtime.
 
 ## Serve multiple local models
 
-Place the local GGUF files beside `serving.toml` in its `models/` directory.
+Download two GGUFs directly from Hugging Face. Skippy stores them in its
+Hugging Face cache and prints each file's path. [Qwen3-0.6B](https://huggingface.co/Qwen/Qwen3-0.6B-GGUF) · [Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B-GGUF)
+
+```console
+skippy models download Qwen/Qwen3-0.6B-GGUF:Q8_0 --direct
+skippy models download Qwen/Qwen3-1.7B-GGUF:Q8_0 --direct
+```
+
+Save this as `serving.toml` and replace each placeholder with the corresponding
+cached GGUF path printed above.
 
 ```toml
 version = 1
@@ -86,15 +95,15 @@ bind_addr = "127.0.0.1:9337"
 ctx_size = 4096
 
 [[models]]
-id = "small"
-path = "models/small.gguf"
+id = "qwen3-0.6b"
+path = "<cached path for Qwen3-0.6B>"
 
 [models.settings]
 ctx_size = 2048
 
 [[models]]
-id = "large"
-path = "models/large.gguf"
+id = "qwen3-1.7b"
+path = "<cached path for Qwen3-1.7B>"
 ```
 
 ```console
@@ -110,7 +119,8 @@ with top-level `bind_addr` and shared runtime options under `[runtime]`.
 
 Skippy opens one listener after all models load successfully. A failed load
 aborts startup and releases the models already opened. `GET /v1/models` lists
-the configured IDs. Use the exact ID in each inference request. Add
+the configured IDs. Set `model` to `qwen3-0.6b` or `qwen3-1.7b` in an
+inference request to choose which model answers. Add
 `--print-effective-config` to inspect the settings resolved for each model.
 
 ## Benchmark serving settings
