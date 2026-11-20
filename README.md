@@ -67,3 +67,12 @@ shared HTTP surface in
 The repository was extracted with filtered Git history from the original
 workspace. Its native ABI and selected compatibility field names remain stable
 where changing them would invalidate existing packages or clients.
+
+## Health
+
+[![CI](https://github.com/general-inference/skippy/actions/workflows/ci.yml/badge.svg)](https://github.com/general-inference/skippy/actions/workflows/ci.yml)
+[![Inference qualification](https://github.com/general-inference/skippy/actions/workflows/inference.yml/badge.svg?event=schedule)](https://github.com/general-inference/skippy/actions/workflows/inference.yml)
+[![Release](https://github.com/general-inference/skippy/actions/workflows/release.yml/badge.svg)](https://github.com/general-inference/skippy/actions/workflows/release.yml)
+[![Documentation](https://github.com/general-inference/skippy/actions/workflows/docs.yml/badge.svg)](https://github.com/general-inference/skippy/actions/workflows/docs.yml)
+[![Llama upgrade](https://github.com/general-inference/skippy/actions/workflows/llama-upgrade.yml/badge.svg)](https://github.com/general-inference/skippy/actions/workflows/llama-upgrade.yml)
+[![CI images](https://github.com/general-inference/skippy/actions/workflows/ci-images.yml/badge.svg)](https://github.com/general-inference/skippy/actions/workflows/ci-images.yml)
