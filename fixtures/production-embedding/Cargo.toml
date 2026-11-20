@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [workspace]
+exclude = ["vendor/skippy"]
 
 [dependencies]
 skippy-api = { path = "vendor/skippy/crates/skippy-api", default-features = false, features = ["dynamic-native-runtime"] }
