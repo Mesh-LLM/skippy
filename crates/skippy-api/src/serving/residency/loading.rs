@@ -32,16 +32,19 @@ impl Control {
                         .and_then(|result| result);
                     let mut state = control.state();
                     let outcome = if state.paused || state.draining {
+                        drop(state);
                         drop(outcome);
+                        control.state().attempt = None;
+                        control.finish_drain();
                         Err(InferenceError::cancelled("model residency was paused"))
                     } else {
-                        outcome.map(|resident| {
+                        let outcome = outcome.map(|resident| {
                             state.resident = Some(resident);
                             Self::idle(&control, &mut state);
-                        })
+                        });
+                        state.attempt = None;
+                        outcome
                     };
-                    state.attempt = None;
-                    Self::finish_drain(&mut state);
                     let _ = sender.send(Some(outcome));
                 }
                 Err(_) => {
@@ -51,9 +54,8 @@ impl Control {
                     // Do not admit another load until the blocking native load
                     // has returned and dropped both its runtime and reservation.
                     drop(load.await);
-                    let mut state = control.state();
-                    state.attempt = None;
-                    Self::finish_drain(&mut state);
+                    control.state().attempt = None;
+                    control.finish_drain();
                 }
             }
         });

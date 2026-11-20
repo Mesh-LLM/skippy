@@ -104,6 +104,7 @@ struct State {
     idle_since: Option<Instant>,
     paused: bool,
     draining: bool,
+    cleaning: bool,
 }
 
 struct Control {
@@ -126,12 +127,22 @@ impl Control {
 
     /// Used for operator unload and idle eviction; a leased model can only
     /// retire after its last request (including an SSE or realtime stream).
-    fn finish_drain(state: &mut State) {
-        if state.draining && state.active == 0 && state.attempt.is_none() {
-            state.resident = None;
-            state.idle_since = None;
-            state.draining = false;
-        }
+    fn finish_drain(&self) {
+        let resident = {
+            let mut state = self.state();
+            if !state.draining || state.active != 0 || state.attempt.is_some() || state.cleaning {
+                return;
+            }
+            state.cleaning = true;
+            state.resident.take()
+        };
+        // Keep admission closed while disposal releases native resources.
+        // Model owners may query controller state during their cleanup.
+        drop(resident);
+        let mut state = self.state();
+        state.idle_since = None;
+        state.draining = false;
+        state.cleaning = false;
     }
 
     fn idle(control: &Arc<Self>, state: &mut State) {
@@ -149,7 +160,8 @@ impl Control {
             let mut state = control.state();
             if state.active == 0 && state.idle_since == Some(now) {
                 state.draining = true;
-                Self::finish_drain(&mut state);
+                drop(state);
+                control.finish_drain();
             }
         });
     }
@@ -212,7 +224,8 @@ impl LocalResidency {
         let mut state = self.0.state();
         state.paused = true;
         state.draining = true;
-        Control::finish_drain(&mut state);
+        drop(state);
+        self.0.finish_drain();
     }
 
     /// Re-enable loading. Admission stays closed until any previous drain ends.
@@ -300,7 +313,8 @@ impl Drop for Active {
         state.active -= 1;
         if state.active == 0 {
             if state.draining {
-                Control::finish_drain(&mut state);
+                drop(state);
+                control.finish_drain();
             } else {
                 Control::idle(&control, &mut state);
             }
