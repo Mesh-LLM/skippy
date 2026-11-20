@@ -23,8 +23,12 @@ contract; no downstream product's workflow topology applies here.
   Inside CI, declarative PR filters select code checks and require Linux x64
   CUDA 13 and macOS ARM64 Metal package and device smoke on inference PRs.
   The protected inference workflow uses the same inference paths in its native
-  trigger for the seven Spark configurations. `PR checks` reads protected
-  workflow trigger paths to determine which runs it expects. Quality canary
+  trigger for the seven Spark configurations. PR qualification is manual: the
+  jobs run only when the PR carries the `qualify` label, while the workflow
+  still triggers on path matches so an intentionally skipped run satisfies
+  the `PR checks` aggregate; nightly, main pushes, and releases stay
+  automatic. `PR checks` reads protected workflow trigger paths to determine
+  which runs it expects. Quality canary
   runs CI automation tests before build checks and gates package jobs. Full CI
   runs Graph Contracts in parallel with eight build, package and smoke jobs.
   Each CPU job supplies a shared platform CLI to its backend jobs. Routine CI
