@@ -28,11 +28,16 @@ gh release download --repo general-inference/skippy \
   --pattern 'skippy-*-darwin-aarch64-metal.tar.gz*'
 shasum -a 256 -c skippy-*-darwin-aarch64-metal.tar.gz.sha256 && \
   tar -xzf skippy-*-darwin-aarch64-metal.tar.gz
-./skippy serve --model Qwen3-0.6B-Q4_K_M --prompt
 ```
 
 Keep `native-runtimes/` alongside the unpacked `skippy` executable. For other
 platforms, choose the matching release bundle. [Install and run Skippy](/getting-started/#download-a-release)
+
+From the directory containing `skippy`, run the bundled executable.
+
+```console
+./skippy serve --model Qwen3-0.6B-Q4_K_M --prompt
+```
 
 The prompt and HTTP API are available together. From another terminal:
 
