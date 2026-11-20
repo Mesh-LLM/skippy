@@ -145,7 +145,8 @@ pub use state::{
 pub use runtime::{
     llama_perf_context_optional, load_native_runtime_libraries, load_native_runtime_library,
     native_runtime_loaded, skippy_decode_step_sampled_mtp_fn,
-    skippy_model_attach_mtp_draft_model_fn,
+    skippy_model_attach_mtp_draft_model_fn, skippy_model_open_from_parts_with_events_fn,
+    skippy_model_open_with_events_fn,
 };
 
 #[cfg(feature = "dynamic-runtime")]

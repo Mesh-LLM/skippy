@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::llama_draft::LlamaDraftApi;
+use crate::runtime::{SkippyModelOpenFromPartsWithEventsFn, SkippyModelOpenWithEventsFn};
 use crate::{
     ABI_VERSION_MAJOR, ABI_VERSION_MINOR, ABI_VERSION_PATCH, AbiVersion, ActivationBoundaryDesc,
     ActivationDesc, AsrAbortCallback, AsrInfoV1, AsrModel, AsrResult, AsrSegmentV1,
@@ -335,21 +336,6 @@ dynamic_symbols! {
 // -----------------------------------------------------------------------
 
 type SkippyAbiFeaturesFn = unsafe extern "C" fn() -> u64;
-type SkippyModelOpenWithEventsFn = unsafe extern "C" fn(
-    path: *const c_char,
-    config: *const RuntimeConfig,
-    reporter: *const SkippyRuntimeEventReporterV1,
-    out_model: *mut *mut Model,
-    out_error: *mut *mut Error,
-) -> Status;
-type SkippyModelOpenFromPartsWithEventsFn = unsafe extern "C" fn(
-    paths: *const *const c_char,
-    path_count: usize,
-    config: *const RuntimeConfig,
-    reporter: *const SkippyRuntimeEventReporterV1,
-    out_model: *mut *mut Model,
-    out_error: *mut *mut Error,
-) -> Status;
 type SkippyApplyChatTemplateJsonFn = unsafe extern "C" fn(
     model: *mut Model,
     messages_json: *const c_char,

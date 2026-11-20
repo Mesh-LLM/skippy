@@ -15,13 +15,7 @@ use skippy_serving::{
     telemetry::Telemetry,
 };
 
-use super::{InferenceOptions, ServingTelemetryOptions};
-
-/// Whether the caller needs the native model-open event path, even without a sink.
-pub enum ModelOpenEvents {
-    Disabled,
-    Enabled(Option<Arc<skippy_runtime::ModelOpenEventQueue>>),
-}
+use super::{InferenceOptions, ModelOpenEvents, ServingTelemetryOptions, model_open};
 
 /// Explicit inputs; product configuration, plugin loading and event storage stay outside Skippy.
 pub struct ModelLoadRequest {
@@ -54,7 +48,23 @@ pub struct LoadedModelBackend {
 }
 
 impl ModelLoadRequest {
+    /// Load and compose the backend. Observations are best-effort and the
+    /// returned result settles the load.
     pub fn load(mut self) -> Result<LoadedModelBackend> {
+        match std::mem::take(&mut self.open_events) {
+            ModelOpenEvents::Disabled => self.load_inner(SkippyRuntimeHandle::load),
+            ModelOpenEvents::Enabled(observer) => model_open::run_observed(observer, |queue| {
+                self.load_inner(|options| {
+                    SkippyRuntimeHandle::load_with_open_events(options, queue)
+                })
+            }),
+        }
+    }
+
+    fn load_inner(
+        mut self,
+        load_runtime: impl FnOnce(EmbeddedRuntimeOptions) -> Result<SkippyRuntimeHandle>,
+    ) -> Result<LoadedModelBackend> {
         self.size_recurrent_rollback();
         let config = self.runtime.config.clone();
         ensure!(
@@ -78,13 +88,7 @@ impl ModelLoadRequest {
             config.clone(),
             settings.level,
         );
-        let runtime = match self.open_events {
-            ModelOpenEvents::Disabled => SkippyRuntimeHandle::load(self.runtime),
-            ModelOpenEvents::Enabled(queue) => {
-                SkippyRuntimeHandle::load_with_open_events(self.runtime, queue)
-            }
-        }
-        .with_context(|| {
+        let runtime = load_runtime(self.runtime).with_context(|| {
             format!(
                 "load Skippy runtime for model {} from {:?}",
                 config.model_id, config.model_path

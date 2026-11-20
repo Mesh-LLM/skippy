@@ -296,7 +296,7 @@ pub fn local_openai_options(
         telemetry_queue_capacity: args.telemetry_queue_capacity,
         telemetry_level: args.telemetry_level.into(),
         openai_guardrails: args.openai_guardrails.into(),
-        model_open_events: None,
+        model_open_events: skippy_api::serving::ModelOpenEvents::Disabled,
         disk_cache,
     })
 }
