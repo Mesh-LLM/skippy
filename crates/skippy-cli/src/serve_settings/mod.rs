@@ -448,6 +448,7 @@ pub fn section(name: &str) -> &'static str {
         "ctx-size" => "kv",
         "n-gpu-layers" => "execution",
         "mmproj" => "media",
+        "on-demand" | "idle-evict-secs" | "residency-budget-bytes" => "execution",
         "bind-addr" | "model-id" | "default-max-tokens" | "guardrails" | "prompt" => "api",
         "config"
         | "topology"

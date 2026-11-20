@@ -232,3 +232,5 @@ pub use local::{LocalDiskCacheOptions, LocalOpenAiOptions, serve_local_openai_wi
 
 /// Startup handshakes and cancellation shared by embedded stage hosts.
 pub use skippy_serving::readiness;
+
+pub mod residency;

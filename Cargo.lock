@@ -5144,6 +5144,8 @@ name = "skippy-api"
 version = "0.80.0"
 dependencies = [
  "anyhow",
+ "async-trait",
+ "futures-util",
  "hex",
  "reqwest 0.13.5",
  "same-file",

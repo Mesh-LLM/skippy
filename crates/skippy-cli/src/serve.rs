@@ -104,6 +104,7 @@ fn installed_model_path(model: &str) -> Option<std::path::PathBuf> {
 
 pub(crate) fn validate(args: &ServeCommandArgs) -> Result<()> {
     args.public.settings.validate_mode(args)?;
+    crate::residency::validate(args)?;
     args.public.settings.tuning(args.public.openai_guardrails)?;
     let mut stage = skippy_protocol::StageConfig::default();
     args.public.settings.apply_stage(&mut stage)?;
@@ -135,6 +136,7 @@ async fn serve_public(args: ServeCommandArgs) -> Result<()> {
         .unwrap_or_else(default_public_bind_addr);
     let startup_timeout = Duration::from_secs(args.public.startup_timeout_secs.max(1));
     console::status("🧠 Preparing model")?;
+    let residency = crate::residency::options(&args.public);
     let settings = args.public.settings.clone();
     let mut options = conversion::local_openai_options(args.public)?;
     if args.print_effective_config {
@@ -144,6 +146,9 @@ async fn serve_public(args: ServeCommandArgs) -> Result<()> {
             Some(&frontend),
             &options.tuning,
         ));
+    }
+    if let Some(residency) = residency {
+        return crate::residency::serve(options, residency).await;
     }
     let model_open_events = ModelOpenEventQueue::new(skippy_runtime::next_operation_id());
     options.model_open_events = Some(Arc::clone(&model_open_events));

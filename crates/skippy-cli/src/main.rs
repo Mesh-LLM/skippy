@@ -4,6 +4,7 @@ mod disk_cache;
 mod local_model;
 mod local_resource_planning;
 mod native_logging;
+mod residency;
 mod runtime;
 mod serve;
 mod serve_settings;

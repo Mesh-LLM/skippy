@@ -232,6 +232,15 @@ pub struct ServeOpenAiArgs {
     /// Local GGUF (first shard) or safetensors checkpoint to prepare and serve.
     #[arg(long, conflicts_with = "config")]
     pub model_path: Option<PathBuf>,
+    /// Defer native loading until a request arrives.
+    #[arg(long)]
+    pub on_demand: bool,
+    /// Evict the unsplit model after this much idle time.
+    #[arg(long)]
+    pub idle_evict_secs: Option<u64>,
+    /// Capacity budget for the model residency controller.
+    #[arg(long)]
+    pub residency_budget_bytes: Option<u64>,
     /// Context size for a local model. Defaults to the VRAM-aware model plan (up to 128k).
     #[arg(long, conflicts_with = "config")]
     pub ctx_size: Option<u32>,

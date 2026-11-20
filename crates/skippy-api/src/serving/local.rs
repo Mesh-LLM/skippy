@@ -6,6 +6,7 @@ use skippy_serving::{EmbeddedRuntimeOptions, SpeculativeDecodeConfig};
 use std::{future::Future, net::SocketAddr, path::PathBuf, sync::Arc};
 
 /// Node disk cache settings, resolved by the caller from its configuration.
+#[derive(Clone)]
 pub struct LocalDiskCacheOptions {
     pub directory: PathBuf,
     pub budget: skippy_cache::disk_policy::DiskCacheBudget,
@@ -29,6 +30,7 @@ impl LocalDiskCacheOptions {
 }
 
 /// Prepared local OpenAI serving options. Model acquisition and argument parsing belong to callers.
+#[derive(Clone)]
 pub struct LocalOpenAiOptions {
     pub tuning: skippy_serving::settings::ServingTuning,
     pub config: StageConfig,
@@ -152,7 +154,8 @@ impl LocalOpenAiOptions {
         Ok(openai)
     }
 
-    fn into_request(self) -> Result<(SocketAddr, ModelLoadRequest)> {
+    /// Resolve local options to a load request without opening the native model.
+    pub fn into_request(self) -> Result<(SocketAddr, ModelLoadRequest)> {
         let openai = self.resolved_openai_options()?;
         let native_mtp_enabled = openai.native_mtp_enabled;
         let mtp_source = if native_mtp_enabled {
