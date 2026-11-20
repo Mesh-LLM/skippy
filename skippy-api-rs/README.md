@@ -1,6 +1,8 @@
 # skippy-api-rs
 
 Rust bindings to `../skippy_api`, developed side by side with it.
+For standalone dynamic runtime bundles and in-process serving, use the
+[production Rust embedding contract](../docs/PRODUCTION_EMBEDDING.md).
 
 | crate        | what it is                                                                 |
 |--------------|-----------------------------------------------------------------------------|

@@ -185,6 +185,15 @@ impl InferenceOptions {
     }
 }
 
+mod model_observation;
+pub use model_observation::{
+    ModelLoadFailure, ModelLoadObservation, ModelLoadObservations, ModelLoadProgressUnit,
+    ModelLoadRecord, ModelLoadRecordKind, ModelLoadSummary, TerminalObservation,
+};
+
+#[cfg(feature = "dynamic-native-runtime")]
+pub mod in_process;
+
 mod lifecycle;
 pub use lifecycle::{LoadedModelBackend, ModelLoadRequest, ModelOpenEvents};
 

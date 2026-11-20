@@ -61,16 +61,26 @@ fn layer_package_progress_label(repo: &str, revision: &str) -> String {
     }
 }
 
+struct TransferProgress<'a> {
+    observer: &'a dyn PackageProgress,
+    label: &'a str,
+    completed_before: usize,
+}
+
 fn download_layer_package_file(
     model_api: &hf_hub::HFRepositorySync<hf_hub::RepoTypeModel>,
     revision: &str,
-    label: &str,
     file_name: &str,
     total_bytes: Option<u64>,
-    observer: &dyn PackageProgress,
-    completed_before: usize,
+    progress: TransferProgress<'_>,
+    force_download: bool,
 ) -> Result<PathBuf> {
-    let progress = observer.file(label, file_name, total_bytes, completed_before);
+    let progress = progress.observer.file(
+        progress.label,
+        file_name,
+        total_bytes,
+        progress.completed_before,
+    );
     progress.ensuring();
     let progress_handler: Option<Progress> =
         Some(Arc::new(ForwardProgress(progress.clone())).into());
@@ -78,12 +88,15 @@ fn download_layer_package_file(
         .download_file()
         .filename(file_name.to_string())
         .revision(revision.to_string())
+        .force_download(force_download)
         .maybe_progress(progress_handler)
         .send()
         .with_context(|| format!("download layer package file: {file_name}"))?;
     progress.ready(&path);
     Ok(path)
 }
+
+type VerifySnapshotPath<'a> = &'a (dyn Fn(&Path) -> Result<()> + Send + Sync);
 
 impl PackageAcquisition {
     pub fn resolve_hf_package_to_local(
@@ -265,11 +278,14 @@ impl PackageAcquisition {
         let manifest_path = download_layer_package_file(
             &model_api,
             revision,
-            &progress_label,
             "model-package.json",
             None,
-            self.progress.as_ref(),
-            0,
+            TransferProgress {
+                observer: self.progress.as_ref(),
+                label: &progress_label,
+                completed_before: 0,
+            },
+            false,
         )
         .context("download layer package manifest")?;
 
@@ -300,11 +316,14 @@ impl PackageAcquisition {
             download_layer_package_file(
                 &model_api,
                 revision,
-                &progress_label,
                 &file_name,
                 *total_bytes,
-                package_scope.as_ref(),
-                index + 1,
+                TransferProgress {
+                    observer: package_scope.as_ref(),
+                    label: &progress_label,
+                    completed_before: index + 1,
+                },
+                false,
             )?;
         }
 
@@ -318,20 +337,70 @@ impl PackageAcquisition {
         )
     }
 
+    // Identity resolution deliberately inspects the upstream manifest before
+    // selecting any payload. Subsequent requests use the manifest's commit.
+    pub(super) fn fetch_identity_file(
+        &self,
+        repo: &str,
+        revision: &str,
+        file: &str,
+        bytes: Option<u64>,
+    ) -> Result<PathBuf> {
+        let (repo, revision, file) = (repo.to_owned(), revision.to_owned(), file.to_owned());
+        let acquisition = self.clone();
+        skippy_model_hf::blocking::run_hf_sync(move || {
+            let _download_guard = lock_layer_package_downloads();
+            let api = (acquisition.build_client)()?;
+            let (owner, name) = repo.split_once('/').context("invalid HF repo format")?;
+            let model_api = api.model(owner, name);
+            let label = layer_package_progress_label(&repo, &revision);
+            download_layer_package_file(
+                &model_api,
+                &revision,
+                &file,
+                bytes,
+                TransferProgress {
+                    observer: acquisition.progress.as_ref(),
+                    label: &label,
+                    completed_before: 0,
+                },
+                file == crate::package::PACKAGE_V2_MANIFEST,
+            )
+        })
+    }
+
     pub fn resolve_package_v2_stage_to_local(
         &self,
         package_ref: &str,
         admission: &PackageV2StageAdmissionDescriptor,
     ) -> Result<(String, Vec<PathBuf>, Option<PathBuf>)> {
         let local_ref = self.resolve_hf_package_to_local(package_ref, 0, 0, false, false)?;
-        let package_dir = PathBuf::from(&local_ref);
+        self.acquire_stage_from_snapshot(Path::new(&local_ref), Some(package_ref), admission, None)
+    }
+
+    pub(super) fn acquire_stage_from_snapshot(
+        &self,
+        package_dir: &Path,
+        remote_ref: Option<&str>,
+        admission: &PackageV2StageAdmissionDescriptor,
+        verify_path: Option<VerifySnapshotPath<'_>>,
+    ) -> Result<(String, Vec<PathBuf>, Option<PathBuf>)> {
         let manifest_path = package_dir.join("model-package.json");
         let manifest_bytes = fs::read(&manifest_path)
             .with_context(|| format!("read package-v2 manifest {}", manifest_path.display()))?;
         let manifest: PackageManifestV2 =
             serde_json::from_slice(&manifest_bytes).context("parse package-v2 manifest")?;
+        if let Some(verify_path) = verify_path {
+            let artifact = manifest
+                .artifact_catalog
+                .entries
+                .iter()
+                .find(|artifact| artifact.id == manifest.source_model.metadata_artifact_id)
+                .context("package-v2 metadata artifact is absent")?;
+            verify_path(&package_dir.join(safe_manifest_file_path(&artifact.path)?))?;
+        }
         let manifest =
-            skippy_model::package_carrier::resolve_package_carrier_from_dir(manifest, &package_dir)
+            skippy_model::package_carrier::resolve_package_carrier_from_dir(manifest, package_dir)
                 .context("resolve package-v2 metadata carrier")?;
         let resolved = manifest
             .resolve_stage_admission(admission)
@@ -342,19 +411,28 @@ impl PackageAcquisition {
             .map(|artifact| (*artifact).clone())
             .collect::<Vec<_>>();
 
-        if let StagePackageRef::HuggingFacePackage { repo, revision } =
-            StagePackageRef::parse(package_ref)?
+        if let Some(verify_path) = verify_path {
+            for artifact in &required {
+                let path = package_dir.join(safe_manifest_file_path(&artifact.path)?);
+                match fs::symlink_metadata(&path) {
+                    Ok(_) => verify_path(&path)?,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
+            }
+        }
+        if let Some(remote_ref) = remote_ref
+            && let StagePackageRef::HuggingFacePackage { repo, revision } =
+                StagePackageRef::parse(remote_ref)?
         {
             let _download_guard = lock_layer_package_downloads();
             let revision = revision.unwrap_or_else(|| "main".to_string());
             let missing = required
                 .iter()
-                .filter(|artifact| verify_package_v2_artifact(&package_dir, artifact).is_err())
+                .filter(|artifact| verify_package_v2_artifact(package_dir, artifact).is_err())
                 .cloned()
                 .collect::<Vec<_>>();
             if !missing.is_empty() {
-                let package_dir_for_download = package_dir.clone();
-                let required_for_download = required.clone();
                 let acquisition = self.clone();
                 skippy_model_hf::blocking::run_hf_sync(move || {
                     let api = (acquisition.build_client)()?;
@@ -366,21 +444,26 @@ impl PackageAcquisition {
                         download_layer_package_file(
                             &model_api,
                             &revision,
-                            &label,
                             &artifact.path,
                             Some(artifact.byte_size),
-                            scope.as_ref(),
-                            index,
+                            TransferProgress {
+                                observer: scope.as_ref(),
+                                label: &label,
+                                completed_before: index,
+                            },
+                            false,
                         )?;
-                    }
-                    for artifact in &required_for_download {
-                        verify_package_v2_artifact(&package_dir_for_download, artifact)?;
                     }
                     Ok(())
                 })?;
             }
         }
-        crate::materialization::resolve_local_package_stage(&package_dir, admission)
+        if let Some(verify_path) = verify_path {
+            for artifact in &required {
+                verify_path(&package_dir.join(safe_manifest_file_path(&artifact.path)?))?;
+            }
+        }
+        crate::materialization::resolve_local_package_stage(package_dir, admission)
     }
 
     /// Resolve the complete tensor closure for single-node package-v2 serving.

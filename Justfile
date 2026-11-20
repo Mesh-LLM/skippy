@@ -103,6 +103,15 @@ test: skippy-api-test
     @cargo test --workspace --no-default-features
     @cargo test --manifest-path skippy-api-rs/Cargo.toml --workspace
 
+embedding-contracts:
+    @scripts/check-embedding-contracts.sh
+
+embedding-consumer-contracts repository="" revision="":
+    @scripts/run-embedding-consumer.sh contracts "{{ repository }}" "{{ revision }}"
+
+embedding-qualify repository revision:
+    @scripts/run-embedding-consumer.sh qualify "{{ repository }}" "{{ revision }}"
+
 llama-prepare:
     @scripts/prepare-llama.sh pinned
 

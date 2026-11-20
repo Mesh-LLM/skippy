@@ -77,3 +77,8 @@ pub fn load_local_native_runtime(args: &NativeRuntimeOptions) -> Result<()> {
         )
     })
 }
+
+#[cfg(feature = "dynamic-native-runtime")]
+mod production;
+#[cfg(feature = "dynamic-native-runtime")]
+pub use production::{ProductionRuntime, RuntimeIdentity, native_source_recipe};

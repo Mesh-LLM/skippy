@@ -13,6 +13,14 @@ fn frame(hasher: &mut Sha256, value: &[u8]) {
     hasher.update(value);
 }
 
+fn encode_digest(digest: impl IntoIterator<Item = u8>) -> String {
+    let mut encoded = String::with_capacity(64);
+    for byte in digest {
+        write!(&mut encoded, "{byte:02x}").expect("write SHA-256 digest");
+    }
+    encoded
+}
+
 fn bundled_recipe(crate_dir: &std::path::Path) -> (String, String) {
     let roster_path = crate_dir.join("src/split-certified.json");
     println!("cargo:rerun-if-changed={}", roster_path.display());
@@ -145,15 +153,26 @@ fn main() {
     let mut hasher = Sha256::new();
     hasher.update(b"mesh-llm-skippy-patch-queue-v2\0");
     hasher.update((patches.len() as u64).to_le_bytes());
+    // Standalone runtime manifests carry the prepare-llama.sh digest.
+    // It has a different framing from the split certification roster.
+    let mut bundle_recipe = Sha256::new();
     for (relative_path, path) in patches {
         println!("cargo:rerun-if-changed={}", path.display());
+        let bytes = fs::read(&path).expect("read llama.cpp patch");
         frame(&mut hasher, relative_path.as_bytes());
-        frame(&mut hasher, &fs::read(&path).expect("read llama.cpp patch"));
+        frame(&mut hasher, &bytes);
+        bundle_recipe.update(relative_path.as_bytes());
+        bundle_recipe.update(b"\n");
+        bundle_recipe.update(encode_digest(Sha256::digest(&bytes)));
+        bundle_recipe.update(b"\n");
     }
     println!("cargo:rustc-env=SKIPPY_LLAMA_UPSTREAM_SHA={upstream}");
-    let mut patch_digest = String::with_capacity(64);
-    for byte in hasher.finalize() {
-        write!(&mut patch_digest, "{byte:02x}").expect("write patch digest");
-    }
-    println!("cargo:rustc-env=SKIPPY_PATCH_QUEUE_SHA256={patch_digest}");
+    println!(
+        "cargo:rustc-env=SKIPPY_PATCH_QUEUE_SHA256={}",
+        encode_digest(hasher.finalize())
+    );
+    println!(
+        "cargo:rustc-env=SKIPPY_RUNTIME_PATCH_DIGEST={}",
+        encode_digest(bundle_recipe.finalize())
+    );
 }

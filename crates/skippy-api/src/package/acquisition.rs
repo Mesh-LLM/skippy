@@ -12,6 +12,11 @@ use std::{
 pub mod cache_resolution;
 pub mod progress;
 pub mod remote;
+mod resolution;
+pub use resolution::{
+    PackageResolutionPolicy, PackageResolutionSource, ResolvedPackageIdentity,
+    UnsupportedPackageSchema,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StagePackageRef {

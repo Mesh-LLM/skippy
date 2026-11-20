@@ -15,7 +15,9 @@ use skippy_serving::{
     telemetry::Telemetry,
 };
 
-use super::{InferenceOptions, ServingTelemetryOptions};
+use super::{
+    InferenceOptions, LocalDiskCacheOptions, ModelLoadObservations, ServingTelemetryOptions,
+};
 
 /// Whether the caller needs the native model-open event path, even without a sink.
 pub enum ModelOpenEvents {
@@ -54,7 +56,43 @@ pub struct LoadedModelBackend {
 }
 
 impl ModelLoadRequest {
-    pub fn load(mut self) -> Result<LoadedModelBackend> {
+    /// Construct a specialist load request with telemetry and extension hooks opt-in.
+    pub fn new(runtime: EmbeddedRuntimeOptions, openai: InferenceOptions) -> Self {
+        Self {
+            runtime,
+            openai,
+            open_events: ModelOpenEvents::Disabled,
+            hooks_factory: None,
+            generation_observer: None,
+            kv_observer: None,
+            hook_policy: None,
+            guardrails: None,
+            guardrail_telemetry: None,
+            downstream_wire_condition: WireCondition::new(0.0, None)
+                .expect("default downstream wire condition"),
+            serving_telemetry: None,
+            l3_manager: None,
+        }
+    }
+
+    pub(super) fn with_disk_cache(mut self, options: Option<LocalDiskCacheOptions>) -> Self {
+        self.l3_manager = options.and_then(LocalDiskCacheOptions::acquire);
+        self
+    }
+
+    pub fn load(self) -> Result<LoadedModelBackend> {
+        self.load_inner(None)
+    }
+
+    /// Use Skippy's typed observation path. This selection supersedes `open_events`.
+    pub fn load_observed(self, observations: ModelLoadObservations) -> Result<LoadedModelBackend> {
+        self.load_inner(Some(observations))
+    }
+
+    fn load_inner(
+        mut self,
+        observations: Option<ModelLoadObservations>,
+    ) -> Result<LoadedModelBackend> {
         self.size_recurrent_rollback();
         let config = self.runtime.config.clone();
         ensure!(
@@ -78,9 +116,17 @@ impl ModelLoadRequest {
             config.clone(),
             settings.level,
         );
-        let runtime = match self.open_events {
-            ModelOpenEvents::Disabled => SkippyRuntimeHandle::load(self.runtime),
-            ModelOpenEvents::Enabled(queue) => {
+        crate::native_runtime::ensure_native_runtime_available()?;
+        let runtime = match (observations, self.open_events) {
+            (Some(observations), _) => observations.run(|enabled, queue| {
+                if enabled {
+                    SkippyRuntimeHandle::load_with_open_events(self.runtime, queue)
+                } else {
+                    SkippyRuntimeHandle::load(self.runtime)
+                }
+            }),
+            (None, ModelOpenEvents::Disabled) => SkippyRuntimeHandle::load(self.runtime),
+            (None, ModelOpenEvents::Enabled(queue)) => {
                 SkippyRuntimeHandle::load_with_open_events(self.runtime, queue)
             }
         }

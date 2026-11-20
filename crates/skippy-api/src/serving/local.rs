@@ -105,9 +105,9 @@ impl LocalOpenAiOptions {
             crate::speculative::apply_auto_speculation(&mut openai, std::path::Path::new(path));
         }
         openai.adaptive_generation_min_concurrency = adaptive_minimum;
-        openai.generation_queue_capacity = self.generation_queue_capacity.unwrap_or_else(|| {
-            skippy_serving::frontend::default_generation_queue_capacity(concurrency)
-        });
+        if let Some(capacity) = self.generation_queue_capacity {
+            openai.generation_queue_capacity = capacity;
+        }
         openai.generation_admission_timeout_secs = self.generation_admission_timeout_secs;
         openai.prefill_chunk_size = self.prefill_chunk_size;
         openai.prefill_chunk_policy = self.prefill_chunk_policy.clone();
@@ -166,47 +166,34 @@ impl LocalOpenAiOptions {
         };
         let mut config = self.config;
         config.native_mtp_enabled = native_mtp_enabled;
-        let l3_manager = self.disk_cache.and_then(LocalDiskCacheOptions::acquire);
-        Ok((
-            self.bind_addr,
-            ModelLoadRequest {
-                runtime: EmbeddedRuntimeOptions {
-                    config,
-                    topology: self.topology,
-                    n_threads: self.tuning.n_threads,
-                    n_threads_batch: self.tuning.n_threads_batch,
-                    mtp_source,
-                    recurrent_rollback_tokens: 0,
-                    metrics_otlp_grpc: self.metrics_otlp_grpc,
-                    telemetry_queue_capacity: self.telemetry_queue_capacity,
-                    telemetry_level: self.telemetry_level,
-                    session_lifecycle_observer: None,
-                },
-                openai,
-                open_events: self
-                    .model_open_events
-                    .map_or(ModelOpenEvents::Disabled, |queue| {
-                        ModelOpenEvents::Enabled(Some(queue))
-                    }),
-                hooks_factory: None,
-                generation_observer: None,
-                kv_observer: None,
-                hook_policy: None,
-                guardrails: self.tuning.guardrails.or_else(|| {
-                    Some(
-                        skippy_serving::InferenceGuardrailsConfig::for_standalone_mode(
-                            self.openai_guardrails,
-                        ),
-                    )
-                }),
-                guardrail_telemetry: None,
-                downstream_wire_condition: skippy_serving::binary_transport::WireCondition::new(
-                    0.0, None,
-                )?,
-                serving_telemetry: None,
-                l3_manager,
+        let mut request = ModelLoadRequest::new(
+            EmbeddedRuntimeOptions {
+                config,
+                topology: self.topology,
+                n_threads: self.tuning.n_threads,
+                n_threads_batch: self.tuning.n_threads_batch,
+                mtp_source,
+                recurrent_rollback_tokens: 0,
+                metrics_otlp_grpc: self.metrics_otlp_grpc,
+                telemetry_queue_capacity: self.telemetry_queue_capacity,
+                telemetry_level: self.telemetry_level,
+                session_lifecycle_observer: None,
             },
-        ))
+            openai,
+        );
+        request.open_events = self
+            .model_open_events
+            .map_or(ModelOpenEvents::Disabled, |queue| {
+                ModelOpenEvents::Enabled(Some(queue))
+            });
+        request.guardrails = self.tuning.guardrails.or_else(|| {
+            Some(
+                skippy_serving::InferenceGuardrailsConfig::for_standalone_mode(
+                    self.openai_guardrails,
+                ),
+            )
+        });
+        Ok((self.bind_addr, request.with_disk_cache(self.disk_cache)))
     }
 }
 

@@ -106,6 +106,13 @@ pub fn admitted_stage_config(
     resident_tensor_names: Vec<String>,
 ) -> Result<StageConfig> {
     load.validate()?;
+    skippy_protocol::validate_stage_admission_descriptor(&load.admission.clone().into())
+        .context("validate stage admission contract")?;
+    anyhow::ensure!(
+        (load.layer_start, load.layer_end)
+            == (load.admission.layer_start, load.admission.layer_end),
+        "stage range differs from its admission descriptor"
+    );
     let frontier_profile = admitted_activation_frontier(&load.admission)?;
     let mut config = StageConfig {
         run_id: load.run_id.clone(),

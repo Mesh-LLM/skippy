@@ -1,0 +1,32 @@
+[package]
+name = "skippy-production-consumer"
+version = "0.1.0"
+edition = "2024"
+publish = false
+autobins = false
+
+[workspace]
+exclude = ["vendor/skippy", "vendor/skippy/crates/*", "vendor/skippy/tools/*"]
+
+
+[features]
+staged = ["dep:skippy-protocol", "dep:skippy-serving"]
+
+[dependencies]
+anyhow = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+skippy-api = { path = "vendor/skippy/crates/skippy-api", default-features = false, features = ["dynamic-native-runtime"] }
+skippy-protocol = { path = "vendor/skippy/crates/skippy-protocol", optional = true }
+skippy-serving = { path = "vendor/skippy/crates/skippy-serving", optional = true, default-features = false, features = ["dynamic-native-runtime"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "local"
+path = "src/bin/local.rs"
+
+[[bin]]
+name = "staged"
+path = "src/bin/staged.rs"
+required-features = ["staged"]

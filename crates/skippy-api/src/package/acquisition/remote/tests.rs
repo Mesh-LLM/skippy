@@ -109,7 +109,11 @@ impl PackageServer {
                     }
                 }
                 let path = request.split_whitespace().nth(1).unwrap();
-                let name = path.split_once("/resolve/main/").map(|(_, name)| name);
+                let name = path
+                    .split_once("/resolve/")
+                    .and_then(|(_, selector)| selector.split_once('/'))
+                    .filter(|(revision, _)| matches!(*revision, "main" | COMMIT))
+                    .map(|(_, name)| name);
                 let body = name.and_then(|name| files.get(name));
                 if let Some(body) = body {
                     write!(stream, "HTTP/1.1 200 OK\r\nETag: \"{}\"\r\nX-Repo-Commit: {COMMIT}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", sha256_hex(body), body.len()).unwrap();
@@ -291,3 +295,5 @@ fn failed_transfer_drops_observer_without_ready_and_releases_download_lock() {
         .unwrap_err();
     assert_eq!(error.to_string(), "next acquisition reached client");
 }
+
+mod resolution;
