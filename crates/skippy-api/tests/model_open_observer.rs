@@ -119,8 +119,7 @@ fn embedding_host_gets_typed_progress_from_a_real_model() {
         std::env::var_os("SKIPPY_TEST_GGUF_PATH").expect("local GGUF fixture path"),
     );
     let model_id = "observation-fixture";
-    let identity =
-        skippy_api::source::synthetic_direct_gguf_package(model_id, &path, None).unwrap();
+    let identity = skippy_api::source::synthetic_direct_gguf_package(model_id, &path).unwrap();
     let mut options = skippy_api::SingleStageOptions::new(model_id, &path);
     options.n_gpu_layers = 0;
     options.ctx_size = 512;

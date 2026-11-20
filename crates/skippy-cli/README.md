@@ -33,15 +33,22 @@ skippy models recommended
 skippy serve --model Qwen3-0.6B-Q4_K_M
 ```
 
-`--model` also accepts a Hugging Face repository reference such as
-`unsloth/Qwen3-8B-GGUF:Q4_K_M`, or an existing local model path. Remote GGUF
-files and complete SafeTensors checkpoints are resolved to an immutable revision
-and cached before loading. Direct SafeTensors serving requires a model family
-supported by Skippy's native checkpoint loader; Qwen3.5 checkpoints are not yet
-supported, so use a GGUF variant such as
-`unsloth/Qwen3.5-0.8B-GGUF:Q4_K_M` for that family. Skippy
-reuses installed exact refs from the shared Hugging Face cache and reports the
-model ID and API address after `GET /v1/models` succeeds.
+`--model` also accepts a Hugging Face GGUF reference such as
+`unsloth/Qwen3-8B-GGUF:Q4_K_M`, or a local GGUF path. Skippy resolves remote
+GGUF files to an immutable revision and reuses installed files from the shared
+Hugging Face cache. It reports the model ID and API address when
+`GET /v1/models` succeeds.
+
+Skippy serves GGUF models only. If you have a SafeTensors checkpoint, choose
+a published GGUF for the same model or convert the checkpoint offline.
+
+```sh
+skippy-quantize convert /models/checkpoint /models/model.gguf
+skippy serve --model /models/model.gguf
+```
+
+For multipart GGUFs, pass the first shard. Choose the weight quantization when
+downloading or producing the GGUF.
 
 For a local GGUF, Skippy's memory-aware context planner sizes one unified KV
 pool from the model metadata, weight footprint,
@@ -49,17 +56,6 @@ and available device memory, up to a 128k-token ceiling, then defaults to four
 lanes sharing that pool. KV stays F16 by default; weight file size does not
 change its quantization. `--ctx-size` and `--generation-concurrency` override
 the corresponding automatic choices.
-
-For a SafeTensors family supported by the native checkpoint loader, `--quant`
-uses Skippy's on-load quantization recipes (`preserve` is the default). Low-bit
-recipes that need an importance matrix also accept
-`--checkpoint-imatrix /path/to/model.imatrix`. Quantization does not add support
-for an otherwise unsupported checkpoint architecture; use a GGUF variant for
-Qwen3.5 today.
-
-```sh
-skippy serve --model /models/supported-checkpoint --quant Q4_K_M
-```
 
 For multimodal GGUFs, Skippy looks for a matching installed `mmproj` sidecar.
 Catalog downloads include the catalog's projector asset; select an explicit
@@ -113,7 +109,7 @@ when piped. Every model subcommand accepts `--json`, alongside Skippy’s global
 ```sh
 skippy models recommended
 skippy models search qwen --limit 10
-skippy models search qwen --mlx --sort downloads
+skippy models search qwen --sort downloads
 skippy models show unsloth/Qwen3-8B-GGUF:Q4_K_M
 skippy models download unsloth/Qwen3-8B-GGUF:Q4_K_M
 skippy models installed
@@ -125,7 +121,7 @@ skippy models cleanup --unused-since 30d
 `recommended` reads `meshllm/catalog` by default.
 `SKIPPY_MODEL_CATALOG=namespace/name` selects another Hugging Face dataset
 repository with the same catalog format. `search` queries Hugging Face for GGUF
-repositories by default; `--mlx` selects MLX repositories, and `--catalog`
+repositories. `--catalog`
 limits results to the selected catalog. `show` resolves an exact artifact and
 displays its revision and file set. `download` uses a catalog layer package when available;
 `--direct` downloads the exact Hub artifact instead, and `--draft` also fetches
@@ -140,7 +136,7 @@ endpoint and token configuration follows Hugging Face settings. `skippy models
 delete org/repo:Q4_K_M` previews the selected installed GGUF files; add
 `--yes` to remove them. It never deletes a remote repository.
 
-`installed` includes both GGUF files and cached SafeTensors checkpoints.
+`installed` lists GGUF models and installed layer packages.
 `cleanup` is a dry run by default and only targets managed model files recorded
 by the CLI; use `--yes` after reviewing its preview. `delete` also previews
 derived stage files associated with the selected model before removal.

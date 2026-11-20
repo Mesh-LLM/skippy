@@ -1,5 +1,4 @@
 //! Shared model preparation for standalone and embedded Skippy serving.
-mod checkpoint;
 pub mod family_policy;
 pub mod kv_cache;
 pub mod speculative;
@@ -21,3 +20,6 @@ pub mod stage_load;
 pub mod native_runtime;
 pub mod serving;
 pub mod serving_profile;
+
+#[cfg(feature = "dynamic-native-runtime")]
+pub mod execution;

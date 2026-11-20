@@ -1,12 +1,16 @@
 # skippy-api
 
+Use `execution` with the `dynamic-native-runtime` feature for ordinary
+in-process production serving. See the [contract and specialist extension
+points](../../docs/PRODUCTION_EMBEDDING.md).
+
 Shared Skippy model preparation. `SingleStageOptions` and a resolved `StageSourceIdentity` produce the same single-stage configuration for standalone and embedded callers. Model-family cache policy and checkpoint quantization/importance-matrix preparation live here. Product hooks, diagnostics and model discovery remain caller concerns.
 
 `package::identity_from_package_v2` verifies a local package and returns its model identity. It checks the package generation, content-derived package ID, confined artifact paths, sizes and digests. The producer native ABI is provenance; runtime loading checks host/library ABI compatibility separately. Callers pass an optional `SidecarDigestCache` opened at an explicit directory; `None` disables the advisory digest cache. The API does not read environment variables or choose a home/cache directory. Existing v2 cache records keep their format and keys.
 
 `package::metadata` verifies metadata-only package identity without fetching layer artifacts. It preserves source provenance separately from the generated metadata digest and pins resolved Hugging Face snapshot references. Callers supply the local directory and optional digest cache; remote acquisition is available through `package::acquisition`.
 
-`source` prepares local GGUF/sharded GGUF, safetensors checkpoints and immutable Hugging Face source identities. Strict local GGUF verification always hashes source bytes and preserves the strong-fingerprint checks; the source registry is a locator, never proof of content. Hugging Face snapshot roots and the metadata client factory are caller-supplied. Existing identity hash domains remain unchanged. Managed multipart views now live under `.skippy/multipart-gguf` within the HF repository cache; these are hard links to verified blobs, and existing `.mesh-llm` views are not deleted.
+`source` prepares local GGUF, multipart GGUF, and immutable Hugging Face GGUF source identities. Strict local GGUF verification always hashes source bytes and preserves the strong-fingerprint checks; the source registry is a locator, never proof of content. Hugging Face snapshot roots and the metadata client factory are caller-supplied. Existing identity hash domains remain unchanged. Managed multipart views now live under `.skippy/multipart-gguf` within the HF repository cache; these are hard links to verified blobs, and existing `.mesh-llm` views are not deleted.
 
 `source::planning` constructs the source-complete graph-planning manifest from verified GGUF identity. Embedding applications retain its profile-scoped source policy and serving hooks; callers supply transport and cache policy to package acquisition.
 

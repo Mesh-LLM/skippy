@@ -9,11 +9,6 @@ from pathlib import Path
 
 def source_version(kind, path):
     text = Path(path).read_bytes().decode("utf-8")
-    if kind == "runtime":
-        value = text.strip()
-        if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?", value):
-            raise ValueError("invalid Skippy runtime release version")
-        return value
     if kind == "workspace":
         eligible = False
         for line in re.split(r"[\r\n]", text):

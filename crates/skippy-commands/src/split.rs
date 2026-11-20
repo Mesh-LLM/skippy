@@ -62,9 +62,10 @@ pub fn run(args: PlanSplitCommand) -> Result<()> {
     } else {
         std::env::current_dir()?.join(&args.model_path)
     };
+    skippy_model_ref::validate_gguf_model_path(&path).map_err(anyhow::Error::msg)?;
     ensure!(
         path.is_file(),
-        "plan-split requires a GGUF file (the first shard for multipart models); safetensors directories are not supported"
+        "plan-split requires a GGUF file (the first shard for multipart models)"
     );
     let model_id = args.model_id.clone().unwrap_or_else(|| {
         path.file_stem()
@@ -72,7 +73,7 @@ pub fn run(args: PlanSplitCommand) -> Result<()> {
             .unwrap_or("local-model")
             .into()
     });
-    let identity = source::synthetic_direct_gguf_package(&model_id, &path, None)?;
+    let identity = source::synthetic_direct_gguf_package(&model_id, &path)?;
     ensure!(
         identity.layer_weight_bytes.len() == identity.layer_count as usize,
         "split planning requires weight sizes for every model layer"
@@ -317,6 +318,7 @@ mod tests {
     #[test]
     fn checkpoint_directory_fails_before_native_planning_or_publication() {
         let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("model.safetensors"), b"weights").unwrap();
         let args = PlanSplitCommand {
             model_path: root.path().to_owned(),
             model_id: None,
@@ -334,7 +336,7 @@ mod tests {
             run(args)
                 .unwrap_err()
                 .to_string()
-                .contains("requires a GGUF file")
+                .contains("Convert the SafeTensors checkpoint to GGUF")
         );
         assert!(!root.path().join("plan").exists());
     }

@@ -501,9 +501,7 @@ pub(in crate::runner) fn tokenizer_model_for_state_handoff(
             activation_export_bindings: runtime_plan
                 .as_ref()
                 .map_or_else(Vec::new, |plan| plan.activation_export_bindings.clone()),
-            checkpoint_quantization: skippy_runtime::CheckpointQuantization::Preserve,
-            checkpoint_imatrix: None,
-            checkpoint_imatrix_sha256: None,
+
             cache_type_k: GGML_TYPE_F16,
             cache_type_v: GGML_TYPE_F16,
             flash_attn_type: runtime_flash_attn(args.flash_attn),
