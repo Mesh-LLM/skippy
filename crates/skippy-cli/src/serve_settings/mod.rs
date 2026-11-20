@@ -1,6 +1,7 @@
 //! Complete standalone serving settings: CLI > environment > TOML > defaults.
 
 mod catalog;
+mod multi_model;
 mod report;
 mod resolution;
 #[cfg(test)]
@@ -108,14 +109,39 @@ fn parse_with_environment(
         return Ok(Cli::from_arg_matches(&matches)?);
     };
     let mut settings = ServeSettings::default();
+    let mut models = None;
     if let Some(path) = serve.get_one::<std::path::PathBuf>("settings") {
-        settings.load_file(path, &command)?;
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("read serving settings {}", path.display()))?;
+        let table: toml::Table = toml::from_str(&content)
+            .with_context(|| format!("parse serving settings {}", path.display()))?;
+        if table.contains_key("models") {
+            models = Some(multi_model::SettingsFile::parse(
+                path,
+                table,
+                &command,
+                &mut settings,
+            )?);
+        } else {
+            settings.load_file(path, table, &command)?;
+        }
     }
     settings.load_environment(&command, environment)?;
     settings.load_cli(&matches, &command)?;
+    let local_models = models
+        .map(|file| file.resolve(&command, &settings))
+        .transpose()?;
+    let mut cli = resolve(&command, settings)?;
+    if let (Command::Serve(args), Some(models)) = (&mut cli.command, local_models) {
+        args.local_models = models;
+    }
+    Ok(cli)
+}
+
+fn resolve(command: &clap::Command, settings: ServeSettings) -> Result<Cli> {
     let mut argv = vec![OsString::from("skippy"), OsString::from("serve")];
     settings.append_arguments(&mut argv)?;
-    let resolved = command.try_get_matches_from(argv)?;
+    let resolved = command.clone().try_get_matches_from(argv)?;
     let mut cli = Cli::from_arg_matches(&resolved)?;
     if let Command::Serve(args) = &mut cli.command {
         args.public.settings = settings;
@@ -140,12 +166,13 @@ impl ServeSettings {
         Ok(())
     }
 
-    fn load_file(&mut self, path: &Path, command: &clap::Command) -> Result<()> {
-        let content = std::fs::read_to_string(path)
-            .with_context(|| format!("read serving settings {}", path.display()))?;
-        let value: toml::Value = toml::from_str(&content)
-            .with_context(|| format!("parse serving settings {}", path.display()))?;
-        let object = serde_json::to_value(value)?;
+    fn load_file(
+        &mut self,
+        path: &Path,
+        table: toml::Table,
+        command: &clap::Command,
+    ) -> Result<()> {
+        let object = serde_json::to_value(table)?;
         let object = object
             .as_object()
             .context("serving settings must be a table")?;
@@ -545,48 +572,4 @@ fn description(name: &str) -> Option<&'static str> {
         }
         _ => None,
     }
-}
-
-pub(crate) fn parse_model_entry(
-    directory: &Path,
-    model_path: &Path,
-    id: &str,
-    options: BTreeMap<String, toml::Value>,
-) -> Result<Cli> {
-    let command = command();
-    let known = known_arguments(&command);
-    let mut settings = ServeSettings::default();
-    for (name, value) in options {
-        let name = name.replace('_', "-");
-        anyhow::ensure!(known.contains_key(&name), "unknown setting {name}");
-        anyhow::ensure!(
-            !matches!(
-                section(&name),
-                "settings" | "runtime" | "diagnostics" | "distributed" | "network"
-            ) && !matches!(
-                name.as_str(),
-                "model" | "model-path" | "model-id" | "bind-addr" | "prompt"
-            ),
-            "{name} is not a per-model setting"
-        );
-        let value = file_value(&name, serde_json::to_value(value)?, directory)?;
-        settings.insert(&name, value, format!("file:models.{id}"))?;
-    }
-    let mut argv = vec![
-        "skippy".into(),
-        "serve".into(),
-        format!("--model-id={id}").into(),
-        format!(
-            "--model-path={}",
-            model_path.to_str().context("model path must be UTF-8")?
-        )
-        .into(),
-    ];
-    settings.append_arguments(&mut argv)?;
-    let matches = command.try_get_matches_from(argv)?;
-    let mut cli = Cli::from_arg_matches(&matches)?;
-    if let Command::Serve(args) = &mut cli.command {
-        args.public.settings = settings;
-    }
-    Ok(cli)
 }

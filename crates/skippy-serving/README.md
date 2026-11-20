@@ -18,7 +18,8 @@ from the host build.
 With `dynamic-native-runtime`, serving commands resolve and load a verified local
 native runtime before opening any model. `--runtime-bundle` accepts a bundle root
 (repeatable), `--runtime-cache` selects a cache, and `--runtime-release` defaults
-to Skippy's `RUNTIME_VERSION`. `--runtime-selection` accepts a backend or exact
+to the Skippy
+release version. `--runtime-selection` accepts a backend or exact
 artifact ID. These global flags work with `skippy serve`;
 `skippy example-config` does not load native code.
 
@@ -188,10 +189,10 @@ deadline handling.
   at once and defaults to the config's KV-derived `lane_count`.
   `--generation-queue-capacity` independently bounds additional waiting
   requests (default `clamp(8 * lanes, 16, 256)`), while
-  `--generation-admission-timeout-secs` can bound predicted and actual queue
-  wait; the default `0` waits until client cancellation so capacity pressure
-  drains through the bounded queue instead of rejecting accepted work. KV
-  restore and prefill-record work runs on a separate
+  `--generation-admission-timeout-secs` bounds actual queue wait. Predicted wait
+  remains advisory telemetry; the default `0` waits until client cancellation
+  so capacity pressure drains through the bounded queue instead of rejecting
+  accepted work. KV restore and prefill-record work runs on a separate
   prompt-scaled deadline: admission timeout plus about one minute per 4,000
   prompt tokens, clamped to at least 60 seconds and at most 30 minutes. A
   legitimate prompt-sized prefill is therefore not killed by the queue-wait

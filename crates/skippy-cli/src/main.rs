@@ -125,10 +125,7 @@ async fn run_main(
     let native_options = runtime::resolve_options(cli.native_runtime)?;
     #[cfg(feature = "dynamic-native-runtime")]
     if matches!(&cli.command, Command::Serve(args) if !args.print_effective_config || args.public.config.is_none())
-        || matches!(
-            &cli.command,
-            Command::PlanSplit(_) | Command::ServeModels { .. }
-        )
+        || matches!(&cli.command, Command::PlanSplit(_))
     {
         runtime::prepare_native_runtime(&native_options, automatic_runtime).await?;
     }
@@ -148,8 +145,11 @@ async fn run_main(
             })
             .await?
         }
-        Command::Serve(args) => serve::run(*args).await,
-        Command::ServeModels { config } => multi_model::run(config).await,
+        Command::Serve(args) => {
+            let served = serve::run(*args).await;
+            skippy_serving::telemetry::finish_process_telemetry();
+            served
+        }
         Command::Models { command } => skippy_commands::models::run_standalone(&command).await,
         Command::PlanSplit(args) => skippy_commands::split::run(args.into()),
         Command::Runtime { command } => {

@@ -20,6 +20,10 @@ Source builds can have a newer ABI than a published release. Use
 ## Configure serving
 
 `skippy serve --help` groups every supported operator control by purpose.
+
+To serve several local models on one listener, list them as `[[models]]`
+entries in one TOML file and run `skippy serve --settings serving.toml`.
+See the [multi-model example](../../docs/SERVING_SETTINGS.md#serve-multiple-local-models).
 Use `--settings serve.toml` for a complete serving configuration and
 `--print-effective-config` to inspect the resolved launch before loading a model.
 CLI options override `SKIPPY_SERVE_*` environment variables, file settings and

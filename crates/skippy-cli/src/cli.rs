@@ -56,12 +56,6 @@ pub enum Command {
     Prompt(PromptArgs),
     /// Serve OpenAI and Anthropic APIs, or an explicitly selected stage transport.
     Serve(Box<ServeCommandArgs>),
-    /// Serve a versioned configuration of local models on one listener.
-    ServeModels {
-        /// Multi-model TOML file.
-        #[arg(long)]
-        config: PathBuf,
-    },
     ExampleConfig,
     /// Download models or inspect the shared Hugging Face cache.
     Models {
@@ -84,9 +78,11 @@ pub enum StageTransport {
 
 #[derive(Parser)]
 pub struct ServeCommandArgs {
-    /// Complete serving settings file (TOML); CLI overrides environment and file values.
+    /// Serving settings (TOML) for one model or a list of local models.
     #[arg(long)]
     pub settings: Option<PathBuf>,
+    #[arg(skip)]
+    pub local_models: Vec<ServeOpenAiArgs>,
     /// Print resolved settings and their sources without starting the server.
     #[arg(long)]
     pub print_effective_config: bool,

@@ -52,6 +52,44 @@ skippy serve --settings serve.toml --temperature 0.2
 skippy serve --settings serve.toml --print-effective-config
 ```
 
+## Serve multiple local models
+
+Declare each local model in one `serving.toml` file.
+
+```toml
+version = 1
+bind_addr = "127.0.0.1:9337"
+
+[defaults]
+ctx_size = 4096
+
+[[models]]
+id = "small"
+path = "models/small.gguf"
+
+[models.settings]
+ctx_size = 2048
+
+[[models]]
+id = "large"
+path = "models/large.gguf"
+```
+
+```console
+skippy serve --settings serving.toml
+```
+
+Use a unique ID and an unsplit local model path for each entry. Paths are
+relative to the file. Per-model settings override shared defaults. Environment
+variables and CLI overrides apply across the model list using the precedence
+below. Set the listener address with `bind_addr` and shared native runtime
+options in `[runtime]`.
+
+The server opens one listener after every model loads successfully.
+`GET /v1/models` lists the configured IDs. Set the request's `model`
+field to the exact ID. Add `--print-effective-config` to see the resolved
+configuration for each entry before model load.
+
 ## How settings resolve
 
 Settings resolve in this order:

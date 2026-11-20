@@ -231,7 +231,7 @@ sha256_file() {
 }
 
 skippy_runtime_version() {
-    "${SKIPPY_PYTHON:-python3}" "$REPO_ROOT/scripts/native-source.py" package-source-version runtime "$REPO_ROOT/crates/skippy-native-runtime/RUNTIME_VERSION"
+    "${SKIPPY_PYTHON:-python3}" "$REPO_ROOT/scripts/native-source.py" package-source-version workspace "$REPO_ROOT/Cargo.toml"
 }
 
 skippy_abi_version() {

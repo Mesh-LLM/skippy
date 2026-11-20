@@ -3,7 +3,7 @@ use super::{InferenceOptions, ModelLoadRequest, ModelOpenEvents};
 use anyhow::{Result, bail};
 use skippy_protocol::{StageConfig, StageTopology};
 use skippy_serving::{EmbeddedRuntimeOptions, SpeculativeDecodeConfig};
-use std::{future::Future, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{future::Future, net::SocketAddr, path::PathBuf};
 
 /// Node disk cache settings, resolved by the caller from its configuration.
 pub struct LocalDiskCacheOptions {
@@ -53,7 +53,7 @@ pub struct LocalOpenAiOptions {
     pub telemetry_queue_capacity: usize,
     pub telemetry_level: skippy_serving::telemetry::TelemetryLevel,
     pub openai_guardrails: skippy_serving::frontend::InferenceGuardrailsMode,
-    pub model_open_events: Option<Arc<skippy_runtime::ModelOpenEventQueue>>,
+    pub model_open_events: ModelOpenEvents,
     pub disk_cache: Option<LocalDiskCacheOptions>,
 }
 
@@ -184,11 +184,7 @@ impl LocalOpenAiOptions {
                     session_lifecycle_observer: None,
                 },
                 openai,
-                open_events: self
-                    .model_open_events
-                    .map_or(ModelOpenEvents::Disabled, |queue| {
-                        ModelOpenEvents::Enabled(Some(queue))
-                    }),
+                open_events: self.model_open_events,
                 hooks_factory: None,
                 generation_observer: None,
                 kv_observer: None,
@@ -251,7 +247,7 @@ mod tests {
             telemetry_queue_capacity: 0,
             telemetry_level: skippy_serving::telemetry::TelemetryLevel::Off,
             openai_guardrails: skippy_serving::frontend::InferenceGuardrailsMode::Disabled,
-            model_open_events: None,
+            model_open_events: ModelOpenEvents::Disabled,
             disk_cache: None,
         }
     }

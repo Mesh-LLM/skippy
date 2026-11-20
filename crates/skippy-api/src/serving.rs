@@ -186,7 +186,13 @@ impl InferenceOptions {
 }
 
 mod lifecycle;
-pub use lifecycle::{LoadedModelBackend, ModelLoadRequest, ModelOpenEvents};
+pub use lifecycle::{LoadedModelBackend, ModelLoadRequest};
+mod model_open;
+pub use model_open::{
+    ModelLoadOutcome, ModelOpenContradiction, ModelOpenEmitter, ModelOpenEvent, ModelOpenEventKind,
+    ModelOpenEvents, ModelOpenFailure, ModelOpenObservation, ModelOpenObserver, ModelOpenProgress,
+    ModelOpenProgressUnit, ModelOpenSummary,
+};
 
 #[derive(Clone, Debug)]
 pub struct ServingTelemetryOptions {
