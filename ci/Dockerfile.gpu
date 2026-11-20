@@ -13,7 +13,14 @@ FROM ${TOOLKIT_BASE} AS toolkit
 # makes ROCm's clang detect a phantom CUDA SDK. Deleting in the toolkit
 # stage, before the final stage copies the surviving tree, actually
 # shrinks the pulled image; deleting in the final stage would only mask
-# files inside retained layers.
+# files inside retained layers. libcudadevrt.a and libcudart_static.a are
+# exceptions: device linking needs -lcudadevrt and it exists only as a
+# static archive, and nvcc links the host runtime statically by default
+# (CMake's CUDA_RUNTIME_LIBRARY default), so consumers' CMake compiler
+# identification fails without them. libclang_rt* archives are the other
+# exception: clang's compiler-rt builtins are linked into every clang++
+# and hipcc link, and hipcc resolves them from the ROCm clang resource
+# directory, so deleting them breaks any device-host link.
 RUN set -eu \
     && rm -rf \
       /usr/local/cuda/nsight-compute* \
@@ -27,7 +34,7 @@ RUN set -eu \
       /opt/rocm/docs \
     && for tree in /usr/local/cuda /opt/rocm; do \
          if [ -e "$tree" ]; then \
-           find "$(readlink -f "$tree")" -name '*.a' -type f -delete; \
+           find "$(readlink -f "$tree")" -name '*.a' ! -name 'libcudadevrt.a' ! -name 'libcudart_static.a' ! -name 'libclang_rt*' -type f -delete; \
          fi; \
        done \
     && if [ -L /opt/rocm ]; then \
@@ -124,16 +131,16 @@ RUN --network=none image_probe_dir="$(mktemp -d)" \
       "$image_probe_dir/probe.cpp" -o "$image_probe_dir/cpp-probe" \
     && "$image_probe_dir/cpp-probe" \
     && if [ "$BACKEND" = cuda12 ]; then \
-         printf '__global__ void probe() {}\n' > "$image_probe_dir/gpu.cu" \
+         printf '__global__ void probe() {}\nint main() { return 0; }\n' > "$image_probe_dir/gpu.cu" \
          && /usr/local/cuda-12.9/bin/nvcc --version | grep -F 'release 12.9,' \
-         && /usr/local/cuda-12.9/bin/nvcc -arch=sm_80 -c "$image_probe_dir/gpu.cu" -o "$image_probe_dir/gpu.o"; \
+         && /usr/local/cuda-12.9/bin/nvcc -arch=sm_80 "$image_probe_dir/gpu.cu" -o "$image_probe_dir/gpu-probe"; \
        elif [ "$BACKEND" = cuda13 ]; then \
-         printf '__global__ void probe() {}\n' > "$image_probe_dir/gpu.cu" \
+         printf '__global__ void probe() {}\nint main() { return 0; }\n' > "$image_probe_dir/gpu.cu" \
          && /usr/local/cuda-13.1/bin/nvcc --version | grep -F 'release 13.1,' \
-         && /usr/local/cuda-13.1/bin/nvcc -arch=sm_80 -c "$image_probe_dir/gpu.cu" -o "$image_probe_dir/gpu.o"; \
+         && /usr/local/cuda-13.1/bin/nvcc -arch=sm_80 "$image_probe_dir/gpu.cu" -o "$image_probe_dir/gpu-probe"; \
        elif [ "$BACKEND" = rocm ]; then \
-         printf '#include <hip/hip_runtime.h>\n__global__ void probe() {}\n' > "$image_probe_dir/gpu.hip" \
-         && hipcc --offload-arch=gfx942 -c "$image_probe_dir/gpu.hip" -o "$image_probe_dir/gpu.o"; \
+         printf '#include <hip/hip_runtime.h>\n__global__ void probe() {}\nint main() { return 0; }\n' > "$image_probe_dir/gpu.hip" \
+         && hipcc --offload-arch=gfx942 "$image_probe_dir/gpu.hip" -o "$image_probe_dir/gpu-probe"; \
        else echo "unsupported GPU backend: $BACKEND" >&2; exit 1; fi \
     && rm -rf "$image_probe_dir"
 

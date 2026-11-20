@@ -105,12 +105,12 @@ same Rust crate.
 
 ## ABI Contract
 
-The staged ABI is versioned as `0.1.81`. The patch header in
+The staged ABI is versioned as `0.1.87`. The patch header in
 `llama_cpp/patches/` and the Rust constants in
 `crates/skippy-ffi/src/lib.rs` are the source of truth, so keep this README
 aligned with those files instead of treating it as canonical prose.
 
-ABI `0.1.81` removes the callback-backed checkpoint loader. The staged
+ABI `0.1.87` removes the callback-backed checkpoint loader. The staged
 model loaders accept GGUF files and GGUF package parts.
 
 ABI `0.1.80` adds `mtmd_helper_get_decode_budget`, the load-time probe a caller

@@ -1,3 +1,4 @@
+use crate::native_timing::native_call;
 use std::ffi::CString;
 use std::path::Path;
 use std::ptr;
@@ -188,6 +189,13 @@ impl StageModel {
         !self.inner.raw.is_null()
     }
 
+    /// Cells in the native KV pool, the capacity admission shares among the
+    /// lanes. The dummy model has no pool.
+    pub fn kv_pool_cells(&self) -> Option<u32> {
+        self.has_native_model()
+            .then(|| unsafe { skippy_ffi::skippy_model_kv_pool_cells(self.inner.raw) })
+    }
+
     pub fn output_activation_boundary(&self) -> Option<ActivationBoundaryDesc> {
         let mut raw = skippy_ffi::ActivationBoundaryDesc::default();
         let present = unsafe {
@@ -283,18 +291,25 @@ impl StageModel {
         #[cfg(not(test))]
         let (raw, status, error) = runtime_events::run_model_open(
             |out_model, out_error| unsafe {
-                skippy_ffi::skippy_model_open(path.as_ptr(), &raw_config.raw, out_model, out_error)
+                native_call!(skippy_model_open(
+                    path.as_ptr(),
+                    &raw_config.raw,
+                    out_model,
+                    out_error
+                ))
             },
             |reporter, out_model, out_error| unsafe {
                 let open_with_events_symbol = runtime_events::model_open_with_events_symbol()
                     .expect("runtime-event symbol availability checked before use");
-                open_with_events_symbol(
-                    path.as_ptr(),
-                    &raw_config.raw,
-                    reporter,
-                    out_model,
-                    out_error,
-                )
+                crate::native_timing::timed("skippy_model_open_with_events", || {
+                    open_with_events_symbol(
+                        path.as_ptr(),
+                        &raw_config.raw,
+                        reporter,
+                        out_model,
+                        out_error,
+                    )
+                })
             },
             event_queue,
             use_events,
@@ -304,12 +319,12 @@ impl StageModel {
             debug_assert!(event_queue.is_none());
             runtime_events::run_model_open(
                 |out_model, out_error| unsafe {
-                    skippy_ffi::skippy_model_open(
+                    native_call!(skippy_model_open(
                         path.as_ptr(),
                         &raw_config.raw,
                         out_model,
                         out_error,
-                    )
+                    ))
                 },
                 |_reporter, _out_model, _out_error| {
                     unreachable!("test builds do not link _with_events model-open symbols")
@@ -377,26 +392,28 @@ impl StageModel {
         #[cfg(not(test))]
         let (raw, status, error) = runtime_events::run_model_open(
             |out_model, out_error| unsafe {
-                skippy_ffi::skippy_model_open_from_parts(
+                native_call!(skippy_model_open_from_parts(
                     path_ptrs.as_ptr(),
                     path_ptrs.len(),
                     &raw_config.raw,
                     out_model,
                     out_error,
-                )
+                ))
             },
             |reporter, out_model, out_error| unsafe {
                 let open_from_parts_with_events_symbol =
                     runtime_events::model_open_from_parts_with_events_symbol()
                         .expect("runtime-event symbol availability checked before use");
-                open_from_parts_with_events_symbol(
-                    path_ptrs.as_ptr(),
-                    path_ptrs.len(),
-                    &raw_config.raw,
-                    reporter,
-                    out_model,
-                    out_error,
-                )
+                crate::native_timing::timed("skippy_model_open_from_parts_with_events", || {
+                    open_from_parts_with_events_symbol(
+                        path_ptrs.as_ptr(),
+                        path_ptrs.len(),
+                        &raw_config.raw,
+                        reporter,
+                        out_model,
+                        out_error,
+                    )
+                })
             },
             event_queue,
             use_events,
@@ -406,13 +423,13 @@ impl StageModel {
             debug_assert!(event_queue.is_none());
             runtime_events::run_model_open(
                 |out_model, out_error| unsafe {
-                    skippy_ffi::skippy_model_open_from_parts(
+                    native_call!(skippy_model_open_from_parts(
                         path_ptrs.as_ptr(),
                         path_ptrs.len(),
                         &raw_config.raw,
                         out_model,
                         out_error,
-                    )
+                    ))
                 },
                 |_reporter, _out_model, _out_error| {
                     unreachable!(
@@ -515,7 +532,7 @@ impl StageModel {
         let mut raw = ptr::null_mut();
         let mut error = ptr::null_mut();
         let status =
-            unsafe { skippy_ffi::skippy_session_create(self.inner.raw, &mut raw, &mut error) };
+            unsafe { native_call!(skippy_session_create(self.inner.raw, &mut raw, &mut error)) };
         write_native_log_note(format!("skippy_session_create returned status={status:?}"));
         ensure_ok(status, error)?;
         if raw.is_null() {
@@ -541,14 +558,14 @@ impl StageModel {
         let mut raw = ptr::null_mut();
         let mut error = ptr::null_mut();
         let status = unsafe {
-            skippy_ffi::skippy_session_create_from_resident_prefix(
+            native_call!(skippy_session_create_from_resident_prefix(
                 self.inner.raw,
                 cache_seq_id,
                 token_ids.as_ptr(),
                 token_ids.len(),
                 &mut raw,
                 &mut error,
-            )
+            ))
         };
         ensure_ok(status, error)?;
         if raw.is_null() {
@@ -649,7 +666,7 @@ impl StageModel {
         let mut output_count = 0usize;
         let mut error = ptr::null_mut();
         let status = unsafe {
-            skippy_ffi::skippy_system_one_read(
+            native_call!(skippy_system_one_read(
                 self.inner.raw,
                 prompt_tokens.as_ptr(),
                 prompt_tokens.len(),
@@ -663,7 +680,7 @@ impl StageModel {
                 probabilities.len(),
                 &mut output_count,
                 &mut error,
-            )
+            ))
         };
         ensure_ok(status, error)?;
         if output_count != probabilities.len() {
@@ -696,11 +713,11 @@ impl StageModel {
         let mut canvas_token_count = 0usize;
         let mut error = ptr::null_mut();
         let status = unsafe {
-            skippy_ffi::skippy_system_one_canvas_length(
+            native_call!(skippy_system_one_canvas_length(
                 self.inner.raw,
                 &mut canvas_token_count,
                 &mut error,
-            )
+            ))
         };
         ensure_ok(status, error)?;
         if canvas_token_count == 0 {
@@ -849,7 +866,7 @@ fn parse_chat_response_json_native(
     let mut bytes = output.len();
     let mut error = ptr::null_mut();
     let status = unsafe {
-        skippy_ffi::skippy_parse_chat_response_json(
+        native_call!(skippy_parse_chat_response_json(
             generated_text.as_ptr(),
             metadata_json.as_ptr(),
             is_partial,
@@ -857,7 +874,7 @@ fn parse_chat_response_json_native(
             output.len(),
             &mut bytes,
             &mut error,
-        )
+        ))
     };
     if status == Status::Ok {
         ensure_ok(status, error)?;
@@ -872,7 +889,7 @@ fn parse_chat_response_json_native(
     output.resize(bytes.max(1), 0);
     let mut error = ptr::null_mut();
     let status = unsafe {
-        skippy_ffi::skippy_parse_chat_response_json(
+        native_call!(skippy_parse_chat_response_json(
             generated_text.as_ptr(),
             metadata_json.as_ptr(),
             is_partial,
@@ -880,7 +897,7 @@ fn parse_chat_response_json_native(
             output.len(),
             &mut bytes,
             &mut error,
-        )
+        ))
     };
     ensure_ok(status, error)?;
     output.truncate(bytes);
@@ -1036,7 +1053,7 @@ fn tokenize_bounded(
     let mut count = 0usize;
     let mut error = ptr::null_mut();
     let status = unsafe {
-        skippy_ffi::skippy_tokenize(
+        native_call!(skippy_tokenize(
             raw,
             text.as_ptr(),
             add_special,
@@ -1044,7 +1061,7 @@ fn tokenize_bounded(
             tokens.len(),
             &mut count,
             &mut error,
-        )
+        ))
     };
     if status == Status::Ok {
         ensure_ok(status, error)?;
@@ -1063,7 +1080,7 @@ fn tokenize_bounded(
     tokens.resize(count, 0);
     let mut error = ptr::null_mut();
     let status = unsafe {
-        skippy_ffi::skippy_tokenize(
+        native_call!(skippy_tokenize(
             raw,
             text.as_ptr(),
             add_special,
@@ -1071,7 +1088,7 @@ fn tokenize_bounded(
             tokens.len(),
             &mut count,
             &mut error,
-        )
+        ))
     };
     if status == Status::BufferTooSmall {
         free_error(error);
@@ -1151,7 +1168,7 @@ fn apply_chat_template_json(
     let mut metadata_bytes = metadata.len();
     let mut error = ptr::null_mut();
     let status = unsafe {
-        skippy_ffi::skippy_apply_chat_template_json(
+        native_call!(skippy_apply_chat_template_json(
             raw,
             messages_json.as_ptr(),
             tools_ptr,
@@ -1174,7 +1191,7 @@ fn apply_chat_template_json(
             metadata.len(),
             &mut metadata_bytes,
             &mut error,
-        )
+        ))
     };
     if status == Status::Ok {
         ensure_ok(status, error)?;
@@ -1191,7 +1208,7 @@ fn apply_chat_template_json(
     metadata.resize(metadata_bytes.max(1), 0);
     let mut error = ptr::null_mut();
     let status = unsafe {
-        skippy_ffi::skippy_apply_chat_template_json(
+        native_call!(skippy_apply_chat_template_json(
             raw,
             messages_json.as_ptr(),
             tools_ptr,
@@ -1214,7 +1231,7 @@ fn apply_chat_template_json(
             metadata.len(),
             &mut metadata_bytes,
             &mut error,
-        )
+        ))
     };
     ensure_ok(status, error)?;
     prompt.truncate(prompt_bytes);
@@ -1229,7 +1246,7 @@ impl Drop for StageModelInner {
         self.dflash_capture.take();
         if !self.raw.is_null() {
             unsafe {
-                let _ = skippy_ffi::skippy_model_free(self.raw, ptr::null_mut());
+                let _ = native_call!(skippy_model_free(self.raw, ptr::null_mut()));
             }
         }
     }

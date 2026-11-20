@@ -208,6 +208,11 @@ fn runtime_config(
         kv_offload: None,
         kv_unified: None,
         swa_full: None,
+        kv_pool_tokens: None,
+        kv_lazy_clear: None,
+        kv_release_pages: None,
+        kv_row_attention: None,
+        sample_threads: None,
     }
 }
 
