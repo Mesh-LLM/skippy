@@ -59,6 +59,11 @@ pub struct ModelOpenEvent {
     /// Diagnostic detail as bytes. May be non-UTF-8 or truncated.
     pub detail: Vec<u8>,
     pub detail_truncated: bool,
+    /// The complete native record this event was decoded from, for hosts
+    /// that store its provenance: status, stage and session identities, the
+    /// numeric summaries, and the raw codes behind `kind` and `emitter`.
+    /// A numeric summary is `None` when the runtime did not send it.
+    pub source: Box<skippy_runtime::RuntimeEvent>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
