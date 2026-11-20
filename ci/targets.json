@@ -3,7 +3,8 @@
   "enabled_hosts": [
     "darwin-aarch64",
     "linux-x86_64",
-    "linux-aarch64"
+    "linux-aarch64",
+    "windows-x86_64"
   ],
   "hosts": [
     {
@@ -39,7 +40,6 @@
     {
       "id": "windows-x86_64",
       "display_name": "Windows x86_64",
-      "enabled": false,
       "target": "x86_64-pc-windows-msvc",
       "os": "windows",
       "arch": "x86_64",
@@ -122,6 +122,18 @@
       "runner_group": "jy-rnr_p0zx3thw895vrka"
     },
     {
+      "id": "linux-x86_64-rocm",
+      "display_name": "Linux x86_64, ROCm 7.2.4",
+      "host": "linux-x86_64",
+      "backend": "rocm",
+      "toolkit": "7.2.4",
+      "gpu_architectures": "gfx90a;gfx942;gfx1100;gfx1101;gfx1151;gfx1200;gfx1201",
+      "validation": "artifact",
+      "runner": [
+        "ubuntu-24.04"
+      ]
+    },
+    {
       "id": "linux-aarch64-cpu",
       "display_name": "Linux ARM64, CPU",
       "host": "linux-aarch64",
@@ -169,11 +181,11 @@
     {
       "id": "windows-x86_64-cpu",
       "display_name": "Windows x86_64, CPU",
-      "enabled": false,
       "host": "windows-x86_64",
       "backend": "cpu",
       "toolkit": "",
       "gpu_architectures": "",
+      "validation": "artifact",
       "runner": [
         "windows-2025"
       ]
@@ -181,35 +193,37 @@
     {
       "id": "windows-x86_64-cuda12",
       "display_name": "Windows x86_64, CUDA 12.9.2",
-      "enabled": false,
       "host": "windows-x86_64",
       "backend": "cuda",
       "toolkit": "12.9.2",
       "gpu_architectures": "61;75;80;86;89;90",
+      "validation": "artifact",
       "runner": [
-        "self-hosted",
-        "skippy-ephemeral",
-        "Windows",
-        "X64",
-        "runtime-image",
-        "cuda12"
+        "windows-2025"
       ]
     },
     {
       "id": "windows-x86_64-cuda13",
       "display_name": "Windows x86_64, CUDA 13.1.2",
-      "enabled": false,
       "host": "windows-x86_64",
       "backend": "cuda",
       "toolkit": "13.1.2",
       "gpu_architectures": "75;80;86;89;90;100;103;120",
+      "validation": "artifact",
       "runner": [
-        "self-hosted",
-        "skippy-ephemeral",
-        "Windows",
-        "X64",
-        "runtime-image",
-        "cuda13"
+        "windows-2025"
+      ]
+    },
+    {
+      "id": "windows-x86_64-rocm",
+      "display_name": "Windows x86_64, ROCm 7.2.0",
+      "host": "windows-x86_64",
+      "backend": "rocm",
+      "toolkit": "7.2.0",
+      "gpu_architectures": "gfx1100;gfx1101;gfx1102;gfx1151;gfx1200;gfx1201",
+      "validation": "artifact",
+      "runner": [
+        "windows-2025"
       ]
     }
   ]

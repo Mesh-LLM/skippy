@@ -595,6 +595,37 @@ bundle_cuda_distribution_license() {
     license_paths+=("licenses/NVIDIA-CUDA-LICENSE.txt")
 }
 
+# The Windows package redistributes HIP runtime, rocBLAS, and hipBLASLt
+# libraries from the pinned HIP SDK. Keep AMD's redistribution terms next to
+# them; fail the package when the SDK layout no longer matches the candidates
+# below so the license is never silently dropped.
+bundle_windows_rocm_distribution_license() {
+    local root="${ROCM_PATH:-}" candidate name
+    local -a sources=()
+    if [[ -n "${SKIPPY_ROCM_LICENSE_FILE:-}" ]]; then
+        if [[ -f "$SKIPPY_ROCM_LICENSE_FILE" ]]; then
+            sources+=("$SKIPPY_ROCM_LICENSE_FILE")
+        else
+            echo "configured ROCm license file does not exist: $SKIPPY_ROCM_LICENSE_FILE" >&2
+            return 1
+        fi
+    elif [[ -n "$root" ]]; then
+        for candidate in LICENSE LICENSE.txt license.txt EULA EULA.txt eula.txt; do
+            [[ -f "$root/$candidate" ]] && sources+=("$root/$candidate")
+        done
+    fi
+    if [[ "${#sources[@]}" -eq 0 ]]; then
+        echo "AMD HIP SDK license material was not found under ${root:-\$ROCM_PATH}; set SKIPPY_ROCM_LICENSE_FILE" >&2
+        return 1
+    fi
+    mkdir -p "$stage_dir/licenses"
+    for source in "${sources[@]}"; do
+        name="$(basename "$source")"
+        cp "$source" "$stage_dir/licenses/AMD-HIP-SDK-$name"
+        license_paths+=("licenses/AMD-HIP-SDK-$name")
+    done
+}
+
 linux_cuda_redistributable_present() {
     local rel_path library_name
     for rel_path in "${library_paths[@]}"; do
@@ -792,6 +823,13 @@ build_model_package_tool
 
 if [[ "$runtime_os" == "windows" ]]; then
     dependency_args=()
+    if [[ "$BACKEND" == "cuda" || "$BACKEND" == "cuda-blackwell" ]]; then
+        dependency_args+=(--cuda-major "$(cuda_toolkit_major)")
+        bundle_cuda_distribution_license
+    fi
+    if [[ "$BACKEND" == "rocm" || "$BACKEND" == "hip" ]]; then
+        bundle_windows_rocm_distribution_license
+    fi
     for library in "${runtime_libraries[@]}"; do
         dependency_args+=(--search-dir "$(dirname "$library")")
     done
@@ -920,11 +958,27 @@ checksum from \`native-runtimes.json\`, installs the artifact into the
 versioned native runtime cache, and loads these libraries before Skippy starts.
 EOF
 
-if [[ "${#license_paths[@]}" -gt 0 ]]; then
+if [[ -f "$stage_dir/licenses/NVIDIA-CUDA-LICENSE.txt" ]]; then
     cat >> "$stage_dir/README.md" <<'EOF'
 
 Redistributed NVIDIA CUDA libraries remain byte-for-byte unchanged. Their
 distribution terms are included at `licenses/NVIDIA-CUDA-LICENSE.txt`.
+EOF
+fi
+
+if compgen -G "$stage_dir/licenses/AMD-HIP-SDK-*" >/dev/null; then
+    cat >> "$stage_dir/README.md" <<'EOF'
+
+Redistributed AMD HIP SDK libraries and kernels remain byte-for-byte
+unchanged. Their distribution terms are included under `licenses/`.
+EOF
+fi
+
+if [[ "$runtime_os" == "linux" && ( "$BACKEND" == "rocm" || "$BACKEND" == "hip" ) ]]; then
+    cat >> "$stage_dir/README.md" <<'EOF'
+
+Install the AMD ROCm runtime matching the version in `manifest.json` and make
+its libraries available to the system loader before running inference.
 EOF
 fi
 

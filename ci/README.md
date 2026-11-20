@@ -68,18 +68,31 @@ for the Linux x64 CUDA 13 device job. Compiler-only CUDA builds always use the
 manifest architecture lists. The only source override is the immutable bundle
 produced by the protected-main llama upgrade workflow.
 
-`targets.json` defines four hosts and eleven runtimes. Three hosts and eight
-runtimes are active. Windows qualification and publication are deferred. After
-the quality and automation canary, each CPU job builds, packages and tests its
-runtime on GitHub-hosted `ubuntu-24.04`, `ubuntu-24.04-arm` or `macos-15`. Each
-also produces the shared CLI for its platform. Linux x64 builds the shared CLI
-on Ubuntu 24.04 for compatibility with the CUDA toolchain images. Each backend
-job waits for its matching CPU job only. Linux x64 CUDA 12 and Linux ARM64
-CUDA 12 and 13 run on GitHub-hosted Ubuntu in the corresponding compiler images
-and check the packaged CLI and runtime artifact without a device. Linux x64
-CUDA 13 and macOS Metal run device smoke on ephemeral JY runners. Tagged
-releases add device smoke for the other three CUDA packages using their exact
-archives. JY hardware jobs declare literal runner groups and labels. The full
+`targets.json` defines four hosts and thirteen active runtimes. After the quality
+and automation canary, each hosted CPU job produces one shared CLI for its
+platform. Each backend job uses the CLI from its matching CPU job. Linux x64
+builds the shared CLI on Ubuntu 24.04 for compatibility with the GPU toolchain
+images.
+
+Full CI and tagged releases build and verify the Windows x64 CPU, CUDA 12,
+CUDA 13, and ROCm 7.2.0 archives on `windows-2025` and the Linux x64 ROCm
+archive in the published ROCm compiler image. These five targets have
+`validation: artifact` in `targets.json`. Their checks cover archive integrity,
+native binary imports and CLI startup. Inference qualification is pending for
+these targets. Windows CUDA jobs provision the toolkit from NVIDIA's versioned,
+checksum-verified component archives; the Windows ROCm job silently installs
+the checksum-verified HIP SDK installer
+`AMD-Software-PRO-Edition-26.Q3-Win11-For-HIP.exe` (AMD publishes HIP SDK 7.2
+for Windows 11; the Server 2025 runner shares its kernel lineage) and verifies
+its compilers, import libraries, and rocBLAS/hipBLASLt kernels before building.
+Windows users need the Microsoft Visual C++ x64 Redistributable and, for CUDA,
+a compatible NVIDIA driver. Linux ROCm users need a matching ROCm runtime with
+its libraries visible to the system loader.
+
+Linux x64 CUDA 12 and Linux ARM64 CUDA 12 and 13 run on GitHub-hosted Ubuntu
+in the corresponding compiler images. Tagged releases run device smoke on those
+exact archives. Linux x64 CUDA 13 and macOS Metal run device smoke on ephemeral
+JY runners. JY hardware jobs declare literal runner groups and labels. The full
 CI gate matches all package jobs to the plan and checks required device results.
 
 The CPU-only `quality` job runs on GitHub-hosted `ubuntu-24.04` inside
@@ -181,8 +194,8 @@ toolkit labels, then pushes immutable build tags and the corresponding latest
 tags. ARM64 build tags also end in `-arm64`.
 
 The kernel compiler probes and container smoke establish compiler/toolkit image
-contents only. They do not execute GPU kernels and cannot qualify a GPU runtime;
-device evidence still comes from the matching CUDA/ROCm inference jobs.
+contents only. The CUDA device jobs produce GPU evidence, and ROCm inference
+qualification is pending.
 Run `just ci-gpu-image-build cuda12 BASE_IMAGE 12.9.2`,
 `just ci-gpu-image-build cuda13 BASE_IMAGE 13.1.2`, or
 `just ci-gpu-image-build rocm BASE_IMAGE 7.2.4`, then the matching smoke and
@@ -305,10 +318,12 @@ smoke commands use Python 3.9 or later. Release inventory uses Python
 2. Each selected job calls `just ci-runtime` for its variant, then
    `just ci-package` to compose verified producer archives. It smokes the
    extracted product on the same runner and uploads the package with its evidence.
-3. Release-only device jobs download the exact compiler-only CUDA archives,
-   run inference smoke, and upload the same archives with device evidence under
-   `release-product-*`. The publisher requires all eight variants and smoke
-   evidence before publication.
+3. Release-only device jobs download the three Linux CUDA archives built on
+   compiler-only runners, run inference smoke, and upload the same archives with
+   device evidence under `release-product-*`. Windows and ROCm already upload
+   their final archives with SHA-256-bound artifact smoke evidence. The publisher
+   requires all thirteen variants and the evidence declared by each target. The
+   release notes identify the targets with pending inference qualification.
 4. The hosted CI gate reads the dependency results and the validated plan
    without checkout or Rust setup. Required work must pass and unselected work
    must report a skip.

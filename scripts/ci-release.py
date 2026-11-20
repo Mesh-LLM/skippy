@@ -55,6 +55,19 @@ def validate(tag):
     return source
 
 
+def verify_package_evidence(directory, runtime, source, archive_digest):
+    variant, backend = runtime["id"], runtime["backend"]
+    artifact_only = runtime["validation"] == "artifact"
+    name = "artifact-smoke" if artifact_only else "smoke"
+    evidence = artifacts.read_json(directory / f"evidence/{name}.json")
+    if (
+        (evidence.get("source"), evidence.get("variant"), evidence.get("backend"))
+        != (source, variant, backend)
+        or (artifact_only and evidence.get("archive_sha256") != archive_digest)
+    ):
+        raise ValueError(f"missing or mismatched {name} evidence for {variant}")
+
+
 def prepare(tag, input_dir):
     source = validate(tag)
     hosts, runtimes = targets()
@@ -75,15 +88,11 @@ def prepare(tag, input_dir):
                 artifacts.verify(root, "product", host["target"], variant)
                 arches = runtime["gpu_architectures"] if runtime["backend"] == "cuda" else None
                 validate_native_identity(root / "native-runtimes" / variant, host, runtime, arches)
-            evidence = artifacts.read_json(directory / "evidence/smoke.json")
-            if (evidence.get("source"), evidence.get("variant"), evidence.get("backend")) != (
-                source, variant, runtime["backend"]
-            ):
-                raise ValueError(f"missing or mismatched smoke evidence for {variant}")
             file = stage / f"skippy-{tag}-{variant}.tar.gz"
             shutil.copyfile(directory / f"skippy-{variant}.tar.gz", file)
-            artifacts.write_checksum(file)
             assets[file.name] = artifacts.digest(file)
+            verify_package_evidence(directory, runtime, source, assets[file.name])
+            artifacts.write_checksum(file)
         index = stage / "release.json"
         artifacts.write_json(index, {
             "schema_version": 1, "tag": tag, "source": source,
@@ -93,6 +102,9 @@ def prepare(tag, input_dir):
         artifacts.write_checksum(index)
         verify(stage)
         stage.rename(output)
+    github_output("artifact_only", ", ".join(
+        variant for variant, runtime in runtimes.items() if runtime["validation"] == "artifact"
+    ))
 
 
 def verify(directory):

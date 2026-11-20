@@ -13,6 +13,15 @@ inputs:
   smoke:
     description: Select inference or artifact smoke.
     default: inference
+  release-device-smoke:
+    description: Whether an artifact-smoked package must go through a separate release device job.
+    default: 'false'
+  windows-cuda:
+    description: Pinned CUDA toolkit version to provision on the hosted Windows builder.
+    default: ''
+  windows-rocm:
+    description: Pinned ROCm version whose HIP SDK is provisioned on the hosted Windows builder.
+    default: ''
   containerized:
     description: Use the preinstalled toolchain in a Skippy compiler image.
     default: 'false'
@@ -29,6 +38,19 @@ runs:
       if: runner.environment == 'github-hosted' && inputs.containerized != 'true'
       with:
         cache: 'false'
+    - name: Prefer Git Bash for Windows build scripts
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $gitRoot = Split-Path (Split-Path (Get-Command git.exe).Source)
+        Join-Path $gitRoot 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        'SKIPPY_PYTHON=python' | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+    # CMake, Ninja, nvcc, and the HIP compilers need the MSVC tools on PATH;
+    # rustc locates Visual Studio itself, the native stage does not.
+    - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+      if: runner.os == 'Windows'
+      with:
+        arch: x64
     - name: Identify the compiler image
       if: inputs.containerized == 'true'
       shell: bash
@@ -40,16 +62,29 @@ runs:
       with:
         artifact: ${{ inputs.candidate-artifact }}
         sha: ${{ inputs.candidate-sha }}
+    - name: Provision NVIDIA CUDA on Windows
+      if: inputs.windows-cuda != ''
+      shell: bash
+      env:
+        CUDA_VERSION: ${{ inputs.windows-cuda }}
+      run: |
+        "$SKIPPY_PYTHON" scripts/ci-windows-cuda.py "$CUDA_VERSION"
+    - name: Provision AMD HIP SDK on Windows
+      if: inputs.windows-rocm != ''
+      shell: pwsh
+      env:
+        ROCM_VERSION: ${{ inputs.windows-rocm }}
+      run: ./scripts/install-windows-rocm-sdk.ps1 -ExpectedVersion "$env:ROCM_VERSION"
     - uses: ./.github/actions/cache
       with:
-        scope: package-${{ inputs.runtime-id }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}
+        scope: package-${{ inputs.runtime-id }}-${{ inputs.windows-cuda || inputs.windows-rocm || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}
         download-scope: ${{ inputs.build-cli == 'true' && 'host' || 'tools' }}
         build-paths: |
           target/debug
           target/release
     - uses: ./.github/actions/sccache
       with:
-        scope: package-${{ inputs.runtime-id }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}-${{ env.SKIPPY_CUDA_ARCHITECTURE_MODE }}
+        scope: package-${{ inputs.runtime-id }}-${{ inputs.windows-cuda || inputs.windows-rocm || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}-${{ env.SKIPPY_CUDA_ARCHITECTURE_MODE }}
     - uses: ./.github/actions/native-source
     - name: Build and verify the platform CLI
       if: inputs.build-cli == 'true'
@@ -58,7 +93,7 @@ runs:
         HOST_ID: ${{ inputs.host-id }}
       run: just ci-host "$HOST_ID"
     - name: Upload the shared CLI for full CI
-      if: inputs.build-cli == 'true' && inputs.smoke == 'inference' && env.SKIPPY_CI_PROFILE == 'full'
+      if: inputs.build-cli == 'true' && env.SKIPPY_CI_PROFILE == 'full'
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
         name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-host-${{ inputs.host-id }}
@@ -100,7 +135,7 @@ runs:
     - name: Upload tested package
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
-        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-${{ inputs.smoke == 'artifact' && env.SKIPPY_ARTIFACT_SCOPE == 'release' && 'package' || 'product' }}-${{ inputs.runtime-id }}
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-${{ inputs.release-device-smoke == 'true' && env.SKIPPY_ARTIFACT_SCOPE == 'release' && 'package' || 'product' }}-${{ inputs.runtime-id }}
         path: dist/products/${{ inputs.runtime-id }}
         if-no-files-found: error
         compression-level: 0

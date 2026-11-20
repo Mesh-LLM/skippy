@@ -72,6 +72,7 @@ jobs:
           pattern: release-product-*
           path: release-artifacts
       - name: Verify complete release matrix
+        id: inventory
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: just release-prepare "$RELEASE_TAG" release-artifacts
@@ -117,8 +118,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
+          SOURCE_SHA: ${{ needs.admission.outputs.source }}
+          ARTIFACT_ONLY: ${{ steps.inventory.outputs.artifact_only }}
           PRERELEASE: ${{ needs.admission.outputs.prerelease }}
-        run: gh release edit "$RELEASE_TAG" --draft=false --prerelease="$PRERELEASE"
+        run: |
+          notes="Skippy source: $SOURCE_SHA"
+          if [[ -n "$ARTIFACT_ONLY" ]]; then
+            notes+=$'\n\n'"Build and archive checks only. Inference qualification is pending for $ARTIFACT_ONLY."
+          fi
+          gh release edit "$RELEASE_TAG" --draft=false --prerelease="$PRERELEASE" --notes "$notes"
   documentation:
     needs: [admission, validation, documentation_validation, publish]
     runs-on: ubuntu-24.04

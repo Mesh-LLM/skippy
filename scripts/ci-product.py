@@ -50,6 +50,14 @@ def cuda_architectures(runtime):
     return ";".join(sorted(values))
 
 
+def rocm_toolkit_version(root):
+    info = root / ".info" / "version"
+    if info.is_file():
+        return info.read_text(encoding="utf-8").strip()
+    match = re.fullmatch(r".*[\\/](?:ROCm|HIP)[\\/](\d+\.\d+(?:\.\d+)?)", str(root))
+    return match.group(1) if match else None
+
+
 def build_runtime(host, runtime):
     require_host(host)
     backend = runtime["backend"]
@@ -67,6 +75,24 @@ def build_runtime(host, runtime):
             "SKIPPY_CUDA_VERSION": toolkit,
             "SKIPPY_CUDA_TOOLKIT_MAJOR": toolkit.split(".")[0],
             "LLAMA_STAGE_CUDA_ARCHITECTURES": arches,
+        })
+    elif backend == "rocm":
+        windows = host["os"] == "windows"
+        default_root = r"C:\Program Files\AMD\ROCm" if windows else "/opt/rocm"
+        rocm = Path(os.environ.get("ROCM_PATH", default_root))
+        toolkit = runtime["toolkit"]
+        version = rocm_toolkit_version(rocm)
+        if version is None or version.split("-", 1)[0] != toolkit:
+            found = "an unreadable version" if version is None else version
+            raise ValueError(f"expected ROCm {toolkit}, found {found} at {rocm}")
+        arches = runtime["gpu_architectures"]
+        suffix = ".exe" if windows else ""
+        environment.update({
+            "ROCM_PATH": str(rocm),
+            "HIPCC": str(rocm / f"llvm/bin/clang{suffix}"),
+            "HIPCXX": str(rocm / f"llvm/bin/clang++{suffix}"),
+            "SKIPPY_ROCM_VERSION": toolkit,
+            "LLAMA_STAGE_AMDGPU_TARGETS": arches,
         })
     command(["just", "release-runtime-build", backend, host["target"]],
             timeout=10800, overrides=environment)

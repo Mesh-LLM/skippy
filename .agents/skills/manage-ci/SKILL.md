@@ -26,12 +26,14 @@ contract; no downstream product's workflow topology applies here.
   trigger for the seven Spark configurations. `PR checks` reads protected
   workflow trigger paths to determine which runs it expects. Quality canary
   runs CI automation tests before build checks and gates package jobs. Full CI
-  runs Graph Contracts in parallel with eight build, package and smoke jobs.
+  runs Graph Contracts in parallel with thirteen build and package jobs.
   Each CPU job supplies a shared platform CLI to its backend jobs. Routine CI
   uses two device jobs and checks the three remaining CUDA archives on hosted
   compiler-image runners.
-  Tagged releases add device smoke on those exact archives. The lightweight
-  CI gate checks the validated matrix and requires all applicable results.
+  Tagged releases add device smoke on those exact archives. Windows x64 CPU,
+  CUDA, and ROCm plus Linux x64 ROCm require archive smoke in full CI and on
+  release tags.
+  The lightweight CI gate checks the validated matrix and requires all applicable results.
 - `.github/workflows/docs.yml` directly validates `docs-site/**` changes on PRs
   and deploys to beta on protected-main pushes. The protected PR aggregate
   expects this workflow when docs paths match. Tagged release validation calls
@@ -47,10 +49,10 @@ contract; no downstream product's workflow topology applies here.
 - `.github/workflows/llama-upgrade.yml` keeps control on protected main, prepares
   an immutable candidate, certifies it, independently repeats certification,
   and opens an ordinary PR. Failed or incomplete qualification cannot publish.
-- `ci/targets.json` owns four host definitions and eleven runtime definitions.
-  `enabled_hosts` selects the active CI and release roster. Windows is temporarily
-  deferred; the active roster has three hosts and eight runtimes. Do not publish
-  artifacts for disabled hosts or describe those hosts as qualified.
+- `ci/targets.json` owns four host definitions and thirteen runtime definitions.
+  `enabled_hosts` selects the active CI and release roster. Require the declared
+  `validation` evidence for each release asset. Declare pending inference
+  qualification in the release notes for targets using archive evidence.
   Keep CLI builds backend-neutral and build each host once. Package by copying
   exact verified producer outputs; consumers must not rebuild missing inputs.
 - Keep workflow path routing declarative in YAML. Keep Just recipes and platform adapters thin. Use

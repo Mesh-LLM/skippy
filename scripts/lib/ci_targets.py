@@ -42,3 +42,9 @@ def validate_native_identity(directory, host, runtime, expected_arches=None):
             raise ValueError("CUDA manifest toolkit mismatch")
         if expected_arches is not None and backend["cuda"]["gpu_arches"] != expected_arches.split(";"):
             raise ValueError(f"CUDA manifest architectures differ from {expected_arches}")
+    elif runtime["backend"] == "rocm":
+        rocm = backend["rocm"]
+        if rocm["version"] != runtime["toolkit"]:
+            raise ValueError("ROCm manifest toolkit mismatch")
+        if rocm["gpu_arches"] != runtime["gpu_architectures"].split(";"):
+            raise ValueError("ROCm manifest architectures differ from the matrix")

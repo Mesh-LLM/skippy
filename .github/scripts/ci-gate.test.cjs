@@ -32,8 +32,8 @@ function gate(needs, release = false) {
   evaluate({ env: { CHECK_RESULTS: JSON.stringify(needs), RELEASE_SMOKE: String(release) } });
 }
 
-test('all eight runtime packages match the planned matrix and depend on the canary', () => {
-  assert.equal(packageJobs.length, 8);
+test('all thirteen runtime packages match the planned matrix and depend on the canary', () => {
+  assert.equal(packageJobs.length, 13);
   assert.deepEqual(declared.filter(job => job.startsWith('package_')).sort(), packageJobs.sort());
   for (const row of rows) {
     const job = `package_${row.id.replaceAll('-', '_')}`;
@@ -42,6 +42,16 @@ test('all eight runtime packages match the planned matrix and depend on the cana
     assert.ok(body.includes(`runtime-id: ${row.id}\n`));
     if (row.backend !== 'cpu') assert.ok(body.includes(`package_${row.host.replaceAll('-', '_')}_cpu`));
     assert.equal(body.includes("needs.changes.outputs.inference == 'true'"), prPackages.includes(job));
+    const needsSeparateSmoke = releaseSmokes.includes(job.replace('package_', 'release_smoke_'));
+    assert.equal(body.includes("release-device-smoke: 'true'"), needsSeparateSmoke);
+    assert.equal(body.includes('smoke: artifact'), row.validation === 'artifact' || needsSeparateSmoke);
+    if (row.validation === 'artifact') assert.ok(body.includes(`runs-on: ${row.runner[0]}\n`));
+    if (row.host === 'windows-x86_64' && row.backend === 'cuda') {
+      assert.ok(body.includes(`windows-cuda: '${row.toolkit}'\n`));
+    }
+    if (row.host === 'windows-x86_64' && row.backend === 'rocm') {
+      assert.ok(body.includes(`windows-rocm: '${row.toolkit}'\n`));
+    }
   }
   assert.doesNotThrow(() => gate(results({ full: true })));
 });

@@ -13,6 +13,8 @@ from unittest.mock import patch
 
 from lib import ci_artifacts, ci_smoke
 from lib.ci_process import command
+from lib.ci_targets import validate_native_identity
+from lib.native_policy import host_owned, rocm_host_library
 from lib.upgrade_evidence import MANIFEST, load
 from lib.upgrade_source import git, restore_at
 
@@ -77,7 +79,74 @@ class Artifacts(unittest.TestCase):
             self.assertIn("verify-runtime-package", native_verify.args[0])
             self.assertEqual(ci_artifacts.read_json(report), {
                 "source": "a" * 40, "variant": variant, "backend": "cuda",
+                "archive_sha256": ci_artifacts.digest(archive),
             })
+
+    def test_release_evidence_matches_target_policy_and_archive(self):
+        release = module("ci-release")
+        runtime = {"id": "linux-x86_64-rocm", "backend": "rocm", "validation": "artifact"}
+        source, digest = "a" * 40, "b" * 64
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            evidence = root / "evidence"
+            evidence.mkdir()
+            identity = {"source": source, "variant": runtime["id"], "backend": runtime["backend"]}
+            artifact = evidence / "artifact-smoke.json"
+            ci_artifacts.write_json(artifact, {**identity, "archive_sha256": "c" * 64})
+            with self.assertRaisesRegex(ValueError, "mismatched artifact-smoke"):
+                release.verify_package_evidence(root, runtime, source, digest)
+            ci_artifacts.write_json(artifact, {**identity, "archive_sha256": digest})
+            release.verify_package_evidence(root, runtime, source, digest)
+            inference = {"id": "linux-x86_64-cuda13", "backend": "cuda", "validation": "inference"}
+            ci_artifacts.write_json(artifact, {**identity, "variant": inference["id"], "backend": "cuda",
+                                                  "archive_sha256": digest})
+            with self.assertRaises(FileNotFoundError):
+                release.verify_package_evidence(root, inference, source, digest)
+
+    def test_rocm_manifest_matches_toolkit_and_architectures(self):
+        host = {"os": "linux", "arch": "x86_64"}
+        runtime = {"backend": "rocm", "toolkit": "7.2.4", "gpu_architectures": "gfx942;gfx1200"}
+        rocm = {"version": "7.2.4", "gpu_arches": ["gfx942"]}
+        manifest = {"runtime": {"platform": host, "backend": {"kind": "rocm", "rocm": rocm}}}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ci_artifacts.write_json(root / "manifest.json", manifest)
+            with self.assertRaisesRegex(ValueError, "architectures differ"):
+                validate_native_identity(root, host, runtime)
+            rocm["gpu_arches"].append("gfx1200")
+            ci_artifacts.write_json(root / "manifest.json", manifest)
+            validate_native_identity(root, host, runtime)
+            with self.assertRaisesRegex(ValueError, "toolkit mismatch"):
+                validate_native_identity(root, host, {**runtime, "toolkit": "7.2.5"})
+        self.assertTrue(rocm_host_library("libamdhip64.so.7", "elf"))
+        self.assertFalse(rocm_host_library("libamdhip64.so.7", "pe"))
+        self.assertFalse(rocm_host_library("libamdhip64.so.8", "elf"))
+        self.assertFalse(host_owned("libamdhip64.so.7", "elf"))
+
+    def test_windows_rocm_manifest_matches_toolkit_and_architectures(self):
+        host = {"os": "windows", "arch": "x86_64"}
+        arches = "gfx1100;gfx1101;gfx1102;gfx1151;gfx1200;gfx1201"
+        runtime = {"backend": "rocm", "toolkit": "7.2.0", "gpu_architectures": arches}
+        rocm = {"version": "7.2.0", "gpu_arches": arches.split(";")}
+        manifest = {"runtime": {"platform": host, "backend": {"kind": "rocm", "rocm": rocm}}}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ci_artifacts.write_json(root / "manifest.json", manifest)
+            validate_native_identity(root, host, runtime)
+            with self.assertRaisesRegex(ValueError, "toolkit mismatch"):
+                validate_native_identity(root, host, {**runtime, "toolkit": "7.2.4"})
+
+    def test_rocm_toolkit_version_reads_info_and_install_root(self):
+        product = module("ci-product")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertIsNone(product.rocm_toolkit_version(root))
+            info = root / ".info"
+            info.mkdir()
+            (info / "version").write_text("7.2.4-93~24.04\n", encoding="utf-8")
+            self.assertEqual(product.rocm_toolkit_version(root), "7.2.4-93~24.04")
+        self.assertEqual(product.rocm_toolkit_version(Path(r"C:\Program Files\AMD\ROCm\7.2.0")), "7.2.0")
+        self.assertIsNone(product.rocm_toolkit_version(Path("/opt/rocm")))
 
     def test_archive_preserves_executable_hardlink_and_internal_library_link(self):
         with tempfile.TemporaryDirectory() as tmp:

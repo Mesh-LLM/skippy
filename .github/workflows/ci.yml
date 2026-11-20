@@ -404,6 +404,7 @@ jobs:
           runtime-id: linux-x86_64-cuda12
           host-id: linux-x86_64
           smoke: artifact
+          release-device-smoke: 'true'
           containerized: 'true'
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
@@ -451,6 +452,37 @@ jobs:
           build-cli: ${{ needs.plan.outputs.profile == 'pr' }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
+  package_linux_x86_64_rocm:
+    name: Build and verify archive · Linux x64 ROCm
+    needs: [plan, quality, package_linux_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/general-inference/skippy-ci-rocm:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      CARGO_BUILD_JOBS: '2'
+      LD_LIBRARY_PATH: /opt/rocm/lib
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: linux-x86_64-rocm
+          host-id: linux-x86_64
+          smoke: artifact
+          containerized: 'true'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
   package_linux_aarch64_cpu:
     name: Build, package, and smoke · Linux ARM64 CPU
     needs: [plan, quality]
@@ -495,6 +527,7 @@ jobs:
           runtime-id: linux-aarch64-cuda12
           host-id: linux-aarch64
           smoke: artifact
+          release-device-smoke: 'true'
           containerized: 'true'
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
@@ -541,6 +574,7 @@ jobs:
           runtime-id: linux-aarch64-cuda13
           host-id: linux-aarch64
           smoke: artifact
+          release-device-smoke: 'true'
           containerized: 'true'
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
@@ -562,13 +596,94 @@ jobs:
           download-package: 'true'
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
+  package_windows_x86_64_cpu:
+    name: Build and verify archive · Windows x64 CPU
+    needs: [plan, quality]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-2025
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-cpu
+          host-id: windows-x86_64
+          build-cli: 'true'
+          smoke: artifact
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_windows_x86_64_cuda12:
+    name: Build and verify archive · Windows x64 CUDA 12
+    needs: [plan, quality, package_windows_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-2025
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-cuda12
+          host-id: windows-x86_64
+          smoke: artifact
+          windows-cuda: '12.9.2'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_windows_x86_64_cuda13:
+    name: Build and verify archive · Windows x64 CUDA 13
+    needs: [plan, quality, package_windows_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-2025
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-cuda13
+          host-id: windows-x86_64
+          smoke: artifact
+          windows-cuda: '13.1.2'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_windows_x86_64_rocm:
+    name: Build and verify archive · Windows x64 ROCm
+    needs: [plan, quality, package_windows_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-2025
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-rocm
+          host-id: windows-x86_64
+          smoke: artifact
+          windows-rocm: '7.2.0'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
   gate:
     name: ${{ needs.plan.outputs.profile == 'full' && 'Full CI gate' || 'CI' }}
     needs: [
       changes, plan, quality, native_contracts,
       package_darwin_aarch64_cpu, package_darwin_aarch64_metal,
-      package_linux_x86_64_cpu, package_linux_x86_64_cuda12, package_linux_x86_64_cuda13,
+      package_linux_x86_64_cpu, package_linux_x86_64_cuda12, package_linux_x86_64_cuda13, package_linux_x86_64_rocm,
       package_linux_aarch64_cpu, package_linux_aarch64_cuda12, package_linux_aarch64_cuda13,
+      package_windows_x86_64_cpu, package_windows_x86_64_cuda12, package_windows_x86_64_cuda13, package_windows_x86_64_rocm,
       release_smoke_linux_x86_64_cuda12, release_smoke_linux_aarch64_cuda12, release_smoke_linux_aarch64_cuda13
     ]
     if: always()

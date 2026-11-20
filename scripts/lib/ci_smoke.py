@@ -31,6 +31,7 @@ def verify_product(host, runtime, product_input, product):
 def artifact_smoke(host, runtime, product_input):
     variant = runtime["id"]
     backend = runtime["backend"]
+    archive = product_input / f"skippy-{variant}.tar.gz"
     with tempfile.TemporaryDirectory() as tmp:
         product = Path(tmp) / "product"
         verify_product(host, runtime, product_input, product)
@@ -38,11 +39,15 @@ def artifact_smoke(host, runtime, product_input):
         architectures = runtime["gpu_architectures"] if backend == "cuda" else None
         validate_native_identity(directory, host, runtime, architectures)
         verifier = Path(__file__).resolve().parents[1] / "native-inspect.py"
-        command([sys.executable, str(verifier), "verify-runtime-package", str(directory)])
+        args = [sys.executable, str(verifier), "verify-runtime-package", str(directory)]
+        if backend == "rocm":
+            args.append("--resolve-rocm")
+        command(args)
     output = product_input / "evidence"
     output.mkdir(parents=True, exist_ok=True)
     artifacts.write_json(output / "artifact-smoke.json", {
         "source": artifacts.source(), "variant": variant, "backend": backend,
+        "archive_sha256": artifacts.digest(archive),
     })
 
 
