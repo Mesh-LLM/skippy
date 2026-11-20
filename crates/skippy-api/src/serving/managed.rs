@@ -65,16 +65,9 @@ struct State {
 struct Entry {
     status: ModelStatus,
     cancel_load: bool,
+    cleaning: bool,
     resident: Option<(ModelObject, BackendLease)>,
     active: BTreeMap<u64, CancellationToken>,
-}
-
-impl Entry {
-    fn publish_unloaded(&mut self) {
-        self.resident = None;
-        self.status.phase = Phase::Unloaded;
-        self.status.error = None;
-    }
 }
 
 impl Registry {
@@ -82,6 +75,37 @@ impl Registry {
         self.state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn retire(&self, id: &str, instance: u64) {
+        let resident = {
+            let mut state = self.state();
+            let Some(entry) = state.models.get_mut(id) else {
+                return;
+            };
+            if entry.status.instance != instance
+                || entry.status.phase != Phase::Draining
+                || !entry.active.is_empty()
+                || entry.cancel_load
+                || entry.cleaning
+            {
+                return;
+            }
+            entry.cleaning = true;
+            entry.resident.take()
+        };
+        // Dropping a model can join native workers or call embedder-owned
+        // cleanup. Keep its instance draining while that work runs unlocked.
+        drop(resident);
+        let mut state = self.state();
+        let entry = state
+            .models
+            .get_mut(id)
+            .expect("draining model remains registered");
+        entry.cleaning = false;
+        entry.status.phase = Phase::Unloaded;
+        entry.status.error = None;
+        self.changed.notify_waiters();
     }
 }
 
@@ -219,15 +243,16 @@ impl Drop for Active {
         let Some(registry) = self.registry.upgrade() else {
             return;
         };
-        let mut state = registry.state();
-        let Some(entry) = state.models.get_mut(&self.id) else {
-            return;
+        let instance = {
+            let mut state = registry.state();
+            let Some(entry) = state.models.get_mut(&self.id) else {
+                return;
+            };
+            entry.active.remove(&self.sequence);
+            entry.status.in_flight = entry.active.len();
+            entry.status.instance
         };
-        entry.active.remove(&self.sequence);
-        entry.status.in_flight = entry.active.len();
-        if entry.active.is_empty() && entry.status.phase == Phase::Draining && !entry.cancel_load {
-            entry.publish_unloaded();
-        }
+        registry.retire(&self.id, instance);
         registry.changed.notify_waiters();
     }
 }

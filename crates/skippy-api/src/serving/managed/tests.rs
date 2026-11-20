@@ -104,3 +104,41 @@ async fn best_effort_continues_and_fail_fast_releases_already_loaded_models() {
     assert_eq!(partial.backend().models().await.unwrap().len(), 1);
     assert_eq!(partial.status()[1].phase, Phase::Failed);
 }
+
+#[tokio::test]
+async fn native_owner_can_observe_lifecycle_during_unload() {
+    struct ObservedDrop(Weak<Registry>, Arc<std::sync::atomic::AtomicBool>);
+    impl Drop for ObservedDrop {
+        fn drop(&mut self) {
+            let Some(registry) = self.0.upgrade() else {
+                return;
+            };
+            let seen = registry
+                .state
+                .try_lock()
+                .is_ok_and(|state| state.models["test"].status.phase == Phase::Draining);
+            self.1.store(seen, Ordering::Release);
+        }
+    }
+
+    let registry = ManagedModels::new(None);
+    let seen = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let owner = ObservedDrop(Arc::downgrade(&registry.0), seen.clone());
+    registry
+        .load(
+            "test".into(),
+            Box::new(|| {
+                Ok((
+                    ModelObject::new("test"),
+                    BackendLease::new(Arc::new(Fake), Arc::new(owner)),
+                ))
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        registry.unload("test", None).await.unwrap().phase,
+        Phase::Unloaded
+    );
+    assert!(seen.load(Ordering::Acquire));
+}

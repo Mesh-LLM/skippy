@@ -33,6 +33,7 @@ impl ManagedModels {
                         error: None,
                     },
                     cancel_load: false,
+                    cleaning: false,
                     resident: None,
                     active: BTreeMap::new(),
                 },
@@ -58,37 +59,33 @@ impl ManagedModels {
         instance: u64,
         result: Result<(ModelObject, BackendLease)>,
     ) -> Result<ModelStatus> {
+        let result = result.and_then(|(model, lease)| {
+            ensure!(model.id == id, "loader returned a different model ID");
+            ensure!(
+                lease.backend().http_exchange_policy().is_none() || self.0.http_policy.is_some(),
+                "model requires a public-listener HTTP exchange policy"
+            );
+            Ok((model, lease))
+        });
         let mut state = self.0.state();
-        let entry = state
-            .models
-            .get_mut(id)
-            .filter(|entry| entry.status.instance == instance)
-            .context("model load instance changed")?;
-        let result = if entry.cancel_load {
+        let entry = matched_entry(&mut state, id, Some(instance))?;
+        if entry.cancel_load {
+            drop(state);
             drop(result);
-            entry.cancel_load = false;
-            entry.publish_unloaded();
-            bail_after_update(id)
-        } else {
-            match result.and_then(|(model, lease)| {
-                ensure!(model.id == id, "loader returned a different model ID");
-                ensure!(
-                    lease.backend().http_exchange_policy().is_none()
-                        || self.0.http_policy.is_some(),
-                    "model requires a public-listener HTTP exchange policy"
-                );
-                Ok((model, lease))
-            }) {
-                Ok(resident) => {
-                    entry.resident = Some(resident);
-                    entry.status.phase = Phase::Ready;
-                    Ok(entry.status.clone())
-                }
-                Err(error) => {
-                    entry.status.phase = Phase::Failed;
-                    entry.status.error = Some(format!("{error:#}"));
-                    Err(error)
-                }
+            matched_entry(&mut self.0.state(), id, Some(instance))?.cancel_load = false;
+            self.0.retire(id, instance);
+            bail!("load cancelled for {id}");
+        }
+        let result = match result {
+            Ok(resident) => {
+                entry.resident = Some(resident);
+                entry.status.phase = Phase::Ready;
+                Ok(entry.status.clone())
+            }
+            Err(error) => {
+                entry.status.phase = Phase::Failed;
+                entry.status.error = Some(format!("{error:#}"));
+                Err(error)
             }
         };
         self.0.changed.notify_waiters();
@@ -112,15 +109,12 @@ impl ManagedModels {
                     entry.status.phase = Phase::Draining;
                     entry.cancel_load = true;
                 }
-                Phase::Ready | Phase::Draining => entry.status.phase = Phase::Draining,
-                Phase::Failed | Phase::Unloaded => entry.publish_unloaded(),
-            }
-            if entry.active.is_empty() && !entry.cancel_load {
-                entry.publish_unloaded();
+                _ => entry.status.phase = Phase::Draining,
             }
             entry.status.instance
         };
         self.0.changed.notify_waiters();
+        self.0.retire(id, instance);
         let completed = tokio::time::timeout(timeout, async {
             loop {
                 let changed = self.0.changed.notified();
@@ -173,8 +167,4 @@ fn matched_entry<'a>(
         "stale model instance"
     );
     Ok(entry)
-}
-
-fn bail_after_update(id: &str) -> Result<ModelStatus> {
-    bail!("load cancelled for {id}")
 }
