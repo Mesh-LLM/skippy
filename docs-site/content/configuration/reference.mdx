@@ -25,6 +25,22 @@ controls supported by a measurement or deployment requirement.
 
 ## `[execution]`
 
+For an infrequently used local model, defer the native load until the first
+inference request and release the model after a minute of inactivity.
+
+```sh
+skippy serve --model-path /models/model.gguf --on-demand --idle-evict-secs 60
+```
+
+Model acquisition and preparation still run at startup. Concurrent cold
+requests share one load, and active requests and streams keep the model
+resident. The next inference request after eviction reloads it.
+
+Residency controls require an unsplit public server and a local source of known
+size. They are incompatible with `--prompt` and `--stage-transport`. A budget
+below the source size causes loading to fail. Actual memory use also depends
+on runtime allocations.
+
 | TOML key | Purpose |
 | --- | --- |
 | `device` | Select a backend device reported by `skippy doctor` |
@@ -32,6 +48,12 @@ controls supported by a measurement or deployment requirement.
 | `threads`, `threads_batch` | Set CPU threads for generation and prompt processing |
 | `batch_size`, `microbatch_size` | Set native batch token limits |
 | `split_mode`, `main_gpu` | Configure supported multi-GPU placement |
+| `on_demand` | Defer native loading until the first inference request. Defaults to `false` (eager). |
+| `idle_evict_secs` | Release the model after 1–86,400 idle seconds. Omit to disable eviction. |
+| `residency_budget_bytes` | Positive admission budget in bytes. Defaults to the model's known source size. |
+
+The corresponding environment overrides are `SKIPPY_SERVE_ON_DEMAND`,
+`SKIPPY_SERVE_IDLE_EVICT_SECS`, and `SKIPPY_SERVE_RESIDENCY_BUDGET_BYTES`.
 
 ## `[kv]`
 
@@ -109,7 +131,9 @@ policy.
 ## `[diagnostics]`
 
 Human/JSON output, debug logs, metrics export, telemetry level, and startup
-timeout.
+timeout. `startup_timeout_secs` defaults to 60 seconds. With residency enabled,
+it applies to every native load, including reloads after eviction. In that mode,
+zero is treated as one second and values above 86,400 seconds are rejected.
 
 ## `[network]`
 
