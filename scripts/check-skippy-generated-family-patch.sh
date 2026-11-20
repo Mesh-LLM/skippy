@@ -213,7 +213,12 @@ TRANSFORMED_TREE_TARGETS=(
 # transformed-tree targets below.
 NATIVE_CONFIGURE_ARGS=(-DLLAMA_STAGE_BUILD_TESTS=ON)
 NATIVE_BUILD_ARGS=(--build "$LLAMA_BUILD_DIR" --config "${CMAKE_BUILD_TYPE:-Release}")
-NATIVE_TEST_ARGS=(--test-dir "$LLAMA_BUILD_DIR" --build-config "${CMAKE_BUILD_TYPE:-Release}" --output-on-failure --stop-on-failure --timeout 900)
+# Native tests run on the ephemeral CPU contracts runner, which is slower
+# than the hosts this harness was sized for: lfm2 measured 757.8 s and
+# qwen4exp exceeded the previous 900 s cap while sharing the machine.
+# Per-test TIMEOUT 900 properties still bind the graph contracts; the
+# flag here only bounds tests without one, like the rollback verifies.
+NATIVE_TEST_ARGS=(--test-dir "$LLAMA_BUILD_DIR" --build-config "${CMAKE_BUILD_TYPE:-Release}" --output-on-failure --stop-on-failure --timeout 1800)
 if [[ "$FULL_NATIVE_SUITE" == 1 ]]; then
   # The canary deferred its initial test run. Rebuild every executable against
   # the regenerated tree and own the complete, unfiltered native suite here.
@@ -237,10 +242,12 @@ run_native_tests() {
   fi
 
   # Each production-sized graph fits the bounded CI runner alone, but not
-  # while overlapping another graph. Run every other test concurrently, then
-  # let CTest admit these contracts and their fixtures exactly once, serially.
-  local high_memory_tests='^skippy_(generate_contract|graph_contract)_(qwen4exp|nemotron)$'
-  local high_memory_contracts='^skippy_graph_contract_(qwen4exp|nemotron)$'
+  # while overlapping another graph. The rollback verifies run production
+  # fixtures the same way (qwen4exp timed out sharing the machine), so the
+  # parallel suite skips all of them and a serial pass admits the contracts
+  # and the rollback verifies exactly once.
+  local high_memory_tests='^skippy_(generate_contract|graph_contract)_(qwen4exp|nemotron)$|^skippy_verify_rollback_(qwen4exp|lfm2|glm5-next|deepseek4)$'
+  local high_memory_contracts='^skippy_(graph_contract_(qwen4exp|nemotron)|verify_rollback_(qwen4exp|lfm2|glm5-next|deepseek4))$'
   local result=0
   ctest "${NATIVE_TEST_ARGS[@]}" -E "$high_memory_tests" || result=$?
   CTEST_PARALLEL_LEVEL=1 ctest "${NATIVE_TEST_ARGS[@]}" -R "$high_memory_contracts" || return $?
