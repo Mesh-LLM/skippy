@@ -44,9 +44,13 @@ and metadata-only PRs do not start CI. The CI result gate rejects missing,
 failed or unexpectedly skipped results.
 
 The protected inference workflow uses native `pull_request_target` path filters
-for the same inference inputs. Relevant PRs retain same-repository/collaborator
-admission, a fresh-head check and all seven GPU smoke configurations.
-The credentialed controller runs only protected source.
+for the same inference inputs. PR qualification is manual: it runs only when
+the PR carries the `qualify` label, and the workflow still triggers on path
+matches so the intentionally skipped run satisfies the `PR checks` aggregate.
+Manual qualification may queue behind another PR's atomic Spark pair; the PR
+budget waits for placement instead of failing fast. Relevant PRs retain
+same-repository/collaborator admission, a fresh-head check and all seven GPU
+smoke configurations. The credentialed controller runs only protected source.
 Python admission verifies trust and source identity.
 The syntax/dependency classifier and offline replay command have been removed.
 The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
