@@ -30,3 +30,7 @@ path = "src/bin/local.rs"
 name = "staged"
 path = "src/bin/staged.rs"
 required-features = ["staged"]
+
+# Model identity verification hashes the supplied GGUF.
+[profile.dev.package.sha2]
+opt-level = 3

@@ -20,6 +20,8 @@ use skippy_serving::{
     telemetry::TelemetryLevel,
 };
 
+const PREFILL_TOKENS: u32 = 8;
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let (runtime, model) = open_runtime()?;
@@ -81,9 +83,9 @@ fn plan(path: &Path, entry: SocketAddr, worker: SocketAddr) -> Result<(StageConf
         },
         StagePlannerProfile {
             profile_id: "prefill".into(),
-            n_tokens: 8,
+            n_tokens: PREFILL_TOKENS,
             n_sequences: 1,
-            n_outputs: 8,
+            n_outputs: PREFILL_TOKENS,
             n_recurrent_rollback_sequences: 0,
         },
     ];
@@ -169,8 +171,8 @@ fn options(
         activation_codec: Default::default(),
         activation_codec_policy: Default::default(),
         stage_index: index,
-        n_batch: Some(8),
-        n_ubatch: Some(8),
+        n_batch: Some(PREFILL_TOKENS),
+        n_ubatch: Some(PREFILL_TOKENS),
         n_gpu_layers: 0,
         mmap: None,
         mlock: false,
@@ -216,7 +218,9 @@ fn load_entry(
     config: StageConfig,
     observations: skippy_api::serving::ModelLoadObservations,
 ) -> Result<LoadedModel> {
-    let openai = InferenceOptions::embedded_stage_defaults(Some(MODEL_ID.into()), 128, 1, 0, false);
+    let mut openai =
+        InferenceOptions::embedded_stage_defaults(Some(MODEL_ID.into()), 128, 1, 0, false);
+    openai.prefill_chunk_size = PREFILL_TOKENS as usize;
     let options = EmbeddedRuntimeOptions {
         config,
         topology: None,
