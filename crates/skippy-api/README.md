@@ -51,3 +51,16 @@ owns publisher-declared live-KV dtype selection and model compatibility fallback
 [`speculative`](src/speculative.rs) owns installed sibling draft discovery and
 conservative automatic pairing. Standalone Skippy and embedding applications consume these same
 policies. Explicit caller settings take precedence.
+
+### Serving profiles
+
+Use `serving_profile::resolve` with an existing stage and frontend baseline,
+shared defaults and model-specific overrides. `Setting::Inherit` leaves the
+previous layer in effect, `Setting::Set` carries an explicit value, and
+`Setting::Reset` restores the baseline. The result includes per-setting
+provenance. Request defaults and speculative policy are typed replacements.
+Mesh can translate its own configuration into these inputs.
+
+Standalone `serve --print-effective-config` and the pre-load path use the
+same stage validation. Single-model TOML, environment variables, CLI
+precedence and the report fields remain compatible.
