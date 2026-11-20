@@ -13,6 +13,9 @@ default = []
 dynamic-native-runtime = ["skippy-runtime/dynamic-native-runtime", "skippy-serving/dynamic-native-runtime"]
 
 [dependencies]
+process-supervision = { path = "../../tools/process-supervision" }
+thiserror = "2"
+tempfile = "3"
 reqwest = { version = "0.13", features = ["json"] }
 tokio = { version = "1", features = ["rt"] }
 skippy-config = { path = "../skippy-config", version = "0.80.0" }
@@ -44,7 +47,6 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "net", "io-util"] }
-tempfile = "3"
 
 [build-dependencies]
 serde_json = "1"

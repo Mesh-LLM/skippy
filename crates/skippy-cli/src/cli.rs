@@ -56,6 +56,12 @@ pub enum Command {
     Prompt(PromptArgs),
     /// Serve OpenAI and Anthropic APIs, or an explicitly selected stage transport.
     Serve(Box<ServeCommandArgs>),
+    /// Benchmark candidate settings in isolated local model trials.
+    Tune(crate::tuning::TuneArgs),
+    #[command(hide = true)]
+    TuneTrial {
+        input: PathBuf,
+    },
     ExampleConfig,
     /// Download models or inspect the shared Hugging Face cache.
     Models {

@@ -16,6 +16,7 @@ default = []
 dynamic-native-runtime = ["skippy-serving/dynamic-native-runtime", "skippy-api/dynamic-native-runtime"]
 
 [dependencies]
+tempfile = "3"
 anyhow.workspace = true
 dirs = "6.0.0"
 clap.workspace = true
@@ -42,4 +43,3 @@ uuid = { version = "1", features = ["v4"] }
 [dev-dependencies]
 skippy-native-runtime = { path = "../skippy-native-runtime", version = "0.80.0" }
 serde_json.workspace = true
-tempfile = "3"

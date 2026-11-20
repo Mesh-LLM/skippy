@@ -5145,6 +5145,7 @@ version = "0.80.0"
 dependencies = [
  "anyhow",
  "hex",
+ "process-supervision",
  "reqwest 0.13.5",
  "same-file",
  "serde",
@@ -5166,6 +5167,7 @@ dependencies = [
  "skippy-runtime-install",
  "skippy-serving",
  "tempfile",
+ "thiserror 2.0.21",
  "tokio",
  "tracing",
  "windows-sys 0.61.2",

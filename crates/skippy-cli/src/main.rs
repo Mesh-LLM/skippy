@@ -7,6 +7,7 @@ mod native_logging;
 mod runtime;
 mod serve;
 mod serve_settings;
+mod tuning;
 
 use anyhow::Context;
 use anyhow::Result;
@@ -145,6 +146,8 @@ async fn run_main(
             .await?
         }
         Command::Serve(args) => serve::run(*args).await,
+        Command::Tune(args) => tuning::run(args).await,
+        Command::TuneTrial { input } => tuning::run_trial(input).await,
         Command::Models { command } => skippy_commands::models::run_standalone(&command).await,
         Command::PlanSplit(args) => skippy_commands::split::run(args.into()),
         Command::Runtime { command } => {
