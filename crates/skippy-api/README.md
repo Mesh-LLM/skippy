@@ -21,8 +21,7 @@ widths, prediction-return listeners, tokenizer-bound hook construction and OpenA
 backend composition. `serving::InferenceOptions` is shared resolved configuration;
 An embedding application translates its product configuration and supplies observers/plugin hooks.
 Guardrail/compaction wrapping uses the serving library implementation, including
-an optional caller-owned telemetry sink. `ModelOpenEvents` preserves the native
-load-with-events choice independently of whether an observer is supplied.
+an optional caller-owned telemetry sink.
 
 Before opening the target, model loading derives recurrent rollback retention
 from enabled speculative proposals and preserves any larger caller-supplied
@@ -42,6 +41,40 @@ preserves explicit queue/adaptive-concurrency/admission settings and loads throu
 resources while HTTP requests drain and propagates listener/serving failures.
 The serving library selects local execution for a stage-zero configuration with
 no downstream peer; split configurations retain embedded stage-zero execution.
+
+### Observing a model load
+
+Set `ModelLoadRequest::open_events` with `ModelOpenEvents::observe` and match
+`ModelOpenObservation::Event` for progress and runtime diagnostics. The final
+`ModelOpenObservation::Summary` carries the load outcome, last observed sequence,
+queue drops and decoder rejections. `summary.contradiction()` identifies a native
+terminal event that conflicts with the enclosing load result. An empty stream or
+missing terminal is possible, including with older runtimes, SafeTensors source
+loads, and validation failures.
+Use the `Result` of `ModelLoadRequest::load` to settle the application operation.
+
+`ModelOpenEvents::Enabled(None)` selects the event-capable load path without
+allocation of a reporter queue or drain thread. `Disabled` selects the regular
+load path. `LocalOpenAiOptions::model_open_events` accepts the same options.
+
+Skippy invokes the observer serially on a dedicated thread. The native callback
+copies records to a bounded queue and never waits for the observer. The drain
+thread polls during the load and makes a final drain on success or error. Skippy
+joins the thread before returning, so a slow observer can delay return and
+cause record loss. Keep the callback short and forward to the application's
+nonblocking event ingress. Callback delivery stops on panic and is skipped if
+the drain thread cannot start. On load unwind, the thread is joined without a
+summary. Arrival order can differ from sequence order across native producers.
+
+Mesh can replace `model_open_drain` and its native queue setup by assigning an
+observer directly to the request. Translate the typed progress and diagnostic
+events to the existing operational-event schema, and use `dropped`, `rejected`,
+and `contradiction()` for the existing health and diagnostic reporting. Use the
+request result to settle the existing success/failure lifecycle. The observer
+can capture Mesh's operation identity and ingress, so storage and presentation
+stay in Mesh. Match unknown or future observations with a wildcard. These types
+are defined by `skippy-api` and can evolve independently of generated bindings.
+[Embedding fixture](tests/model_open_observer.rs)
 
 `package::inspection` owns local package inspection results and per-layer tensor/artifact accounting, including metadata-only v2 inspection and legacy offline inspection. The caller supplies a resolved directory, original reference and optional digest cache.
 
