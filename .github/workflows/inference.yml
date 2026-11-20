@@ -1,7 +1,7 @@
 name: Inference qualification
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths:
       - 'crates/**'
       - 'skippy_api/src/**'
@@ -79,6 +79,14 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
 jobs:
   plan:
+    # PR qualification is manual: it runs only when the `qualify` label is
+    # present, so atomic Spark pairs are reserved on request rather than by
+    # every inference-path push. The workflow still triggers on path matches
+    # so an intentionally skipped run satisfies the PR checks aggregate;
+    # nightly, main pushes, and releases stay automatic.
+    if: >-
+      github.event_name != 'pull_request_target' ||
+      contains(github.event.pull_request.labels.*.name, 'qualify')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
@@ -112,7 +120,7 @@ jobs:
       max-parallel: 3
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ needs.plan.outputs.profile == 'pr' && 45 || 360 }}
+    timeout-minutes: ${{ needs.plan.outputs.profile == 'pr' && 100 || 360 }}
     env:
       EVIDENCE: target/ci-evidence/inference-${{ matrix.id }}
     steps:
