@@ -238,6 +238,9 @@ pub struct ServeOpenAiArgs {
     /// GPU layers for a local model; -1 offloads all supported layers.
     #[arg(long, conflicts_with = "config", allow_hyphen_values = true)]
     pub n_gpu_layers: Option<i32>,
+    /// Pin a local model to this stable device ID from the selected runtime.
+    #[arg(long, conflicts_with = "config")]
+    pub gpu_id: Option<String>,
     /// Quantize SafeTensors weights while loading; defaults to preserve.
     #[arg(
         long = "quant",

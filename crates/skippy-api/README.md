@@ -51,3 +51,21 @@ owns publisher-declared live-KV dtype selection and model compatibility fallback
 [`speculative`](src/speculative.rs) owns installed sibling draft discovery and
 conservative automatic pairing. Standalone Skippy and embedding applications consume these same
 policies. Explicit caller settings take precedence.
+
+### GPU placement
+
+Use one `placement::DeviceAllocator` per shared serving process and bind each
+`ModelLoadRequest` through `load_with_placement`. Supply an inventory that
+maps stable IDs to selectors exposed by the selected runtime. A pinned request
+fails if its device is missing, ambiguous, incompatible or out of capacity.
+The load owns its reservation until the loaded backend is released.
+
+For standalone serving, `skippy serve --model-path MODEL --gpu-id ID` resolves
+the selected runtime's stable ID, then checks fit before loading. Existing
+`--device` backend selectors retain their existing behavior.
+
+To qualify on a two-GPU host, select a native runtime that sees both devices.
+Use the same allocator for two concurrent local load requests with distinct
+pins, request inference from both, and check the runtime's memory on each
+GPU. Drop one backend and confirm the corresponding budget can be reserved
+again. Use two model fixtures that fit the intended device budgets.
