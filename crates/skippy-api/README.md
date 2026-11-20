@@ -51,3 +51,18 @@ owns publisher-declared live-KV dtype selection and model compatibility fallback
 [`speculative`](src/speculative.rs) owns installed sibling draft discovery and
 conservative automatic pairing. Standalone Skippy and embedding applications consume these same
 policies. Explicit caller settings take precedence.
+
+### Split execution
+
+`split_execution::plan_direct_gguf` builds the same admitted stage
+configurations as `skippy plan-split`. Embedders can supply worker IDs and
+listen endpoints, an expected manifest digest, measured worker capacity,
+and optional locked contiguous ranges. Capacity planning and native
+admission must both succeed before a plan can start.
+
+Implement `StageOperations` to bind the admitted worker identity to your
+transport and artifact policy. `AdmittedSplit::start` checks the current
+manifest and endpoints before starting downstream stages first.
+`SplitExecution::observe` reports stage state. For binary endpoints an
+adapter can use `start_binary_stage_ready_probe` for the existing readiness
+handshake. Cancel the execution to release stages in reverse startup order.
