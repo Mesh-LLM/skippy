@@ -11,14 +11,12 @@ use crate::HfModelRepository;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArtifactFilter {
     Gguf,
-    Mlx,
 }
 
 impl ArtifactFilter {
     fn hub_filter(self) -> &'static str {
         match self {
             Self::Gguf => "gguf",
-            Self::Mlx => "mlx",
         }
     }
 }

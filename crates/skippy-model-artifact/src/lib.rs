@@ -81,8 +81,9 @@ use anyhow::{Result, bail};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use skippy_model_ref::{
-    ModelRef, format_canonical_ref, gguf_matches_quant_selector, normalize_gguf_distribution_id,
-    parse_model_ref, split_gguf_shard_info,
+    ModelRef, SAFETENSORS_SERVING_GUIDANCE, format_canonical_ref, gguf_matches_quant_selector,
+    is_safetensors_model_ref, normalize_gguf_distribution_id, parse_model_ref,
+    split_gguf_shard_info,
 };
 
 /// Resolves revisions and lists artifacts for model repositories.
@@ -163,7 +164,6 @@ impl From<&ResolvedModelArtifact> for ModelIdentity {
 #[serde(rename_all = "snake_case")]
 pub enum ModelFormat {
     Gguf,
-    Safetensors,
 }
 
 /// A single file in a model artifact: its path plus optional size and SHA-256.
@@ -190,7 +190,7 @@ pub async fn resolve_model_artifact_ref(
     model_ref: &str,
     repository: &impl ModelRepository,
 ) -> Result<ResolvedModelArtifact> {
-    let parsed = parse_model_ref(model_ref)?;
+    let parsed = parse_artifact_ref(model_ref)?;
     resolve_model_artifact(&parsed, repository).await
 }
 
@@ -201,8 +201,34 @@ pub async fn resolve_model_artifact_ref_with_budget(
     repository: &impl ModelRepository,
     available_bytes: u64,
 ) -> Result<ResolvedModelArtifact> {
-    let parsed = parse_model_ref(model_ref)?;
+    let parsed = parse_artifact_ref(model_ref)?;
     resolve_model_artifact_with_budget(&parsed, repository, available_bytes).await
+}
+
+fn parse_artifact_ref(input: &str) -> Result<ModelRef> {
+    let input = input.trim();
+    if is_safetensors_model_ref(input) {
+        bail!("{input}: {SAFETENSORS_SERVING_GUIDANCE}");
+    }
+    if let Some((repo, revision, file)) = parse_hf_resolve_url_parts(input) {
+        return Ok(ModelRef {
+            repo: repo.to_owned(),
+            revision: revision.map(str::to_owned),
+            selector: Some(file.to_owned()),
+        });
+    }
+    let mut components = input.splitn(3, '/');
+    if let (Some(owner), Some(repo), Some(file)) =
+        (components.next(), components.next(), components.next())
+        && !owner.contains(':')
+        && !repo.contains(':')
+        && file.ends_with(".gguf")
+    {
+        let mut model_ref = parse_model_ref(&format!("{owner}/{repo}"))?;
+        model_ref.selector = Some(file.to_owned());
+        return Ok(model_ref);
+    }
+    Ok(parse_model_ref(input)?)
 }
 
 /// Resolves the artifact for an already-parsed `model_ref`.
@@ -219,6 +245,13 @@ pub async fn resolve_model_artifact_with_budget(
     repository: &impl ModelRepository,
     available_bytes: u64,
 ) -> Result<ResolvedModelArtifact> {
+    if let Some(selector) = model_ref
+        .selector
+        .as_deref()
+        .filter(|value| is_safetensors_model_ref(value))
+    {
+        bail!("{selector}: {SAFETENSORS_SERVING_GUIDANCE}");
+    }
     let source_revision = repository
         .resolve_revision(&model_ref.repo, model_ref.revision.as_deref())
         .await?;
@@ -227,23 +260,24 @@ pub async fn resolve_model_artifact_with_budget(
         .await?;
     repo_files.sort_by(|left, right| left.path.cmp(&right.path));
 
-    let primary_file =
-        if model_ref.selector.is_none() && selection::repo_prefers_gguf_only(&model_ref.repo) {
-            selection::select_default_gguf_file(&repo_files, available_bytes)
-                .ok_or_else(|| anyhow::anyhow!("no GGUF model files found in repository"))?
-        } else {
-            select_primary_file(model_ref.selector.as_deref(), &repo_files)?
-        };
-    let format = format_for_file(&primary_file.path)?;
+    let primary_file = match model_ref.selector.as_deref() {
+        Some(selector) => select_primary_file(selector, &repo_files)?,
+        None => selection::select_default_gguf_file(&repo_files, available_bytes)
+            .ok_or_else(|| anyhow::anyhow!(
+                "no runnable GGUF model files found in {}@{source_revision}. {SAFETENSORS_SERVING_GUIDANCE}",
+                model_ref.repo
+            ))?,
+    };
     let files = artifact_file_set(&primary_file.path, &repo_files);
-    let distribution_id = distribution_id_for_file(&primary_file.path)?;
+    let distribution_id = normalize_gguf_distribution_id(&primary_file.path)
+        .ok_or_else(|| anyhow::anyhow!("invalid GGUF artifact file name: {}", primary_file.path))?;
 
     Ok(ResolvedModelArtifact {
         model_id: model_ref.display_id(),
         source_repo: model_ref.repo.clone(),
         source_revision: source_revision.clone(),
         selector: model_ref.selector.clone(),
-        format,
+        format: ModelFormat::Gguf,
         files,
         primary_file: primary_file.path.clone(),
         canonical_ref: format_canonical_ref(&model_ref.repo, &source_revision, &primary_file.path),
@@ -257,7 +291,14 @@ pub fn select_primary_artifact_file(
     selector: Option<&str>,
     files: &[ModelArtifactFile],
 ) -> Result<ModelArtifactFile> {
-    select_primary_file(selector, files)
+    match selector {
+        Some(selector) => select_primary_file(selector, files),
+        None => selection::select_default_gguf_file(files, 0).ok_or_else(|| {
+            anyhow::anyhow!(
+                "no runnable GGUF model files found in repository. {SAFETENSORS_SERVING_GUIDANCE}"
+            )
+        }),
+    }
 }
 
 /// Returns the full file set that serves `primary_file`, including every
@@ -269,63 +310,38 @@ pub fn artifact_files_for_primary(
     artifact_file_set(primary_file, files)
 }
 
-fn select_primary_file(
-    selector: Option<&str>,
-    files: &[ModelArtifactFile],
-) -> Result<ModelArtifactFile> {
-    let Some(selector) = selector else {
-        return select_default_file(files);
-    };
-
+fn select_primary_file(selector: &str, files: &[ModelArtifactFile]) -> Result<ModelArtifactFile> {
+    if is_safetensors_model_ref(selector) {
+        bail!("{selector}: {SAFETENSORS_SERVING_GUIDANCE}");
+    }
     let selector_lower = selector.to_ascii_lowercase();
-    let gguf_exact = format!("{selector}.gguf").to_ascii_lowercase();
-    let gguf_split_prefix = format!("{selector}-00001-of-").to_ascii_lowercase();
-    let safetensors_exact = format!("{selector}.safetensors").to_ascii_lowercase();
-    let safetensors_split_prefix = format!("{selector}-00001-of-").to_ascii_lowercase();
+    let gguf_exact = format!("{selector_lower}.gguf");
+    let gguf_split_prefix = format!("{selector_lower}-00001-of-");
 
     select_ranked_file(files, |file, lower, basename| {
+        if !lower.ends_with(".gguf") {
+            return None;
+        }
+        // Explicit GGUF projector references are used for catalog sidecar downloads.
         if lower == selector_lower || basename == selector_lower {
-            Some(0)
-        } else if gguf_matches_quant_selector(&file.path, selector) {
+            return selection::has_complete_gguf_parts(&file.path, files).then_some(0);
+        }
+        if !selection::is_gguf_model_candidate(&file.path, files) {
+            return None;
+        }
+        if gguf_matches_quant_selector(&file.path, selector) {
             Some(1)
-        } else if basename == safetensors_exact {
-            Some(2)
-        } else if basename.starts_with(&safetensors_split_prefix)
-            && basename.ends_with(".safetensors")
-        {
-            Some(3)
         } else if basename == gguf_exact {
-            Some(4)
-        } else if basename.starts_with(&gguf_split_prefix) && basename.ends_with(".gguf") {
-            Some(5)
+            Some(2)
+        } else if basename.starts_with(&gguf_split_prefix) {
+            Some(3)
         } else {
             None
         }
     })
     .ok_or_else(|| {
-        anyhow::anyhow!("no model artifact matching selector '{selector}' in repository")
+        anyhow::anyhow!("no runnable GGUF model file matching selector '{selector}' in repository. {SAFETENSORS_SERVING_GUIDANCE}")
     })
-}
-
-fn select_default_file(files: &[ModelArtifactFile]) -> Result<ModelArtifactFile> {
-    select_ranked_file(files, |_file, lower, basename| {
-        if basename == "model.safetensors" {
-            Some(0)
-        } else if is_split_safetensors_first_shard(basename) {
-            Some(1)
-        } else if lower.ends_with(".gguf") {
-            if is_known_gguf_sidecar(basename) {
-                return None;
-            }
-            if lower.contains("-000") && !lower.contains("-00001-of-") {
-                return None;
-            }
-            Some(if lower.contains("-00001-of-") { 2 } else { 3 })
-        } else {
-            None
-        }
-    })
-    .ok_or_else(|| anyhow::anyhow!("no supported model artifact files found in repository"))
 }
 
 fn select_ranked_file(
@@ -340,7 +356,7 @@ fn select_ranked_file(
             rank(file, &lower, &basename).map(|rank| {
                 (
                     rank,
-                    artifact_preference_score(&file.path),
+                    selection::file_preference_score(&file.path),
                     file.path.as_str(),
                     file,
                 )
@@ -378,80 +394,12 @@ fn artifact_file_set(primary_file: &str, files: &[ModelArtifactFile]) -> Vec<Mod
     ]
 }
 
-fn format_for_file(file: &str) -> Result<ModelFormat> {
-    if file.ends_with(".gguf") {
-        return Ok(ModelFormat::Gguf);
-    }
-    if file.ends_with(".safetensors") || file.ends_with(".safetensors.index.json") {
-        return Ok(ModelFormat::Safetensors);
-    }
-    bail!("unsupported model artifact file format: {file}")
-}
-
-fn distribution_id_for_file(file: &str) -> Result<String> {
-    if file.ends_with(".gguf") {
-        return normalize_gguf_distribution_id(file)
-            .ok_or_else(|| anyhow::anyhow!("invalid GGUF artifact file name: {file}"));
-    }
-    let basename = Path::new(file)
-        .file_name()
-        .and_then(|value| value.to_str())
-        .unwrap_or(file);
-    let stem = basename.strip_suffix(".safetensors").unwrap_or(basename);
-    Ok(split_safetensors_shard_stem_prefix(stem)
-        .unwrap_or(stem)
-        .to_string())
-}
-
 fn basename_lower(path: &str) -> String {
     Path::new(path)
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or(path)
         .to_ascii_lowercase()
-}
-
-fn artifact_preference_score(file: &str) -> usize {
-    if file.contains("-00001-of-") {
-        return 0;
-    }
-    const PREFERRED: &[&str] = &[
-        "Q4_K_M", "Q4_K_S", "Q4_1", "Q5_K_M", "Q5_K_S", "Q8_0", "BF16",
-    ];
-    PREFERRED
-        .iter()
-        .position(|needle| file.contains(needle))
-        .map(|pos| pos + 1)
-        .unwrap_or(PREFERRED.len() + 2)
-}
-
-fn is_known_gguf_sidecar(basename_lower: &str) -> bool {
-    basename_lower.starts_with("mmproj")
-}
-
-fn is_split_safetensors_first_shard(basename_lower: &str) -> bool {
-    let Some(stem) = basename_lower.strip_suffix(".safetensors") else {
-        return false;
-    };
-    split_safetensors_shard_info(stem)
-        .map(|(_, part, _)| part == "00001")
-        .unwrap_or(false)
-}
-
-fn split_safetensors_shard_stem_prefix(stem: &str) -> Option<&str> {
-    split_safetensors_shard_info(stem).map(|(prefix, _, _)| prefix)
-}
-
-fn split_safetensors_shard_info(stem: &str) -> Option<(&str, &str, &str)> {
-    let (prefix_and_part, total) = stem.rsplit_once("-of-")?;
-    if total.len() != 5 || !total.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    let (prefix, part) = prefix_and_part.rsplit_once('-')?;
-    if part.len() != 5 || !part.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    Some((prefix, part, total))
 }
 
 #[cfg(test)]
@@ -560,13 +508,13 @@ mod tests {
     #[test]
     fn public_selector_api_resolves_mesh_split_stem_to_first_part() {
         let files = files(&[
-            "zai-org.GLM-5.1.Q2_K-00002-of-00018.gguf",
-            "zai-org.GLM-5.1.Q2_K-00001-of-00018.gguf",
+            "zai-org.GLM-5.1.Q2_K-00002-of-00002.gguf",
+            "zai-org.GLM-5.1.Q2_K-00001-of-00002.gguf",
         ]);
 
         let selected = select_primary_artifact_file(Some("zai-org.GLM-5.1.Q2_K"), &files).unwrap();
 
-        assert_eq!(selected.path, "zai-org.GLM-5.1.Q2_K-00001-of-00018.gguf");
+        assert_eq!(selected.path, "zai-org.GLM-5.1.Q2_K-00001-of-00002.gguf");
     }
 
     #[test]
@@ -592,12 +540,12 @@ mod tests {
     }
 
     #[test]
-    fn exact_filename_precedes_quant_selector_match() {
+    fn exact_filename_with_other_format_cannot_override_gguf_match() {
         let files = files(&["Model-Q4_K_M.gguf", "Q4_K_M"]);
 
         let selected = select_primary_artifact_file(Some("Q4_K_M"), &files).unwrap();
 
-        assert_eq!(selected.path, "Q4_K_M");
+        assert_eq!(selected.path, "Model-Q4_K_M.gguf");
     }
 
     #[test]
@@ -613,16 +561,17 @@ mod tests {
     }
 
     #[test]
-    fn public_selector_api_resolves_mesh_mlx_shorthand() {
+    fn checkpoint_only_repository_has_no_runnable_artifact() {
         let files = files(&[
             "model-00002-of-00048.safetensors",
             "model-00001-of-00048.safetensors",
             "model.safetensors.index.json",
         ]);
 
-        let selected = select_primary_artifact_file(Some("model"), &files).unwrap();
-
-        assert_eq!(selected.path, "model-00001-of-00048.safetensors");
+        for selector in [None, Some("model"), Some("model.safetensors.index.json")] {
+            let error = select_primary_artifact_file(selector, &files).unwrap_err();
+            assert!(error.to_string().contains(SAFETENSORS_SERVING_GUIDANCE));
+        }
     }
 
     #[test]
@@ -639,7 +588,7 @@ mod tests {
     }
 
     #[test]
-    fn public_default_api_prefers_mlx_weights_over_gguf() {
+    fn public_default_api_skips_safetensors_in_mixed_repository() {
         let files = files(&[
             "Qwen3-8B-Q4_K_M.gguf",
             "model.safetensors",
@@ -648,19 +597,20 @@ mod tests {
 
         let selected = select_primary_artifact_file(None, &files).unwrap();
 
-        assert_eq!(selected.path, "model.safetensors");
+        assert_eq!(selected.path, "Qwen3-8B-Q4_K_M.gguf");
     }
 
     #[test]
     fn default_selection_rejects_sidecars_and_non_first_split_shards() {
-        let files = files(&["mmproj-model-f16.gguf", "Model-Q4_K_M-00002-of-00002.gguf"]);
+        let files = files(&[
+            "mmproj-model-f16.gguf",
+            "Model-Q4_K_M-00002-of-00002.gguf",
+            "Model-Q5_K_M-00001-of-00002.gguf",
+        ]);
 
         let error = select_primary_artifact_file(None, &files).unwrap_err();
 
-        assert_eq!(
-            error.to_string(),
-            "no supported model artifact files found in repository"
-        );
+        assert!(error.to_string().contains("no runnable GGUF model files"));
     }
 
     #[test]
@@ -718,6 +668,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn resolves_exact_gguf_file_refs_at_the_requested_revision() {
+        let repository = repo(vec!["nested/Model-Q4_K_M.gguf"]);
+        for reference in [
+            "org/repo@rev-1/nested/Model-Q4_K_M.gguf",
+            "https://huggingface.co/org/repo/resolve/rev-1/nested/Model-Q4_K_M.gguf",
+        ] {
+            let artifact = resolve_model_artifact_ref(reference, &repository)
+                .await
+                .unwrap();
+            assert_eq!(artifact.source_revision, "rev-1");
+            assert_eq!(artifact.primary_file, "nested/Model-Q4_K_M.gguf");
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_checkpoint_refs_are_rejected() {
+        let repository = repo(vec!["model.safetensors", "Model-Q4_K_M.gguf"]);
+        for reference in [
+            "org/repo",
+            "org/repo/model.safetensors",
+            "org/repo:weights/model.safetensors.index.json",
+            "https://huggingface.co/org/repo/resolve/main/model.safetensors?download=1",
+        ] {
+            let result = resolve_model_artifact_ref(reference, &repository).await;
+            if reference == "org/repo" {
+                assert_eq!(result.unwrap().primary_file, "Model-Q4_K_M.gguf");
+            } else {
+                assert!(
+                    result
+                        .unwrap_err()
+                        .to_string()
+                        .contains(SAFETENSORS_SERVING_GUIDANCE)
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn unknown_selector_returns_error() {
         let repository = repo(vec!["Model-Q4_K_M.gguf"]);
 
@@ -725,9 +713,10 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert_eq!(
-            error.to_string(),
-            "no model artifact matching selector 'Q5_K_M' in repository"
+        assert!(
+            error
+                .to_string()
+                .contains("no runnable GGUF model file matching selector 'Q5_K_M'")
         );
     }
 }

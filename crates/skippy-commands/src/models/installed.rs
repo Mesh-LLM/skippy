@@ -22,13 +22,11 @@ fn build_installed_rows(cache_root: &Path) -> Vec<InstalledRow> {
         .map(|artifact| {
             let name = artifact.model_ref;
             let path = artifact.path;
-            let is_safetensors =
-                path.extension().and_then(|extension| extension.to_str()) == Some("safetensors");
             let display_name = installed_model_display_name(&name);
             let catalog_model = find_remote_catalog_model_exact(&name);
             let layer_count =
                 installed_layer_package_count(&name, layered_package_layer_count_for_path(&path));
-            let model_ref = if layer_count.is_some() || is_safetensors {
+            let model_ref = if layer_count.is_some() {
                 name.clone()
             } else if let Some(model) = catalog_model.as_ref() {
                 remote_catalog_model_ref(model)
@@ -64,11 +62,7 @@ fn build_installed_rows(cache_root: &Path) -> Vec<InstalledRow> {
             } else {
                 std::fs::metadata(&path).map(|meta| meta.len()).ok()
             };
-            let capabilities = if is_safetensors {
-                crate::models::capabilities::infer_local_model_capabilities(&name, &path)
-            } else {
-                installed_model_capabilities(&name)
-            };
+            let capabilities = installed_model_capabilities(&name);
             let usage = load_model_usage_record_for_path(&path);
             InstalledRow {
                 name: display_name,

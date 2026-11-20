@@ -5,7 +5,6 @@ pub(crate) use skippy_ffi::TensorRole;
 mod activation;
 mod capability_probe;
 mod chat_sampling_metadata;
-mod checkpoint;
 pub mod clef;
 mod config;
 pub mod decision;
@@ -38,7 +37,6 @@ pub use activation::{
     DecodeFrameBatchRequest, IterationBatchPhase, IterationBatchRequest, PartialBatchExecution,
 };
 pub use capability_probe::{CapabilityReport, probe_capabilities};
-pub use checkpoint::{CheckpointQuantization, is_safetensors_checkpoint};
 pub use clef::{ClefModel, ClefModelInfo};
 pub use config::{
     FlashAttentionType, GGML_TYPE_F16, GGML_TYPE_F32, GGML_TYPE_I32, GGML_TYPE_Q4_0,

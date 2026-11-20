@@ -1,8 +1,7 @@
 use super::formatters::{
     DownloadRenderInput, InstalledRow, JsonFormatter, ModelsFormatter, SearchFormatter,
-    capabilities_json, catalog_model_capabilities, catalog_model_kind_code,
-    fit_code_for_size_label, format_installed_size, huggingface_cache_dir,
-    installed_model_kind_code, local_capacity_json, model_kind_code, print_json,
+    capabilities_json, catalog_model_capabilities, fit_code_for_size_label, format_installed_size,
+    huggingface_cache_dir, local_capacity_json, model_kind_code, print_json,
 };
 use crate::models::details::{
     ModelDetails, remote_catalog_model_draft_ref, remote_catalog_model_ref,
@@ -150,7 +149,7 @@ impl ModelsFormatter for JsonFormatter {
                     "size": model.size,
                     "description": model.description,
                     "draft": remote_catalog_model_draft_ref(model),
-                    "type": catalog_model_kind_code(model),
+                    "type": "gguf",
                     "ref": model_ref,
                     "show": format!("{program} models show {model_ref}", program = crate::models::output::program()),
                     "download": format!("{program} models download {model_ref}", program = crate::models::output::program()),
@@ -170,7 +169,7 @@ impl ModelsFormatter for JsonFormatter {
             .map(|row| {
                 json!({
                     "name": row.name,
-                    "type": installed_model_kind_code(&row.path),
+                    "type": "gguf",
                     "size_bytes": row.size,
                     "size": row.size.map(super::formatters::format_installed_size),
                     "layer_count": row.layer_count,

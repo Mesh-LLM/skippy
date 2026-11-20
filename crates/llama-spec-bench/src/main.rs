@@ -331,9 +331,7 @@ fn full_model_config(path: &Path, ctx_size: u32, n_gpu_layers: i32) -> Result<Ru
         activation_import_bindings: Vec::new(),
         activation_export_identities: Vec::new(),
         activation_export_bindings: Vec::new(),
-        checkpoint_quantization: skippy_runtime::CheckpointQuantization::Preserve,
-        checkpoint_imatrix: None,
-        checkpoint_imatrix_sha256: None,
+
         mlock: false,
         repack: false,
         op_offload: None,

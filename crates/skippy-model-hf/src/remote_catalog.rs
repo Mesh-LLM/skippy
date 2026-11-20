@@ -626,6 +626,9 @@ pub fn resolve_model_download(query: &str) -> Option<RemoteModelRef> {
         .find_map(|candidate| match candidate {
             ModelArtifactCandidate::RemoteGguf(remote) => {
                 let file = remote.source.file?;
+                if !file.ends_with(".gguf") {
+                    return None;
+                }
                 let name = remote
                     .curated
                     .as_ref()
@@ -769,6 +772,13 @@ fn remote_models_from_entry(entry: &CatalogEntry) -> Result<Vec<RemoteCatalogMod
     variants.sort_by(|left, right| left.0.cmp(right.0));
     variants
         .into_iter()
+        .filter(|(_, variant)| {
+            variant
+                .source
+                .file
+                .as_deref()
+                .is_none_or(|file| file.ends_with(".gguf"))
+        })
         .map(|(variant_name, variant)| remote_model_from_variant(variant_name, variant))
         .collect()
 }

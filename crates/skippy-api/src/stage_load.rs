@@ -184,9 +184,7 @@ pub fn admitted_stage_config(
         activation_import_bindings: frontier_profile.activation_import_bindings.clone(),
         activation_export_identities: frontier_profile.activation_exports.clone(),
         activation_export_bindings: frontier_profile.activation_export_bindings.clone(),
-        checkpoint_quantization: None,
-        checkpoint_imatrix: None,
-        checkpoint_imatrix_sha256: None,
+
         selected_device: load.selected_device.clone(),
         kv_cache: None,
         native_mtp_enabled: load.native_mtp_enabled,

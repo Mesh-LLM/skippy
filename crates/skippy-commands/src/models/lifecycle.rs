@@ -39,6 +39,10 @@ pub enum StartupModelSource {
 
 pub async fn resolve_startup_model_source(input: &Path) -> Result<StartupModelSource> {
     let raw = input.to_string_lossy();
+    if skippy_model_ref::is_safetensors_model_ref(&raw) {
+        anyhow::bail!("{raw}: {}", skippy_model_ref::SAFETENSORS_SERVING_GUIDANCE);
+    }
+
     if raw.starts_with("hf://") {
         return Ok(StartupModelSource::Passthrough(input.to_path_buf()));
     }

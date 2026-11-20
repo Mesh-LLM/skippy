@@ -1,4 +1,4 @@
-use crate::{checkpoint, family_policy::family_policy_for_model_path};
+use crate::family_policy::family_policy_for_model_path;
 use anyhow::Result;
 use skippy_protocol::{FlashAttentionType, LoadMode, StageConfig, StageDevice, StageKvCacheConfig};
 use std::path::PathBuf;
@@ -53,8 +53,7 @@ pub struct SingleStageOptions {
     pub kv_unified: Option<bool>,
     pub swa_full: Option<bool>,
     pub cache_idle_slots: Option<u32>,
-    pub checkpoint_quantization: Option<String>,
-    pub checkpoint_imatrix: Option<String>,
+
     pub native_mtp_enabled: bool,
     pub kv_cache: Option<StageKvCacheConfig>,
 }
@@ -98,8 +97,7 @@ impl SingleStageOptions {
             kv_unified: None,
             swa_full: None,
             cache_idle_slots: None,
-            checkpoint_quantization: None,
-            checkpoint_imatrix: None,
+
             native_mtp_enabled: true,
             kv_cache: None,
         }
@@ -141,8 +139,8 @@ pub fn single_stage_config(
         layer_start < layer_end,
         "skippy stage layer range must satisfy layer_start < layer_end"
     );
+    skippy_model_ref::validate_gguf_model_path(&options.model_path).map_err(anyhow::Error::msg)?;
     let family_policy = family_policy_for_model_path(&options.model_path);
-    let checkpoint = checkpoint::prepare(options)?;
     let mut config = StageConfig {
         run_id: run_id.clone(),
         topology_id: format!("topology-{run_id}"),
@@ -210,12 +208,6 @@ pub fn single_stage_config(
         activation_import_bindings: Vec::new(),
         activation_export_identities: Vec::new(),
         activation_export_bindings: Vec::new(),
-        checkpoint_quantization: options
-            .checkpoint_quantization
-            .as_ref()
-            .map(|_| checkpoint.quantization.canonical_name().to_string()),
-        checkpoint_imatrix: checkpoint.imatrix,
-        checkpoint_imatrix_sha256: checkpoint.imatrix_sha256,
         selected_device: options.selected_device.clone(),
         kv_cache: None,
         native_mtp_enabled: options.native_mtp_enabled,
@@ -271,10 +263,9 @@ mod tests {
     }
 
     #[test]
-    fn invalid_options_fail_before_checkpoint_file_access() {
+    fn invalid_options_fail_before_model_file_access() {
         let mut options = SingleStageOptions::new("model", "/missing/model.gguf");
         options.ctx_size = 0;
-        options.checkpoint_imatrix = Some("missing.imatrix".into());
         let error =
             single_stage_config(&options, identity(options.model_path.clone()), "run".into())
                 .unwrap_err();

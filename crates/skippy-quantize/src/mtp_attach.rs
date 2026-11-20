@@ -208,9 +208,6 @@ fn runtime_config(
         kv_offload: None,
         kv_unified: None,
         swa_full: None,
-        checkpoint_quantization: skippy_runtime::CheckpointQuantization::Preserve,
-        checkpoint_imatrix: None,
-        checkpoint_imatrix_sha256: None,
     }
 }
 

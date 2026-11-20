@@ -22,7 +22,6 @@ pub const FEATURE_MTP_MULTIMODAL: u64 = bindings::skippy::skippy_feature::MtpMul
 pub const FEATURE_ITERATION_BATCH: u64 = bindings::skippy::skippy_feature::IterationBatch as u64;
 pub const FEATURE_ACTIVATION_BOUNDARY: u64 =
     bindings::skippy::skippy_feature::ActivationBoundary as u64;
-pub const FEATURE_MODEL_SOURCE: u64 = bindings::skippy::skippy_feature::ModelSource as u64;
 pub const FEATURE_RUNTIME_EVENT_REPORTER: u64 =
     bindings::skippy::skippy_ffi_bridge_feature_runtime_event_reporter;
 pub const FEATURE_MODEL_LOAD_EVENTS_V2: u64 =
@@ -43,8 +42,6 @@ pub const FEATURE_SPEECH_RECOGNITION: u64 =
 /// Joint Clef decision reads (`skippy/clef.h`).
 pub const FEATURE_CLEF_DECISIONS: u64 = bindings::skippy::skippy_ffi_bridge_feature_clef_decisions;
 
-pub const MODEL_TENSOR_SOURCE_V1_ABI_VERSION: u32 =
-    bindings::skippy::SKIPPY_MODEL_TENSOR_SOURCE_V1_ABI_VERSION;
 pub const WORKLOAD_INFO_V1_ABI_VERSION: u32 = bindings::skippy::SKIPPY_WORKLOAD_INFO_V1_ABI_VERSION;
 pub const LAYA_INFO_V1_ABI_VERSION: u32 = bindings::skippy::SKIPPY_LAYA_INFO_V1_ABI_VERSION;
 pub const LAYA_MEMORY_V1_ABI_VERSION: u32 = bindings::skippy::SKIPPY_LAYA_MEMORY_V1_ABI_VERSION;
@@ -88,9 +85,6 @@ impl Default for WorkloadInfoV1 {
     }
 }
 
-pub type ModelReadTensorF32Callback = bindings::skippy::skippy_model_read_tensor_f32_callback;
-pub type ModelImatrixEntryV1 = bindings::skippy::skippy_model_imatrix_entry_v1;
-pub type ModelTensorSourceV1 = bindings::skippy::skippy_model_tensor_source_v1;
 pub type IterationRequest = bindings::skippy::skippy_iteration_request;
 pub type TokenScoreRequest = bindings::skippy::skippy_token_score_request;
 pub type SystemOneSlot = bindings::skippy::skippy_system_one_slot;

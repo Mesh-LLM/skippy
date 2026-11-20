@@ -1021,9 +1021,7 @@ fn open_local_state_model(
         activation_import_bindings: runtime_plan.activation_import_bindings,
         activation_export_identities: runtime_plan.activation_export_identities,
         activation_export_bindings: runtime_plan.activation_export_bindings,
-        checkpoint_quantization: skippy_runtime::CheckpointQuantization::Preserve,
-        checkpoint_imatrix: None,
-        checkpoint_imatrix_sha256: None,
+
         cache_type_k: args.cache_type_k,
         cache_type_v: args.cache_type_v,
         flash_attn_type: runtime_flash_attn(args.flash_attn),
@@ -1599,9 +1597,7 @@ fn build_state_handoff_inputs(
         activation_import_bindings: runtime_plan.activation_import_bindings,
         activation_export_identities: runtime_plan.activation_export_identities,
         activation_export_bindings: runtime_plan.activation_export_bindings,
-        checkpoint_quantization: skippy_runtime::CheckpointQuantization::Preserve,
-        checkpoint_imatrix: None,
-        checkpoint_imatrix_sha256: None,
+
         cache_type_k: args.cache_type_k,
         cache_type_v: args.cache_type_v,
         flash_attn_type: runtime_flash_attn(args.flash_attn),

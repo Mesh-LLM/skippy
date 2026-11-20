@@ -187,13 +187,8 @@ fn update_weight_identity(hasher: &mut blake3::Hasher, config: &StageConfig) {
             }
         }
     }
-    hasher.update(b"checkpoint-quantization:");
-    hasher.update(normalized_checkpoint_quantization(config).as_bytes());
-    hasher.update(b"checkpoint-imatrix:");
-    match config.checkpoint_imatrix_sha256.as_deref() {
-        Some(digest) => hasher.update(digest.as_bytes()),
-        None => hasher.update(b"<absent>"),
-    };
+    // Keep the original GGUF defaults in the hash for existing cached state.
+    hasher.update(b"checkpoint-quantization:PRESERVEcheckpoint-imatrix:<absent>");
     // Layer packages and direct GGUFs assemble tensors differently even for
     // the same underlying model.
     // Matched exhaustively on purpose: a new load mode is a new way of
@@ -204,21 +199,6 @@ fn update_weight_identity(hasher: &mut blake3::Hasher, config: &StageConfig) {
         LoadMode::RuntimeSlice => b"load:runslice",
         LoadMode::ArtifactSlice => b"load:artslice",
     });
-}
-
-fn normalized_checkpoint_quantization(config: &StageConfig) -> String {
-    let quantization = config
-        .checkpoint_quantization
-        .as_deref()
-        .unwrap_or("preserve")
-        .chars()
-        .filter(|character| character.is_ascii_alphanumeric())
-        .flat_map(char::to_uppercase)
-        .collect::<String>();
-    match quantization.as_str() {
-        "DIRECT" | "NONE" | "PRESERVE" => "PRESERVE".to_string(),
-        _ => quantization,
-    }
 }
 
 pub fn prefix_hash_with_namespace(
@@ -352,16 +332,8 @@ pub fn numerical_model_identity_for_stage(config: &StageConfig) -> String {
             hasher.update(config.model_id.as_bytes());
         }
     }
-    hasher.update(b"checkpoint-quantization:");
-    hasher.update(normalized_checkpoint_quantization(config).as_bytes());
-    hasher.update(b"checkpoint-imatrix:");
-    hasher.update(
-        config
-            .checkpoint_imatrix_sha256
-            .as_deref()
-            .unwrap_or("<absent>")
-            .as_bytes(),
-    );
+    // Keep the original GGUF defaults in the hash for existing cached state.
+    hasher.update(b"checkpoint-quantization:PRESERVEcheckpoint-imatrix:<absent>");
     format!("blake3:{}", hasher.finalize().to_hex())
 }
 
@@ -647,9 +619,7 @@ mod identity_completeness_tests {
             materialized_pinned: false,
             model_path: None,
             model_part_paths: Vec::new(),
-            checkpoint_quantization: None,
-            checkpoint_imatrix: None,
-            checkpoint_imatrix_sha256: None,
+
             projector_path: None,
             projector_use_gpu: None,
             media_marker: None,
@@ -1012,9 +982,7 @@ mod identity_stability_tests {
             materialized_pinned: false,
             model_path: None,
             model_part_paths: Vec::new(),
-            checkpoint_quantization: None,
-            checkpoint_imatrix: None,
-            checkpoint_imatrix_sha256: None,
+
             projector_path: None,
             projector_use_gpu: None,
             media_marker: None,
@@ -1137,13 +1105,6 @@ mod identity_stability_tests {
             source_model_sha256: Some("d".repeat(64)),
             ..base.clone()
         };
-        let load_time_quantized = StageConfig {
-            checkpoint_quantization: Some("Q4_K_M".to_string()),
-            checkpoint_imatrix: None,
-            checkpoint_imatrix_sha256: None,
-            ..base.clone()
-        };
-
         assert_eq!(base.model_id, repacked.model_id);
         assert_ne!(
             prefix_identity(&base, 0, &tokens).page_id,
@@ -1154,52 +1115,6 @@ mod identity_stability_tests {
             prefix_identity(&base, 0, &tokens).page_id,
             prefix_identity(&requantized, 0, &tokens).page_id,
             "different source weights must not reuse cached pages"
-        );
-        assert_ne!(
-            prefix_identity(&base, 0, &tokens).page_id,
-            prefix_identity(&load_time_quantized, 0, &tokens).page_id,
-            "different load-time quantization must not reuse cached pages"
-        );
-    }
-
-    #[test]
-    fn absent_and_explicit_preserve_quantization_share_weight_identity() {
-        let tokens = (0..128).collect::<Vec<_>>();
-        let absent = StageConfig {
-            source_model_sha256: Some("b".repeat(64)),
-            ..config_with_topology("topology-a")
-        };
-        let explicit = StageConfig {
-            checkpoint_quantization: Some("preserve".to_string()),
-            checkpoint_imatrix: None,
-            checkpoint_imatrix_sha256: None,
-            ..absent.clone()
-        };
-
-        assert_eq!(
-            prefix_identity(&absent, 0, &tokens).page_id,
-            prefix_identity(&explicit, 0, &tokens).page_id
-        );
-    }
-
-    #[test]
-    fn identity_separates_importance_matrix_contents() {
-        let tokens = (0..128).collect::<Vec<_>>();
-        let first = StageConfig {
-            checkpoint_quantization: Some("IQ2_XXS".to_string()),
-            checkpoint_imatrix: Some("/models/calibration.gguf".to_string()),
-            checkpoint_imatrix_sha256: Some("a".repeat(64)),
-            ..config_with_topology("topology-a")
-        };
-        let second = StageConfig {
-            checkpoint_imatrix_sha256: Some("b".repeat(64)),
-            ..first.clone()
-        };
-
-        assert_ne!(
-            prefix_identity(&first, 0, &tokens).page_id,
-            prefix_identity(&second, 0, &tokens).page_id,
-            "different calibration weights must not share cached KV pages"
         );
     }
 
@@ -1301,14 +1216,6 @@ mod identity_stability_tests {
         assert_ne!(
             exact_state_identity_for_stage(&first, "full-state"),
             exact_state_identity_for_stage(&second, "full-state")
-        );
-
-        let mut equivalent_spelling = first.clone();
-        equivalent_spelling.checkpoint_quantization = Some("none".to_string());
-        assert_eq!(
-            numerical_model_identity_for_stage(&first),
-            numerical_model_identity_for_stage(&equivalent_spelling),
-            "equivalent preserve-mode spellings must share lifecycle identity"
         );
     }
 

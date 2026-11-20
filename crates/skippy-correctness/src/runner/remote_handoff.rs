@@ -322,9 +322,7 @@ fn open_full_model(args: &RemoteHandoffArgs, lane_count: u32) -> Result<StageMod
         activation_import_bindings: Vec::new(),
         activation_export_identities: Vec::new(),
         activation_export_bindings: Vec::new(),
-        checkpoint_quantization: skippy_runtime::CheckpointQuantization::Preserve,
-        checkpoint_imatrix: None,
-        checkpoint_imatrix_sha256: None,
+
         cache_type_k: GGML_TYPE_F16,
         cache_type_v: GGML_TYPE_F16,
         flash_attn_type: runtime_flash_attn(args.runtime.flash_attn),

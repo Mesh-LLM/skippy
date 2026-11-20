@@ -38,17 +38,11 @@ pub fn scan_installed_artifacts_in(cache_root: &Path) -> Vec<InstalledModelArtif
         let Some(format) = model_format_for_primary(&path) else {
             continue;
         };
-        let Some(model_ref) = model_ref_for_path(&path, cache_root, format) else {
-            continue;
-        };
+        let model_ref = local::model_ref_for_path(&path);
         let size_bytes = std::fs::metadata(&path)
             .map(|metadata| metadata.len())
             .unwrap_or(0);
-        let load_path = if format == ModelFormat::Safetensors {
-            path.parent().unwrap_or(&path).to_path_buf()
-        } else {
-            path.clone()
-        };
+        let load_path = path.clone();
         installed
             .entry(model_ref.clone())
             .or_insert(InstalledModelArtifact {
@@ -82,47 +76,10 @@ fn collect_model_files(dir: &Path, paths: &mut Vec<PathBuf>) {
 
 fn model_format_for_primary(path: &Path) -> Option<ModelFormat> {
     let name = path.file_name()?.to_str()?.to_ascii_lowercase();
-    if name.starts_with("mmproj") {
-        return None;
-    }
-    if name.ends_with(".gguf") {
-        return skippy_model_ref::split_gguf_shard_info(&name)
-            .is_none_or(|shard| shard.part == "00001")
-            .then_some(ModelFormat::Gguf);
-    }
-    if !name.ends_with(".safetensors") || name.starts_with("mtp") {
-        return None;
-    }
-    if let Some((_, part)) = name.rsplit_once("-of-")
-        && part.len() == "00000.safetensors".len()
-    {
-        return name
-            .contains("-00001-of-")
-            .then_some(ModelFormat::Safetensors);
-    }
-    Some(ModelFormat::Safetensors)
-}
-
-fn model_ref_for_path(path: &Path, cache_root: &Path, format: ModelFormat) -> Option<String> {
-    if format == ModelFormat::Gguf {
-        return Some(local::model_ref_for_path(path));
-    }
-    let relative = path.strip_prefix(cache_root).ok()?;
-    let mut parts = relative.components();
-    let repo_folder = parts
-        .next()?
-        .as_os_str()
-        .to_str()?
-        .strip_prefix("models--")?;
-    if parts.next()?.as_os_str() != "snapshots" {
-        return None;
-    }
-    let revision = parts.next()?.as_os_str().to_str()?;
-    let file = parts.as_path().to_str()?.replace('\\', "/");
-    Some(format!(
-        "{}@{revision}/{file}",
-        repo_folder.replace("--", "/")
-    ))
+    (name.ends_with(".gguf")
+        && !name.starts_with("mmproj")
+        && skippy_model_ref::split_gguf_shard_info(&name).is_none_or(|shard| shard.part == "00001"))
+    .then_some(ModelFormat::Gguf)
 }
 
 #[cfg(test)]
@@ -130,7 +87,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn scans_safetensors_and_gguf_without_sidecars_or_extra_shards() {
+    fn scans_gguf_without_checkpoints_or_sidecars() {
         let temp = tempfile::tempdir().unwrap();
         let snapshot = temp.path().join("models--org--repo/snapshots/rev");
         std::fs::create_dir_all(&snapshot).unwrap();
@@ -143,12 +100,7 @@ mod tests {
             std::fs::write(snapshot.join(file), b"weight").unwrap();
         }
         let found = scan_installed_artifacts_in(temp.path());
-        assert_eq!(found.len(), 2);
-        assert!(
-            found
-                .iter()
-                .any(|entry| entry.format == ModelFormat::Safetensors)
-        );
+        assert_eq!(found.len(), 1);
         assert!(found.iter().any(|entry| entry.format == ModelFormat::Gguf));
     }
 }

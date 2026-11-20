@@ -6,7 +6,7 @@
 
 pub const SKIPPY_ABI_VERSION_MAJOR: u32 = 0;
 pub const SKIPPY_ABI_VERSION_MINOR: u32 = 1;
-pub const SKIPPY_ABI_VERSION_PATCH: u32 = 80;
+pub const SKIPPY_ABI_VERSION_PATCH: u32 = 81;
 pub const SKIPPY_ACTIVATION_FRAME_VERSION: u32 = 2;
 pub const SKIPPY_ACTIVATION_BOUNDARY_DESC_VERSION: u32 = 2;
 pub const SKIPPY_ACTIVATION_IDENTITY_BYTES: u32 = 32;
@@ -25,7 +25,6 @@ pub const SKIPPY_GLM_DSA_POLICY_PROFILE_V1: u32 = 1;
 pub const SKIPPY_TRISTATE_AUTO: i32 = -1;
 pub const SKIPPY_TRISTATE_FALSE: u32 = 0;
 pub const SKIPPY_TRISTATE_TRUE: u32 = 1;
-pub const SKIPPY_MODEL_TENSOR_SOURCE_V1_ABI_VERSION: u32 = 1;
 pub const SKIPPY_STAGE_PLANNER_CONFIG_V1_ABI_VERSION: u32 = 1;
 pub const SKIPPY_STAGE_PLANNER_TENSOR_V1_ABI_VERSION: u32 = 1;
 pub const SKIPPY_STAGE_PLANNER_PROFILE_V1_ABI_VERSION: u32 = 1;
@@ -98,7 +97,6 @@ pub enum skippy_feature {
     MtpMultimodal = 134217728,
     IterationBatch = 268435456,
     ActivationBoundary = 536870912,
-    ModelSource = 1073741824,
 }
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -709,47 +707,6 @@ unsafe extern "C" {
     #[doc = " @brief Releases an inference session handle."]
     pub fn skippy_session_free(
         session: *mut skippy_session,
-        out_error: *mut *mut skippy_error,
-    ) -> skippy_status;
-}
-#[doc = " @brief Supplies one canonical model tensor as F32 values during model construction.\n\n The callback is invoked synchronously and serially while\n `skippy_model_open_from_source` is active. `tensor_name` and `destination`\n are borrowed only for the callback duration; implementations must write\n exactly `element_count` values and must not retain either pointer. On\n failure, `out_message` may receive a borrowed NUL-terminated message that\n remains valid until `skippy_model_open_from_source` returns."]
-pub type skippy_model_read_tensor_f32_callback = ::std::option::Option<
-    unsafe extern "C" fn(
-        tensor_name: *const ::std::os::raw::c_char,
-        destination: *mut f32,
-        element_count: usize,
-        out_message: *mut *const ::std::os::raw::c_char,
-        user_data: *mut ::std::os::raw::c_void,
-    ) -> skippy_status,
->;
-#[doc = " @brief One tensor's importance weights for low-bit quantization.\n\n `tensor_name` identifies the canonical llama.cpp tensor. `values` contains\n exactly the weights expected by llama.cpp for that tensor. Both buffers are\n borrowed for the synchronous model-open call and are never retained."]
-#[repr(C)]
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct skippy_model_imatrix_entry_v1 {
-    pub tensor_name: *const ::std::os::raw::c_char,
-    pub values: *const f32,
-    pub value_count: usize,
-}
-#[doc = " @brief Versioned callback source for direct checkpoint loading.\n\n The source and `user_data` are borrowed for the synchronous duration of\n `skippy_model_open_from_source` and are never retained by the model."]
-#[repr(C)]
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct skippy_model_tensor_source_v1 {
-    pub abi_version: u32,
-    pub struct_size: u32,
-    pub read_tensor_f32: skippy_model_read_tensor_f32_callback,
-    pub user_data: *mut ::std::os::raw::c_void,
-    pub imatrix: *const skippy_model_imatrix_entry_v1,
-    pub imatrix_count: usize,
-}
-unsafe extern "C" {
-    #[doc = " @brief Opens a model from metadata-only GGUF and callback-supplied tensor values.\n\n `metadata_gguf`, `source`, and `source->user_data` must remain valid for\n this synchronous call and are not retained; tensor callbacks execute\n synchronously before the function returns. `quantization_ftype` is a\n llama_ftype value, or -1 to preserve the tensor types declared by\n `metadata_gguf`. On success, `out_model` owns the resulting model and must\n be released with `skippy_model_free`."]
-    pub fn skippy_model_open_from_source(
-        metadata_gguf: *const ::std::os::raw::c_void,
-        metadata_gguf_size: usize,
-        source: *const skippy_model_tensor_source_v1,
-        quantization_ftype: i32,
-        config: *const skippy_runtime_config,
-        out_model: *mut *mut skippy_model,
         out_error: *mut *mut skippy_error,
     ) -> skippy_status;
 }
