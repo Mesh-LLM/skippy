@@ -93,6 +93,27 @@ format:
     @cargo fmt --all
     @cargo fmt --manifest-path skippy-api-rs/Cargo.toml --all
 
+embedding-contract-check:
+    @cargo fmt -p skippy-api -p skippy-inference-api -p skippy-serving --check
+    @cargo check --locked --offline -p skippy-api -p skippy-inference-api -p skippy-serving --features skippy-api/dynamic-native-runtime
+    @cargo clippy --locked --offline -p skippy-api -p skippy-inference-api -p skippy-serving --features skippy-api/dynamic-native-runtime --all-targets -- -D warnings
+    @cargo test --locked --offline -p skippy-api -p skippy-inference-api --features skippy-api/dynamic-native-runtime
+    @cargo test --locked --offline -p skippy-serving --features dynamic-native-runtime --lib embedded::tests
+    @cargo test --locked --offline -p skippy-serving --features dynamic-native-runtime --lib readiness::tests
+    @python3 scripts/embedding-consumer.py check
+
+[positional-arguments]
+embedding-serving-test bundle_root:
+    @SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR="$1" cargo test --locked --offline -p skippy-serving --features dynamic-native-runtime
+
+[positional-arguments]
+embedding-consumer-check *args:
+    @python3 scripts/embedding-consumer.py check "$@"
+
+[positional-arguments]
+embedding-consumer-qualify *args:
+    @python3 scripts/embedding-consumer.py qualify "$@"
+
 lint: llama-prepare
     @cargo fmt --all --check
     @cargo clippy --workspace --all-targets -- -D warnings
