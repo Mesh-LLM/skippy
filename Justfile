@@ -103,7 +103,7 @@ embedding-contract-check:
     @python3 scripts/embedding-consumer.py check
 
 [positional-arguments]
-embedding-serving-test bundle:
+embedding-serving-test bundle_root:
     @SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR="$1" cargo test --locked --offline -p skippy-serving --features dynamic-native-runtime
 
 [positional-arguments]

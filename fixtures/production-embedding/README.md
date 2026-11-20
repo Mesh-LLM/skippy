@@ -11,8 +11,9 @@ Rust checks and compiles a copy of the fixture against the candidate.
 `just embedding-consumer-check --source <full-commit-sha>` uses `git archive`
 of an already available commit for the same offline proof. Cargo preserves
 the compatible transitive versions from the pinned source lockfile.
-Run `just embedding-serving-test /absolute/verified-runtime-directory` for
-the full serving suite, including tests that call the native ABI.
+Run `just embedding-serving-test /absolute/dist/native-runtimes` for the
+full serving suite, including tests that call the native ABI. Supply the
+parent directory containing the verified bundle.
 
 The strict native run requires a runtime directory from `just ci-runtime`
 with its producer `provenance.json`, a local GGUF and two free explicit
