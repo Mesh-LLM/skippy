@@ -83,6 +83,9 @@ on:
       artifact_scope:
         type: string
         default: ci
+      source_ref:
+        type: string
+        default: ''
       candidate_artifact:
         type: string
         default: ''
@@ -103,6 +106,7 @@ env:
   SCCACHE_GHA_ENABLED: 'true'
   SKIPPY_REQUIRE_SCCACHE: '1'
   SKIPPY_CUDA_ARCHITECTURE_MODE: ${{ inputs.cuda_architecture_mode || 'native' }}
+  SKIPPY_CI_SOURCE_REF: ${{ inputs.source_ref || github.sha }}
   SKIPPY_ARTIFACT_SCOPE: ${{ inputs.artifact_scope || 'ci' }}
 jobs:
   changes:
@@ -112,10 +116,39 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      actions: read
     outputs:
-      code: ${{ inputs.profile != '' || github.event_name != 'pull_request' || steps.paths.outputs.code == 'true' }}
+      code: ${{ steps.release.outputs.verified != 'true' && (inputs.profile != '' || github.event_name != 'pull_request' || steps.paths.outputs.code == 'true') }}
       inference: ${{ inputs.profile == '' && github.event_name == 'pull_request' && steps.paths.outputs.inference == 'true' }}
     steps:
+      - name: Reuse qualification from the exact promoted release
+        id: release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            try {
+              const repo = context.repo;
+              const sha = context.sha;
+              const { data: candidate } = await github.rest.repos.getCommit({ ...repo, ref: sha });
+              const runId = candidate.commit.message.match(/\n\nSkippy-Release-Run: ([1-9][0-9]*)\s*$/)?.[1];
+              if (!runId || candidate.parents.length !== 1 ||
+                  candidate.parents[0].sha !== context.payload.before) return;
+              const { data: run } = await github.rest.actions.getWorkflowRun({ ...repo, run_id: runId });
+              if (run.path !== '.github/workflows/release.yml' || run.event !== 'workflow_dispatch' ||
+                  run.head_branch !== 'main' || run.head_sha !== context.payload.before ||
+                  run.head_repository?.full_name !== context.payload.repository.full_name) return;
+              const receipt = `validated-release-${sha}`;
+              const { data: result } = await github.rest.actions.listWorkflowRunArtifacts({
+                ...repo, run_id: runId, name: receipt,
+              });
+              if (result.artifacts.some(artifact => artifact.name === receipt && !artifact.expired)) {
+                core.info(`Release run ${runId} already validated ${sha}`);
+                core.setOutput('verified', 'true');
+              }
+            } catch (error) {
+              core.warning(`Release validation could not be verified. Running ordinary CI. ${error.message}`);
+            }
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         if: inputs.profile == '' && github.event_name == 'pull_request'
         with:
@@ -156,6 +189,7 @@ jobs:
           fi
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           persist-credentials: false
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/source
@@ -195,6 +229,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           persist-credentials: false
       - uses: ./.github/actions/source
         with:
@@ -282,6 +317,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           persist-credentials: false
       - uses: ./.github/actions/source
         with:
@@ -325,6 +361,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -351,6 +388,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -371,6 +409,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -398,6 +437,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -418,6 +458,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           persist-credentials: false
       - uses: ./.github/actions/ci-smoke
         with:
@@ -443,6 +484,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -462,6 +504,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -489,6 +532,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -509,6 +553,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           persist-credentials: false
       - uses: ./.github/actions/ci-smoke
         with:
@@ -535,6 +580,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -555,6 +601,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           persist-credentials: false
       - uses: ./.github/actions/ci-smoke
         with:
