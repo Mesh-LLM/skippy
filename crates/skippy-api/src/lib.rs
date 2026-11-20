@@ -8,6 +8,7 @@ pub use stage::{SingleStageOptions, StageSourceIdentity, single_stage_config};
 
 pub mod hash_cache;
 pub mod package;
+pub mod placement;
 
 pub mod source;
 pub mod source_registry;

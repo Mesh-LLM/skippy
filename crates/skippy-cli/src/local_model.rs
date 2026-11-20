@@ -55,6 +55,18 @@ pub(crate) fn prepare_openai_stage(args: &ServeOpenAiArgs) -> Result<StageConfig
                 .get("selected_device")
                 .map(|value| serde_json::from_value(value.clone()))
                 .transpose()?;
+            if let Some(id) = &args.gpu_id {
+                anyhow::ensure!(
+                    options.selected_device.is_none(),
+                    "--gpu-id conflicts with --device"
+                );
+                anyhow::ensure!(
+                    options.n_gpu_layers != 0,
+                    "--gpu-id requires GPU layer offload"
+                );
+                let allocator = skippy_api::placement::DeviceAllocator::from_loaded_runtime()?;
+                options.selected_device = Some(allocator.pinned(id)?.0);
+            }
             skippy_runtime::parse_cache_type(&options.cache_type_k)?;
             skippy_runtime::parse_cache_type(&options.cache_type_v)?;
             options.flash_attn_type =
@@ -88,6 +100,30 @@ pub(crate) fn prepare_openai_stage(args: &ServeOpenAiArgs) -> Result<StageConfig
                 cache_type_k: &options.cache_type_k,
                 cache_type_v: &options.cache_type_v,
             });
+            if let Some(id) = &args.gpu_id {
+                let breakdown = plan
+                    .breakdown
+                    .context("no capacity estimate for explicit GPU pin")?;
+                let budget = options
+                    .selected_device
+                    .as_ref()
+                    .and_then(|device| device.vram_bytes)
+                    .unwrap_or(0);
+                let required = breakdown
+                    .model_bytes
+                    .saturating_add(breakdown.projector_bytes)
+                    .saturating_add(breakdown.speculative_bytes)
+                    .saturating_add(breakdown.planned_kv_bytes)
+                    .saturating_add(breakdown.compute_charge_bytes);
+                if !plan.fits() || required > budget {
+                    return Err(skippy_api::placement::PlacementError::Exhausted {
+                        device: Some(id.clone()),
+                        requested: required,
+                        available: budget,
+                    }
+                    .into());
+                }
+            }
             options.ctx_size = plan.context_length;
             options.generation_concurrency = plan.slots;
             options.validate()?;
