@@ -35,10 +35,12 @@ pub use unused_gpu::{
     UnusedGpuBackend, describe_unused_gpu_backends, describe_unused_gpus, unused_gpu_backends,
 };
 
-/// Native runtime artifact release, tracked separately from crate package versions.
+/// Native runtime artifact release: always the Skippy workspace version.
 ///
-/// The packaging producer reads the same Skippy-owned version file. This is a
-/// release identity; native binary compatibility is checked separately by ABI.
+/// Every Skippy release is therefore a new runtime identity and cache
+/// directory, so a runtime cached by an earlier release is never selected.
+/// The packaging producer stamps the same workspace version. Native binary
+/// compatibility is checked separately by ABI.
 pub fn runtime_release_version() -> &'static str {
-    include_str!("../RUNTIME_VERSION").trim()
+    env!("CARGO_PKG_VERSION")
 }
