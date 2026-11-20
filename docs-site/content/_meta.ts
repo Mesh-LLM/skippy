@@ -4,6 +4,7 @@ export default {
   "running-models": "Running Models",
   "pipeline-parallelism": "Pipeline Parallelism",
   "kv-caching": "KV Caching",
+  cli: "CLI Reference",
   configuration: "Configuration Reference",
   contributing: "Contributing",
 };
