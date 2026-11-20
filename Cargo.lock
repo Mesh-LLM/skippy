@@ -5464,6 +5464,7 @@ dependencies = [
  "hex",
  "libc",
  "regex-lite",
+ "reqwest 0.13.5",
  "rustls",
  "serde",
  "serde_json",
