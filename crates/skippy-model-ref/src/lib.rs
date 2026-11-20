@@ -4,6 +4,49 @@ use std::{error::Error, fmt, path::Path, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
+pub const SAFETENSORS_SERVING_GUIDANCE: &str = "Skippy serves GGUF models only. Convert the SafeTensors checkpoint to GGUF or select a published GGUF.";
+
+pub fn is_safetensors_model_ref(reference: &str) -> bool {
+    let reference = reference
+        .trim()
+        .split(['?', '#'])
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    reference.ends_with(".safetensors") || reference.ends_with(".safetensors.index.json")
+}
+
+/// Reject checkpoint references before invoking the GGUF reader. A GGUF part
+/// may have an extensionless name, such as a content-addressed Hub blob.
+pub fn validate_gguf_model_path(path: &Path) -> Result<(), String> {
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(is_safetensors_model_ref)
+        || (path.is_dir()
+            && std::fs::read_dir(path).is_ok_and(|entries| {
+                entries.flatten().any(|entry| {
+                    entry
+                        .file_name()
+                        .to_str()
+                        .is_some_and(is_safetensors_model_ref)
+                })
+            }))
+    {
+        return Err(format!(
+            "{}: {SAFETENSORS_SERVING_GUIDANCE}",
+            path.display()
+        ));
+    }
+    if path.is_dir() {
+        return Err(format!(
+            "expected a GGUF file, got directory {}",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelRef {
     pub repo: String,

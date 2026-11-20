@@ -45,7 +45,7 @@ fn discovery_preserves_startup_precedence_and_search_response_fields() {
                     serde_json::json!([
                         {"id":"owner/Model-7B", "downloads":42, "likes":7, "siblings":[{"rfilename":"Model-Q4_K_M.gguf", "size":4_000_000_000u64}]},
                         {"id":"owner/Model-13B", "downloads":9, "likes":3, "siblings":[{"rfilename":"Model-Q8_0.gguf", "size":8_000_000_000u64}]},
-                        {"id":"owner/WithoutWeights", "siblings":[]}
+                        {"id":"owner/CheckpointOnly", "siblings":[{"rfilename":"model.safetensors"}]}
                     ])
                 };
                 ("200 OK", models.to_string())
@@ -104,6 +104,20 @@ fn discovery_child() {
 }
 
 async fn check_startup(root: &Path) {
+    let checkpoint = root.join("model.safetensors");
+    std::fs::write(&checkpoint, []).unwrap();
+    for input in [
+        checkpoint.as_path(),
+        Path::new("owner/repo/model.safetensors"),
+    ] {
+        let error = resolve_startup_model_source(input).await.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Convert the SafeTensors checkpoint to GGUF")
+        );
+    }
+
     let package = Path::new("hf://owner/package@rev");
     assert_eq!(
         resolve_startup_model_source(package).await.unwrap(),

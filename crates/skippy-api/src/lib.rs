@@ -1,5 +1,4 @@
 //! Shared model preparation for standalone and embedded Skippy serving.
-mod checkpoint;
 pub mod family_policy;
 pub mod kv_cache;
 pub mod speculative;

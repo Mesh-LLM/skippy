@@ -1,11 +1,16 @@
 //! Ordered startup discovery, separate from acquisition and presentation.
-use crate::{details::canonicalize_model_ref_input, remote_catalog, store::local::find_model_path};
+use crate::{
+    details::{canonicalize_model_ref_input, reject_safetensors_model_ref},
+    remote_catalog,
+    store::local::find_model_path,
+};
 use anyhow::{Context, Result};
 use skippy_model_resolver::startup::StartupModelSource;
 use std::path::Path;
 
 pub async fn resolve_startup_model_source(input: &Path) -> Result<StartupModelSource> {
     let raw = input.to_string_lossy();
+    reject_safetensors_model_ref(&raw)?;
     // Preserve package passthrough without probing the filesystem.
     if let Some(source) = StartupModelSource::explicit(input, || input.exists()) {
         return Ok(source);

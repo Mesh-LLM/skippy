@@ -22,13 +22,11 @@ fn build_installed_rows(cache_root: &Path) -> Vec<InstalledRow> {
         .map(|artifact| {
             let name = artifact.model_ref;
             let path = artifact.path;
-            let is_safetensors =
-                path.extension().and_then(|extension| extension.to_str()) == Some("safetensors");
             let display_name = installed_model_display_name(&name);
             let catalog_model = find_remote_catalog_model_exact(&name);
             let layer_count =
                 installed_layer_package_count(&name, layered_package_layer_count_for_path(&path));
-            let model_ref = if layer_count.is_some() || is_safetensors {
+            let model_ref = if layer_count.is_some() {
                 name.clone()
             } else if let Some(model) = catalog_model.as_ref() {
                 remote_catalog_model_ref(model)
@@ -64,11 +62,7 @@ fn build_installed_rows(cache_root: &Path) -> Vec<InstalledRow> {
             } else {
                 std::fs::metadata(&path).map(|meta| meta.len()).ok()
             };
-            let capabilities = if is_safetensors {
-                skippy_model_hf::capabilities::infer_local_model_capabilities(&name, &path)
-            } else {
-                installed_model_capabilities(&name)
-            };
+            let capabilities = installed_model_capabilities(&name);
             let usage = load_model_usage_record_for_path(&path);
             InstalledRow {
                 name: display_name,
@@ -99,14 +93,6 @@ mod tests {
     use super::build_installed_rows;
     use std::path::{Path, PathBuf};
 
-    fn unique_temp_dir(prefix: &str) -> PathBuf {
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("skippy-{prefix}-{stamp}"))
-    }
-
     fn create_cache_repo_file(
         root: &Path,
         repo_id: &str,
@@ -130,31 +116,33 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn installed_rows_keep_layered_package_ref_and_safe_commands() {
-        let temp = unique_temp_dir("installed-layered-row");
+        let _catalog = skippy_model_hf::remote_catalog::set_catalog_entries_for_test(Vec::new());
+        let temp = tempfile::tempdir().unwrap();
         create_cache_repo_file(
-            &temp,
+            temp.path(),
             "meshllm/DeepSeek-V3.2-UD-Q4_K_XL-layers",
             "abcdef1234567890",
             "shared/embeddings.gguf",
             6,
         );
         create_cache_repo_file(
-            &temp,
+            temp.path(),
             "meshllm/DeepSeek-V3.2-UD-Q4_K_XL-layers",
             "abcdef1234567890",
             "layers/layer-000.gguf",
             9,
         );
         create_cache_repo_file(
-            &temp,
+            temp.path(),
             "meshllm/DeepSeek-V3.2-UD-Q4_K_XL-layers",
             "abcdef1234567890",
             "layers/layer-001.gguf",
             9,
         );
 
-        let rows = build_installed_rows(&temp);
+        let rows = build_installed_rows(temp.path());
         assert_eq!(rows.len(), 1);
         let row = &rows[0];
         assert_eq!(row.model_ref, "meshllm/DeepSeek-V3.2-UD-Q4_K_XL-layers");
@@ -165,22 +153,22 @@ mod tests {
             row.delete_command,
             "skippy models delete meshllm/DeepSeek-V3.2-UD-Q4_K_XL-layers"
         );
-
-        let _ = std::fs::remove_dir_all(&temp);
     }
 
     #[test]
+    #[serial_test::serial]
     fn installed_rows_keep_partial_layered_package_grouped() {
-        let temp = unique_temp_dir("installed-partial-layered-row");
+        let _catalog = skippy_model_hf::remote_catalog::set_catalog_entries_for_test(Vec::new());
+        let temp = tempfile::tempdir().unwrap();
         let metadata = create_cache_repo_file(
-            &temp,
+            temp.path(),
             "meshllm/Qwen3-8B-Q4_K_M-layers",
             "abcdef1234567890",
             "shared/metadata.gguf",
             6,
         );
 
-        let rows = build_installed_rows(&temp);
+        let rows = build_installed_rows(temp.path());
         assert_eq!(rows.len(), 1);
         let row = &rows[0];
         assert_eq!(row.path, metadata);
@@ -192,7 +180,5 @@ mod tests {
             row.delete_command,
             "skippy models delete meshllm/Qwen3-8B-Q4_K_M-layers"
         );
-
-        let _ = std::fs::remove_dir_all(&temp);
     }
 }

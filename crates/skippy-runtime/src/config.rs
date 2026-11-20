@@ -8,8 +8,6 @@ use skippy_ffi::{
     TRISTATE_FALSE, TRISTATE_TRUE,
 };
 
-use crate::checkpoint::CheckpointQuantization;
-
 mod host_expert_layers;
 pub use host_expert_layers::HostExpertLayers;
 
@@ -118,13 +116,6 @@ pub struct RuntimeConfig {
     pub activation_export_identities: Vec<String>,
     /// Stable live-graph tensor bindings paired with exported planner identities.
     pub activation_export_bindings: Vec<String>,
-    /// Tensor type policy used when `StageModel::open` receives a SafeTensors checkpoint.
-    pub checkpoint_quantization: CheckpointQuantization,
-    /// Importance matrix used by quantization recipes that require calibration data.
-    pub checkpoint_imatrix: Option<std::path::PathBuf>,
-    /// Expected SHA-256 for `checkpoint_imatrix`. When set, the runtime verifies
-    /// the exact bytes that it passes to the importance-matrix parser.
-    pub checkpoint_imatrix_sha256: Option<String>,
     /// K/V cache backend offload. `None` preserves llama.cpp's derived
     /// default (offloaded); `Some` forces the value.
     pub kv_offload: Option<bool>,
@@ -468,7 +459,7 @@ impl RuntimeConfig {
             .unwrap_or_else(|| default_n_batch_for_lane_count(self.lane_count));
         let n_ubatch = self.n_ubatch.unwrap_or(LLAMA_SERVER_DEFAULT_N_UBATCH);
         format!(
-            "stage_index={} layers={}..{} ctx={} lanes={} n_batch={} n_ubatch={} n_gpu_layers={} mmap={} mlock={} repack={} backend={} cache_k={} cache_v={} flash_attn={:?} load_mode={:?} source_stage={} terminal_stage={} mtp_source={:?} resident_tensor_count={} checkpoint_quantization={:?} host_expert_layers={}",
+            "stage_index={} layers={}..{} ctx={} lanes={} n_batch={} n_ubatch={} n_gpu_layers={} mmap={} mlock={} repack={} backend={} cache_k={} cache_v={} flash_attn={:?} load_mode={:?} source_stage={} terminal_stage={} mtp_source={:?} resident_tensor_count={} host_expert_layers={}",
             self.stage_index,
             self.layer_start,
             self.layer_end,
@@ -491,7 +482,6 @@ impl RuntimeConfig {
             self.is_terminal_stage(),
             self.mtp_source,
             self.resident_tensor_names.len(),
-            self.checkpoint_quantization,
             self.host_expert_layers
                 .map(|layers| format!("{}..{}", layers.start, layers.end))
                 .unwrap_or_else(|| "none".to_string()),
@@ -578,9 +568,7 @@ impl Default for RuntimeConfig {
             activation_import_bindings: Vec::new(),
             activation_export_identities: Vec::new(),
             activation_export_bindings: Vec::new(),
-            checkpoint_quantization: CheckpointQuantization::Preserve,
-            checkpoint_imatrix: None,
-            checkpoint_imatrix_sha256: None,
+
             kv_offload: None,
             kv_unified: None,
             swa_full: None,

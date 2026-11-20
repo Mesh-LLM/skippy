@@ -29,14 +29,12 @@ use std::time::Duration;
 use std::time::Instant;
 
 use super::formatters::{
-    DownloadRenderInput, catalog_model_is_mlx, format_installed_size, format_relative_timestamp,
-    model_kind_code, models_formatter, search_formatter,
+    DownloadRenderInput, format_installed_size, format_relative_timestamp, model_kind_code,
+    models_formatter, search_formatter,
 };
 
 pub async fn run_model_search(
     query: &[String],
-    _prefer_gguf: bool,
-    prefer_mlx: bool,
     catalog_only: bool,
     limit: usize,
     sort: ModelSearchSort,
@@ -44,21 +42,11 @@ pub async fn run_model_search(
 ) -> Result<()> {
     let formatter = search_formatter(json_output);
     let query = query.join(" ");
-    let filter = if prefer_mlx {
-        SearchArtifactFilter::Mlx
-    } else {
-        SearchArtifactFilter::Gguf
-    };
+    let filter = SearchArtifactFilter::Gguf;
     let search_sort = map_search_sort(sort);
 
     if catalog_only {
-        let results: Vec<_> = search_catalog_models(&query)?
-            .into_iter()
-            .filter(|model| match filter {
-                SearchArtifactFilter::Gguf => !catalog_model_is_mlx(model),
-                SearchArtifactFilter::Mlx => catalog_model_is_mlx(model),
-            })
-            .collect();
+        let results = search_catalog_models(&query)?;
         if results.is_empty() {
             return formatter.render_catalog_empty(&query, filter, search_sort);
         }
@@ -342,6 +330,7 @@ pub async fn run_model_download(
     direct: bool,
     json_output: bool,
 ) -> Result<()> {
+    super::reject_safetensors_model_ref(model_ref)?;
     let formatter = models_formatter(json_output);
     let progress = !json_output || super::output::context().byte_progress.is_some();
     if !direct

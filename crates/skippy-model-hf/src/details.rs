@@ -7,12 +7,11 @@ use crate::{
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use skippy_model_artifact::capabilities::ModelCapabilities;
-use skippy_model_artifact::selection::file_preference_score;
 use skippy_model_artifact::sizes::format_size_bytes;
 use skippy_model_artifact::{ModelArtifactFile, select_primary_artifact_file};
 use skippy_model_ref::quant_selector_from_gguf_file;
 use skippy_model_resolver::refs::{
-    format_huggingface_display_ref, huggingface_resolve_url, is_split_mlx_first_shard,
+    format_huggingface_display_ref, huggingface_resolve_url,
     parse_huggingface_file_ref as parse_huggingface_ref, parse_huggingface_repo_ref,
     parse_huggingface_repo_url, select_strong_repo_hit, split_bare_name_selector,
 };
@@ -86,7 +85,7 @@ pub async fn show_exact_model(input: &str, fit_budget_bytes: u64) -> Result<Mode
                 display_name: exact_ref.clone(),
                 exact_ref,
                 source: "catalog",
-                kind: remote_catalog_model_kind(&model),
+                kind: "🦙 GGUF",
                 download_url: model.resolve_url(),
                 size_label: model.size.clone(),
                 description: model.description.clone(),
@@ -140,7 +139,7 @@ pub async fn show_exact_model(input: &str, fit_budget_bytes: u64) -> Result<Mode
                     .to_string(),
                 exact_ref,
                 source: "huggingface",
-                kind: artifact_kind_for_file(&file),
+                kind: "🦙 GGUF",
                 download_url,
                 size_label,
                 description: catalog.as_ref().and_then(|model| model.description.clone()),
@@ -214,7 +213,7 @@ where
                 .to_string(),
             exact_ref,
             source: "huggingface",
-            kind: artifact_kind_for_file(&file),
+            kind: "🦙 GGUF",
             download_url: huggingface_resolve_url(&repo, revision.as_deref(), &file),
             size_label,
             description: None,
@@ -228,18 +227,6 @@ where
     }
 
     Ok(Some(out))
-}
-
-fn artifact_kind_for_file(file: &str) -> &'static str {
-    if file.ends_with(".safetensors") || file.ends_with(".safetensors.index.json") {
-        "🍎 MLX"
-    } else {
-        "🦙 GGUF"
-    }
-}
-
-fn remote_catalog_model_kind(model: &remote_catalog::RemoteCatalogModel) -> &'static str {
-    artifact_kind_for_file(model.source_file())
 }
 
 pub fn installed_model_capabilities(model_name: &str) -> ModelCapabilities {
@@ -293,7 +280,7 @@ fn parse_exact_model_ref(input: &str) -> Result<ExactModelRef> {
         return Ok(ExactModelRef::Catalog(Box::new(model)));
     }
     bail!(
-        "Expected an exact model ref. Use a catalog id or a Hugging Face ref like org/repo, org/repo@rev:QUANT, org/repo/file.gguf, org/repo/file-stem for split GGUFs, org/repo/model.safetensors, or org/repo/model-00001-of-00048.safetensors."
+        "Expected a GGUF model ref like a catalog id, org/repo, org/repo@rev:QUANT, org/repo/file.gguf, or org/repo/file-stem for split GGUFs."
     )
 }
 
@@ -315,6 +302,8 @@ async fn discover_hf_repo_for_bare_name(name: &str) -> Result<Option<String>> {
 }
 
 pub async fn canonicalize_model_ref_input(input: &str) -> Result<String> {
+    reject_safetensors_model_ref(input)?;
+
     if parse_exact_model_ref(input).is_ok() {
         return Ok(input.to_string());
     }
@@ -332,18 +321,18 @@ pub async fn canonicalize_model_ref_input(input: &str) -> Result<String> {
     Ok(input.to_string())
 }
 
-fn select_default_hf_file_from_siblings(siblings: &[String]) -> Option<String> {
-    resolve_hf_file_from_siblings("", siblings)
+/// Reject an explicit SafeTensors checkpoint before runnable-model discovery.
+pub fn reject_safetensors_model_ref(model_ref: &str) -> Result<()> {
+    anyhow::ensure!(
+        !skippy_model_ref::is_safetensors_model_ref(model_ref),
+        "{model_ref}: {}",
+        skippy_model_ref::SAFETENSORS_SERVING_GUIDANCE
+    );
+    Ok(())
 }
 
+#[cfg(test)]
 fn resolve_hf_file_from_siblings(requested: &str, siblings: &[String]) -> Option<String> {
-    if requested.ends_with(".gguf")
-        || requested.ends_with(".safetensors")
-        || requested.ends_with(".safetensors.index.json")
-    {
-        return Some(requested.to_string());
-    }
-
     let files = siblings
         .iter()
         .cloned()
@@ -353,22 +342,6 @@ fn resolve_hf_file_from_siblings(requested: &str, siblings: &[String]) -> Option
     select_primary_artifact_file(selector, &files)
         .ok()
         .map(|file| file.path)
-}
-
-pub fn is_known_gguf_sidecar(file: &str) -> bool {
-    let basename = file.rsplit('/').next().unwrap_or(file);
-    basename.to_ascii_lowercase().starts_with("mmproj")
-}
-
-fn split_gguf_shard_info(file: &str) -> Option<(&str, &str, &str)> {
-    skippy_model_ref::split_gguf_shard_info(file)
-        .map(|shard| (shard.prefix, shard.part, shard.total))
-}
-
-fn is_split_gguf_first_shard(file: &str) -> bool {
-    split_gguf_shard_info(file)
-        .map(|(_, part, _)| part == "00001")
-        .unwrap_or(false)
 }
 
 pub fn gguf_variant_size_bytes_from_siblings(
@@ -390,35 +363,26 @@ fn collect_show_gguf_variants_from_siblings(
     siblings: &[(String, Option<u64>)],
     available_bytes: u64,
 ) -> Vec<(String, Option<u64>)> {
-    let mut gguf_candidates: Vec<(String, Option<u64>)> = siblings
+    use skippy_model_artifact::selection::{gguf_variant_size_bytes, is_gguf_model_candidate};
+
+    let files = siblings
         .iter()
-        .filter_map(|(file, _size)| {
-            let lower = file.to_lowercase();
-            if !lower.ends_with(".gguf") {
-                return None;
-            }
-            if is_known_gguf_sidecar(file) {
-                return None;
-            }
-            if split_gguf_shard_info(file).is_some() && !is_split_gguf_first_shard(file) {
-                return None;
-            }
-            Some((
-                file.clone(),
-                gguf_variant_size_bytes_from_siblings(file, siblings),
-            ))
+        .map(|(path, size_bytes)| ModelArtifactFile {
+            path: path.clone(),
+            size_bytes: *size_bytes,
+            sha256: None,
         })
-        .collect();
-
-    if available_bytes == 0 {
-        gguf_candidates.sort_by(|left, right| {
-            file_preference_score(&left.0)
-                .cmp(&file_preference_score(&right.0))
-                .then_with(|| left.0.cmp(&right.0))
-        });
-        return gguf_candidates;
-    }
-
+        .collect::<Vec<_>>();
+    let mut gguf_candidates = files
+        .iter()
+        .filter(|file| is_gguf_model_candidate(&file.path, &files))
+        .map(|file| {
+            (
+                file.path.clone(),
+                gguf_variant_size_bytes(&file.path, &files),
+            )
+        })
+        .collect::<Vec<_>>();
     gguf_candidates.sort_by(|left, right| {
         compare_gguf_candidates_by_fit(&left.0, left.1, &right.0, right.1, available_bytes)
     });
@@ -523,32 +487,10 @@ async fn select_default_hf_file_fit_aware(
     siblings: &[(String, Option<u64>)],
     fit_budget_bytes: u64,
 ) -> Option<String> {
-    let mut gguf_candidates: Vec<(String, Option<u64>)> = Vec::new();
-    for (file, api_size) in siblings {
-        let lower = file.to_lowercase();
-        if !lower.ends_with(".gguf") {
-            continue;
-        }
-        if is_known_gguf_sidecar(file) {
-            continue;
-        }
-        if lower.contains("-000") && !lower.contains("-00001-of-") {
-            continue;
-        }
-        gguf_candidates.push((file.clone(), *api_size));
-    }
-    if gguf_candidates.is_empty() {
-        return None;
-    }
-
     let available_bytes = fit_budget_bytes;
-    if available_bytes == 0 {
-        gguf_candidates.sort_by(|left, right| {
-            file_preference_score(&left.0)
-                .cmp(&file_preference_score(&right.0))
-                .then_with(|| left.0.cmp(&right.0))
-        });
-        return gguf_candidates.first().map(|(f, _)| f.clone());
+    let gguf_candidates = collect_show_gguf_variants_from_siblings(siblings, available_bytes);
+    if gguf_candidates.is_empty() || available_bytes == 0 {
+        return gguf_candidates.into_iter().next().map(|(file, _)| file);
     }
 
     // Prefer API-provided sizes; only fall back to HEAD for files missing a size.
@@ -593,10 +535,6 @@ fn pick_gguf_for_budget(
         compare_gguf_candidates_by_fit(&left.0, left.1, &right.0, right.1, available_bytes)
     });
     scored.first().map(|(file, _)| file.clone())
-}
-
-fn repo_prefers_gguf_only(repo: &str) -> bool {
-    skippy_model_artifact::selection::repo_prefers_gguf_only(repo)
 }
 
 #[cfg(test)]
@@ -674,63 +612,27 @@ pub(crate) async fn resolve_huggingface_file_from_sibling_entries(
     sibling_entries: &[(String, Option<u64>)],
     fit_budget_bytes: u64,
 ) -> Result<String> {
-    if file.ends_with(".gguf")
-        || file.ends_with(".safetensors")
-        || file.ends_with(".safetensors.index.json")
-    {
-        return Ok(file.to_string());
-    }
-
     let revision = revision.unwrap_or("main");
-    let siblings: Vec<String> = sibling_entries.iter().map(|(f, _)| f.clone()).collect();
-    let has_mlx_weights = siblings
-        .iter()
-        .any(|entry| entry == "model.safetensors" || is_split_mlx_first_shard(entry));
-
     if file.is_empty() {
-        let gguf_only = repo_prefers_gguf_only(repo);
-        if gguf_only {
-            if let Some(resolved) = select_default_hf_file_fit_aware(
-                repo,
-                Some(revision),
-                sibling_entries,
-                fit_budget_bytes,
-            )
-            .await
-            {
-                return Ok(resolved);
-            }
-            bail!("No GGUF model files found in {repo}@{revision}.");
-        }
-
-        if let Some(resolved) = select_default_hf_file_from_siblings(&siblings) {
-            return Ok(resolved);
-        }
-
-        if let Some(resolved) = select_default_hf_file_fit_aware(
+        return select_default_hf_file_fit_aware(
             repo,
             Some(revision),
             sibling_entries,
             fit_budget_bytes,
         )
         .await
-        {
-            return Ok(resolved);
-        }
+        .with_context(|| {
+            format!(
+                "no runnable GGUF model files found in {repo}@{revision}. {}",
+                skippy_model_ref::SAFETENSORS_SERVING_GUIDANCE
+            )
+        });
     }
-    if file == "model" && has_mlx_weights {
-        bail!(
-            "MLX shorthand '/model' is not supported. Use '{repo}' or a full file ref like '{repo}/model.safetensors'."
-        );
-    }
-
-    if let Some(resolved) = resolve_hf_file_from_siblings(file, &siblings) {
-        return Ok(resolved);
-    }
-
-    bail!(
-        "No model file matching stem '{file}' in {repo}@{revision}. Use a full ref like org/repo/file.gguf or org/repo/model.safetensors."
-    )
+    let siblings = sibling_entries
+        .iter()
+        .map(|(path, _)| ModelArtifactFile::new(path))
+        .collect::<Vec<_>>();
+    select_primary_artifact_file(Some(file), &siblings).map(|file| file.path)
 }
 
 async fn resolve_huggingface_file(
@@ -762,7 +664,7 @@ pub async fn remote_hf_size_label_with_api(
     revision: Option<&str>,
     file: &str,
 ) -> Option<String> {
-    if split_gguf_shard_info(file).is_some() {
+    if skippy_model_ref::split_gguf_shard_info(file).is_some() {
         let tree_path = Path::new(file)
             .parent()
             .and_then(|value| value.to_str())

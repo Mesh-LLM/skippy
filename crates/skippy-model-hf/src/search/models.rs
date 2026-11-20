@@ -1,8 +1,7 @@
 use crate::capabilities;
 use crate::details::{
-    gguf_variant_size_bytes_from_siblings, is_known_gguf_sidecar,
-    matching_remote_catalog_model_for_huggingface, merge_capabilities,
-    remote_hf_size_label_with_api,
+    gguf_variant_size_bytes_from_siblings, matching_remote_catalog_model_for_huggingface,
+    merge_capabilities, remote_hf_size_label_with_api,
 };
 use crate::remote_catalog;
 use skippy_model_artifact::capabilities::ModelCapabilities;
@@ -37,18 +36,6 @@ pub enum SearchProgress {
 pub trait SearchObserver {
     fn progress(&mut self, progress: SearchProgress);
     fn inspection_warning(&mut self, error: &anyhow::Error) -> Result<()>;
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RepoArtifactKind {
-    Gguf,
-    Mlx,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct RepoArtifactCandidate {
-    kind: RepoArtifactKind,
-    file: String,
 }
 
 pub fn search_catalog_models(query: &str) -> Result<Vec<remote_catalog::RemoteCatalogModel>> {
@@ -98,7 +85,7 @@ pub async fn search_huggingface(
     for _ in 0..SEARCH_CONCURRENCY.min(total.max(1)) {
         if let Some((index, repo)) = pending.next() {
             let api = api.clone();
-            join_set.spawn(async move { (index, build_search_hit(api, repo, filter).await) });
+            join_set.spawn(async move { (index, build_search_hit(api, repo).await) });
         }
     }
 
@@ -113,7 +100,7 @@ pub async fn search_huggingface(
         }
         if let Some((next_index, repo)) = pending.next() {
             let api = api.clone();
-            join_set.spawn(async move { (next_index, build_search_hit(api, repo, filter).await) });
+            join_set.spawn(async move { (next_index, build_search_hit(api, repo).await) });
         }
     }
 
@@ -137,11 +124,7 @@ fn inspected_hit(
     }
 }
 
-async fn build_search_hit(
-    api: hf_hub::HFClient,
-    repo: ModelInfo,
-    filter: SearchArtifactFilter,
-) -> Result<Option<SearchHit>> {
+async fn build_search_hit(api: hf_hub::HFClient, repo: ModelInfo) -> Result<Option<SearchHit>> {
     let repo_downloads = repo.downloads;
     let repo_likes = repo.likes;
     let detail = repo;
@@ -155,39 +138,24 @@ async fn build_search_hit(
         .iter()
         .map(|sibling| (sibling.rfilename.clone(), sibling.size))
         .collect();
-    let repo_has_mlx_weights = sibling_names.iter().any(|file| is_mlx_weight_file(file));
     let candidates = collect_repo_artifact_candidates(&sibling_names);
-    if candidates.is_empty() {
+    let Some(candidate) = candidates.first() else {
         return Ok(None);
-    }
+    };
 
-    let matching_candidates: Vec<_> = candidates
-        .into_iter()
-        .filter(|candidate| match filter {
-            SearchArtifactFilter::Gguf => candidate.kind == RepoArtifactKind::Gguf,
-            SearchArtifactFilter::Mlx => {
-                candidate.kind == RepoArtifactKind::Mlx && repo_has_mlx_weights
-            }
-        })
-        .collect();
-    if matching_candidates.is_empty() {
-        return Ok(None);
-    }
-
-    let candidate = &matching_candidates[0];
-    let variant_count = search_hit_variant_count(filter, &repo_id, &matching_candidates);
+    let variant_count = Some(gguf_variant_count_from_candidates(&repo_id, &candidates));
     let remote_metadata = capabilities::fetch_remote_hf_metadata_jsons(&repo_id, None).await;
-    let catalog = matching_remote_catalog_model_for_huggingface(&repo_id, None, &candidate.file);
+    let catalog = matching_remote_catalog_model_for_huggingface(&repo_id, None, candidate);
     let size_label = match catalog {
         Some(ref model) => model.size.clone(),
-        None => match size_label_from_sibling_entries(&candidate.file, &sibling_size_entries) {
+        None => match size_label_from_sibling_entries(candidate, &sibling_size_entries) {
             Some(size_label) => Some(size_label),
-            None => remote_hf_size_label_with_api(&api, &repo_id, None, &candidate.file).await,
+            None => remote_hf_size_label_with_api(&api, &repo_id, None, candidate).await,
         },
     };
     let remote_caps = capabilities::infer_remote_hf_capabilities_with_metadata(
         &repo_id,
-        &candidate.file,
+        candidate,
         Some(&sibling_names),
         &remote_metadata,
     );
@@ -200,8 +168,8 @@ async fn build_search_hit(
     };
     Ok(Some(SearchHit {
         repo_id: repo_id.clone(),
-        kind: repo_artifact_kind_label(candidate.kind),
-        exact_ref: display_exact_ref(&repo_id, candidate.kind, &candidate.file),
+        kind: "🦙 GGUF",
+        exact_ref: display_exact_ref(&repo_id, candidate),
         variant_count,
         size_label,
         downloads: detail.downloads.or(repo_downloads),
@@ -241,20 +209,10 @@ fn approx_parameter_count_b(hit: &SearchHit) -> f64 {
     .unwrap_or(-1.0)
 }
 
-fn repo_artifact_kind_label(kind: RepoArtifactKind) -> &'static str {
-    match kind {
-        RepoArtifactKind::Gguf => "🦙 GGUF",
-        RepoArtifactKind::Mlx => "🍎 MLX",
-    }
-}
-
-fn display_exact_ref(repo: &str, kind: RepoArtifactKind, file: &str) -> String {
-    match kind {
-        RepoArtifactKind::Gguf => match quant_selector_from_gguf_file(file) {
-            Some(selector) => format!("{repo}:{selector}"),
-            None => format!("{repo}/{}", display_ref_file(file)),
-        },
-        RepoArtifactKind::Mlx => repo.to_string(),
+fn display_exact_ref(repo: &str, file: &str) -> String {
+    match quant_selector_from_gguf_file(file) {
+        Some(selector) => format!("{repo}:{selector}"),
+        None => format!("{repo}/{}", display_ref_file(file)),
     }
 }
 
@@ -272,12 +230,6 @@ fn display_ref_file(file: &str) -> String {
         return without_ext.to_string();
     }
 
-    if file == "model.safetensors" {
-        return "model".to_string();
-    }
-    if is_split_mlx_first_shard(file) {
-        return "model".to_string();
-    }
     file.to_string()
 }
 
@@ -289,118 +241,35 @@ fn size_label_from_sibling_entries(
         .map(skippy_model_artifact::sizes::format_size_bytes)
 }
 
-fn collect_repo_artifact_candidates(siblings: &[String]) -> Vec<RepoArtifactCandidate> {
-    let mut gguf = Vec::new();
-    let mut mlx = Vec::new();
-    for sibling in siblings {
-        if sibling.ends_with(".gguf") {
-            if is_known_gguf_sidecar(sibling) {
-                continue;
-            }
-            if sibling.contains("-000") && !sibling.contains("-00001-of-") {
-                continue;
-            }
-            gguf.push(RepoArtifactCandidate {
-                kind: RepoArtifactKind::Gguf,
-                file: sibling.clone(),
-            });
-            continue;
-        }
-        if sibling == "model.safetensors.index.json" || sibling == "model.safetensors" {
-            if sibling == "model.safetensors.index.json" {
-                continue;
-            }
-            mlx.push(RepoArtifactCandidate {
-                kind: RepoArtifactKind::Mlx,
-                file: sibling.clone(),
-            });
-            continue;
-        }
-        if is_split_mlx_weight_file(sibling) {
-            if !is_split_mlx_first_shard(sibling) {
-                continue;
-            }
-            mlx.push(RepoArtifactCandidate {
-                kind: RepoArtifactKind::Mlx,
-                file: sibling.clone(),
-            });
-        }
-    }
-    gguf.sort_by(|left, right| {
-        file_preference_score(&left.file)
-            .cmp(&file_preference_score(&right.file))
-            .then_with(|| left.file.cmp(&right.file))
+fn collect_repo_artifact_candidates(siblings: &[String]) -> Vec<String> {
+    use skippy_model_artifact::{ModelArtifactFile, selection::is_gguf_model_candidate};
+
+    let files = siblings
+        .iter()
+        .cloned()
+        .map(ModelArtifactFile::new)
+        .collect::<Vec<_>>();
+    let mut candidates = siblings
+        .iter()
+        .filter(|file| is_gguf_model_candidate(file, &files))
+        .cloned()
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        file_preference_score(left)
+            .cmp(&file_preference_score(right))
+            .then_with(|| left.cmp(right))
     });
-    mlx.sort_by(|left, right| {
-        mlx_candidate_rank(&left.file)
-            .cmp(&mlx_candidate_rank(&right.file))
-            .then_with(|| left.file.cmp(&right.file))
-    });
-    if !mlx.is_empty() {
-        let best_rank = mlx_candidate_rank(&mlx[0].file);
-        mlx.retain(|candidate| mlx_candidate_rank(&candidate.file) == best_rank);
-    }
-    gguf.extend(mlx);
-    gguf
+    candidates
 }
 
-fn gguf_variant_count_from_candidates(repo: &str, candidates: &[RepoArtifactCandidate]) -> usize {
+fn gguf_variant_count_from_candidates(repo: &str, candidates: &[String]) -> usize {
     candidates
         .iter()
-        .filter(|candidate| candidate.kind == RepoArtifactKind::Gguf)
-        .filter_map(|candidate| {
-            quant_selector_from_gguf_file(&candidate.file)
-                .map(|_| display_exact_ref(repo, RepoArtifactKind::Gguf, &candidate.file))
+        .filter_map(|file| {
+            quant_selector_from_gguf_file(file).map(|_| display_exact_ref(repo, file))
         })
         .collect::<HashSet<_>>()
         .len()
-}
-
-fn search_hit_variant_count(
-    filter: SearchArtifactFilter,
-    repo: &str,
-    candidates: &[RepoArtifactCandidate],
-) -> Option<usize> {
-    match filter {
-        SearchArtifactFilter::Gguf => Some(gguf_variant_count_from_candidates(repo, candidates)),
-        SearchArtifactFilter::Mlx => None,
-    }
-}
-
-fn is_split_mlx_weight_file(file: &str) -> bool {
-    let Some(rest) = file.strip_prefix("model-") else {
-        return false;
-    };
-    let Some(rest) = rest.strip_suffix(".safetensors") else {
-        return false;
-    };
-    let Some((left, right)) = rest.split_once("-of-") else {
-        return false;
-    };
-    left.len() == 5
-        && right.len() == 5
-        && left.bytes().all(|b| b.is_ascii_digit())
-        && right.bytes().all(|b| b.is_ascii_digit())
-}
-
-fn is_split_mlx_first_shard(file: &str) -> bool {
-    is_split_mlx_weight_file(file) && file.starts_with("model-00001-of-")
-}
-
-fn is_mlx_weight_file(file: &str) -> bool {
-    file == "model.safetensors" || is_split_mlx_weight_file(file)
-}
-
-fn mlx_candidate_rank(file: &str) -> usize {
-    if file == "model.safetensors" {
-        0
-    } else if is_split_mlx_first_shard(file) {
-        1
-    } else if file == "model.safetensors.index.json" {
-        2
-    } else {
-        3
-    }
 }
 
 #[cfg(test)]
@@ -490,30 +359,27 @@ mod tests {
     }
 
     #[test]
-    fn collect_repo_artifact_candidates_prefers_model_safetensors_over_index() {
+    fn collect_repo_artifact_candidates_excludes_checkpoints() {
         let siblings = vec![
             "model.safetensors".to_string(),
             "model.safetensors.index.json".to_string(),
         ];
         let candidates = collect_repo_artifact_candidates(&siblings);
-        assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].kind, RepoArtifactKind::Mlx);
-        assert_eq!(candidates[0].file, "model.safetensors");
+        assert!(candidates.is_empty());
     }
 
     #[test]
     fn collect_repo_artifact_candidates_keeps_gguf_first_split_only() {
         let siblings = vec![
-            "GLM-5.1-UD-Q5_K_XL-00002-of-00013.gguf".to_string(),
-            "GLM-5.1-UD-Q5_K_XL-00001-of-00013.gguf".to_string(),
+            "GLM-5.1-UD-Q5_K_XL-00002-of-00002.gguf".to_string(),
+            "GLM-5.1-UD-Q5_K_XL-00001-of-00002.gguf".to_string(),
             "GLM-5.1-UD-Q4_K_M.gguf".to_string(),
         ];
         let candidates = collect_repo_artifact_candidates(&siblings);
-        let files: Vec<_> = candidates.into_iter().map(|c| c.file).collect();
         assert_eq!(
-            files,
+            candidates,
             vec![
-                "GLM-5.1-UD-Q5_K_XL-00001-of-00013.gguf".to_string(),
+                "GLM-5.1-UD-Q5_K_XL-00001-of-00002.gguf".to_string(),
                 "GLM-5.1-UD-Q4_K_M.gguf".to_string(),
             ]
         );
@@ -527,8 +393,10 @@ mod tests {
             "gemma-4-26B-A4B-it-UD-Q3_K_S.gguf".to_string(),
         ];
         let candidates = collect_repo_artifact_candidates(&siblings);
-        let files: Vec<_> = candidates.into_iter().map(|c| c.file).collect();
-        assert_eq!(files, vec!["gemma-4-26B-A4B-it-UD-Q3_K_S.gguf".to_string()]);
+        assert_eq!(
+            candidates,
+            vec!["gemma-4-26B-A4B-it-UD-Q3_K_S.gguf".to_string()]
+        );
     }
 
     #[test]
@@ -544,36 +412,6 @@ mod tests {
         assert_eq!(
             gguf_variant_count_from_candidates("unsloth/Qwen3.6-35B-A3B-GGUF", &candidates),
             3
-        );
-    }
-
-    #[test]
-    fn search_hit_variant_count_only_applies_to_gguf_results() {
-        let gguf_candidates = collect_repo_artifact_candidates(&[
-            "BF16/Qwen3.6-35B-A3B-BF16-00001-of-00002.gguf".to_string(),
-            "BF16/Qwen3.6-35B-A3B-BF16-00002-of-00002.gguf".to_string(),
-            "Qwen3.6-35B-A3B-Q4_K_M.gguf".to_string(),
-        ]);
-        assert_eq!(
-            search_hit_variant_count(
-                SearchArtifactFilter::Gguf,
-                "unsloth/Qwen3.6-35B-A3B-GGUF",
-                &gguf_candidates
-            ),
-            Some(2)
-        );
-
-        let mlx_candidates = collect_repo_artifact_candidates(&[
-            "model.safetensors".to_string(),
-            "model.safetensors.index.json".to_string(),
-        ]);
-        assert_eq!(
-            search_hit_variant_count(
-                SearchArtifactFilter::Mlx,
-                "mlx-community/Foo-4bit",
-                &mlx_candidates
-            ),
-            None
         );
     }
 
@@ -626,16 +464,11 @@ mod tests {
     }
 
     #[test]
-    fn display_ref_file_uses_gguf_and_mlx_stems() {
+    fn display_ref_file_uses_gguf_stems() {
         assert_eq!(display_ref_file("Qwen3-8B-Q4_K_M.gguf"), "Qwen3-8B-Q4_K_M");
         assert_eq!(
-            display_ref_file("GLM-5.1-UD-Q5_K_XL-00001-of-00013.gguf"),
+            display_ref_file("GLM-5.1-UD-Q5_K_XL-00001-of-00002.gguf"),
             "GLM-5.1-UD-Q5_K_XL"
-        );
-        assert_eq!(display_ref_file("model.safetensors"), "model");
-        assert_eq!(
-            display_ref_file("model-00001-of-00048.safetensors"),
-            "model"
         );
     }
 
@@ -644,7 +477,6 @@ mod tests {
         assert_eq!(
             display_exact_ref(
                 "unsloth/gemma-4-26B-A4B-it-GGUF",
-                RepoArtifactKind::Gguf,
                 "gemma-4-26B-A4B-it-UD-Q3_K_S-00001-of-00009.gguf"
             ),
             "unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q3_K_S"
@@ -652,54 +484,10 @@ mod tests {
         assert_eq!(
             display_exact_ref(
                 "QuantFactory/Meta-Llama-3.1-8B-Instruct-GGUF",
-                RepoArtifactKind::Gguf,
                 "Meta-Llama-3.1-8B-Instruct.Q4_K_M.gguf"
             ),
             "QuantFactory/Meta-Llama-3.1-8B-Instruct-GGUF:Q4_K_M"
         );
-    }
-
-    #[test]
-    fn display_exact_ref_prefers_repo_ref_for_mlx() {
-        assert_eq!(
-            display_exact_ref(
-                "mlx-community/Llama-3.2-3B-Instruct-4bit",
-                RepoArtifactKind::Mlx,
-                "model.safetensors"
-            ),
-            "mlx-community/Llama-3.2-3B-Instruct-4bit"
-        );
-    }
-
-    #[test]
-    fn mlx_identification_requires_weight_files() {
-        assert!(is_mlx_weight_file("model.safetensors"));
-        assert!(is_mlx_weight_file("model-00001-of-00008.safetensors"));
-        assert!(is_mlx_weight_file("model-00008-of-00008.safetensors"));
-        assert!(!is_mlx_weight_file("model.safetensors.index.json"));
-    }
-
-    #[test]
-    fn split_mlx_candidates_emit_first_shard() {
-        let siblings = vec![
-            "model-00002-of-00004.safetensors".to_string(),
-            "model-00001-of-00004.safetensors".to_string(),
-            "model.safetensors.index.json".to_string(),
-        ];
-        let candidates = collect_repo_artifact_candidates(&siblings);
-        let files: Vec<_> = candidates.into_iter().map(|c| c.file).collect();
-        assert_eq!(files, vec!["model-00001-of-00004.safetensors".to_string()]);
-    }
-
-    #[test]
-    fn mlx_candidates_only_include_model_safetensors() {
-        let siblings = vec![
-            "model.safetensors".to_string(),
-            "model.safetensors.index.json".to_string(),
-        ];
-        let candidates = collect_repo_artifact_candidates(&siblings);
-        let files: Vec<_> = candidates.into_iter().map(|c| c.file).collect();
-        assert_eq!(files, vec!["model.safetensors".to_string()]);
     }
 
     #[tokio::test]
@@ -729,36 +517,6 @@ mod tests {
                 .iter()
                 .all(|hit| !hit.repo_id.is_empty() && !hit.exact_ref.is_empty()),
             "expected populated repo ids and refs, got {results:?}"
-        );
-
-        let events = events.lock().unwrap().clone();
-        assert_progress_sequence(&events);
-    }
-
-    #[tokio::test]
-    #[ignore = "live Hugging Face search; run explicitly when validating hub integration"]
-    async fn live_search_huggingface_mlx_returns_results_and_reports_progress() {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let results = search_huggingface(
-            "llama",
-            5,
-            SearchArtifactFilter::Mlx,
-            SearchSort::Trending,
-            &mut Observer(Arc::clone(&events)),
-        )
-        .await
-        .expect("live mlx search should succeed");
-
-        assert!(!results.is_empty(), "expected at least one live mlx result");
-        assert!(
-            results.iter().all(|hit| hit.kind == "🍎 MLX"),
-            "expected only MLX hits, got {results:?}"
-        );
-        assert!(
-            results
-                .iter()
-                .all(|hit| hit.repo_id == hit.exact_ref || hit.exact_ref.starts_with(&hit.repo_id)),
-            "expected mlx refs to stay repo-shaped, got {results:?}"
         );
 
         let events = events.lock().unwrap().clone();

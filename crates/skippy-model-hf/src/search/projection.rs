@@ -21,7 +21,7 @@ pub fn search_catalog_json_payload(
             json!({
                 "name": model.name,
                 "repo_id": model.source_repo(),
-                "type": catalog_model_kind_code(model),
+                "type": "gguf",
                 "size": model.size,
                 "description": model.description,
                 "fit": model.size.as_deref().and_then(|size| fit_code_for_size_label(size, fit_budget_bytes)),
@@ -54,7 +54,7 @@ pub fn search_huggingface_json_payload(
             json!({
                 "repo_id": result.repo_id,
                 "repo_url": huggingface_repo_url(&result.repo_id),
-                "type": model_kind_code(result.kind),
+                "type": "gguf",
                 "variant_count": result.variant_count,
                 "size": result.size_label,
                 "downloads": result.downloads,
@@ -88,7 +88,6 @@ pub fn search_huggingface_json_payload(
 fn search_filter_name(filter: SearchArtifactFilter) -> &'static str {
     match filter {
         SearchArtifactFilter::Gguf => "gguf",
-        SearchArtifactFilter::Mlx => "mlx",
     }
 }
 
@@ -145,24 +144,4 @@ fn fit_code_for_size_label(size_label: &str, fit_budget_bytes: u64) -> Option<&'
 
 fn huggingface_repo_url(repo_id: &str) -> String {
     format!("https://huggingface.co/{repo_id}")
-}
-
-fn model_kind_code(kind: &str) -> &'static str {
-    if kind.to_ascii_lowercase().contains("mlx") {
-        "mlx"
-    } else {
-        "gguf"
-    }
-}
-
-fn catalog_model_kind_code(model: &remote_catalog::RemoteCatalogModel) -> &'static str {
-    if model.source_file().ends_with("model.safetensors")
-        || model
-            .source_file()
-            .ends_with("model.safetensors.index.json")
-    {
-        "mlx"
-    } else {
-        "gguf"
-    }
 }

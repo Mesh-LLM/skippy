@@ -235,7 +235,7 @@ pub struct ServeOpenAiArgs {
     /// Prepared stage configuration; mutually exclusive with --model-path and --model.
     #[arg(long, conflicts_with = "model_path")]
     pub config: Option<PathBuf>,
-    /// Local GGUF (first shard) or safetensors checkpoint to prepare and serve.
+    /// Local GGUF file to prepare and serve (first shard for multipart models).
     #[arg(long, conflicts_with = "config")]
     pub model_path: Option<PathBuf>,
     /// Context size for a local model. Defaults to the VRAM-aware model plan (up to 128k).
@@ -244,22 +244,9 @@ pub struct ServeOpenAiArgs {
     /// GPU layers for a local model; -1 offloads all supported layers.
     #[arg(long, conflicts_with = "config", allow_hyphen_values = true)]
     pub n_gpu_layers: Option<i32>,
-    /// Quantize SafeTensors weights while loading; defaults to preserve.
-    #[arg(
-        long = "quant",
-        visible_alias = "checkpoint-quantization",
-        conflicts_with = "config"
-    )]
-    pub checkpoint_quantization: Option<String>,
-    /// Importance matrix for low-bit SafeTensors checkpoint quantization.
-    #[arg(long, conflicts_with = "config")]
-    pub checkpoint_imatrix: Option<PathBuf>,
     /// Multimodal projector GGUF; otherwise use a matching installed sidecar.
     #[arg(long, conflicts_with = "config")]
     pub mmproj: Option<PathBuf>,
-    /// Optional advisory digest cache directory for local checkpoint files.
-    #[arg(long, conflicts_with = "config")]
-    pub hash_cache: Option<PathBuf>,
     #[arg(long)]
     pub topology: Option<PathBuf>,
     /// Public API address (default: 127.0.0.1:9337); in worker mode,
@@ -559,7 +546,7 @@ mod tests {
             "search",
             "qwen",
             "vision",
-            "--mlx",
+            "--gguf",
             "--catalog",
             "--sort",
             "parameters-desc",
@@ -570,7 +557,7 @@ mod tests {
         };
         let ModelCommand::Search {
             query,
-            mlx,
+            gguf,
             sort,
             catalog,
             ..
@@ -579,7 +566,7 @@ mod tests {
             panic!("expected model search");
         };
         assert_eq!(query, ["qwen", "vision"]);
-        assert!(mlx);
+        assert!(gguf);
         assert_eq!(
             sort,
             skippy_commands::models::cli::ModelSearchSort::ParametersDesc
@@ -649,9 +636,7 @@ mod tests {
             assert_eq!(sort, expected);
             assert!(json);
         }
-        assert!(
-            Cli::try_parse_from(["skippy", "models", "search", "qwen", "--mlx", "--gguf"]).is_err()
-        );
+        assert!(Cli::try_parse_from(["skippy", "models", "search", "qwen", "--mlx"]).is_err());
     }
 
     #[test]

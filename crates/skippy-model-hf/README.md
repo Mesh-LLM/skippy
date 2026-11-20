@@ -87,7 +87,7 @@ unchanged.
 - list model repository files at a resolved revision
 - download the selected artifact file set
 - download complete SafeTensors checkpoints (indexed shards, config, tokenizer,
-  and available sidecars) while returning named snapshot paths to model loaders
+  and available sidecars) for offline conversion using named snapshot paths
 - locate the default Hugging Face cache directory
 - derive `HfModelIdentity` and `ModelIdentity` from cached snapshot paths
 - scan local GGUF inventory and cache compact metadata for both products

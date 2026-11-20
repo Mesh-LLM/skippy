@@ -28,9 +28,7 @@ pub use output::{
     suppress_native_logs,
 };
 
-use parser_policy::{
-    ALL_FORWARDING_CATEGORIES, MODEL_CATEGORY, MODEL_FALLBACK_NOTE, category_mask,
-};
+use parser_policy::{ALL_FORWARDING_CATEGORIES, MODEL_CATEGORY, category_mask};
 pub use parser_policy::{NativeLogParserMode, NativeLogParserPolicy};
 
 #[cfg(test)]
@@ -834,15 +832,6 @@ fn sanitize_native_log_note(note: &str) -> String {
 
 pub fn write_native_log_note(note: impl AsRef<str>) {
     write_native_log_note_with_mask(note, MODEL_CATEGORY);
-}
-
-/// Writes a native-log note that remains visible in `auto` mode even when
-/// structured model-open events cover ordinary parsed model summaries.
-///
-/// This is reserved for source-specific compatibility gaps such as the
-/// SafeTensors loader, which does not enter the native model-open callback.
-pub(crate) fn write_native_log_fallback_note(note: impl AsRef<str>) {
-    write_native_log_note_with_mask(note, MODEL_FALLBACK_NOTE);
 }
 
 fn write_native_log_note_with_mask(note: impl AsRef<str>, required_mask: u8) {
