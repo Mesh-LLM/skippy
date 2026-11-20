@@ -51,3 +51,40 @@ owns publisher-declared live-KV dtype selection and model compatibility fallback
 [`speculative`](src/speculative.rs) owns installed sibling draft discovery and
 conservative automatic pairing. Standalone Skippy and embedding applications consume these same
 policies. Explicit caller settings take precedence.
+
+### Several local models on one listener
+
+Build a `serving::multi_model::LocalModelDefinition` for each served ID and
+load request, then call `MultiModelServer::load`. Duplicate IDs fail before
+load. A failed eager load releases already loaded models and leaves the
+listener unopened. Call `backend` for in-process inference or `serve` with a
+bound listener. Requests route to the exact ID and retain that model through
+stream completion. Supply a single public-listener policy when using HTTP
+exchange admission hooks. Model-specific execution hooks remain on each load
+request.
+
+Standalone example for `skippy serve-models --config serving.toml`:
+
+```toml
+version = 1
+bind_addr = "127.0.0.1:9337"
+
+[defaults]
+ctx_size = 4096
+
+[[models]]
+id = "small"
+path = "models/small.gguf"
+
+[models.settings]
+ctx_size = 2048
+
+[[models]]
+id = "large"
+path = "models/large.gguf"
+```
+
+Paths are relative to the config file. The `defaults` and
+`models.settings` tables accept the same per-model setting names as
+`serve`. An override takes precedence over a shared default. The existing
+single-model command and TOML remain available.

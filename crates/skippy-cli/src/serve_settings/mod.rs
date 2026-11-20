@@ -546,3 +546,47 @@ fn description(name: &str) -> Option<&'static str> {
         _ => None,
     }
 }
+
+pub(crate) fn parse_model_entry(
+    directory: &Path,
+    model_path: &Path,
+    id: &str,
+    options: BTreeMap<String, toml::Value>,
+) -> Result<Cli> {
+    let command = command();
+    let known = known_arguments(&command);
+    let mut settings = ServeSettings::default();
+    for (name, value) in options {
+        let name = name.replace('_', "-");
+        anyhow::ensure!(known.contains_key(&name), "unknown setting {name}");
+        anyhow::ensure!(
+            !matches!(
+                section(&name),
+                "settings" | "runtime" | "diagnostics" | "distributed" | "network"
+            ) && !matches!(
+                name.as_str(),
+                "model" | "model-path" | "model-id" | "bind-addr" | "prompt"
+            ),
+            "{name} is not a per-model setting"
+        );
+        let value = file_value(&name, serde_json::to_value(value)?, directory)?;
+        settings.insert(&name, value, format!("file:models.{id}"))?;
+    }
+    let mut argv = vec![
+        "skippy".into(),
+        "serve".into(),
+        format!("--model-id={id}").into(),
+        format!(
+            "--model-path={}",
+            model_path.to_str().context("model path must be UTF-8")?
+        )
+        .into(),
+    ];
+    settings.append_arguments(&mut argv)?;
+    let matches = command.try_get_matches_from(argv)?;
+    let mut cli = Cli::from_arg_matches(&matches)?;
+    if let Command::Serve(args) = &mut cli.command {
+        args.public.settings = settings;
+    }
+    Ok(cli)
+}

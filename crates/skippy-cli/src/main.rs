@@ -3,6 +3,7 @@ mod conversion;
 mod disk_cache;
 mod local_model;
 mod local_resource_planning;
+mod multi_model;
 mod native_logging;
 mod runtime;
 mod serve;
@@ -124,7 +125,10 @@ async fn run_main(
     let native_options = runtime::resolve_options(cli.native_runtime)?;
     #[cfg(feature = "dynamic-native-runtime")]
     if matches!(&cli.command, Command::Serve(args) if !args.print_effective_config || args.public.config.is_none())
-        || matches!(&cli.command, Command::PlanSplit(_))
+        || matches!(
+            &cli.command,
+            Command::PlanSplit(_) | Command::ServeModels { .. }
+        )
     {
         runtime::prepare_native_runtime(&native_options, automatic_runtime).await?;
     }
@@ -145,6 +149,7 @@ async fn run_main(
             .await?
         }
         Command::Serve(args) => serve::run(*args).await,
+        Command::ServeModels { config } => multi_model::run(config).await,
         Command::Models { command } => skippy_commands::models::run_standalone(&command).await,
         Command::PlanSplit(args) => skippy_commands::split::run(args.into()),
         Command::Runtime { command } => {

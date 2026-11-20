@@ -56,6 +56,12 @@ pub enum Command {
     Prompt(PromptArgs),
     /// Serve OpenAI and Anthropic APIs, or an explicitly selected stage transport.
     Serve(Box<ServeCommandArgs>),
+    /// Serve a versioned configuration of local models on one listener.
+    ServeModels {
+        /// Multi-model TOML file.
+        #[arg(long)]
+        config: PathBuf,
+    },
     ExampleConfig,
     /// Download models or inspect the shared Hugging Face cache.
     Models {
