@@ -17,6 +17,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+mod inspection;
+pub use inspection::{
+    InspectedPackage, PackageInspectionError, PackageInspectionPolicy, PackageInspectionSource,
+};
+
 /// Explicit storage and transport policy shared by standalone and embedded callers.
 /// The client factory is lazy: a complete cached snapshot never constructs a client.
 #[derive(Clone)]

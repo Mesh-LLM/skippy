@@ -1,4 +1,5 @@
 use std::ffi::CString;
+use std::num::NonZeroU32;
 use std::ptr;
 
 use anyhow::{Context, Result, anyhow};
@@ -6,8 +7,6 @@ use skippy_ffi::{
     LoadMode, MtpSource as RawMtpSource, RuntimeConfig as RawRuntimeConfig, TRISTATE_AUTO,
     TRISTATE_FALSE, TRISTATE_TRUE,
 };
-
-use crate::checkpoint::CheckpointQuantization;
 
 mod host_expert_layers;
 pub use host_expert_layers::HostExpertLayers;
@@ -117,13 +116,6 @@ pub struct RuntimeConfig {
     pub activation_export_identities: Vec<String>,
     /// Stable live-graph tensor bindings paired with exported planner identities.
     pub activation_export_bindings: Vec<String>,
-    /// Tensor type policy used when `StageModel::open` receives a SafeTensors checkpoint.
-    pub checkpoint_quantization: CheckpointQuantization,
-    /// Importance matrix used by quantization recipes that require calibration data.
-    pub checkpoint_imatrix: Option<std::path::PathBuf>,
-    /// Expected SHA-256 for `checkpoint_imatrix`. When set, the runtime verifies
-    /// the exact bytes that it passes to the importance-matrix parser.
-    pub checkpoint_imatrix_sha256: Option<String>,
     /// K/V cache backend offload. `None` preserves llama.cpp's derived
     /// default (offloaded); `Some` forces the value.
     pub kv_offload: Option<bool>,
@@ -134,6 +126,25 @@ pub struct RuntimeConfig {
     /// Sliding-window-attention full (unshifted) cache window. `None`
     /// preserves llama.cpp's built-in default (full).
     pub swa_full: Option<bool>,
+    /// Cells in the unified KV pool, which the lanes share; at least
+    /// `ctx_size`. `None` reserves `ctx_size` for every lane.
+    pub kv_pool_tokens: Option<NonZeroU32>,
+    /// Zero KV cells as the pool's high-water mark advances rather than all
+    /// at load. `None` and `Some(true)` are lazy wherever the cache supports
+    /// it; `Some(false)` zeroes the whole pool at load and keeps every page.
+    pub kv_lazy_clear: Option<bool>,
+    /// Hand the pages of free KV cells back to the system. `None` and
+    /// `Some(true)` release wherever the pool's memory is host-visible.
+    pub kv_release_pages: Option<bool>,
+    /// Read a unified pool through per-owner row lists. `None` and
+    /// `Some(true)` use them wherever the backend supports it; `Some(false)`
+    /// keeps ordinary attention over the whole pool.
+    pub kv_row_attention: Option<bool>,
+    /// Threads that sample the requests of one decode wave. `None` and
+    /// `Some(0)` use the calling thread plus as many pooled helpers as the
+    /// wave and the hardware allow; `Some(1)` samples on the calling thread
+    /// alone; any other value caps the calling thread plus helpers.
+    pub sample_threads: Option<u32>,
     /// Whether the backend offloads host tensor operations to device. `None`
     /// preserves llama.cpp's derived default (enabled).
     pub op_offload: Option<bool>,
@@ -156,7 +167,8 @@ pub struct RuntimeConfig {
     pub host_expert_layers: Option<HostExpertLayers>,
     /// Recurrent-state rollback depth for recurrent and hybrid models. A
     /// speculative plan sets it to its largest verify window so verify rolls
-    /// back in place; `0` keeps the native default.
+    /// back in place; `0` disables snapshots. Windows outside native retention
+    /// use the existing checkpoint/replay fallback.
     pub recurrent_rollback_tokens: u32,
 }
 
@@ -395,6 +407,11 @@ impl RuntimeConfig {
                 kv_offload: tristate(self.kv_offload),
                 kv_unified: tristate(self.kv_unified),
                 swa_full: tristate(self.swa_full),
+                kv_pool_tokens: self.kv_pool_tokens.map_or(0, NonZeroU32::get),
+                kv_lazy_clear: tristate(self.kv_lazy_clear),
+                kv_release_pages: tristate(self.kv_release_pages),
+                kv_row_attention: tristate(self.kv_row_attention),
+                sample_threads: self.sample_threads.unwrap_or(0),
                 op_offload: tristate(self.op_offload),
                 no_host_buffer: self.no_host_buffer,
                 check_tensors: self.check_tensors,
@@ -442,7 +459,7 @@ impl RuntimeConfig {
             .unwrap_or_else(|| default_n_batch_for_lane_count(self.lane_count));
         let n_ubatch = self.n_ubatch.unwrap_or(LLAMA_SERVER_DEFAULT_N_UBATCH);
         format!(
-            "stage_index={} layers={}..{} ctx={} lanes={} n_batch={} n_ubatch={} n_gpu_layers={} mmap={} mlock={} repack={} backend={} cache_k={} cache_v={} flash_attn={:?} load_mode={:?} source_stage={} terminal_stage={} mtp_source={:?} resident_tensor_count={} checkpoint_quantization={:?} host_expert_layers={}",
+            "stage_index={} layers={}..{} ctx={} lanes={} n_batch={} n_ubatch={} n_gpu_layers={} mmap={} mlock={} repack={} backend={} cache_k={} cache_v={} flash_attn={:?} load_mode={:?} source_stage={} terminal_stage={} mtp_source={:?} resident_tensor_count={} host_expert_layers={}",
             self.stage_index,
             self.layer_start,
             self.layer_end,
@@ -465,7 +482,6 @@ impl RuntimeConfig {
             self.is_terminal_stage(),
             self.mtp_source,
             self.resident_tensor_names.len(),
-            self.checkpoint_quantization,
             self.host_expert_layers
                 .map(|layers| format!("{}..{}", layers.start, layers.end))
                 .unwrap_or_else(|| "none".to_string()),
@@ -552,12 +568,15 @@ impl Default for RuntimeConfig {
             activation_import_bindings: Vec::new(),
             activation_export_identities: Vec::new(),
             activation_export_bindings: Vec::new(),
-            checkpoint_quantization: CheckpointQuantization::Preserve,
-            checkpoint_imatrix: None,
-            checkpoint_imatrix_sha256: None,
+
             kv_offload: None,
             kv_unified: None,
             swa_full: None,
+            kv_pool_tokens: None,
+            kv_lazy_clear: None,
+            kv_release_pages: None,
+            kv_row_attention: None,
+            sample_threads: None,
             op_offload: None,
             no_host_buffer: false,
             check_tensors: false,
@@ -582,6 +601,18 @@ pub fn parse_cache_type(value: &str) -> Result<u32> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn recurrent_rollback_zero_and_positive_values_reach_native_unchanged() -> anyhow::Result<()> {
+        for depth in [0, 1, 2, 16, 100] {
+            let config = super::RuntimeConfig {
+                recurrent_rollback_tokens: depth,
+                ..super::RuntimeConfig::default()
+            };
+            assert_eq!(config.as_raw()?.raw.recurrent_rollback_tokens, depth);
+        }
+        Ok(())
+    }
+
     use std::ffi::CStr;
 
     use super::*;
@@ -1134,6 +1165,34 @@ mod tests {
         assert_eq!(raw.kv_offload, skippy_ffi::TRISTATE_AUTO);
         assert_eq!(raw.kv_unified, skippy_ffi::TRISTATE_AUTO);
         assert_eq!(raw.swa_full, skippy_ffi::TRISTATE_AUTO);
+        assert_eq!(raw.kv_pool_tokens, 0);
+        assert_eq!(raw.kv_lazy_clear, skippy_ffi::TRISTATE_AUTO);
+        assert_eq!(raw.kv_release_pages, skippy_ffi::TRISTATE_AUTO);
+        assert_eq!(raw.kv_row_attention, skippy_ffi::TRISTATE_AUTO);
+        assert_eq!(raw.sample_threads, 0);
+        Ok(())
+    }
+
+    /// The pool and what it does with unused memory reach native as
+    /// configured: a shared pool by its cell count, each switch as a tristate.
+    #[test]
+    fn runtime_config_raw_carries_kv_memory_settings() -> anyhow::Result<()> {
+        let raw = RuntimeConfig {
+            kv_pool_tokens: NonZeroU32::new(32_768),
+            kv_lazy_clear: Some(false),
+            kv_release_pages: Some(false),
+            kv_row_attention: Some(true),
+            sample_threads: Some(6),
+            ..RuntimeConfig::default()
+        }
+        .as_raw()?
+        .raw;
+
+        assert_eq!(raw.kv_pool_tokens, 32_768);
+        assert_eq!(raw.kv_lazy_clear, skippy_ffi::TRISTATE_FALSE);
+        assert_eq!(raw.kv_release_pages, skippy_ffi::TRISTATE_FALSE);
+        assert_eq!(raw.kv_row_attention, skippy_ffi::TRISTATE_TRUE);
+        assert_eq!(raw.sample_threads, 6);
         Ok(())
     }
 

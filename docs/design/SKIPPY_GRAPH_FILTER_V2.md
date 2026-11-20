@@ -564,8 +564,8 @@ For every legal cut:
 - three-or-more-stage composition preserves live pass-through values and state
   lifecycle across adjacent boundaries.
 
-Run the same behavioral matrix through direct GGUF, callback/SafeTensors, and
-skippy-model-package v2 sources where those paths are supported.
+Run the same behavioral matrix through direct GGUF and skippy-model-package v2
+sources where those paths are supported.
 
 ### Cross-cutting product acceptance and KV validation
 

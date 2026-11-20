@@ -15,13 +15,7 @@ use skippy_serving::{
     telemetry::Telemetry,
 };
 
-use super::{InferenceOptions, ServingTelemetryOptions};
-
-/// Whether the caller needs the native model-open event path, even without a sink.
-pub enum ModelOpenEvents {
-    Disabled,
-    Enabled(Option<Arc<skippy_runtime::ModelOpenEventQueue>>),
-}
+use super::{InferenceOptions, ModelOpenEvents, ServingTelemetryOptions, model_open};
 
 /// Explicit inputs; product configuration, plugin loading and event storage stay outside Skippy.
 pub struct ModelLoadRequest {
@@ -75,7 +69,23 @@ impl ModelLoadRequest {
         Ok(loaded)
     }
 
+    /// Load and compose the backend. Observations are best-effort and the
+    /// returned result settles the load.
     pub fn load(mut self) -> Result<LoadedModelBackend> {
+        match std::mem::take(&mut self.open_events) {
+            ModelOpenEvents::Disabled => self.load_inner(SkippyRuntimeHandle::load),
+            ModelOpenEvents::Enabled(observer) => model_open::run_observed(observer, |queue| {
+                self.load_inner(|options| {
+                    SkippyRuntimeHandle::load_with_open_events(options, queue)
+                })
+            }),
+        }
+    }
+
+    fn load_inner(
+        mut self,
+        load_runtime: impl FnOnce(EmbeddedRuntimeOptions) -> Result<SkippyRuntimeHandle>,
+    ) -> Result<LoadedModelBackend> {
         self.size_recurrent_rollback();
         let config = self.runtime.config.clone();
         ensure!(
@@ -99,13 +109,7 @@ impl ModelLoadRequest {
             config.clone(),
             settings.level,
         );
-        let runtime = match self.open_events {
-            ModelOpenEvents::Disabled => SkippyRuntimeHandle::load(self.runtime),
-            ModelOpenEvents::Enabled(queue) => {
-                SkippyRuntimeHandle::load_with_open_events(self.runtime, queue)
-            }
-        }
-        .with_context(|| {
+        let runtime = load_runtime(self.runtime).with_context(|| {
             format!(
                 "load Skippy runtime for model {} from {:?}",
                 config.model_id, config.model_path
@@ -169,15 +173,19 @@ impl ModelLoadRequest {
 }
 
 impl ModelLoadRequest {
-    /// The target context is sized when it opens, before the DFlash draft
-    /// attaches, so the plan's rollback depth must travel with the runtime.
+    /// Size the target before any proposal model attaches or verification runs.
     fn size_recurrent_rollback(&mut self) {
-        if let Some(dflash) = &self.openai.speculative.dflash {
-            self.runtime.recurrent_rollback_tokens = self
-                .runtime
-                .recurrent_rollback_tokens
-                .max(dflash.recurrent_rollback_tokens());
-        }
+        let planned = self.openai.speculative.recurrent_rollback_tokens(
+            self.openai
+                .native_mtp_enabled
+                .then_some(self.openai.native_mtp_max_tokens),
+            self.openai
+                .draft_model_path
+                .as_ref()
+                .map(|_| self.openai.speculative_window),
+        );
+        self.runtime.recurrent_rollback_tokens =
+            self.runtime.recurrent_rollback_tokens.max(planned);
     }
 }
 
@@ -290,6 +298,24 @@ mod tests {
                 "cap {cap}"
             );
         }
+    }
+
+    #[test]
+    fn rollback_plan_covers_mtp_and_external_draft_before_open() {
+        let mut request = request();
+        request.openai.native_mtp_enabled = true;
+        request.openai.native_mtp_max_tokens = 9;
+        request.size_recurrent_rollback();
+        assert_eq!(request.runtime.recurrent_rollback_tokens, 10);
+
+        request.openai.native_mtp_enabled = false;
+        request.openai.draft_model_path = Some("draft.gguf".into());
+        request.openai.speculative_window = 12;
+        request.size_recurrent_rollback();
+        assert_eq!(request.runtime.recurrent_rollback_tokens, 12);
+        request.runtime.recurrent_rollback_tokens = 20;
+        request.size_recurrent_rollback();
+        assert_eq!(request.runtime.recurrent_rollback_tokens, 20);
     }
 
     #[test]

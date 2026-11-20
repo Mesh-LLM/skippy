@@ -8,10 +8,9 @@ pub(super) const MODEL_CATEGORY: u8 = 1 << 1;
 const MEMORY_CATEGORY: u8 = 1 << 2;
 const KV_CACHE_CATEGORY: u8 = 1 << 3;
 const TOKENIZER_CATEGORY: u8 = 1 << 4;
-pub(super) const MODEL_FALLBACK_NOTE: u8 = 1 << 5;
 pub(super) const ALL_PRESENTATION_CATEGORIES: u8 =
     BACKEND_CATEGORY | MODEL_CATEGORY | MEMORY_CATEGORY | KV_CACHE_CATEGORY | TOKENIZER_CATEGORY;
-pub(super) const ALL_FORWARDING_CATEGORIES: u8 = ALL_PRESENTATION_CATEGORIES | MODEL_FALLBACK_NOTE;
+pub(super) const ALL_FORWARDING_CATEGORIES: u8 = ALL_PRESENTATION_CATEGORIES;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeLogParserMode {
@@ -32,16 +31,13 @@ impl NativeLogParserPolicy {
     /// `Enabled` forwards every category as an explicit debug aid and
     /// `Disabled` forwards none. `Auto` is structured-first: a category is
     /// forwarded only when the loaded runtime cannot report it through a
-    /// confirmed structured event family. A dedicated SafeTensors
-    /// compatibility note remains enabled without exposing every parsed model
-    /// summary for event-capable GGUF opens.
+    /// confirmed structured event family.
     pub fn new(mode: NativeLogParserMode, capabilities: &crate::CapabilityReport) -> Self {
         let forwarding_mask = match mode {
             NativeLogParserMode::Enabled => ALL_FORWARDING_CATEGORIES,
             NativeLogParserMode::Disabled => 0,
             NativeLogParserMode::Auto => {
-                (ALL_PRESENTATION_CATEGORIES & !structured_coverage(capabilities))
-                    | MODEL_FALLBACK_NOTE
+                ALL_PRESENTATION_CATEGORIES & !structured_coverage(capabilities)
             }
         };
         Self { forwarding_mask }
@@ -49,12 +45,6 @@ impl NativeLogParserPolicy {
 
     pub fn forwards(self, category: &str) -> bool {
         category_mask(category).is_some_and(|mask| self.forwarding_mask & mask != 0)
-    }
-
-    /// Returns whether the source-specific model fallback note is forwarded.
-    #[must_use]
-    pub fn forwards_model_fallback_note(self) -> bool {
-        self.forwarding_mask & MODEL_FALLBACK_NOTE != 0
     }
 }
 

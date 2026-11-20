@@ -129,7 +129,10 @@ def dispatch(pilot, profile, sha, output, configuration):
     ledger = output / "jobs.json"
     identifiers = []
     record(ledger, identifiers)
-    deadline = time.monotonic() + (2400 if profile == "pr" else 21000)
+    # Manual qualification may queue behind another PR's atomic Spark pair;
+    # a PR profile waits for placement instead of failing fast, and the job
+    # timeout in inference.yml carries the same headroom.
+    deadline = time.monotonic() + (5400 if profile == "pr" else 21000)
     try:
         for row in result["rows"]:
             identity, mode = row["id"], row["mode"]

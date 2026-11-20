@@ -437,6 +437,11 @@ async fn download_and_install_runtime(
     })?;
     extract_runtime_archive(&archive, &extracted)?;
     let bundle_dir = find_extracted_runtime_dir(&extracted)?;
+    let downloaded = NativeRuntimeManifest::read_from_dir(&bundle_dir)?;
+    crate::catalog_match::ensure_downloaded_runtime_matches_catalog_entry(
+        artifact,
+        &downloaded.runtime,
+    )?;
     cache.install_from_dir(&bundle_dir)
 }
 

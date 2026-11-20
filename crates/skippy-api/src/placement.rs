@@ -5,8 +5,11 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
+use skippy_native_runtime::HostRuntimeProfile;
 use skippy_protocol::StageDevice;
-use skippy_runtime::{BackendDevice, BackendDeviceType};
+use skippy_runtime::BackendDevice;
+
+use crate::hardware::{self, RuntimeDevice};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PlacementRequest {
@@ -83,35 +86,57 @@ impl DeviceAllocator {
         }
     }
 
-    /// Build a budget from the currently loaded runtime using its reported
-    /// device identifiers. Callers with an OS inventory can supply their own
-    /// stable identifiers and more conservative per-device limits.
+    /// Use the physical stable IDs reported by the hardware inventory. A
+    /// runtime-only accelerator keeps its reported runtime identifier.
     pub fn from_loaded_runtime() -> anyhow::Result<Self> {
         crate::native_runtime::ensure_native_runtime_available()?;
-        Ok(Self::from_backend_devices(
+        Ok(Self::from_hardware(
+            &hardware::physical_hardware(),
             &skippy_runtime::backend_devices()?,
         ))
     }
 
-    fn from_backend_devices(devices: &[BackendDevice]) -> Self {
-        Self::new(
-            devices
+    fn from_hardware(host: &HostRuntimeProfile, devices: &[BackendDevice]) -> Self {
+        let runtime: Vec<_> = devices.iter().map(RuntimeDevice::from).collect();
+        let inventory = hardware::inventory(host, Some(&runtime), &BTreeMap::new());
+        let mut placement = Vec::new();
+
+        for gpu in &inventory.physical_gpus {
+            if let Some(stable_id) = &gpu.stable_id
+                && gpu.selectors.is_empty()
+            {
+                placement.push(PlacementDevice {
+                    stable_id: stable_id.clone(),
+                    selector: String::new(),
+                    selectable: false,
+                    capacity_bytes: None,
+                });
+            }
+        }
+
+        for (device, facts) in devices.iter().zip(runtime).filter(|(_, facts)| facts.gpu) {
+            let mut physical = inventory
+                .physical_gpus
                 .iter()
-                .filter_map(|device| {
-                    let stable_id = device.device_id.clone().filter(|id| !id.is_empty())?;
-                    Some(PlacementDevice {
-                        stable_id,
-                        selector: device.name.clone(),
-                        selectable: matches!(
-                            device.device_type,
-                            BackendDeviceType::Gpu | BackendDeviceType::IntegratedGpu
-                        ),
-                        capacity_bytes: (device.memory_total > 0)
-                            .then_some(device.memory_free.min(device.memory_total)),
-                    })
-                })
-                .collect(),
-        )
+                .filter(|gpu| gpu.selectors.contains(&facts.selector))
+                .peekable();
+            if physical.peek().is_none() {
+                if let Some(id) = facts
+                    .identifier
+                    .as_deref()
+                    .filter(|id| !id.trim().is_empty())
+                {
+                    placement.push(placement_device(device, id, None));
+                }
+                continue;
+            }
+            for gpu in physical {
+                if let Some(stable_id) = &gpu.stable_id {
+                    placement.push(placement_device(device, stable_id, gpu.total_bytes));
+                }
+            }
+        }
+        Self::new(placement)
     }
 
     /// Resolve a strict pin and publish its currently unreserved budget.
@@ -187,6 +212,25 @@ impl DeviceAllocator {
         self.reserved
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+fn placement_device(
+    device: &BackendDevice,
+    stable_id: &str,
+    physical_total_bytes: Option<u64>,
+) -> PlacementDevice {
+    let capacity_bytes = (device.memory_total > 0).then(|| {
+        let total = physical_total_bytes.map_or(device.memory_total, |physical_total| {
+            physical_total.min(device.memory_total)
+        });
+        device.memory_free.min(total)
+    });
+    PlacementDevice {
+        stable_id: stable_id.to_owned(),
+        selector: device.name.clone(),
+        selectable: true,
+        capacity_bytes,
     }
 }
 

@@ -1,7 +1,7 @@
 //! Prepare local models through the same API used by Mesh.
 use crate::cli::ServeOpenAiArgs;
 use anyhow::{Context, Result};
-use skippy_api::{SingleStageOptions, hash_cache::SidecarDigestCache};
+use skippy_api::SingleStageOptions;
 use skippy_config::load_json;
 use skippy_protocol::StageConfig;
 
@@ -71,12 +71,7 @@ pub(crate) fn prepare_openai_stage(args: &ServeOpenAiArgs) -> Result<StageConfig
             skippy_runtime::parse_cache_type(&options.cache_type_v)?;
             options.flash_attn_type =
                 skippy_api::kv_cache::effective_flash_attention(&options.cache_type_v);
-            options.checkpoint_quantization = args.checkpoint_quantization.clone();
             options.native_mtp_enabled = skippy_model_artifact::gguf::supports_native_mtp(&path);
-            options.checkpoint_imatrix = args
-                .checkpoint_imatrix
-                .as_ref()
-                .map(|path| path.to_string_lossy().into_owned());
             options.projector_path = args
                 .mmproj
                 .clone()
@@ -89,12 +84,7 @@ pub(crate) fn prepare_openai_stage(args: &ServeOpenAiArgs) -> Result<StageConfig
                 );
             }
             options.validate()?;
-            let cache = args.hash_cache.clone().map(SidecarDigestCache::open_in);
-            let identity = skippy_api::source::synthetic_direct_gguf_package(
-                &model_id,
-                &path,
-                cache.as_ref(),
-            )?;
+            let identity = skippy_api::source::synthetic_direct_gguf_package(&model_id, &path)?;
             let plan = plan_local_resources(LocalResourcePlanningInput {
                 model_path: &identity.source_model_path,
                 model_bytes: identity.source_model_bytes,
@@ -209,6 +199,20 @@ mod tests {
     }
 
     #[test]
+    fn local_model_preparation_requires_gguf_for_checkpoint_inputs() {
+        let root = tempfile::tempdir().unwrap();
+        let weights = root.path().join("model.safetensors");
+        let index = root.path().join("model.safetensors.index.json");
+        std::fs::write(&weights, b"checkpoint").unwrap();
+        std::fs::write(&index, b"{}").unwrap();
+        for path in [root.path(), weights.as_path(), index.as_path()] {
+            let args = args(&["skippy", "serve", "--model-path", path.to_str().unwrap()]);
+            let error = prepare_openai_stage(&args).unwrap_err();
+            assert!(format!("{error:#}").contains("Convert the SafeTensors checkpoint to GGUF"));
+        }
+    }
+
+    #[test]
     fn local_model_uses_verified_identity_and_shared_stage_options() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("tiny.gguf");
@@ -248,8 +252,7 @@ mod tests {
             "2",
         ]);
         let config = prepare_openai_stage(&explicit_args).unwrap();
-        let identity =
-            skippy_api::source::synthetic_direct_gguf_package("tiny", &path, None).unwrap();
+        let identity = skippy_api::source::synthetic_direct_gguf_package("tiny", &path).unwrap();
         assert_eq!(
             config.source_model_sha256.as_deref(),
             Some(identity.source_model_sha256.as_str())
@@ -277,7 +280,7 @@ mod tests {
     }
 
     #[test]
-    fn local_model_passes_checkpoint_quantization_and_projector_to_shared_stage() {
+    fn local_model_passes_projector_to_shared_stage() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("tiny.gguf");
         let mut bytes = Vec::from(*b"GGUF");
@@ -308,13 +311,10 @@ mod tests {
             "serve",
             "--model-path",
             path.to_str().unwrap(),
-            "--quant",
-            "Q4_K",
             "--mmproj",
             projector.to_str().unwrap(),
         ]);
         let config = prepare_openai_stage(&args).unwrap();
-        assert_eq!(config.checkpoint_quantization.as_deref(), Some("Q4_K_M"));
         assert_eq!(config.projector_path.as_deref(), projector.to_str());
     }
 }

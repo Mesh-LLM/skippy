@@ -80,13 +80,12 @@ pub(super) async fn dispatch_models_command(command: &ModelsCommand) -> Result<(
         }
         ModelsCommand::Search {
             query,
-            gguf,
-            mlx,
+            gguf: _,
             catalog,
             limit,
             sort,
             json,
-        } => run_model_search(query, *gguf, *mlx, *catalog, *limit, *sort, *json).await?,
+        } => run_model_search(query, *catalog, *limit, *sort, *json).await?,
         ModelsCommand::Show { model, json } => run_model_show(model, *json).await?,
         ModelsCommand::Download {
             model,

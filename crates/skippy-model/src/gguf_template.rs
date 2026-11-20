@@ -27,12 +27,6 @@ pub fn metadata_from_hf_config(source: &Path, tensor_count: usize) -> Result<Vec
     metadata_from_hf_config_with_options(source, tensor_count, MetadataOptions::default())
 }
 
-/// Reject checkpoint families before expensive tensor inspection when the
-/// native metadata/tensor mapping cannot faithfully represent their model.
-pub fn validate_native_checkpoint_architecture(config: &Value) -> Result<()> {
-    architecture_name(config).map(|_| ())
-}
-
 pub fn mtp_layer_start_from_hf_config(source: &Path) -> Result<Option<u32>> {
     let config = read_hf_config(source)?;
     if inkling_metadata::is_inkling_config(&config) {
