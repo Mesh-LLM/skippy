@@ -148,8 +148,9 @@ fn decode(operation_id: u64, record: &NativeEventRecord) -> ModelOpenEvent {
             }
         },
         kind,
-        detail: event.detail_bytes,
+        detail: event.detail_bytes.clone(),
         detail_truncated: record.detail_truncated,
+        source: Box::new(event),
     }
 }
 

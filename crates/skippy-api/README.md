@@ -70,7 +70,9 @@ Mesh can replace `model_open_drain` and its native queue setup by assigning an
 observer directly to the request. Translate the typed progress and diagnostic
 events to the existing operational-event schema, and use `dropped`, `rejected`,
 and `contradiction()` for the existing health and diagnostic reporting. Use the
-request result to settle the existing success/failure lifecycle. The observer
+request result to settle the existing success/failure lifecycle. `event.source`
+is the complete native record, for the status, stage and session identities,
+numeric summaries and raw codes that Mesh stores with each fact. The observer
 can capture Mesh's operation identity and ingress, so storage and presentation
 stay in Mesh. Match unknown or future observations with a wildcard. These types
 are defined by `skippy-api` and can evolve independently of generated bindings.
