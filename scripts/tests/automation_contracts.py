@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -204,6 +205,45 @@ class Upgrade(unittest.TestCase):
             (root / "llama-independent-cuda-evidence/native-result.json").write_bytes(b"changed")
             with self.assertRaisesRegex(ValueError, "changed family evidence"):
                 publisher.admit_receipts(root, candidate, manifest, manifest_hash, recipe_hash)
+
+
+class RewriterReport(unittest.TestCase):
+    @staticmethod
+    def run_report(*args):
+        return subprocess.run(
+            [sys.executable, str(SCRIPTS / "rewriter-report.py"), *args],
+            capture_output=True, text=True, cwd=SCRIPTS)
+
+    def write_report(self, directory):
+        report = directory / "report.json"
+        report.write_text(json.dumps({
+            "builders": [{"verdict": "transformable", "file": "model.cpp"}],
+            "summary": {"transformable": 1, "error": 0},
+        }))
+        return report
+
+    def test_failed_gate_prints_report_and_fails_the_run(self):
+        # Regression: --graph-verify-result rejected 'fail' at argparse, so a
+        # failing native verification died on usage text and the report never
+        # reached the job log. The report must print, then the gate must fail.
+        with tempfile.TemporaryDirectory() as tmp:
+            report = self.write_report(Path(tmp))
+            result = self.run_report("--report", str(report),
+                                     "--patch-drift-gate", "fail",
+                                     "--graph-verify-result", "fail")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("native validation gates failed: graph-verify-result",
+                      result.stderr)
+        self.assertIn('"transformable": 1', result.stdout)
+
+    def test_passing_gates_exit_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            report = self.write_report(Path(tmp))
+            result = self.run_report("--report", str(report),
+                                     "--patch-check", "pass",
+                                     "--compile-result", "pass",
+                                     "--graph-verify-result", "skipped")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":
