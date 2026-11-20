@@ -18,7 +18,8 @@ from the host build.
 With `dynamic-native-runtime`, serving commands resolve and load a verified local
 native runtime before opening any model. `--runtime-bundle` accepts a bundle root
 (repeatable), `--runtime-cache` selects a cache, and `--runtime-release` defaults
-to Skippy's `RUNTIME_VERSION`. `--runtime-selection` accepts a backend or exact
+to the Skippy
+release version. `--runtime-selection` accepts a backend or exact
 artifact ID. These global flags work with `skippy serve`;
 `skippy example-config` does not load native code.
 
