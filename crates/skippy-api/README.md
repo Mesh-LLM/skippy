@@ -92,3 +92,20 @@ owns publisher-declared live-KV dtype selection and model compatibility fallback
 [`speculative`](src/speculative.rs) owns installed sibling draft discovery and
 conservative automatic pairing. Standalone Skippy and embedding applications consume these same
 policies. Explicit caller settings take precedence.
+
+## Resolving a package for stage planning
+
+Use `PackageAcquisition::resolve_and_inspect_package` with the original local or Hugging Face reference. Mesh and other embedding hosts can replace their schema checks, cache fallback, and metadata inspection calls with this operation. Keep passing the existing explicit cache root, lazy Hub client factory, and progress observer to `PackageAcquisition`.
+
+```rust
+use skippy_api::package::acquisition::remote::PackageInspectionPolicy;
+
+let package = acquisition.resolve_and_inspect_package(
+    selected_package_ref,
+    PackageInspectionPolicy::AllowUpstream,
+)?;
+```
+
+Use `CacheOnly` for offline resolution. `AllowUpstream` fetches missing metadata and resolves a mutable revision upstream once when its cached manifest declares schema 1. A full Hub commit pin stays fixed. `PackageInspectionError::UnsupportedSchema` reports the schema and whether it came from a local package, the cache, or upstream. Missing offline Hub metadata produces `MetadataNotCached`. Malformed manifests and integrity failures surface as errors.
+
+Use `package.package_dir` for graph planning and `package.package_id` for exact stage admission. Carry `package.identity.manifest_sha256` with the stage load and pass `package.identity.package_ref` to `resolve_package_v2_stage_to_local`. For Hub packages this reference contains the verified snapshot’s full commit hash, so later stage acquisition uses the same snapshot when a branch moves. Inspection verifies the manifest and carrier. Stage acquisition fetches and verifies the required layer artifacts after admission.
