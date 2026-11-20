@@ -130,7 +130,7 @@ async fn run_main(
     }
     skippy_runtime::logging::set_native_log_sink(native_logs);
     match cli.command {
-        Command::Doctor => runtime::doctor(&native_options),
+        Command::Doctor { device_inventory } => runtime::doctor(&native_options, device_inventory),
         Command::Prompt(args) => {
             tokio::task::spawn_blocking(move || {
                 skippy_commands::prompt::run(skippy_commands::prompt::PromptCommand {

@@ -51,7 +51,11 @@ impl From<OutputFormat> for skippy_commands::console::OutputMode {
 #[derive(Subcommand)]
 pub enum Command {
     /// Inspect hardware, caches, and the selected native runtime.
-    Doctor,
+    Doctor {
+        /// Include device capacity and visibility from the installed runtime.
+        #[arg(long)]
+        device_inventory: bool,
+    },
     /// Prompt a running Skippy OpenAI endpoint interactively.
     Prompt(PromptArgs),
     /// Serve OpenAI and Anthropic APIs, or an explicitly selected stage transport.

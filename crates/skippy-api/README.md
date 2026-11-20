@@ -51,3 +51,17 @@ owns publisher-declared live-KV dtype selection and model compatibility fallback
 [`speculative`](src/speculative.rs) owns installed sibling draft discovery and
 conservative automatic pairing. Standalone Skippy and embedding applications consume these same
 policies. Explicit caller settings take precedence.
+
+### Hardware inventory
+
+Embedders can collect OS facts with `hardware::physical_hardware`, enumerate
+a runtime they have already loaded with `hardware::runtime_devices`, and pass
+both to `hardware::inventory`. The inventory accepts per-device limits,
+reservations and measurements keyed by the reported physical stable ID. It
+reports absent facts as optional values and exposes runtime-only devices
+separately. A device name or enumeration order cannot establish identity.
+
+`skippy --output json doctor --device-inventory` adds a `device_inventory`
+object to the existing doctor report. A runtime probe failure is reported as
+`device_inventory_issue`; OS discovery remains available. The probe uses an
+installed runtime and does not download one.
