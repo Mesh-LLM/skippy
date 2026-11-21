@@ -1,6 +1,11 @@
 """Admit native inference executables and immutable model inputs."""
 
+import fcntl
+import os
 import re
+import shutil
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 from .ci_artifacts import digest, read_json, write_json
@@ -14,6 +19,13 @@ INPUT_MANIFESTS = {
 }
 DEBUG_DIR = Path("target/debug")
 BUILD_IDENTITY = Path("target/inference-build.json")
+
+
+@contextmanager
+def lock(path):
+    with path.open("a+b") as stream:
+        fcntl.flock(stream, fcntl.LOCK_EX)
+        yield
 
 
 def input_hashes():
@@ -91,24 +103,52 @@ def downloaded_path(output):
     raise ValueError("hf download returned no absolute artifact path")
 
 
+def stage(source, destination):
+    destination.unlink(missing_ok=True)
+    try:
+        os.link(source.resolve(strict=True), destination)
+    except OSError:
+        shutil.copyfile(source, destination)
+
+
 def valid_model(path, row):
     return path.stat().st_size == row["size"] and digest(path) == row["sha256"]
 
 
 def download(row, model):
-    return downloaded_path(command(
-        ["hf", "download", model["repo"], row["path"], "--revision", model["revision"], "--quiet"],
-        timeout=18000, overrides={"HF_HUB_DISABLE_XET": "1"}, capture_stdout=True,
-    ))
+    path, repo, revision = row["path"], model["repo"], model["revision"]
+    if os.environ.get("HF_HUB_CACHE"):
+        cached = (Path(os.environ["HF_HUB_CACHE"]) / ("models--" + repo.replace("/", "--"))
+                  / "snapshots" / revision / safe_relative(path))
+        if cached.is_file():
+            return cached
+    args = ["hf", "download", repo, "--revision", revision, path]
+    command(args, timeout=18000, overrides={"HF_HUB_DISABLE_XET": "1"})
+    return downloaded_path(capture([*args, "--quiet"]))
 
 
-def admit(model):
+def admit(key, model):
+    destination = Path("target/inference-models") / key
+    local = Path(os.environ["HOME"]) / ".cache/skippy/inference-models"
+    for directory in (destination, local):
+        directory.mkdir(parents=True, exist_ok=True)
     paths = []
     for row in model["files"]:
-        print(f'Admitting {model["repo"]}@{model["revision"]}: {row["path"]}', flush=True)
-        path = download(row, model)
-        if not valid_model(path, row):
-            raise ValueError(f'model artifact digest mismatch: {row["path"]}')
-        # Keep the snapshot filename so the loader can find the sibling GGUF shards.
-        paths.append(path)
+        cached = local / row["sha256"]
+        target = destination / Path(row["path"]).name
+        with lock(cached.with_suffix(".lock")):
+            if cached.is_file() and valid_model(cached, row):
+                print(f'Verified local model cache HIT: {row["path"]}', flush=True)
+            else:
+                print(f'Admitting {model["repo"]}@{model["revision"]}: {row["path"]}', flush=True)
+                with tempfile.TemporaryDirectory(dir=local) as tmp:
+                    staged = Path(tmp) / "model"
+                    shutil.copyfile(download(row, model), staged)
+                    if not valid_model(staged, row):
+                        raise ValueError("model artifact digest mismatch")
+                    with staged.open("rb+") as stream:
+                        os.fsync(stream.fileno())
+                    staged.replace(cached)
+            stage(cached, target)
+        paths.append(target.resolve(strict=True))
     return paths[0]

@@ -10,21 +10,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from contextlib import contextmanager
 from pathlib import Path
 
 from lib.ci_artifacts import digest, read_json, write_json
 from lib.ci_process import cancel_on_signal, capture, command
-from lib.inference_inputs import BINARIES, BUILD_IDENTITY, DEBUG_DIR, check_executables, identity
-
-
-@contextmanager
-def lock(path):
-    import fcntl
-
-    with path.open("a+b") as stream:
-        fcntl.flock(stream, fcntl.LOCK_EX)
-        yield
+from lib.inference_inputs import BINARIES, BUILD_IDENTITY, DEBUG_DIR, check_executables, identity, lock
 
 
 def cache_key(inputs):

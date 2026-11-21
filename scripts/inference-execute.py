@@ -133,7 +133,7 @@ def execute(profile, key, mode):
     inputs = fixture(key)
     if available_memory() < sum(file["size"] for file in inputs["files"]) + 16 * 1024**3:
         raise ValueError("insufficient free unified memory for weights and runtime reserve")
-    model = admit(inputs)
+    model = admit(key, inputs)
     coordinate = f'{inputs["repo"]}@{inputs["revision"]}'
     context = 4096 if profile == "pr" else 65536
     if not worker and profile != "pr":
