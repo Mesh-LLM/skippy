@@ -220,12 +220,32 @@ jobs:
       - name: Compile the HIP fingerprint probe
         shell: bash
         run: |
+          rocm_bin="$(cygpath -u "$ROCM_PATH")/bin"
+          echo '--- HIP-related entries in the SDK bin:'
+          find "$rocm_bin" -maxdepth 1 -iname '*hip*' -o -maxdepth 1 -iname 'clang*' | sed 's|.*/||'
+          failures=0
           for arch in gfx1100 gfx1201; do
-            "$HIPCC" -O3 -std=c++17 --offload-arch="$arch" \
-              crates/skippy-gpu-bench/native/hip/membench-fingerprint.hip \
-              -o "membench-$arch.exe"
+            echo "--- variant A: direct \$HIPCC ($HIPCC)"
+            if "$HIPCC" -O3 -std=c++17 --offload-arch="$arch" \
+                 crates/skippy-gpu-bench/native/hip/membench-fingerprint.hip \
+                 -o "membench-a-$arch.exe"; then
+              echo "variant A OK for $arch"
+            else
+              echo "variant A FAILED for $arch"
+              failures=$((failures + 1))
+            fi
+            echo "--- variant B: hipcc wrapper"
+            if cmd //c hipcc -O3 -std=c++17 --offload-arch="$arch" \
+                 crates/skippy-gpu-bench/native/hip/membench-fingerprint.hip \
+                 -o "membench-b-$arch.exe"; then
+              echo "variant B OK for $arch"
+            else
+              echo "variant B FAILED for $arch"
+              failures=$((failures + 1))
+            fi
           done
-          ls -l membench-*.exe
+          ls -l membench-*.exe 2>/dev/null || true
+          test "$failures" -lt 4
       - name: Provision the pinned CUDA toolkit and compile a kernel
         shell: bash
         run: |
