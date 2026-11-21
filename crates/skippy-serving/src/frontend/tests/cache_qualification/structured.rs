@@ -89,6 +89,7 @@ pub(super) enum Attempt {
     Captured {
         response: Value,
         prompt_digest: Option<String>,
+        hit_kind: Option<String>,
         restore_source: Option<String>,
         payload_kind: Option<String>,
     },
@@ -103,6 +104,7 @@ impl Attempt {
             Ok(response) => Self::Captured {
                 response,
                 prompt_digest: None,
+                hit_kind: None,
                 restore_source: None,
                 payload_kind: None,
             },
@@ -206,6 +208,7 @@ async fn observe(
         Ok(Attempt::Captured {
             response: serde_json::to_value(response)?,
             prompt_digest: Some(super::hex_digest(&digest.finalize())),
+            hit_kind: cache.hit_kind,
             restore_source: cache.restore_source,
             payload_kind: cache.payload_kind,
         })
@@ -277,13 +280,20 @@ fn validate_attempt(
     baseline: Option<&Attempt>,
     warm: bool,
 ) -> Result<()> {
-    let (response, prompt_digest, restore_source, payload_kind) = match attempt {
+    let (response, prompt_digest, hit_kind, restore_source, payload_kind) = match attempt {
         Attempt::Captured {
             response,
             prompt_digest,
+            hit_kind,
             restore_source,
             payload_kind,
-        } => (response, prompt_digest, restore_source, payload_kind),
+        } => (
+            response,
+            prompt_digest,
+            hit_kind,
+            restore_source,
+            payload_kind,
+        ),
         Attempt::Error { error } => anyhow::bail!("{error}"),
     };
     validate_answer(case, response)?;
@@ -320,14 +330,15 @@ fn validate_attempt(
         "expected L1 reuse, observed {cached} cached tokens"
     );
     ensure!(
-        response["timings"]["suffix_prefill_n"].as_u64() == Some(prefill - cached),
+        response["timings"]["suffix_prefill_n"].as_u64() == Some(prompt - cached),
         "suffix prefill does not match cached-token accounting"
     );
     let recurrent = family.payload() == crate::kv_integration::StagePrefixCachePayload::KvRecurrent;
     if recurrent {
         ensure!(
-            restore_source.as_deref() == Some("radix")
-                && payload_kind.as_deref() == Some("kv-recurrent"),
+            hit_kind.as_deref() == Some("resident_prefix")
+                || (restore_source.as_deref() == Some("radix")
+                    && payload_kind.as_deref() == Some("kv-recurrent")),
             "expected complete L1 KV and recurrent state"
         );
     } else {

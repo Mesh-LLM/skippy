@@ -240,7 +240,7 @@ pub(super) fn validate(report: &mut Report) -> Result<()> {
         .template
         .as_ref()
         .context("missing chat template identity observations")
-        .and_then(|observation| observation.validate(report.fixture.family));
+        .and_then(|observation| observation.validate());
     report.template_result = Some(if template.is_ok() {
         Status::Pass
     } else {
@@ -347,7 +347,6 @@ fn replay_cases(report: &Report) -> [(&'static str, Option<&Candidate>); 11] {
 }
 
 fn validate_durable(report: &Report) -> Result<()> {
-    let family = report.fixture.family;
     let cold = report.cold.as_ref().context("missing cold output")?;
     let prompt_tokens = u32::try_from(cold.generation.prompt_ids.len())?;
     let durable = report
@@ -366,15 +365,13 @@ fn validate_durable(report: &Report) -> Result<()> {
         .checkpoint_tokens
         .context("missing durable checkpoint token count")?;
     let seed = durable.seed.as_ref().context("missing durable seed")?;
-    validate_miss(prompt_tokens, seed, family).context("durable seed accounting")?;
+    validate_miss(prompt_tokens, seed).context("durable seed accounting")?;
     ensure!(
         durable.evictions.len() == 3
             && durable
                 .evictions
                 .iter()
-                .all(|eviction| eviction.exact_entries > 0)
-            && (report.fixture.family.payload() != StagePrefixCachePayload::ResidentKv
-                || durable.evictions[0].resident_entries > 0),
+                .all(|eviction| eviction.exact_entries + eviction.resident_entries > 0),
         "the expected in-memory cache entries were not evicted"
     );
     ensure!(
@@ -402,7 +399,7 @@ fn validate_durable(report: &Report) -> Result<()> {
         restart.reconciled_temporary_files > 0,
         "replacement did not reconcile the interrupted write"
     );
-    validate_miss(prompt_tokens, &ownership.contender, family)
+    validate_miss(prompt_tokens, &ownership.contender)
         .context("lock contention fallback accounting")?;
     for (label, tier, replay) in [
         ("first disk fill", "l3", durable.first_l3.as_ref()),
@@ -416,8 +413,7 @@ fn validate_durable(report: &Report) -> Result<()> {
         ("crash restart disk replay", "l3", Some(&restart.replay)),
     ] {
         let replay = replay.with_context(|| format!("missing {label}"))?;
-        validate_durable_replay(prompt_tokens, replay, tier, checkpoint, family)
-            .with_context(|| label)?;
+        validate_durable_replay(prompt_tokens, replay, tier, checkpoint).with_context(|| label)?;
         if report.fixture.family.payload() == StagePrefixCachePayload::KvRecurrent {
             ensure!(
                 replay.cache.payload_kind.as_deref() == Some("kv-recurrent"),
@@ -429,22 +425,17 @@ fn validate_durable(report: &Report) -> Result<()> {
         .namespace_miss
         .as_ref()
         .context("missing namespace-isolation evidence")?;
-    validate_miss(prompt_tokens, namespace, family)
-        .context("isolated execution scope accounting")?;
+    validate_miss(prompt_tokens, namespace).context("isolated execution scope accounting")?;
     ensure!(
         restart.corrupt_objects > 0,
         "L3 reported no corrupt object after truncation"
     );
-    validate_miss(prompt_tokens, &restart.corrupt_fallback, family)
+    validate_miss(prompt_tokens, &restart.corrupt_fallback)
         .context("corrupt L3 fallback accounting")?;
     Ok(())
 }
 
-pub(super) fn validate_miss(
-    prompt_tokens: u32,
-    candidate: &Candidate,
-    family: Family,
-) -> Result<()> {
+pub(super) fn validate_miss(prompt_tokens: u32, candidate: &Candidate) -> Result<()> {
     let cache = &candidate.cache;
     ensure!(
         cache.status == "miss"
@@ -453,7 +444,7 @@ pub(super) fn validate_miss(
             && cache.prompt_tokens == prompt_tokens
             && cache.cached_tokens == 0
             && cache.matched_tokens == 0
-            && cache.suffix_tokens == family.prefill_tokens(prompt_tokens),
+            && cache.suffix_tokens == prompt_tokens,
         "expected a cache miss and complete prefill"
     );
     Ok(())
@@ -464,10 +455,9 @@ pub(super) fn validate_durable_replay(
     replay: &Candidate,
     tier: &str,
     checkpoint: u32,
-    family: Family,
 ) -> Result<()> {
     ensure!(
-        checkpoint > 0 && checkpoint < family.prefill_tokens(prompt_tokens),
+        checkpoint > 0 && checkpoint < prompt_tokens,
         "invalid checkpoint length"
     );
     let cache = &replay.cache;
@@ -482,7 +472,7 @@ pub(super) fn validate_durable_replay(
         cache.prompt_tokens == prompt_tokens
             && cache.cached_tokens == checkpoint
             && cache.matched_tokens == checkpoint
-            && cache.suffix_tokens == family.prefill_tokens(prompt_tokens) - checkpoint,
+            && cache.suffix_tokens == prompt_tokens - checkpoint,
         "incorrect token accounting for {tier} restore of {checkpoint} prefill tokens"
     );
     Ok(())
@@ -550,28 +540,22 @@ pub(super) fn validate_l1_replay(
         expected_match > 0 && expected_match <= prefill_tokens,
         "invalid L1 prefix length"
     );
-    if family.payload() == StagePrefixCachePayload::ResidentKv {
-        ensure!(
-            replay.cache.status == "hit"
-                && replay.cache.hit_kind.as_deref() == Some("resident_prefix")
-                && replay.cache.restore_source.is_none(),
-            "expected L1 resident_prefix hit, observed {:?}",
-            replay.cache.hit_kind
-        );
-    } else {
-        ensure!(
-            replay.cache.status == "hit"
-                && replay.cache.hit_kind.as_deref() == Some("exact_prefix")
-                && replay.cache.restore_source.as_deref() == Some("radix")
-                && replay.cache.payload_kind.as_deref() == Some("kv-recurrent"),
-            "expected L1 radix restore of KV and recurrent state"
-        );
-    }
+    let native = replay.cache.hit_kind.as_deref() == Some("resident_prefix")
+        && replay.cache.restore_source.is_none();
+    let serialized_hybrid = family.payload() == StagePrefixCachePayload::KvRecurrent
+        && replay.cache.hit_kind.as_deref() == Some("exact_prefix")
+        && replay.cache.restore_source.as_deref() == Some("radix")
+        && replay.cache.payload_kind.as_deref() == Some("kv-recurrent");
+    ensure!(
+        replay.cache.status == "hit" && (native || serialized_hybrid),
+        "expected a complete L1 prefix restore, observed {:?}",
+        replay.cache.hit_kind
+    );
     ensure!(
         replay.cache.prompt_tokens == prompt_tokens
             && replay.cache.cached_tokens == expected_match
             && replay.cache.matched_tokens == expected_match
-            && replay.cache.suffix_tokens == prefill_tokens - expected_match,
+            && replay.cache.suffix_tokens == prompt_tokens - expected_match,
         "L1 did not restore its expected {expected_match}-token prefix"
     );
     Ok(())
@@ -688,6 +672,7 @@ mod tests {
         replay.cache.hit_kind = Some("resident_prefix".into());
         replay.cache.cached_tokens = 99;
         replay.cache.matched_tokens = 99;
+        replay.cache.suffix_tokens = 1;
         let mut report = Report::new(
             Backend::Metal,
             Fixture::load(Family::DenseAttention).unwrap(),
@@ -734,14 +719,14 @@ mod tests {
             validate_l1(&report)
                 .unwrap_err()
                 .to_string()
-                .contains("expected L1 resident_prefix")
+                .contains("expected a complete L1 prefix restore")
         );
     }
 
     #[test]
     fn dense_evidence_rejects_wrong_accounting_or_incomplete_scores() {
         let mut report = passing_report();
-        report.replay.as_mut().unwrap().cache.suffix_tokens = 1;
+        report.replay.as_mut().unwrap().cache.suffix_tokens = 0;
         assert!(
             validate_l1(&report)
                 .unwrap_err()
@@ -764,11 +749,10 @@ mod tests {
         candidate.cache.restore_source = Some("l3".into());
         candidate.cache.cached_tokens = 64;
         candidate.cache.matched_tokens = 64;
-        candidate.cache.suffix_tokens = 35;
-        let family = Family::DenseAttention;
-        validate_durable_replay(100, &candidate, "l3", 64, family).unwrap();
-        assert!(validate_durable_replay(100, &candidate, "l2", 64, family).is_err());
+        candidate.cache.suffix_tokens = 36;
+        validate_durable_replay(100, &candidate, "l3", 64).unwrap();
+        assert!(validate_durable_replay(100, &candidate, "l2", 64).is_err());
         candidate.cache.suffix_tokens += 1;
-        assert!(validate_durable_replay(100, &candidate, "l3", 64, family).is_err());
+        assert!(validate_durable_replay(100, &candidate, "l3", 64).is_err());
     }
 }

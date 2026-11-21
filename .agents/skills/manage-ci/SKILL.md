@@ -33,8 +33,9 @@ contract; no downstream product's workflow topology applies here.
   runs Graph Contracts in parallel with eight build, package and smoke jobs.
   Each CPU job supplies a shared platform CLI to its backend jobs. Routine CI
   uses two device jobs and checks the three remaining CUDA archives on hosted
-  compiler-image runners.
-  Tagged releases add device smoke on those exact archives. The lightweight
+  compiler-image runners. A dedicated KV path filter selects short cache
+  checks in both device jobs. Full CI qualifies all four KV fixtures on
+  Metal and Spark. Tagged releases add device smoke for both CUDA 12 archives. The lightweight
   CI gate checks the validated matrix and requires all applicable results.
 - `.github/workflows/docs.yml` directly validates `docs-site/**` changes on PRs
   and deploys to beta on protected-main pushes. The protected PR aggregate

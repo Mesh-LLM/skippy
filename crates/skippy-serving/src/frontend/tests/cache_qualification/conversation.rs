@@ -167,7 +167,7 @@ fn validate_accounting(
             case == Case::DivergentTail,
             "follow-up did not preserve a reusable checkpoint"
         );
-        validate_miss(prompt_tokens, &observation.warm, family)
+        validate_miss(prompt_tokens, &observation.warm)
     } else {
         validate_l1_replay(family, prompt_tokens, matched, &observation.warm)
     }

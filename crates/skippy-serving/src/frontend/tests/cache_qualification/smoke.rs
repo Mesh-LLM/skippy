@@ -51,7 +51,10 @@ async fn observe(directory: &Path, report: &mut Report) -> Result<()> {
         report.replay = Some(runner.generate(&request)?);
         tiers::drain_workers(&cache)?;
         tiers::evict_l1(&runner, &cache)?;
-        tiers::published_checkpoint(&manager, report.seed.as_ref().context("missing cache seed")?)
+        tiers::published_checkpoint(
+            &manager,
+            report.seed.as_ref().context("missing cache seed")?,
+        )
     })();
     skippy_runtime::restore_native_logs();
     let checkpoint = observed?;
@@ -85,7 +88,6 @@ async fn observe(directory: &Path, report: &mut Report) -> Result<()> {
         &restarted.replay,
         "l3",
         checkpoint,
-        family,
     )?;
     evidence::compare(cold, &restarted.replay.generation).context("L3 output")?;
     ensure!(
