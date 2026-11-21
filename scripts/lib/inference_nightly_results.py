@@ -6,8 +6,12 @@ import sys
 
 from .ci_artifacts import read_json
 from .inference_ladder import matrix
-from .inference_nightly_metrics import METRIC_NAMES, WORKLOADS, contract, metric_value
+from .inference_nightly_metrics import METAL_WORKLOADS, METRIC_NAMES, WORKLOADS, contract, metric_value
 from .inference_throughput import successful_run
+
+
+def workload_for(entry):
+    return (METAL_WORKLOADS if entry["backend"] == "metal" else WORKLOADS)[entry["profile"]]
 
 
 def admitted_workload(entry, certification):
@@ -16,7 +20,7 @@ def admitted_workload(entry, certification):
         allowed.add("uncertified_override")
     if certification not in allowed:
         raise ValueError("invalid split admission")
-    workload = WORKLOADS[entry["profile"]]
+    workload = workload_for(entry)
     if certification == "uncertified_override":
         return workload + " (experimental split)"
     return workload
@@ -32,6 +36,7 @@ def measurements(directory, entry, sha):
     }
     if (type(receipt.get("schema_version")) is not int or receipt["schema_version"] != 1
             or any(receipt.get(field) != value for field, value in expected.items())
+            or receipt.get("backend", "cuda") != entry["backend"]
             or not re.fullmatch(r"job_[A-Za-z0-9_]+", job["id"])):
         raise ValueError("inference measurement receipt identity mismatch")
     if entry["mode"] == "split":
@@ -44,7 +49,7 @@ def measurements(directory, entry, sha):
             raise ValueError("nightly receipt requires a successful split formation")
     certification = receipt["split_certification"]
     workload = admitted_workload(entry, certification)
-    model = entry["configuration"].removesuffix(f'-{entry["mode"]}')
+    model = entry["configuration"].removeprefix("metal-").removesuffix(f'-{entry["mode"]}')
     fingerprint = contract(entry["profile"], entry, model, certification)
     if receipt["contract_sha256"] != fingerprint:
         raise ValueError("inference workload fingerprint mismatch")
@@ -74,10 +79,10 @@ def failure_outcome(directory, entry, sha):
     return "incomplete"
 
 
-def read_configuration(root, entry, sha, run_id, attempt, *, reuse_prior):
+def read_configuration(root, entry, sha, run_id, attempt):
     prefix = f'inference-{entry["id"]}-{run_id}-'
     directory = root / f"{prefix}{attempt}"
-    if reuse_prior and not directory.is_dir():
+    if not directory.is_dir():
         prior = [int(suffix) for path in root.glob(f"{prefix}*")
                  if path.is_dir() and re.fullmatch(r"[1-9][0-9]*", suffix := path.name[len(prefix):])
                  and int(suffix) < int(attempt)]
@@ -88,7 +93,7 @@ def read_configuration(root, entry, sha, run_id, attempt, *, reuse_prior):
         return {"id": entry["configuration"], "workload": workload, "outcome": "passed", "metrics": rows}
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         print(f'{entry["id"]}: unverified inference measurements ({type(error).__name__})', file=sys.stderr)
-        workload = WORKLOADS[entry["profile"]]
+        workload = workload_for(entry)
         return {
             "id": entry["configuration"], "workload": workload,
             "outcome": failure_outcome(directory, entry, sha),
@@ -100,9 +105,11 @@ def read_configuration(root, entry, sha, run_id, attempt, *, reuse_prior):
 def qualification_run(root: Path, profile, source, run_id, attempt, started_at, matrix_passed, *, published=False):
     if profile not in METRIC_NAMES or (published and profile != "nightly"):
         raise ValueError("unsupported inference measurement profile")
+    entries = (matrix(profile, source, include_smoke=published)
+               + matrix(profile, source, include_smoke=published, backend="metal"))
     configs = [
-        read_configuration(root, entry, source, run_id, attempt, reuse_prior=not published)
-        for entry in matrix(profile, source, include_smoke=published)
+        read_configuration(root, entry, source, run_id, attempt)
+        for entry in entries
     ]
     passed = matrix_passed and all(config["outcome"] == "passed" for config in configs)
     return {

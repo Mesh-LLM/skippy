@@ -38,7 +38,7 @@ Illustrative scenario. Correctness passed. Output throughput fell 12.20% against
 
 ## Performance over time
 
-Up to 30 days ending at the latest run shown. The dashed line marks the active baseline. Missing measurements leave gaps.
+Up to 30 days ending at the latest run shown. Dashed lines show the saved baselines. Missing measurements leave gaps.
 
 ![Output throughput](charts/qualification-1.png)
 

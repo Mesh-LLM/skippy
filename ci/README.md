@@ -49,7 +49,7 @@ the PR carries the `qualify` label, and the workflow still triggers on path
 matches so the intentionally skipped run satisfies the `PR checks` aggregate.
 Manual qualification may queue behind another PR's atomic Spark pair; the PR
 budget waits for placement instead of failing fast. Relevant PRs retain
-same-repository/collaborator admission, a fresh-head check and all seven GPU
+same-repository/collaborator admission, a fresh-head check and all eleven GPU
 smoke configurations. The credentialed controller runs only protected source.
 Python admission verifies trust and source identity.
 The syntax/dependency classifier and offline replay command have been removed.
@@ -71,10 +71,13 @@ uv run --python 3.12 --with-requirements ci/inference-report-requirements.txt \
 just inference-render-report summary "$examples/examples.json" --run pr-pass
 ```
 
-The scheduled inference workflow runs the twelve nightly AgentX configurations
-and the seven PR-profile smoke configurations. The smoke runs use the same
-harness as labeled PRs and retain the actual split admission status. AgentX
-nightly split qualification still requires certified admission.
+The scheduled inference workflow runs twenty nightly AgentX configurations
+(twelve CUDA and eight M3 Ultra Metal) and eleven PR-profile smoke
+configurations (seven CUDA and four Metal). The smoke runs use the same
+harness as labeled PRs and retain the actual split admission status. Nightly
+CUDA split qualification still requires certified admission. Both reports show
+CUDA and Metal on the same charts and compare each configuration against its
+own saved baseline.
 
 The protected scheduled publisher reads the current public dataset revision,
 compares verified measurements directly with its saved baselines, and uploads
@@ -100,7 +103,7 @@ to the Actions summary. A regression, incomplete required lab evidence, or a
 failure to read or verify the published baseline fails qualification. The
 summary identifies measurements with no matching baseline, including before
 the first nightly publication and when benchmark inputs change. The longer
-`release` workload continues to use its lab qualification result because the
+`release` workload shows measured lab results without comparisons because the
 dataset has no comparable release workload. A merge to `main` adds no
 qualification run.
 

@@ -12,7 +12,7 @@ from urllib.request import urlopen
 
 from lib.inference_baselines import DATASET, DIRECTION, SHA, apply_baselines, baseline_index, prior_state
 from lib.inference_markdown import HF_DATASET, run_summary, utc
-from lib.inference_nightly_metrics import HARNESS
+from lib.inference_nightly_metrics import harness_files
 from lib.inference_nightly_results import qualification_run
 
 
@@ -33,16 +33,16 @@ def published_baselines(read=public_json):
     return (revision if state["history"] else None), state["baselines"]
 
 
-def same_harness(profile, source, repository):
+def matching_backends(profile, source, repository):
     # Receipt fingerprints come from the protected controller. Check that the
     # native candidate ran the same benchmark inputs before using those hashes.
     controller = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    by_backend = {backend: (*harness_files(profile, backend), "ci/inference-artifacts.json")
+                  for backend in ("cuda", "metal")}
     if source == controller:
-        return True
-    paths = (*HARNESS, "ci/inference-artifacts.json")
-    paths += (("scripts/lib/inference_throughput.py",) if profile == "pr"
-              else ("ci/inference-corpus.json", "ci/aiperf-requirements.lock"))
-    listing = subprocess.check_output(["git", "ls-tree", "HEAD", "--", *paths], text=True)
+        return set(by_backend)
+    paths = {path for files in by_backend.values() for path in files}
+    listing = subprocess.check_output(["git", "ls-tree", "HEAD", "--", *sorted(paths)], text=True)
     expected = {}
     for line in listing.splitlines():
         entry, path = line.split("\t", 1)
@@ -53,20 +53,25 @@ def same_harness(profile, source, repository):
     if tree["truncated"] or set(expected) != set(paths):
         raise ValueError("benchmark source inputs could not be verified")
     candidate = {entry["path"]: entry["sha"] for entry in tree["tree"] if entry["type"] == "blob"}
-    return all(candidate.get(path) == sha for path, sha in expected.items())
+    return {backend for backend, files in by_backend.items()
+            if all(candidate.get(path) == expected[path] for path in files)}
 
 
-def compare(run, repository, *, load=published_baselines, compatible=same_harness):
+def compare(run, repository, *, load=published_baselines, compatible=matching_backends):
     run = dict(run)
+    if run["profile"] == "release":
+        run["note"] = ("Release uses two 1800-second AgentX trials. The public dataset has no matching "
+                       "release baseline. AgentX values are means of the two trial summaries.")
+        return run
     revision, saved = load()
     if revision:
         run["baseline_revision"] = revision
     if not revision:
         run["note"] = "Baseline comparison unavailable. The first nightly has yet to publish a baseline."
-    elif saved and not compatible(run["profile"], run["source_sha"], repository):
-        run["note"] = "Baseline comparison unavailable for this run because its benchmark inputs changed."
     else:
-        run, _ = apply_baselines(run, saved, read_only=True)
+        matching = compatible(run["profile"], run["source_sha"], repository) if saved else {"cuda", "metal"}
+        baselines = [row for row in saved if backend_for(row["configuration"]) in matching]
+        run, _ = apply_baselines(run, baselines, read_only=True)
         rows = [row for config in run["configurations"] for row in config["metrics"]
                 if row["metric"] in DIRECTION and row["measured"] is not None]
         matched = sum("reference" in row for row in rows)
@@ -74,9 +79,17 @@ def compare(run, repository, *, load=published_baselines, compatible=same_harnes
             f"{matched} of {len(rows)} measured performance metrics had a matching published baseline. "
             "A change beyond 5% in the unfavorable direction fails qualification."
         )
+        changed = {"cuda", "metal"} - matching
+        if changed:
+            labels = " and ".join(backend.upper() if backend == "cuda" else "Metal" for backend in sorted(changed))
+            run["note"] += f" {labels} benchmark inputs changed."
     if run["profile"] == "nightly":
         run["note"] += " AgentX values are means of two trial summaries. Request counts are combined."
     return run
+
+
+def backend_for(configuration):
+    return "metal" if configuration.startswith("metal-") else "cuda"
 
 
 def main():

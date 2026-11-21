@@ -12,6 +12,7 @@ MUTED = "#526574"
 GRID = "#DCE5EA"
 MEASURED = BAR_STYLES[None][0]
 BASELINE = BAR_STYLES["baseline"][0]
+METAL = "#7C5994"
 HISTORY_MARKERS = {
     "passed": ("o", "Equivalent"),
     "improved": ("^", "Improvement"),
@@ -21,26 +22,32 @@ HISTORY_MARKERS = {
 }
 
 
-def history_axes(ax, chart, mdates):
-    scale = 0.001 if chart.unit == "ms" else 1
-    values = [None if value is None else value * scale for value in chart.values]
-    baselines = [None if value is None else value * scale for value in chart.baseline]
-    dates = chart.dates
-    ax.plot(dates, values, color=MEASURED, linewidth=2, zorder=3)
-    pad = max((dates[-1] - dates[0]) / 20, timedelta(minutes=1))
+def plot_history_series(ax, dates, series, scale, pad, color, label=None):
+    values = [None if value is None else value * scale for value in series.values]
+    baselines = [None if value is None else value * scale for value in series.baseline]
+    ax.plot(dates, values, color=color, linewidth=2, zorder=3, label=label)
     if any(value is not None for value in baselines):
         end = dates[-1] + pad
-        ax.step([*dates, end], [*baselines, baselines[-1]], where="post", color=BASELINE,
-                linewidth=2, linestyle="--", label="Baseline in force", zorder=2)
+        ax.step([*dates, end], [*baselines, baselines[-1]], where="post", color=color if label else BASELINE,
+                linewidth=2, linestyle="--", label=f"{label} baseline" if label else "Baseline in force", zorder=2)
     for verdict, (marker, label) in HISTORY_MARKERS.items():
         points = [
-            (date, value) for date, value, outcome in zip(dates, values, chart.verdicts)
+            (date, value) for date, value, outcome in zip(dates, values, series.verdicts)
             if outcome == verdict and value is not None
         ]
         if points:
             point_dates, point_values = zip(*points)
             ax.scatter(point_dates, point_values, color=BAR_STYLES[verdict][0], edgecolor="white",
                        linewidth=1, s=58, marker=marker, zorder=4, label=label)
+
+
+def history_axes(ax, chart, mdates):
+    scale = 0.001 if chart.unit == "ms" else 1
+    dates = chart.dates
+    pad = max((dates[-1] - dates[0]) / 20, timedelta(minutes=1))
+    plot_history_series(ax, dates, chart, scale, pad, MEASURED, "CUDA" if chart.metal else None)
+    if chart.metal:
+        plot_history_series(ax, dates, chart.metal, scale, pad, METAL, "Metal")
     ax.set_xlim(dates[0] - pad, dates[-1] + pad)
     if len(dates) <= 6 and len({date.date() for date in dates}) == len(dates):
         ax.set_xticks(dates)
@@ -98,8 +105,9 @@ def draw(chart, output, figure_class, mdates):
     if history or not chart.horizontal:
         ax.grid(axis="y", color=GRID, linewidth=0.75)
     handles, labels = ax.get_legend_handles_labels()
-    if handles:
-        ax.legend(handles, labels, frameon=False, ncol=len(labels), fontsize=9, labelcolor=INK,
+    legend = dict(zip(labels, handles))
+    if legend:
+        ax.legend(legend.values(), legend.keys(), frameon=False, ncol=min(4, len(legend)), fontsize=9, labelcolor=INK,
                   loc="lower left", bbox_to_anchor=(0, 1.03), borderaxespad=0, columnspacing=1.4)
     figure.savefig(output)
 

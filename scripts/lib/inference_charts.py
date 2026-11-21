@@ -70,6 +70,13 @@ class Chart:
 
 
 @dataclass(frozen=True)
+class HistorySeries:
+    values: tuple
+    baseline: tuple
+    verdicts: tuple
+
+
+@dataclass(frozen=True)
 class HistoryChart:
     title: str
     unit: str
@@ -78,6 +85,7 @@ class HistoryChart:
     baseline: tuple
     verdicts: tuple
     caption: str
+    metal: HistorySeries | None = None
 
 
 def quoted(value):
@@ -107,7 +115,7 @@ def run_charts(run, metrics):
     groups = {}
     for (workload, config, metric), row in observations(run):
         if row["measured"] is not None:
-            groups.setdefault((metric, workload), []).append((config, row))
+            groups.setdefault((metric, workload_label(workload)), []).append((config, row))
     charts = []
     for metric in CHART_METRICS:
         matches = ((workload, points) for (key, workload), points in groups.items() if key == metric)
@@ -115,7 +123,6 @@ def run_charts(run, metrics):
         if selected is None:
             continue
         workload, points = selected
-        workload = workload_label(workload)
         title, unit = metrics[metric]
         if len(points) == 1:
             config, row = points[0]
@@ -128,7 +135,8 @@ def run_charts(run, metrics):
             caption = f"{configuration_label(config)} · {workload}. {bar_legend(verdicts)}."
             charts.append(Chart(title, unit, labels, values, caption, verdicts))
             continue
-        labels = tuple(configuration_label(config) for config, _ in points)
+        combined = any(config.startswith("metal-") for config, _ in points)
+        labels = tuple(platform_label(config, combined) for config, _ in points)
         values = tuple(row["measured"] for _, row in points)
         verdicts = tuple(row.get("verdict") for _, row in points)
         baseline = ()
@@ -138,6 +146,11 @@ def run_charts(run, metrics):
         caption = f"{workload}. {bar_legend(verdicts)}.{line}"
         charts.append(Chart(title, unit, labels, values, caption, verdicts, baseline, horizontal=True))
     return charts
+
+
+def platform_label(configuration, combined):
+    label = configuration_label(configuration)
+    return f"CUDA - {label}" if combined and not configuration.startswith("metal-") else label
 
 
 def baseline_after(row):
@@ -157,24 +170,45 @@ def history_charts(timeline, metrics):
         for key, row in observations(run):
             series.setdefault(key, {})[index] = row
     series = {key: matching_history(points) for key, points in series.items()}
+    metal_series = {(workload_label(workload), config.removeprefix("metal-"), metric): points
+                    for (workload, config, metric), points in series.items() if config.startswith("metal-")}
 
     charts = []
     for metric in CHART_METRICS:
         matches = (
-            (sum(row["measured"] is not None for row in points.values()), key, points)
+            (measurements(points), key, points)
             for key, points in series.items() if key[2] == metric
         )
         selected = max(matches, key=lambda item: (item[0], item[1]), default=None)
         if selected is None or selected[0] < 2:
             continue
         _, (workload, config, _), points = selected
+        pairs = []
+        for (candidate_workload, candidate, key), cuda in series.items():
+            if key != metric or candidate.startswith("metal-") or not candidate.endswith("-standalone"):
+                continue
+            metal = metal_series.get((workload_label(candidate_workload), candidate, key), {})
+            cuda_count, metal_count = measurements(cuda), measurements(metal)
+            if min(cuda_count, metal_count) and max(cuda_count, metal_count) >= 2:
+                pairs.append((min(cuda_count, metal_count), candidate, candidate_workload, cuda, metal))
+        secondary = None
+        caption = f"{configuration_label(config)} · {workload_label(workload)}"
+        if pairs:
+            _, config, workload, points, metal = max(pairs, key=lambda pair: pair[:3])
+            _, metal_values, metal_baseline, metal_verdicts = history_values(window, metal)
+            secondary = HistorySeries(metal_values, metal_baseline, metal_verdicts)
+            caption = f"{configuration_label(config)} · {workload_label(workload)} · CUDA and M3 Ultra Metal"
         title, unit = metrics[metric]
         dates, values, baseline, verdicts = history_values(window, points)
         charts.append(HistoryChart(
             title, unit, dates, values, baseline, verdicts,
-            f"{configuration_label(config)} · {workload_label(workload)}",
+            caption, secondary,
         ))
     return charts
+
+
+def measurements(points):
+    return sum(row["measured"] is not None for row in points.values())
 
 
 def matching_history(points):

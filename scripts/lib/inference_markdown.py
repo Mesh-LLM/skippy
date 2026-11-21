@@ -313,7 +313,7 @@ def dataset_card(report, charts=None):
             lines.extend([
                 "", "## Performance over time", "",
                 f"Up to {HISTORY_DAYS} days ending at the latest run shown. "
-                "The dashed line marks the active baseline. Missing measurements leave gaps.",
+                "Dashed lines show the saved baselines. Missing measurements leave gaps.",
             ])
         else:
             lines.extend(["", "## Latest performance"])

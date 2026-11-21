@@ -930,6 +930,113 @@
         "HF_HOME": "/mnt/model-store/huggingface",
         "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
       }
+    },
+    {
+      "name": "Native M3 Ultra Metal inference qualification",
+      "group": "Inference",
+      "target": {
+        "executor": "lab",
+        "selector": {
+          "os": {
+            "family": "macos"
+          },
+          "arch": {
+            "in": [
+              "aarch64"
+            ]
+          },
+          "accelerator": {
+            "backend": "metal",
+            "model": {
+              "in": [
+                "Apple M3 Ultra"
+              ]
+            }
+          },
+          "memory": {
+            "system_gib": {
+              "min": 120
+            }
+          },
+          "network": {
+            "in": [
+              "james-lab",
+              "dan-lab"
+            ]
+          }
+        }
+      },
+      "build": "cd ${repo_dir} && just inference-build metal",
+      "inputs": [
+        {
+          "key": "profile",
+          "label": "Profile",
+          "kind": "choice",
+          "choices": [
+            {
+              "value": "pr",
+              "label": "pr"
+            },
+            {
+              "value": "nightly",
+              "label": "nightly"
+            },
+            {
+              "value": "release",
+              "label": "release"
+            }
+          ],
+          "default": "pr"
+        },
+        {
+          "key": "model_key",
+          "label": "Model",
+          "kind": "choice",
+          "choices": [
+            {
+              "value": "qwen35-08b",
+              "label": "Qwen/Qwen3.5-0.8B"
+            },
+            {
+              "value": "qwen35-2b",
+              "label": "Qwen/Qwen3.5-2B"
+            },
+            {
+              "value": "qwen35-4b",
+              "label": "Qwen/Qwen3.5-4B"
+            },
+            {
+              "value": "qwen35-9b",
+              "label": "Qwen/Qwen3.5-9B"
+            },
+            {
+              "value": "qwen38-27b",
+              "label": "Qwen/Qwen3.8-27B"
+            },
+            {
+              "value": "qwen3-coder-30b-a3b",
+              "label": "Qwen/Qwen3-Coder-30B-A3B-Instruct"
+            },
+            {
+              "value": "qwen36-35b-a3b",
+              "label": "Qwen/Qwen3.6-35B-A3B"
+            },
+            {
+              "value": "qwen38-flash-next",
+              "label": "Qwen/Qwen3.8-Flash-Next"
+            }
+          ],
+          "default": "qwen35-4b"
+        }
+      ],
+      "budget": {
+        "max_usd": 0,
+        "max_duration_s": 18000,
+        "grace_s": 60
+      },
+      "retain": "never",
+      "key": "inference-metal-standalone",
+      "command": "cd \"$JIANYANG_REPO_DIR\" && just inference-execute ${profile} ${model_key} standalone metal"
     }
   ]
 }

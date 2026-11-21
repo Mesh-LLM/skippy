@@ -15,6 +15,10 @@ def model_names():
 
 
 def configuration_label(configuration):
+    if configuration.startswith("metal-"):
+        model = configuration.removeprefix("metal-").removesuffix("-standalone")
+        name = model_names().get(model, model)
+        return f"Metal - {name} (M3 Ultra)"
     model, _, placement = configuration.rpartition("-")
     count = {"standalone": "1 Spark", "split": "2 Sparks"}.get(placement)
     name = model_names().get(model)
@@ -26,4 +30,8 @@ def workload_label(workload):
         "DGX Spark AgentX nightly v1": "Nightly AgentX (v1)",
         "DGX Spark smoke v1": "Smoke test (v1)",
         "DGX Spark smoke v1 (experimental split)": "Smoke test (v1, experimental split)",
+        "Apple M3 Ultra AgentX nightly v1": "Nightly AgentX (v1)",
+        "Apple M3 Ultra smoke v1": "Smoke test (v1)",
+        "DGX Spark AgentX release v1": "Release AgentX (v1)",
+        "Apple M3 Ultra AgentX release v1": "Release AgentX (v1)",
     }.get(workload, workload)

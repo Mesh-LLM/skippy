@@ -9,12 +9,16 @@ import time
 
 from .ci_artifacts import digest, write_json
 from .inference_inputs import fixture, input_hashes
+from .inference_metal import DEVICE as METAL_DEVICE
 from .inference_throughput import collect, successful_run
 
-WORKLOADS = {"pr": "DGX Spark smoke v1", "nightly": "DGX Spark AgentX nightly v1"}
+WORKLOADS = {"pr": "DGX Spark smoke v1", "nightly": "DGX Spark AgentX nightly v1",
+             "release": "DGX Spark AgentX release v1"}
+METAL_WORKLOADS = {"pr": "Apple M3 Ultra smoke v1", "nightly": "Apple M3 Ultra AgentX nightly v1",
+                   "release": "Apple M3 Ultra AgentX release v1"}
 SMOKE_METRICS = ("prefill_tok_s", "decode_tok_s")
 AGENTX_METRICS = ("output_tok_s", "ttft_p95_ms", "itl_p95_ms", "requests", "request_error_pct")
-METRIC_NAMES = {"pr": SMOKE_METRICS, "nightly": AGENTX_METRICS}
+METRIC_NAMES = {"pr": SMOKE_METRICS, "nightly": AGENTX_METRICS, "release": AGENTX_METRICS}
 HARNESS = (
     "scripts/inference-execute.py", "scripts/lib/inference_checks.py",
     "scripts/lib/inference_nightly_metrics.py", "ci/inference-quality.json",
@@ -67,14 +71,22 @@ def agentx_metrics(trials):
             "requests": sum(requests), "request_error_pct": 0}
 
 
-def contract(profile, row, key, certification):
+def harness_files(profile, backend):
     files = HARNESS
+    if backend == "metal":
+        files += ("scripts/lib/inference_metal.py", "scripts/lib/ci_smoke.py")
     if profile == "pr":
         files += ("scripts/lib/inference_throughput.py",)
     else:
         files += ("ci/inference-corpus.json", "ci/aiperf-requirements.lock")
+    return files
+
+
+def contract(profile, row, key, certification):
+    backend = row.get("backend", "cuda")
+    files = harness_files(profile, backend)
     inputs = {
-        "profile": profile, "mode": row["mode"], "device": "NVIDIA GB10",
+        "profile": profile, "mode": row["mode"], "device": METAL_DEVICE if backend == "metal" else "NVIDIA GB10",
         "certification": certification, "model": fixture(key),
         "harness": {name: digest(Path(name)) for name in files},
     }
@@ -82,9 +94,9 @@ def contract(profile, row, key, certification):
     return hashlib.sha256(encoded).hexdigest()
 
 
-def collect_nightly(pilot, job, row, sha, output, key, profile):
+def collect_measurements(pilot, job, row, sha, output, key, profile):
     if profile not in METRIC_NAMES:
-        raise ValueError("nightly publication only supports AgentX and smoke evidence")
+        raise ValueError("unsupported inference evidence profile")
     run_id = successful_run(job, sha)
     prefix = f"/v1/artifacts/{run_id}"
     if profile == "pr":
@@ -101,8 +113,10 @@ def collect_nightly(pilot, job, row, sha, output, key, profile):
                 "status": "passed", "artifact_manifest_sha256": input_hashes()["model_manifest_sha256"]}
     if any(qualification.get(field) != value for field, value in expected.items()):
         raise ValueError("nightly measurement provenance mismatch")
-    if qualification.get("gpu", "").strip() != "NVIDIA GB10":
-        raise ValueError("nightly evidence requires the DGX Spark GPU")
+    backend = row.get("backend", "cuda")
+    device = METAL_DEVICE if backend == "metal" else "NVIDIA GB10"
+    if qualification.get("gpu", "").strip() != device or qualification.get("backend", "cuda") != backend:
+        raise ValueError(f"inference evidence requires {backend} on {device}")
     certification = qualification.get("split_certification")
     allowed = {None} if row["mode"] == "standalone" else {"certified"}
     if row["mode"] == "split" and profile == "pr":
@@ -111,6 +125,6 @@ def collect_nightly(pilot, job, row, sha, output, key, profile):
         raise ValueError("invalid split admission for nightly measurement")
     write_json(output / "measurements.json", {
         "schema_version": 1, "source_sha": sha, "configuration": row["id"], "profile": profile,
-        "job_id": job["id"], "run_id": run_id, "split_certification": certification,
+        "job_id": job["id"], "run_id": run_id, "split_certification": certification, "backend": backend,
         "contract_sha256": contract(profile, row, key, certification), "metrics": measurements,
     })

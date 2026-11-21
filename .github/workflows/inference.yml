@@ -95,6 +95,7 @@ jobs:
       source: ${{ steps.admission.outputs.source || github.event.pull_request.head.sha || github.sha }}
       profile: ${{ steps.admission.outputs.profile || 'pr' }}
       matrix: ${{ steps.matrix.outputs.matrix }}
+      metal_matrix: ${{ steps.metal_matrix.outputs.matrix }}
       controller: ${{ steps.controller.outputs.sha }}
     steps:
       # Credentialed controller source always comes from protected main.
@@ -113,7 +114,7 @@ jobs:
           RELEASE_CANDIDATE: ${{ inputs.release_candidate }}
         run: just inference-admit
       - id: matrix
-        env:
+        env: &matrix-env
           SOURCE_SHA: ${{ steps.admission.outputs.source }}
           PROFILE: ${{ steps.admission.outputs.profile }}
           NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && !inputs.release_candidate && github.ref == 'refs/heads/main' && github.repository == 'general-inference/skippy' }}
@@ -121,8 +122,14 @@ jobs:
           flags=()
           if [[ "$NIGHTLY_PUBLICATION" == true ]]; then flags+=(--include-smoke); fi
           just inference-matrix "$PROFILE" "$SOURCE_SHA" "${flags[@]}"
+      - id: metal_matrix
+        env: *matrix-env
+        run: |
+          flags=(--backend metal)
+          if [[ "$NIGHTLY_PUBLICATION" == true ]]; then flags+=(--include-smoke); fi
+          just inference-matrix "$PROFILE" "$SOURCE_SHA" "${flags[@]}"
   qualification:
-    name: qualification (${{ matrix.id }})
+    name: ${{ matrix.name }}
     needs: plan
     strategy:
       fail-fast: false
@@ -130,24 +137,23 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ matrix.profile == 'pr' && 100 || 360 }}
-    env:
+    env: &qualification-env
       EVIDENCE: target/ci-evidence/inference-${{ matrix.id }}
-    steps:
+    steps: &qualification-steps
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           ref: ${{ needs.plan.outputs.controller }}
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: Dispatch and await native Spark qualification
+      - name: Dispatch and await native qualification
         env:
           SOURCE_SHA: ${{ needs.plan.outputs.source }}
           PROFILE: ${{ matrix.profile }}
+          BACKEND: ${{ matrix.backend }}
           CONFIGURATION: ${{ matrix.configuration }}
           JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
         run: |
-          flags=()
-          if [[ "$PROFILE" == pr || "$PROFILE" == nightly ]]; then flags+=(--collect-metrics); fi
-          just inference-dispatch "$PROFILE" "$SOURCE_SHA" "$EVIDENCE" "$CONFIGURATION" "${flags[@]}"
+          just inference-dispatch "$PROFILE" "$SOURCE_SHA" "$EVIDENCE" "$CONFIGURATION" --backend "$BACKEND" --collect-metrics
       - name: Cancel outstanding JY jobs and formations
         if: cancelled() || failure()
         env:
@@ -163,9 +169,22 @@ jobs:
           path: ${{ env.EVIDENCE }}
           if-no-files-found: error
           retention-days: 30
+  qualification_metal:
+    name: ${{ matrix.name }}
+    needs: plan
+    strategy:
+      fail-fast: false
+      # The M3 Ultra is reserved exclusively. Serial dispatch keeps jobs off
+      # the Actions timeout clock until the preceding model finishes.
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.plan.outputs.metal_matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.profile == 'pr' && 100 || 360 }}
+    env: *qualification-env
+    steps: *qualification-steps
   nightly_publish:
     name: Publish nightly qualification
-    needs: [plan, qualification]
+    needs: [plan, qualification, qualification_metal]
     if: >-
       always() && !cancelled() && github.event_name == 'schedule' &&
       !inputs.release_candidate && github.repository == 'general-inference/skippy' &&
@@ -187,7 +206,7 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         continue-on-error: true
         with:
-          pattern: inference-*-${{ github.run_id }}-${{ github.run_attempt }}
+          pattern: inference-*-${{ github.run_id }}-*
           path: target/ci-evidence/nightly-inference
       - name: Prepare reporting dependencies
         env:
@@ -201,19 +220,18 @@ jobs:
       - name: Compare against saved baselines and publish the public report
         env:
           SOURCE_SHA: ${{ needs.plan.outputs.source }}
-          MATRIX_RESULT: ${{ needs.qualification.result }}
+          MATRIX_RESULT: ${{ needs.qualification.result == 'success' && needs.qualification_metal.result == 'success' && 'success' || 'failure' }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_HUB_DISABLE_PROGRESS_BARS: '1'
         run: |
           SKIPPY_PYTHON="$RUNNER_TEMP/inference-publication/bin/python" \
             just inference-publish-nightly target/ci-evidence/nightly-inference
   compare:
-    name: Compare with published inference baseline
-    needs: [plan, qualification]
+    name: Report inference qualification
+    needs: [plan, qualification, qualification_metal]
     if: >-
       always() && !cancelled() && needs.plan.result == 'success' &&
-      (github.event_name == 'pull_request_target' || github.event_name == 'workflow_dispatch') &&
-      (needs.plan.outputs.profile == 'pr' || needs.plan.outputs.profile == 'nightly')
+      (github.event_name == 'pull_request_target' || github.event_name == 'workflow_dispatch' || inputs.release_candidate)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -236,7 +254,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PROFILE: ${{ needs.plan.outputs.profile }}
           SOURCE_SHA: ${{ needs.plan.outputs.source }}
-          MATRIX_RESULT: ${{ needs.qualification.result }}
+          MATRIX_RESULT: ${{ needs.qualification.result == 'success' && needs.qualification_metal.result == 'success' && 'success' || 'failure' }}
         run: |
           RUN_STARTED_AT=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
             --jq '.run_started_at')
@@ -244,7 +262,7 @@ jobs:
           python3 scripts/inference-compare.py target/ci-evidence/inference-comparison
 
   summary:
-    needs: [plan, qualification, nightly_publish, compare]
+    needs: [plan, qualification, qualification_metal, nightly_publish, compare]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -256,6 +274,7 @@ jobs:
           SOURCE_SHA: ${{ needs.plan.outputs.source || github.event.pull_request.head.sha || github.sha }}
           PLAN: ${{ needs.plan.result }}
           RESULT: ${{ needs.qualification.result }}
+          METAL: ${{ needs.qualification_metal.result }}
           PUBLICATION: ${{ needs.nightly_publish.result }}
           COMPARISON: ${{ needs.compare.result }}
           PROFILE: ${{ needs.plan.outputs.profile }}
@@ -263,7 +282,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |
-            const { SOURCE_SHA: sha, PLAN: plan, RESULT: result, PUBLICATION: publication,
+            const { SOURCE_SHA: sha, PLAN: plan, RESULT: cuda, METAL: metal, PUBLICATION: publication,
               COMPARISON: comparison, PROFILE: profile, RELEASE_CANDIDATE: candidate, RUN_URL: url } = process.env;
             if (!/^[a-f0-9]{40}$/i.test(sha)) throw new Error('Invalid qualification source SHA');
             // A skipped plan is an intentional opt-out: the PR carries no
@@ -273,25 +292,23 @@ jobs:
             const skipped = plan === 'skipped' && pullRequest &&
               !(context.payload.pull_request.labels ?? []).some(label => label.name === 'qualify');
             const nightly = context.eventName === 'schedule' && !candidate;
-            const compare = (pullRequest || context.eventName === 'workflow_dispatch') &&
-              (profile === 'pr' || profile === 'nightly');
-            const passed = plan === 'success' && result === 'success' &&
+            const compare = pullRequest || context.eventName === 'workflow_dispatch' || Boolean(candidate);
+            const qualified = cuda === 'success' && metal === 'success';
+            const passed = plan === 'success' && qualified &&
               (!nightly || publication === 'success') && (!compare || comparison === 'success');
             const description = passed
-              ? 'Native Spark lab qualification'
+              ? 'Native CUDA and Metal lab qualification'
               : skipped
               ? 'Intentionally skipped (no qualify label)'
               : nightly
               ? 'Nightly qualification or publication incomplete or failed'
-              : compare && result === 'success'
+              : compare && qualified && profile !== 'release'
               ? 'Published baseline comparison failed or incomplete'
               : 'Inference admission or qualification incomplete or failed';
-            if (skipped || plan !== 'success' || profile === 'release') {
+            if (skipped || plan !== 'success') {
               const detail = skipped
-                ? 'Spark qualification was intentionally skipped because the PR does not carry the `qualify` label.'
-                : plan !== 'success'
-                ? 'Qualification did not reach the lab. See the admission job for details.'
-                : 'The release profile runs longer AgentX trials and has no matching published baseline.';
+                ? 'Qualification was intentionally skipped because the PR does not carry the `qualify` label.'
+                : 'Qualification did not reach the lab. See the admission job for details.';
               const outcome = skipped ? 'Skipped' : passed ? 'Passed' : 'Failed';
               await core.summary.addHeading('Inference qualification')
                 .addRaw(`**${outcome}** · \`${sha.slice(0, 12)}\`\n\n${detail}\n`, true).write();
@@ -303,7 +320,7 @@ jobs:
             if (!passed && !skipped) core.setFailed(description);
 
   report:
-    needs: [plan, qualification, summary]
+    needs: [plan, qualification, qualification_metal, summary]
     if: always() && github.event_name == 'pull_request_target' && needs.plan.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -329,5 +346,7 @@ jobs:
           SOURCE_SHA: ${{ needs.plan.outputs.source || github.event.pull_request.head.sha }}
           PLAN: ${{ needs.plan.result }}
           REQUIRED: 'true'
-          RESULT: ${{ needs.qualification.result }}
+          RESULT: ${{ needs.qualification.result == 'success' && needs.qualification_metal.result == 'success' && 'success' || 'failure' }}
+          CUDA_MATRIX: ${{ needs.plan.outputs.matrix }}
+          METAL_MATRIX: ${{ needs.plan.outputs.metal_matrix }}
         run: bash scripts/inference-report.sh target/inference-comment

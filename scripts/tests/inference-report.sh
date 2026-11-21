@@ -31,12 +31,16 @@ chmod +x "$fixture/bin/gh"
 printf '{"number":52}\n' > "$GITHUB_EVENT_PATH"
 jq -n --arg sha "$SOURCE_SHA" '{state:"open",head:{sha:$sha}}' > "$fixture/pr.json"
 printf '[[]]\n' > "$fixture/comments.json"
-jq '[.models[] | select(.pr) | (.id + "-standalone"), (select(.split) | .id + "-split")]' \
-  "$root/ci/inference-ladder.json" > "$fixture/rows.json"
-jq 'to_entries | map({id:(.key+1), name:("qualification ("+.value+")"), conclusion:"success"}) |
+GITHUB_OUTPUT="$fixture/cuda" python3 "$root/scripts/inference-plan.py" matrix pr "$SOURCE_SHA"
+GITHUB_OUTPUT="$fixture/metal" python3 "$root/scripts/inference-plan.py" matrix pr "$SOURCE_SHA" --backend metal
+CUDA_MATRIX=$(sed 's/^matrix=//' "$fixture/cuda")
+METAL_MATRIX=$(sed 's/^matrix=//' "$fixture/metal")
+export CUDA_MATRIX METAL_MATRIX
+jq -n --argjson cuda "$CUDA_MATRIX" --argjson metal "$METAL_MATRIX" \
+  '[$cuda.include[], $metal.include[]] | to_entries | map({id:(.key+1), name:.value.name, conclusion:"success"}) |
   [{jobs: .[:3]}, {jobs: .[3:]}]' \
-  "$fixture/rows.json" > "$fixture/jobs.json"
-row=$(jq -r '.[0]' "$fixture/rows.json")
+  > "$fixture/jobs.json"
+row=$(jq -r '.include[0].id' <<< "$CUDA_MATRIX")
 receipt="$fixture/evidence/$row-job.json"
 rates="$fixture/evidence/$row-throughput.json"
 jq -n --arg sha "$SOURCE_SHA" '{repo_rev:$sha,id:"job_test",status:"succeeded",runs:[{id:"run_test",status:"succeeded"}]}' > "$receipt"
@@ -54,7 +58,7 @@ reject() {
 }
 
 report
-jq -e '.body | contains("Lab Qualification: Passed") and contains("| 500.0 | 100.0 |") and contains("/jobs/job_test") and contains("/attempts/2")' "$fixture/posted.json" > /dev/null
+jq -e '.body | contains("Lab Qualification: Passed") and contains("| 500.0 | 100.0 |") and contains("/jobs/job_test") and contains("/attempts/2") and contains("Metal - Qwen/Qwen3.5-4B - standalone")' "$fixture/posted.json" > /dev/null
 grep -q 'POST$' "$fixture/mutation"
 cmp "$GITHUB_STEP_SUMMARY" <(jq -rj .body "$fixture/posted.json")
 

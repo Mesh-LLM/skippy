@@ -46,10 +46,10 @@ def output(**values):
 
 
 def admit_release_candidate(sha):
-    if (os.environ["GITHUB_EVENT_NAME"] != "workflow_dispatch"
+    if (os.environ["GITHUB_EVENT_NAME"] not in {"schedule", "workflow_dispatch"}
             or os.environ["GITHUB_REF"] != "refs/heads/main"
             or os.environ["GITHUB_WORKFLOW_REF"] != f"{REPO}/.github/workflows/release.yml@refs/heads/main"):
-        raise ValueError("release candidates require a protected Release dispatch")
+        raise ValueError("release candidates require a protected Release run")
     run = os.environ["GITHUB_RUN_ID"]
     if not re.fullmatch(r"[1-9][0-9]*", run):
         raise ValueError("invalid release run ID")
@@ -100,12 +100,13 @@ def main():
             action.add_argument("output", type=Path)
         else:
             action.add_argument("--include-smoke", action="store_true")
+            action.add_argument("--backend", choices=("cuda", "metal"), default="cuda")
     args = parser.parse_args()
     if args.action == "admit":
         admit()
         return
     if args.action == "matrix":
-        rows = matrix(args.profile, args.sha, args.include_smoke)
+        rows = matrix(args.profile, args.sha, args.include_smoke, backend=args.backend)
         output(matrix=json.dumps({"include": rows}, separators=(",", ":")))
     else:
         result = plan(args.profile, args.sha)
