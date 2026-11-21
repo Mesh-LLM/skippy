@@ -134,7 +134,7 @@ def main():
     args = parser.parse_args()
     identity = admit(os.environ)
     if not os.environ.get("HF_TOKEN"):
-        raise ValueError("HF_INFERENCE_DATASET_TOKEN is required for nightly publication")
+        raise ValueError("HF_TOKEN is required for nightly publication")
     from huggingface_hub import CommitOperationAdd, CommitOperationDelete, HfApi, hf_hub_download
 
     run = publish(HfApi(), hf_hub_download, CommitOperationAdd, CommitOperationDelete, args.evidence, identity)

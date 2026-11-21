@@ -70,8 +70,8 @@ on:
     secrets:
       JIANYANG_INFERENCE_SSH_KEY:
         required: true
-      HF_INFERENCE_DATASET_TOKEN:
-        description: Dataset-scoped token used only by the protected scheduled publisher.
+      HF_TOKEN:
+        description: Hugging Face write token used only by the protected scheduled publisher.
         required: false
 permissions:
   contents: read
@@ -199,7 +199,7 @@ jobs:
         env:
           SOURCE_SHA: ${{ needs.plan.outputs.source }}
           MATRIX_RESULT: ${{ needs.qualification.result }}
-          HF_TOKEN: ${{ secrets.HF_INFERENCE_DATASET_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_HUB_DISABLE_PROGRESS_BARS: '1'
         run: |
           SKIPPY_PYTHON="$RUNNER_TEMP/inference-publication/bin/python" \

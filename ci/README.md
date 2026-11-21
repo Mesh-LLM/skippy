@@ -87,11 +87,11 @@ recorded while the saved reference remains in force until a new source exceeds
 the improvement threshold. Regressions and incomplete evidence fail nightly
 after publication and preserve the affected baseline.
 
-Set `HF_INFERENCE_DATASET_TOKEN` to a repository secret with write access
-scoped to this Hugging Face dataset before enabling nightly publication on
-main. Only the publisher step receives the token. Public receipts contain
-aggregate results, source and workload identities, and verdicts. Native logs,
-lab receipts, and native access credentials stay in their existing systems.
+The scheduled publisher uses the existing `HF_TOKEN` Actions secret. It needs
+write access to this Hugging Face dataset. Only the publisher step receives
+the token. Public receipts contain aggregate results, source and workload
+identities, and verdicts. Native logs, lab receipts, and native access
+credentials stay in their existing systems.
 
 Scheduled, manual and reusable full/candidate validation bypass path selection.
 Tagged releases and manual llama upgrades retain their explicit triggers. The
