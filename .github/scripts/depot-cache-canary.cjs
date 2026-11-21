@@ -14,15 +14,17 @@ async function checkCacheWriteDenied(env, request) {
     throw new Error('Missing canary run identity');
   }
 
-  const url = new URL(env.ACTIONS_RESULTS_URL);
-  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-  const depot = url.protocol === 'https:' && url.hostname.endsWith('.depot.dev');
-  if (!(depot || (loopback && ['https:', 'http:'].includes(url.protocol))) ||
-      url.username || url.password || url.search || url.hash) {
-    throw new Error('The runner did not expose a recognized Depot cache proxy');
+  // Match actions/cache v2, which resolves its Twirp path from the runtime endpoint's origin.
+  const path = '/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry';
+  const url = URL.parse(path, env.ACTIONS_RESULTS_URL);
+  if (!url) {
+    throw new Error('The runner exposed an invalid Actions Cache v2 endpoint');
   }
-  const service = 'twirp/github.actions.results.api.v1.CacheService';
-  url.pathname = `${url.pathname.replace(/\/+$/, '')}/${service}/CreateCacheEntry`;
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if ((url.protocol !== 'https:' && !(loopback && url.protocol === 'http:')) ||
+      url.username || url.password) {
+    throw new Error('The Actions Cache v2 endpoint must use HTTPS or runner loopback HTTP and have no embedded credentials');
+  }
 
   // A reservation tests the server-side permission without uploading any data.
   const key = `skippy-depot-cache-canary-${env.GITHUB_RUN_ID}-${env.GITHUB_RUN_ATTEMPT}-write-probe`;
