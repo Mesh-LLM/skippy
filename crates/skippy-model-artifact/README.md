@@ -11,11 +11,14 @@ runtime consumers. It knows
 artifact-selection policy and file metadata formats, but it does not know how
 any particular registry downloads files.
 
+The `sizes` module parses catalog size labels and formats decimal GB/MB labels
+used by model discovery responses.
+
 ## Architecture Role
 
 Repository adapters implement `ModelRepository`. This crate asks the adapter for
 the resolved revision and file listing, then applies shared selection rules for
-GGUF and safetensors artifacts.
+runnable GGUF artifacts.
 
 ```mermaid
 flowchart LR
@@ -33,12 +36,12 @@ flowchart LR
 
 - With a selector, prefer exact file and basename matches before quant-like GGUF
   matches.
-- Without a selector, prefer `model.safetensors`, then split safetensors, then
-  GGUF first shards, then single GGUF files.
-- Split GGUF shards are grouped by matching shard prefix and total count.
-- SafeTensors checkpoint planning reads the index when present, selects only
-  referenced weight shards, and requires config and tokenizer metadata.
+- Without a selector, choose a GGUF by quantization preference or by fit when a memory budget is available.
+- Split GGUF shards are grouped by matching shard prefix and total count. Selection requires all shards.
 - Known GGUF sidecars are ignored during default selection.
+
+The offline SafeTensors checkpoint planner reads the index when present, selects
+its referenced shards, and requires config and tokenizer metadata.
 
 ## Main Types
 

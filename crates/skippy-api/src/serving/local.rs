@@ -3,7 +3,7 @@ use super::{InferenceOptions, ModelLoadRequest, ModelOpenEvents};
 use anyhow::{Result, bail};
 use skippy_protocol::{StageConfig, StageTopology};
 use skippy_serving::{EmbeddedRuntimeOptions, SpeculativeDecodeConfig};
-use std::{future::Future, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{future::Future, net::SocketAddr, path::PathBuf};
 
 /// Node disk cache settings, resolved by the caller from its configuration.
 #[derive(Clone)]
@@ -30,7 +30,6 @@ impl LocalDiskCacheOptions {
 }
 
 /// Prepared local OpenAI serving options. Model acquisition and argument parsing belong to callers.
-#[derive(Clone)]
 pub struct LocalOpenAiOptions {
     pub tuning: skippy_serving::settings::ServingTuning,
     pub config: StageConfig,
@@ -55,7 +54,7 @@ pub struct LocalOpenAiOptions {
     pub telemetry_queue_capacity: usize,
     pub telemetry_level: skippy_serving::telemetry::TelemetryLevel,
     pub openai_guardrails: skippy_serving::frontend::InferenceGuardrailsMode,
-    pub model_open_events: Option<Arc<skippy_runtime::ModelOpenEventQueue>>,
+    pub model_open_events: ModelOpenEvents,
     pub disk_cache: Option<LocalDiskCacheOptions>,
 }
 
@@ -155,7 +154,16 @@ impl LocalOpenAiOptions {
     }
 
     /// Resolve local options to a load request without opening the native model.
-    pub fn into_request(self) -> Result<(SocketAddr, ModelLoadRequest)> {
+    pub fn into_request(mut self) -> Result<(SocketAddr, ModelLoadRequest)> {
+        let events = std::mem::take(&mut self.model_open_events);
+        self.load_request(events)
+    }
+
+    /// Prepare a fresh load from the same options with a per-load observer.
+    pub fn load_request(
+        &self,
+        open_events: ModelOpenEvents,
+    ) -> Result<(SocketAddr, ModelLoadRequest)> {
         let openai = self.resolved_openai_options()?;
         let native_mtp_enabled = openai.native_mtp_enabled;
         let mtp_source = if native_mtp_enabled {
@@ -167,35 +175,34 @@ impl LocalOpenAiOptions {
         } else {
             skippy_runtime::MtpSource::Disabled
         };
-        let mut config = self.config;
+        let mut config = self.config.clone();
         config.native_mtp_enabled = native_mtp_enabled;
-        let l3_manager = self.disk_cache.and_then(LocalDiskCacheOptions::acquire);
+        let l3_manager = self
+            .disk_cache
+            .clone()
+            .and_then(LocalDiskCacheOptions::acquire);
         Ok((
             self.bind_addr,
             ModelLoadRequest {
                 runtime: EmbeddedRuntimeOptions {
                     config,
-                    topology: self.topology,
+                    topology: self.topology.clone(),
                     n_threads: self.tuning.n_threads,
                     n_threads_batch: self.tuning.n_threads_batch,
                     mtp_source,
                     recurrent_rollback_tokens: 0,
-                    metrics_otlp_grpc: self.metrics_otlp_grpc,
+                    metrics_otlp_grpc: self.metrics_otlp_grpc.clone(),
                     telemetry_queue_capacity: self.telemetry_queue_capacity,
                     telemetry_level: self.telemetry_level,
                     session_lifecycle_observer: None,
                 },
                 openai,
-                open_events: self
-                    .model_open_events
-                    .map_or(ModelOpenEvents::Disabled, |queue| {
-                        ModelOpenEvents::Enabled(Some(queue))
-                    }),
+                open_events,
                 hooks_factory: None,
                 generation_observer: None,
                 kv_observer: None,
                 hook_policy: None,
-                guardrails: self.tuning.guardrails.or_else(|| {
+                guardrails: self.tuning.guardrails.clone().or_else(|| {
                     Some(
                         skippy_serving::InferenceGuardrailsConfig::for_standalone_mode(
                             self.openai_guardrails,
@@ -253,7 +260,7 @@ mod tests {
             telemetry_queue_capacity: 0,
             telemetry_level: skippy_serving::telemetry::TelemetryLevel::Off,
             openai_guardrails: skippy_serving::frontend::InferenceGuardrailsMode::Disabled,
-            model_open_events: None,
+            model_open_events: ModelOpenEvents::Disabled,
             disk_cache: None,
         }
     }

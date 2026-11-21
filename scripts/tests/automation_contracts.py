@@ -246,5 +246,47 @@ class RewriterReport(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class CargoDownloadsCache(unittest.TestCase):
+    """The ~/.cargo downloads cache must not cross filesystem layouts."""
+
+    action = ROOT / ".github" / "actions" / "cache" / "action.yml"
+
+    def downloads_key_lines(self):
+        lines = [line.strip() for line in self.action.read_text().splitlines()]
+        key = [line for line in lines if line.startswith("key: cargo-downloads-v1")]
+        prefix = [line for line in lines
+                  if line.startswith("cargo-downloads-v1-") and not line.startswith("key:")]
+        self.assertTrue(key, "cargo-downloads cache key is missing")
+        self.assertTrue(prefix, "cargo-downloads restore-keys prefix is missing")
+        return key[0], prefix[0]
+
+    def test_downloads_keys_carry_a_layout_signature(self):
+        # Regression: the downloads cache archives ~/.cargo relative to the
+        # workspace. Archives saved by VM-layout jobs store registry paths as
+        # ../../../.cargo/..., and container-layout jobs (workspace
+        # /__w/skippy/skippy) could not extract them: ../../../ escapes to /
+        # where mkdir is denied, so every crate re-downloaded on each run.
+        # Both the exact key and the restore-keys prefix must carry the layout
+        # signature, or a prefix match would still restore foreign layouts.
+        key, prefix = self.downloads_key_lines()
+        self.assertIn("${{ env.SKIPPY_CARGO_CACHE_LAYOUT }}", key)
+        self.assertIn("${{ env.SKIPPY_CARGO_CACHE_LAYOUT }}", prefix)
+
+    def test_layout_signature_binds_workspace_and_cargo_home(self):
+        # The signature must digest the resolved cargo home together with the
+        # workspace, because the tar geometry depends on both; hashing only
+        # one anchor still lets mixed-layout jobs share an archive lineage.
+        lines = self.action.read_text().splitlines()
+        self.assertTrue(any('cargo_home="${CARGO_HOME:-$HOME/.cargo}"' in line for line in lines),
+                        "cargo home is not resolved from CARGO_HOME")
+        self.assertTrue(any("SKIPPY_CARGO_CACHE_LAYOUT=" in line for line in lines),
+                        "layout signature is never exported")
+        digests = [line for line in lines if "sha256sum" in line or "shasum" in line]
+        self.assertTrue(digests, "layout signature is not hashed")
+        self.assertTrue(any('"$cargo_home"' in line and '"$GITHUB_WORKSPACE"' in line
+                            for line in lines),
+                        "layout digest must cover both the cargo home and the workspace")
+
+
 if __name__ == "__main__":
     unittest.main()

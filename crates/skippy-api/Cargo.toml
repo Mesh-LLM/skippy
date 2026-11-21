@@ -13,6 +13,8 @@ default = []
 dynamic-native-runtime = ["skippy-runtime/dynamic-native-runtime", "skippy-serving/dynamic-native-runtime"]
 
 [dependencies]
+skippy-topology = { path = "../skippy-topology", version = "0.80.0" }
+skippy-coordinator = { path = "../skippy-coordinator", version = "0.80.0" }
 reqwest = { version = "0.13", features = ["json"] }
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 skippy-config = { path = "../skippy-config", version = "0.80.0" }

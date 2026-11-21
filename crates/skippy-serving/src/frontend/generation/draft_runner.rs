@@ -376,18 +376,14 @@ pub(in crate::frontend) fn draft_runtime_config(
         activation_import_bindings: Vec::new(),
         activation_export_identities: Vec::new(),
         activation_export_bindings: Vec::new(),
-        checkpoint_quantization: config
-            .checkpoint_quantization
-            .as_deref()
-            .unwrap_or("preserve")
-            .parse()
-            .map_err(anyhow::Error::msg)
-            .context("parse checkpoint_quantization for draft model")?,
-        checkpoint_imatrix: config.checkpoint_imatrix.as_deref().map(Into::into),
-        checkpoint_imatrix_sha256: config.checkpoint_imatrix_sha256.clone(),
         kv_offload: config.kv_offload,
         kv_unified: config.kv_unified,
         swa_full: config.swa_full,
+        kv_pool_tokens: config.kv_pool_tokens,
+        kv_lazy_clear: config.kv_lazy_clear,
+        kv_release_pages: config.kv_release_pages,
+        kv_row_attention: config.kv_row_attention,
+        sample_threads: config.sample_threads,
     })
 }
 

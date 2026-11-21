@@ -19,7 +19,6 @@ controls supported by a measurement or deployment requirement.
 | --- | --- |
 | `model`, `model_path` | Select a catalog, Hugging Face, or local source |
 | `model_id` | Set the public model identifier where supported |
-| `quant`, `checkpoint_imatrix` | Configure supported on-load checkpoint quantization |
 | `mmproj` | Select a multimodal projector |
 | `mmap`, `mlock` | Control model weight mapping and page locking |
 
@@ -64,6 +63,9 @@ The corresponding environment overrides are `SKIPPY_SERVE_ON_DEMAND`,
 | `kv_cache_offload` | Offload supported KV work to the backend |
 | `flash_attention` | Select automatic, enabled, or disabled Flash Attention |
 | `cache_idle_slots` | Limit retained idle sessions |
+| `kv_pool_tokens` | Bound the shared pool; at least one request's context window |
+| `kv_lazy_clear`, `kv_release_pages` | Control incremental zeroing and release of unused host-visible KV pages |
+| `kv_row_attention` | Enable per-request row lists on supported backends |
 
 ## `[cache]`
 
@@ -72,7 +74,9 @@ The corresponding environment overrides are `SKIPPY_SERVE_ON_DEMAND`,
 | `prefix_cache` | Select `auto`, `on`, `off`, or `record` |
 | `prefix_cache_budget` | Set the resident retention target |
 | `prefix_cache_max_entries`, `prefix_cache_min_tokens` | Bound retained entries and minimum useful prefixes |
-| `prefix_cache_ram` | Enable the optional host-RAM tier above disk |
+| `prefix_cache_ram` | Bound native recurrent-checkpoint RAM; serialized runtimes use an optional tier above disk |
+| `prefix_cache_retention_tokens` | Bound attention cells retained after requests finish |
+| `prefill_admission` | Select cooperative or serialized suffix prefill |
 | `kv_cache_disk`, `kv_cache_disk_dir` | Enable and locate durable prompt state |
 | `kv_cache_min_free` | Reserve free space on the cache volume |
 
@@ -82,6 +86,9 @@ The corresponding environment overrides are `SKIPPY_SERVE_ON_DEMAND`,
 | --- | --- |
 | `generation_concurrency` | Set active generation lanes |
 | `continuous_batching` | Serve concurrent lanes in the iteration scheduler |
+| `batch_policy` | Select the arrival-order batch policy |
+| `batch_decode_window_us`, `batch_prefill_window_per_token_us` | Tune batch gathering latency |
+| `sample_threads` | Select pooled sampling (0), inline sampling (1), or a thread cap |
 | `generation_queue_capacity` | Bound queued requests |
 | `generation_admission_timeout_secs` | Bound queue wait time |
 | `prefill_chunk_size`, `prefill_chunk_policy` | Configure chunked prefill |
@@ -143,3 +150,5 @@ experiments.
 The repository's canonical field-by-field table is
 `docs/SERVING_SETTINGS.md`. Keep that source and this public index consistent
 when adding or retiring a serving option.
+
+For command syntax and global flags, see the [CLI reference](/cli/).

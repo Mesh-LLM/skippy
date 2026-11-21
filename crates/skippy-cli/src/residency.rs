@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result, ensure};
 use skippy_api::serving::{
@@ -68,9 +71,17 @@ pub async fn serve(model: LocalOpenAiOptions, options: Options) -> Result<()> {
         .context("residency requires an identified local source with a known size")?;
     let capacity = options.capacity_bytes.unwrap_or(model_bytes);
     let address = model.bind_addr;
+    let load_id = id.clone();
+    let model = Mutex::new(model);
     let loader: Loader = Arc::new(move || {
-        let (_, request) = model.clone().into_request()?;
-        let loaded = Arc::new(request.load()?);
+        let (_, request) = model
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .load_request(crate::serve::model_open_events())?;
+        let started = Instant::now();
+        let result = request.load();
+        crate::serve::record_model_load(&load_id, started.elapsed(), result.is_ok());
+        let loaded = Arc::new(result?);
         Ok(BackendLease::new(loaded.backend.clone(), loaded))
     });
     let residency = LocalResidency::start(
