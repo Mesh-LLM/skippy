@@ -121,6 +121,22 @@ releases add device smoke for the other three CUDA packages using their exact
 archives. JY hardware jobs declare literal runner groups and labels. The full
 CI gate matches all package jobs to the plan and checks required device results.
 
+Same-repository PRs to `main` use the workflow definition on protected `main`.
+The workflow verifies repository identity, the PR author's write access and the
+exact candidate SHA before running candidate code. The ordinary PR workflow
+runs approved forks on GitHub-hosted runners. Changes requiring native hardware
+stay blocked until an isolated native runner path is available.
+
+Restrict each Skippy lab runner group to the protected workflow references
+below before enabling public fork builds. Validate a same-repository PR and a
+release canary after applying the restrictions.
+
+```text
+Mesh-LLM/skippy/.github/workflows/ci.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main
+```
+
 The CPU-only `quality` job runs on GitHub-hosted `ubuntu-24.04` inside
 `ghcr.io/mesh-llm/skippy-ci-cpu:latest` for lint, tests and FFI binding
 freshness. The image supplies the pinned Rust toolchain, Just, sccache,

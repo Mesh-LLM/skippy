@@ -126,7 +126,7 @@ test('native CI and inference triggers match the internal route lists', () => {
   const config = readFileSync(join(__dirname, '../path-filters.yml'), 'utf8');
   const [code, inference] = config.split(/^inference:\n/m).map(lists);
   const ci = readFileSync(join(__dirname, '../workflows/ci.yml'), 'utf8');
-  const [prPaths, pushPaths] = ci.split(/^  push:\n/m);
+  const [prPaths, targetPaths, pushPaths] = ci.split(/^  (?:pull_request_target|push):\n/m);
   const spark = readFileSync(join(__dirname, '../workflows/inference.yml'), 'utf8');
   assert.deepEqual(lists(pushPaths.split(/^  schedule:\n/m)[0]), code);
   assert.deepEqual(lists(spark.split(/^  schedule:\n/m)[0]), inference);
@@ -135,11 +135,24 @@ test('native CI and inference triggers match the internal route lists', () => {
   assert.ok(ciOnly.every(path => inference.includes(path)));
   const exclusion = code.findIndex(path => path.startsWith('!'));
   assert.deepEqual(lists(prPaths), [...code.slice(0, exclusion), ...ciOnly, ...code.slice(exclusion)]);
+  assert.deepEqual(lists(targetPaths), lists(prPaths));
   const includes = lists(prPaths).filter(path => !path.startsWith('!'));
   for (const path of inference.filter(path => !path.startsWith('!'))) {
     assert.ok(includes.some(trigger => trigger === path ||
       (trigger.endsWith('/**') && path.startsWith(trigger.slice(0, -2)))), `CI never triggers for ${path}`);
   }
+});
+
+test('same-repository PRs to main wait for the protected CI producer', async () => {
+  const pr = { head: { sha, repo: { id: 42 } }, base: { ref: 'main', repo: { id: 42 } } };
+  const ordinary = run('ci.yml');
+  const protectedCI = run('ci.yml', 3, { event: 'pull_request_target' });
+  const inference = run('inference.yml', 2);
+  assert.equal((await evaluate({ pr, runs: [ordinary, inference] })).state, 'pending');
+  assert.equal((await evaluate({ pr, runs: [ordinary, inference, protectedCI] })).state, 'success');
+  const fork = { ...pr, head: { ...pr.head, repo: { id: 43 } } };
+  assert.equal((await evaluate({ pr: fork, runs: [protectedCI, inference] })).state, 'pending');
+  assert.equal((await evaluate({ pr: fork, runs: [ordinary, inference] })).state, 'success');
 });
 
 test('latest run and attempt govern reruns; old cancellations do not poison new results', async () => {

@@ -34,10 +34,11 @@ function workflowPaths(workflow, eventName) {
   return rules;
 }
 
-function expectedWorkflows(files) {
+function expectedWorkflows(files, sameRepositoryPR = false) {
   const filenames = files.flatMap(({ filename, previous_filename }) => [filename, previous_filename]).filter(Boolean);
   const expected = new Map();
-  for (const [workflow, eventName] of producers) {
+  for (const [workflow, defaultEvent] of producers) {
+    const eventName = workflow === 'ci.yml' && sameRepositoryPR ? 'pull_request_target' : defaultEvent;
     const rules = workflowPaths(workflow, eventName);
     // GitHub applies matching path patterns in order, with the last match
     // determining whether each changed file is included.
