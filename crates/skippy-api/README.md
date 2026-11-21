@@ -162,6 +162,25 @@ manifest and endpoints before starting downstream stages first.
 adapter can use `start_binary_stage_ready_probe` for the existing readiness
 handshake. Cancel the execution to release stages in reverse startup order.
 
+### Running server lifecycle
+
+`serving::managed::ManagedModels` can start with zero models or apply a
+fail-fast or best-effort eager startup policy. Its backend lists only ready
+instances. Load acceptance appears as `loading` in status and the load future
+waits for completion. A drain closes admission immediately, then waits for
+existing requests and streams. At the deadline the registry signals their
+cancellation and retains the instance until execution releases its leases.
+A load cancelled during native initialization releases its result when the
+native call finishes. An optional instance number prevents stale operator
+requests from affecting a replacement.
+
+On Unix, create an owner-only directory and use
+`skippy serve-managed --management-socket /absolute/private/control.sock`.
+Use `skippy manage --management-socket /absolute/private/control.sock status`
+to list all states. The same command accepts `load ID /absolute/model.gguf`,
+`drain ID --timeout-secs 30`, and `unload ID`. Startup can use repeated
+`--eager-model ID=/absolute/model.gguf` flags and `--best-effort`.
+
 ## Resolving a package for stage planning
 
 Use `PackageAcquisition::resolve_and_inspect_package` with the original local or Hugging Face reference. Mesh and other embedding hosts can replace their schema checks, cache fallback, and metadata inspection calls with this operation. Keep passing the existing explicit cache root, lazy Hub client factory, and progress observer to `PackageAcquisition`.
