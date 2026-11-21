@@ -14,17 +14,14 @@ async function checkCacheWriteDenied(env, request) {
     throw new Error('Missing canary run identity');
   }
 
-  // Match actions/cache v2, which resolves its Twirp path from the runtime endpoint's origin.
-  const path = '/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry';
-  const url = URL.parse(path, env.ACTIONS_RESULTS_URL);
-  if (!url) {
+  // The protected job gets this endpoint from the runner, just as actions/cache does.
+  const endpoint = URL.parse(env.ACTIONS_RESULTS_URL);
+  if (!endpoint || !['http:', 'https:'].includes(endpoint.protocol)) {
     throw new Error('The runner exposed an invalid Actions Cache v2 endpoint');
   }
-  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-  if ((url.protocol !== 'https:' && !(loopback && url.protocol === 'http:')) ||
-      url.username || url.password) {
-    throw new Error('The Actions Cache v2 endpoint must use HTTPS or runner loopback HTTP and have no embedded credentials');
-  }
+  // Use only the scheme, host, and port, as the Actions HTTP client's request does.
+  const path = '/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry';
+  const url = new URL(path, endpoint.origin);
 
   // A reservation tests the server-side permission without uploading any data.
   const key = `skippy-depot-cache-canary-${env.GITHUB_RUN_ID}-${env.GITHUB_RUN_ATTEMPT}-write-probe`;

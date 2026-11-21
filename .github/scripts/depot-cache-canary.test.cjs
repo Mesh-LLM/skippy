@@ -31,13 +31,16 @@ test('requires an explicit service denial with the unmodified job token', async 
     Response.json({ ok: false, message: 'cache write denied: read-only' })), 200);
 });
 
-test('uses the runner-provided HTTPS origin without a host suffix requirement', async () => {
-  const endpoint = { ...env, ACTIONS_RESULTS_URL: 'https://cache.example.test/path?query=1#fragment' };
-  const status = await checkCacheWriteDenied(endpoint, async (url) => {
-    assert.equal(url.href, 'https://cache.example.test/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry');
-    return Response.json({ code: 'permission_denied' }, { status: 403 });
-  });
-  assert.equal(status, 403);
+test('uses the runner-provided HTTP or HTTPS origin without forwarding URL credentials', async () => {
+  for (const protocol of ['http:', 'https:']) {
+    const ACTIONS_RESULTS_URL = `${protocol}//name:password@cache.example.test:8123/path?query=1#fragment`;
+    const status = await checkCacheWriteDenied({ ...env, ACTIONS_RESULTS_URL }, async (url, request) => {
+      assert.equal(url.href, `${protocol}//cache.example.test:8123/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry`);
+      assert.equal(request.headers.Authorization, 'Bearer job-token');
+      return Response.json({ code: 'permission_denied' }, { status: 403 });
+    });
+    assert.equal(status, 403);
+  }
 });
 
 test('a successful reservation or inconclusive response fails the canary', async () => {
@@ -57,14 +60,12 @@ test('skips requests in the wrong mode or with an unsafe endpoint', async () => 
   await assert.rejects(checkCacheWriteDenied({ ...env, DEPOT_CACHE_TOKEN: 'separate-token' }, noRequest), /separate cache connection/);
   await assert.rejects(checkCacheWriteDenied({ ...env, SCCACHE_WEBDAV_ENDPOINT: 'https://cache.depot.dev' }, noRequest), /separate cache connection/);
   for (const ACTIONS_RESULTS_URL of [
-    'http://cache.example.test/',
-    'http://localhost.example.test/',
-    'http://name:password@localhost:8123/',
-    'https://name:password@cache.example.test/',
+    'invalid',
+    'file:///tmp/cache',
+    'ftp://cache.example.test/',
   ]) {
-    await assert.rejects(checkCacheWriteDenied({ ...env, ACTIONS_RESULTS_URL }, noRequest), /endpoint must use HTTPS/);
+    await assert.rejects(checkCacheWriteDenied({ ...env, ACTIONS_RESULTS_URL }, noRequest), /invalid Actions Cache v2 endpoint/);
   }
-  await assert.rejects(checkCacheWriteDenied({ ...env, ACTIONS_RESULTS_URL: 'invalid' }, noRequest), /invalid Actions Cache v2 endpoint/);
 });
 
 test('the canary is restricted to manual runs on protected main', () => {
