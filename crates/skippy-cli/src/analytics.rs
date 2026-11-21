@@ -28,7 +28,7 @@ pub fn init(command: &Command) {
 /// The family a command reports under. Arguments never go out.
 pub fn family(command: &Command) -> &'static str {
     match command {
-        Command::Doctor => "doctor",
+        Command::Doctor { .. } => "doctor",
         Command::GpuBenchmark { .. } => "gpu_benchmark",
         Command::Prompt(_) => "prompt",
         Command::Serve(_) => "serve",
