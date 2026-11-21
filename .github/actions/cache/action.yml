@@ -40,9 +40,9 @@ runs:
         path: |
           ${{ env.CARGO_HOME || '~/.cargo' }}/registry
           ${{ env.CARGO_HOME || '~/.cargo' }}/git
-        key: cargo-downloads-v1-${{ runner.os }}-${{ env.SKIPPY_CARGO_CACHE_LAYOUT }}-${{ inputs.download-scope }}-${{ hashFiles('Cargo.lock', 'skippy-api-rs/Cargo.lock') }}
+        key: cargo-downloads-v1-${{ github.event_name == 'pull_request_target' && 'same-repo-pr-' || '' }}${{ runner.os }}-${{ env.SKIPPY_CARGO_CACHE_LAYOUT }}-${{ inputs.download-scope }}-${{ hashFiles('Cargo.lock', 'skippy-api-rs/Cargo.lock') }}
         restore-keys: |
-          cargo-downloads-v1-${{ runner.os }}-${{ env.SKIPPY_CARGO_CACHE_LAYOUT }}-${{ inputs.download-scope }}-
+          cargo-downloads-v1-${{ github.event_name == 'pull_request_target' && 'same-repo-pr-' || '' }}${{ runner.os }}-${{ env.SKIPPY_CARGO_CACHE_LAYOUT }}-${{ inputs.download-scope }}-
     - name: Identify checked-out source
       id: source
       shell: bash
@@ -51,6 +51,6 @@ runs:
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ inputs.build-paths }}
-        key: cargo-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.scope }}-${{ env.CARGO_INCREMENTAL }}-${{ env.CARGO_PROFILE_DEV_DEBUG }}-${{ env.CARGO_PROFILE_TEST_DEBUG }}-${{ env.CARGO_PROFILE_RELEASE_DEBUG }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml', 'Cargo.lock', 'skippy-api-rs/Cargo.toml', 'skippy-api-rs/Cargo.lock', '.cargo/config.toml', 'Justfile', 'scripts/**', 'llama_cpp/upstream.txt', 'llama_cpp/whisper-upstream.txt', 'llama_cpp/patches/**', 'ci/targets.json') }}-${{ steps.source.outputs.sha }}
+        key: cargo-build-v1-${{ github.event_name == 'pull_request_target' && 'same-repo-pr-' || '' }}${{ runner.os }}-${{ runner.arch }}-${{ inputs.scope }}-${{ env.CARGO_INCREMENTAL }}-${{ env.CARGO_PROFILE_DEV_DEBUG }}-${{ env.CARGO_PROFILE_TEST_DEBUG }}-${{ env.CARGO_PROFILE_RELEASE_DEBUG }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml', 'Cargo.lock', 'skippy-api-rs/Cargo.toml', 'skippy-api-rs/Cargo.lock', '.cargo/config.toml', 'Justfile', 'scripts/**', 'llama_cpp/upstream.txt', 'llama_cpp/whisper-upstream.txt', 'llama_cpp/patches/**', 'ci/targets.json') }}-${{ steps.source.outputs.sha }}
         restore-keys: |
-          cargo-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.scope }}-${{ env.CARGO_INCREMENTAL }}-${{ env.CARGO_PROFILE_DEV_DEBUG }}-${{ env.CARGO_PROFILE_TEST_DEBUG }}-${{ env.CARGO_PROFILE_RELEASE_DEBUG }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml', 'Cargo.lock', 'skippy-api-rs/Cargo.toml', 'skippy-api-rs/Cargo.lock', '.cargo/config.toml', 'Justfile', 'scripts/**', 'llama_cpp/upstream.txt', 'llama_cpp/whisper-upstream.txt', 'llama_cpp/patches/**', 'ci/targets.json') }}-
+          cargo-build-v1-${{ github.event_name == 'pull_request_target' && 'same-repo-pr-' || '' }}${{ runner.os }}-${{ runner.arch }}-${{ inputs.scope }}-${{ env.CARGO_INCREMENTAL }}-${{ env.CARGO_PROFILE_DEV_DEBUG }}-${{ env.CARGO_PROFILE_TEST_DEBUG }}-${{ env.CARGO_PROFILE_RELEASE_DEBUG }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml', 'Cargo.lock', 'skippy-api-rs/Cargo.toml', 'skippy-api-rs/Cargo.lock', '.cargo/config.toml', 'Justfile', 'scripts/**', 'llama_cpp/upstream.txt', 'llama_cpp/whisper-upstream.txt', 'llama_cpp/patches/**', 'ci/targets.json') }}-

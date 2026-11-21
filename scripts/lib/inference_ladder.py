@@ -50,3 +50,16 @@ def plan(profile, sha):
                               else "extended-qualification-requires-pinned-harness-and-repeats"),
         "rows": rows,
     }
+
+
+def matrix(profile, sha, include_smoke=False):
+    rows = [{**row, "configuration": row["id"], "profile": profile}
+            for row in plan(profile, sha)["rows"]]
+    if include_smoke:
+        if profile != "nightly":
+            raise ValueError("the additional smoke matrix requires the nightly profile")
+        rows.extend(
+            {**row, "id": f'smoke-{row["id"]}', "configuration": row["id"], "profile": "pr"}
+            for row in plan("pr", sha)["rows"]
+        )
+    return rows

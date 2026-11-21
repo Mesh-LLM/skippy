@@ -6,8 +6,8 @@ publish = false
 version.workspace = true
 build = "build.rs"
 description = "Rust FFI bindings for the Skippy native runtime ABI"
-repository = "https://github.com/general-inference/skippy"
-homepage = "https://github.com/general-inference/skippy"
+repository = "https://github.com/Mesh-LLM/skippy"
+homepage = "https://github.com/Mesh-LLM/skippy"
 
 [features]
 default = ["dynamic-runtime"]

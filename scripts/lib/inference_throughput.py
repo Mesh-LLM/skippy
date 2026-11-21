@@ -7,20 +7,24 @@ from pathlib import Path
 from .ci_artifacts import read_json, write_json
 
 
-def collect(pilot, job, row, sha, output, key):
+def successful_run(job, sha):
     runs = job.get("runs") or []
     run = runs[-1] if runs else {}
     run_id = run.get("id") or ""
-    if run.get("status") != "succeeded" or not re.fullmatch(r"run_[A-Za-z0-9_]+", run_id):
+    if (job.get("repo_rev") != sha or job.get("status") != "succeeded"
+            or run.get("status") != "succeeded" or not re.fullmatch(r"run_[A-Za-z0-9_]+", run_id)):
         raise ValueError("missing successful native attempt")
+    return run_id
+
+
+def collect(pilot, job, row, sha, output, key):
+    run_id = successful_run(job, sha)
     prefix = f"/v1/artifacts/{run_id}/raw/"
     qualification = pilot.api("GET", prefix + "qualification.json")
     samples = pilot.api("GET", prefix + "quality.json")
     identity = {"source_sha": sha, "model": key, "mode": row["mode"],
                 "profile": "pr", "status": "passed"}
-    if job.get("repo_rev") != sha or job.get("status") != "succeeded" or any(
-        qualification.get(field) != expected for field, expected in identity.items()
-    ):
+    if any(qualification.get(field) != expected for field, expected in identity.items()):
         raise ValueError("throughput evidence identity mismatch")
     cases = read_json(Path("ci/inference-quality.json"))
     if not isinstance(samples, list) or len(samples) != len(cases):
@@ -38,11 +42,13 @@ def collect(pilot, job, row, sha, output, key):
         decode.append((timing.get("predicted_n"), timing.get("predicted_ms")))
     p_tokens, p_ms = totals(prefill)
     d_tokens, d_ms = totals(decode)
-    write_json(output / f'{row["id"]}-throughput.json', {
+    receipt = {
         "source_sha": sha, "configuration": row["id"], "job_id": job["id"], "run_id": run_id,
         "requests": len(samples), "prefill_tokens": p_tokens, "prefill_ms": p_ms,
         "decode_tokens": d_tokens, "decode_ms": d_ms,
-    })
+    }
+    write_json(output / f'{row["id"]}-throughput.json', receipt)
+    return qualification, receipt
 
 
 def totals(rows):

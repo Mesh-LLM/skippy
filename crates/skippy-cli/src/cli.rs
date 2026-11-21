@@ -72,6 +72,12 @@ pub enum Command {
     /// Operate a running server over its private Unix control socket.
     #[cfg(unix)]
     Manage(crate::managed::ClientArgs),
+    /// Benchmark candidate settings in isolated local model trials.
+    Tune(crate::tuning::TuneArgs),
+    #[command(hide = true)]
+    TuneTrial {
+        input: PathBuf,
+    },
     ExampleConfig,
     /// Download models or inspect the shared Hugging Face cache.
     Models {

@@ -58,6 +58,41 @@ The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
 configuration and native-attempt identity, updates only its bot-owned comment,
 and refuses to replace results for a newer commit or workflow attempt.
 
+The shared report renderer takes normalized qualification JSON. It renders
+Mermaid charts for Actions summaries and saves the Hugging Face card’s PNG
+charts in `charts/` beside its README. PNG export uses the reporting
+requirements. The Actions summary renderer uses the Python standard library.
+
+```sh
+examples=docs/design/inference-qualification-examples
+uv run --python 3.12 --with-requirements ci/inference-report-requirements.txt \
+  python scripts/inference-render-report.py dataset-card "$examples/examples.json" \
+  --output "$examples/README.md"
+just inference-render-report summary "$examples/examples.json" --run pr-pass
+```
+
+The scheduled inference workflow runs the twelve nightly AgentX configurations
+and the seven PR-profile smoke configurations. The smoke runs use the same
+harness as labeled PRs and retain the actual split admission status. AgentX
+nightly split qualification still requires certified admission.
+
+The protected scheduled publisher reads the current public dataset revision,
+compares verified measurements directly with its saved baselines, and uploads
+aggregate Parquet results, the baseline manifest, and the generated card in
+one revision-checked commit to
+[the public qualification dataset](https://huggingface.co/datasets/meshllm/skippy-inference-qualification).
+The initial tolerance and promotion threshold are 5% per performance metric.
+A changed benchmark recipe seeds its own reference. Passing measurements are
+recorded while the saved reference remains in force until a new source exceeds
+the improvement threshold. Regressions and incomplete evidence fail nightly
+after publication and preserve the affected baseline.
+
+The scheduled publisher uses the existing `HF_TOKEN` Actions secret. It needs
+write access to this Hugging Face dataset. Only the publisher step receives
+the token. Public receipts contain aggregate results, source and workload
+identities, and verdicts. Native logs, lab receipts, and native access
+credentials stay in their existing systems.
+
 Scheduled, manual and reusable full/candidate validation bypass path selection.
 Tagged releases and manual llama upgrades retain their explicit triggers. The
 `CI images` workflow retains its native paths for its workflow,
@@ -102,8 +137,24 @@ exact archives. Linux x64 CUDA 13 and macOS Metal run device smoke on ephemeral
 JY runners. JY hardware jobs declare literal runner groups and labels. The full
 CI gate matches all package jobs to the plan and checks required device results.
 
+Same-repository PRs to `main` use the workflow definition on protected `main`.
+The workflow verifies repository identity, the PR author's write access and the
+exact candidate SHA before running candidate code. The ordinary PR workflow
+runs approved forks on GitHub-hosted runners. Changes requiring native hardware
+stay blocked until an isolated native runner path is available.
+
+Restrict each Skippy lab runner group to the protected workflow references
+below before enabling public fork builds. Validate a same-repository PR and a
+release canary after applying the restrictions.
+
+```text
+Mesh-LLM/skippy/.github/workflows/ci.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main
+```
+
 The CPU-only `quality` job runs on GitHub-hosted `ubuntu-24.04` inside
-`ghcr.io/general-inference/skippy-ci-cpu:latest` for lint, tests and FFI binding
+`ghcr.io/mesh-llm/skippy-ci-cpu:latest` for lint, tests and FFI binding
 freshness. The image supplies the pinned Rust toolchain, Just, sccache,
 build-essential, mold and LLVM/Clang 22 development inputs. The job verifies
 its tools and pulls the private image with its own `GITHUB_TOKEN` using
@@ -149,7 +200,7 @@ receive this secret.
 ### CPU dependency image
 
 `ci/Dockerfile` builds the x86_64 CPU dependency image
-`ghcr.io/general-inference/skippy-ci-cpu:latest`. It includes **build-essential
+`ghcr.io/mesh-llm/skippy-ci-cpu:latest`. It includes **build-essential
 and mold**, LLVM/Clang 22 development packages (including `libclang-cpp22-dev`),
 libc++/libc++abi 22, OpenMP and sanitizers, Rust/Clippy/rustfmt
 from `rust-toolchain.toml`, Just, sccache, CMake, Ninja, Python, jq, OpenSSH client tools and
@@ -184,9 +235,9 @@ keys. Private same-repository pulls use `GITHUB_TOKEN` with `packages: read`.
 ### CUDA and ROCm compiler images
 
 The `CI images` workflow also builds
-`ghcr.io/general-inference/skippy-ci-cuda12`,
-`ghcr.io/general-inference/skippy-ci-cuda13`, and
-`ghcr.io/general-inference/skippy-ci-rocm` from digest-pinned vendor development
+`ghcr.io/mesh-llm/skippy-ci-cuda12`,
+`ghcr.io/mesh-llm/skippy-ci-cuda13`, and
+`ghcr.io/mesh-llm/skippy-ci-rocm` from digest-pinned vendor development
 images. CUDA 12.9.2 and 13.1.2 use separate images, matching `targets.json`, so
 each hosted runner only needs space for one toolkit. Both CUDA toolkits build
 on native x86_64 and ARM64 Ubuntu runners.
@@ -389,6 +440,24 @@ or explicit immutable upstream SHA and exports a digest-bound Git bundle. Both
 CI passes and both family passes restore the same candidate. The CPU, Metal and
 CUDA family jobs consume immutable offline model caches and retain per-pass
 evidence. They receive no GitHub write credential.
+
+Candidate preparation can be rehearsed before merge from a clean local PR
+checkout, with the native build prerequisites above and
+`SKIPPY_REWRITER_LLVM_PREFIX` set:
+
+```sh
+just automation-run upgrade resolve --upstream FULL_UPSTREAM_SHA --force-certify false
+just automation-run upgrade prepare FULL_UPSTREAM_SHA
+```
+
+These commands do not push, merge, tag or publish. Preparation writes a candidate
+bundle only after regeneration and full patch replay succeed. It does not run
+family qualification. Core/model-support conflicts require a reviewed repair,
+not a wider automatic-update allowlist. Failed native preparation retains Git
+status, the source diff and the active failed patch (when available) under
+`target/llama-upgrade/diagnostics` before removing its temporary checkout; the
+workflow uploads that directory on failure. Local preparation does not bypass
+the protected-main admission checks for the full Actions pipeline.
 
 Only the publisher uses `SKIPPY_UPGRADE_APP_ID` and
 `SKIPPY_UPGRADE_APP_PRIVATE_KEY`, with repository-scoped Contents and Pull

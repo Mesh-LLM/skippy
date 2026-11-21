@@ -25,7 +25,7 @@ env:
   CARGO_PROFILE_BENCH_DEBUG: '0'
 jobs:
   admission:
-    if: github.repository == 'general-inference/skippy' && github.ref == 'refs/heads/main'
+    if: github.repository == 'Mesh-LLM/skippy' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
     runs-on: ubuntu-24.04

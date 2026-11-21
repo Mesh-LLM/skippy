@@ -1,6 +1,6 @@
 # Releasing Skippy
 
-Releases are private GitHub releases in `general-inference/skippy`, produced by
+Releases are published on GitHub in `Mesh-LLM/skippy` by
 the **Release** workflow from `main`. The workflow writes the version commit
 itself, so no version PR or hand-made tag is needed.
 
@@ -61,10 +61,10 @@ No Apple Developer ID/notarization or Windows Authenticode identity is configure
 by this extraction. If platform signing is added, it must precede final hashes
 and require fresh verification; never reuse obsolete checksums after signing.
 
-Download privately with an authorized GitHub CLI session:
+Download a release with the GitHub CLI. Sign in to access private releases.
 
 ```sh
-gh release download v1.2.3 --repo general-inference/skippy \
+gh release download v1.2.3 --repo Mesh-LLM/skippy \
   --pattern 'skippy-v1.2.3-linux-x86_64-cpu.tar.gz*'
 sha256sum --check skippy-v1.2.3-linux-x86_64-cpu.tar.gz.sha256
 tar -xzf skippy-v1.2.3-linux-x86_64-cpu.tar.gz
