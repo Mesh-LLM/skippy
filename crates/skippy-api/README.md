@@ -111,6 +111,55 @@ Mesh can translate its own configuration into these inputs.
 Standalone `serve --print-effective-config` and the pre-load path use the
 same stage validation. Single-model TOML, environment variables, CLI
 precedence and the report fields remain compatible.
+
+### Hardware inventory
+
+Embedders can collect OS facts with `hardware::physical_hardware`, enumerate
+a runtime they have already loaded with `hardware::runtime_devices`, and pass
+both to `hardware::inventory`. The inventory accepts per-device limits,
+reservations and measurements keyed by the reported physical stable ID. It
+reports absent facts as optional values and exposes runtime-only devices
+separately. A device name or enumeration order cannot establish identity.
+
+`skippy --output json doctor --device-inventory` adds a `device_inventory`
+object to the existing doctor report. A runtime probe failure is reported as
+`device_inventory_issue`; OS discovery remains available. The probe uses an
+installed runtime and does not download one.
+
+### GPU placement
+
+Use one `placement::DeviceAllocator` per shared serving process and bind each
+`ModelLoadRequest` through `load_with_placement`. Supply an inventory that
+maps stable IDs to selectors exposed by the selected runtime. A pinned request
+fails if its device is missing, ambiguous, incompatible or out of capacity.
+The load owns its reservation until the loaded backend is released.
+
+For standalone serving, use the physical `stable_id` shown for a selectable
+GPU by `skippy --output json doctor --device-inventory` with
+`skippy serve --model-path MODEL --gpu-id ID`. A runtime-only accelerator uses
+its reported runtime `identifier`. Skippy checks fit before loading.
+
+To qualify on a two-GPU host, select a native runtime that sees both devices.
+Use the same allocator for two concurrent local load requests with distinct
+pins, request inference from both, and check the runtime's memory on each
+GPU. Drop one backend and confirm the corresponding budget can be reserved
+again. Use two model fixtures that fit the intended device budgets.
+
+### Split execution
+
+`split_execution::plan_direct_gguf` builds the same admitted stage
+configurations as `skippy plan-split`. Embedders can supply worker IDs and
+listen endpoints, an expected manifest digest, measured worker capacity,
+and optional locked contiguous ranges. Capacity planning and native
+admission must both succeed before a plan can start.
+
+Implement `StageOperations` to bind the admitted worker identity to your
+transport and artifact policy. `AdmittedSplit::start` checks the current
+manifest and endpoints before starting downstream stages first.
+`SplitExecution::observe` reports stage state. For binary endpoints an
+adapter can use `start_binary_stage_ready_probe` for the existing readiness
+handshake. Cancel the execution to release stages in reverse startup order.
+
 ## Resolving a package for stage planning
 
 Use `PackageAcquisition::resolve_and_inspect_package` with the original local or Hugging Face reference. Mesh and other embedding hosts can replace their schema checks, cache fallback, and metadata inspection calls with this operation. Keep passing the existing explicit cache root, lazy Hub client factory, and progress observer to `PackageAcquisition`.
