@@ -143,7 +143,7 @@ async fn run_command(cli: Cli, native_logs: Arc<native_logging::NativeDiagnostic
     }
     skippy_runtime::logging::set_native_log_sink(native_logs);
     match cli.command {
-        Command::Doctor => runtime::doctor(&native_options),
+        Command::Doctor { device_inventory } => runtime::doctor(&native_options, device_inventory),
         Command::GpuBenchmark { timeout_secs } => {
             gpu_benchmark::run(&native_options, timeout_secs).await
         }

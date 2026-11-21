@@ -45,9 +45,30 @@ pub struct LoadedModelBackend {
     /// [`skippy_serving::thinking_probe`] for what they can and cannot claim.
     pub thinking: Option<ThinkingControls>,
     telemetry: Telemetry,
+    _device_reservation: Option<crate::placement::DeviceReservation>,
 }
 
 impl ModelLoadRequest {
+    /// Bind a model to the chosen accelerator and retain its capacity while
+    /// the loaded model is alive. Dropping an unsuccessful or cancelled load
+    /// releases the reservation.
+    pub fn load_with_placement(
+        mut self,
+        allocator: &crate::placement::DeviceAllocator,
+        placement: &crate::placement::PlacementRequest,
+        required_bytes: u64,
+    ) -> Result<LoadedModelBackend> {
+        ensure!(
+            self.runtime.config.n_gpu_layers != 0,
+            "GPU placement requires GPU layer offload"
+        );
+        let reservation = allocator.reserve(placement, required_bytes)?;
+        self.runtime.config.selected_device = Some(reservation.device().clone());
+        let mut loaded = self.load()?;
+        loaded._device_reservation = Some(reservation);
+        Ok(loaded)
+    }
+
     /// Load and compose the backend. Observations are best-effort and the
     /// returned result settles the load.
     pub fn load(mut self) -> Result<LoadedModelBackend> {
@@ -146,6 +167,7 @@ impl ModelLoadRequest {
             prediction_return_listener,
             thinking,
             telemetry,
+            _device_reservation: None,
         })
     }
 }
