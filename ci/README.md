@@ -58,6 +58,41 @@ The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
 configuration and native-attempt identity, updates only its bot-owned comment,
 and refuses to replace results for a newer commit or workflow attempt.
 
+The shared report renderer takes normalized qualification JSON. It renders
+Mermaid charts for Actions summaries and saves the Hugging Face card’s PNG
+charts in `charts/` beside its README. PNG export uses the reporting
+requirements. The Actions summary renderer uses the Python standard library.
+
+```sh
+examples=docs/design/inference-qualification-examples
+uv run --python 3.12 --with-requirements ci/inference-report-requirements.txt \
+  python scripts/inference-render-report.py dataset-card "$examples/examples.json" \
+  --output "$examples/README.md"
+just inference-render-report summary "$examples/examples.json" --run pr-pass
+```
+
+The scheduled inference workflow runs the twelve nightly AgentX configurations
+and the seven PR-profile smoke configurations. The smoke runs use the same
+harness as labeled PRs and retain the actual split admission status. AgentX
+nightly split qualification still requires certified admission.
+
+The protected scheduled publisher reads the current public dataset revision,
+compares verified measurements directly with its saved baselines, and uploads
+aggregate Parquet results, the baseline manifest, and the generated card in
+one revision-checked commit to
+[the public qualification dataset](https://huggingface.co/datasets/meshllm/skippy-inference-qualification).
+The initial tolerance and promotion threshold are 5% per performance metric.
+A changed benchmark recipe seeds its own reference. Passing measurements are
+recorded while the saved reference remains in force until a new source exceeds
+the improvement threshold. Regressions and incomplete evidence fail nightly
+after publication and preserve the affected baseline.
+
+Set `HF_INFERENCE_DATASET_TOKEN` to a repository secret with write access
+scoped to this Hugging Face dataset before enabling nightly publication on
+main. Only the publisher step receives the token. Public receipts contain
+aggregate results, source and workload identities, and verdicts. Native logs,
+lab receipts, and native access credentials stay in their existing systems.
+
 Scheduled, manual and reusable full/candidate validation bypass path selection.
 Tagged releases and manual llama upgrades retain their explicit triggers. The
 `CI images` workflow retains its native paths for its workflow,
