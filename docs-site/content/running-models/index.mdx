@@ -27,15 +27,9 @@ loading. Serving the same exact reference reuses the Hugging Face cache.
 ## Migrate a SafeTensors checkpoint
 
 Skippy serves GGUF models only. If you have a SafeTensors checkpoint, choose
-a published GGUF for the same model or convert the checkpoint offline.
-
-```sh
-skippy-quantize convert /models/checkpoint /models/model.gguf
-skippy serve --model /models/model.gguf
-```
-
-For multipart GGUFs, pass the first shard. Choose the weight quantization when
-downloading or producing the GGUF.
+a published GGUF for the same model or convert a supported checkpoint offline
+with `skippy-quantize`. For multipart GGUFs, pass the first shard.
+[Convert a SafeTensors checkpoint](/running-models/quantization/#start-from-safetensors)
 
 ## Choose how models are loaded
 

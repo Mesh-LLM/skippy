@@ -65,6 +65,19 @@ discover. Use `just build cpu` to select the CPU backend explicitly.
 A source checkout may require a newer native ABI than the latest release. Use
 `--runtime-bundle PATH` to select a compatible local runtime bundle explicitly.
 
+### Build the quantizer
+
+From the repository root, build the separate `skippy-quantize` binary.
+
+```console
+just with-lld cargo build --locked -p skippy-quantize
+```
+
+The binary is `target/debug/skippy-quantize` or `target/debug/skippy-quantize.exe`
+on Windows. For GGUF quantization, use a native runtime bundle with the same
+Skippy ABI. The `just build cpu` recipe above builds a matching bundle.
+[Quantize a model](/running-models/quantization/)
+
 ## Develop and verify the change
 
 Read the repository `CONTRIBUTING.md` and the closest `AGENTS.md` before making
