@@ -26,3 +26,43 @@ test('both llama upgrade CI calls grant the read permissions requested by reusab
     assert.ok(Object.values(granted).every(access => access === 'read'));
   }
 });
+
+test('resolve runs read-only on hosted Ubuntu before allocating the native candidate builder', () => {
+  const all = jobs(workflow('llama-upgrade.yml'));
+  const resolve = all.find(job => job.startsWith('  resolve:\n'));
+  const candidate = all.find(job => job.startsWith('  candidate:\n'));
+  assert.ok(resolve);
+  assert.match(resolve, /^    if: github.ref == 'refs\/heads\/main'$/m);
+  assert.match(resolve, /^    runs-on: ubuntu-24.04$/m);
+  assert.deepEqual(Object.fromEntries(permissions(resolve)), { contents: 'read', 'pull-requests': 'read' });
+  assert.match(resolve, /uses: \.\/\.github\/actions\/setup\n        with:\n          cache: 'false'/);
+  assert.match(resolve, /persist-credentials: false/);
+  assert.match(resolve, /GH_TOKEN: \$\{\{ github.token \}\}/);
+  assert.match(resolve, /just automation-run upgrade resolve --upstream "\$UPSTREAM_SHA" --force-certify "\$FORCE_CERTIFY"/);
+  for (const output of ['upstream_sha', 'changed', 'certify']) {
+    assert.ok(resolve.includes(`${output}: \${{ steps.resolve.outputs.${output} }}`));
+  }
+  assert.match(candidate, /^    needs: resolve$/m);
+  assert.match(candidate, /^    if: github.ref == 'refs\/heads\/main' && needs.resolve.outputs.certify == 'true'$/m);
+  assert.match(candidate, /group: jy-rnr_vfnz8k5p4yrh334/);
+  assert.match(candidate, /labels: \[self-hosted, jy-linux-docker, Linux, X64\]/);
+  assert.doesNotMatch(candidate, /steps\.resolve|upgrade resolve|GH_TOKEN/);
+  assert.ok(candidate.includes('UPSTREAM_SHA: ${{ needs.resolve.outputs.upstream_sha }}'));
+  assert.match(candidate, /just automation-run upgrade prepare "\$UPSTREAM_SHA"/);
+  for (const output of ['changed', 'certify']) {
+    assert.ok(candidate.includes(`${output}: \${{ needs.resolve.outputs.${output} }}`));
+  }
+  assert.ok(candidate.includes('candidate_sha: ${{ steps.prepare.outputs.candidate_sha }}'));
+});
+
+test('resolution does not bypass candidate or independent qualification before publication', () => {
+  const all = jobs(workflow('llama-upgrade.yml'));
+  const job = name => all.find(section => section.startsWith(`  ${name}:\n`));
+  assert.match(job('candidate_ci'), /^    needs: candidate$/m);
+  assert.match(job('candidate_ci'), /^    if: needs.candidate.outputs.certify == 'true'$/m);
+  assert.match(job('candidate_families'), /^    needs: \[candidate, candidate_ci\]$/m);
+  assert.match(job('independent_ci'), /^    needs: \[candidate, candidate_ci, candidate_families\]$/m);
+  assert.match(job('independent_families'), /^    needs: \[candidate, independent_ci\]$/m);
+  assert.match(job('publish'), /^    needs: \[candidate, candidate_ci, candidate_families, independent_ci, independent_families\]$/m);
+  assert.match(job('publish'), /^    if: needs.candidate.outputs.changed == 'true'$/m);
+});

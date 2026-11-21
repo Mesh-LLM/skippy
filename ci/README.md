@@ -418,7 +418,10 @@ theirs for retry and diagnosis.
 ## Llama upgrades
 
 `llama-upgrade.yml` runs from protected main. The controller resolves a release
-or explicit immutable upstream SHA and exports a digest-bound Git bundle. Both
+or explicit immutable upstream SHA on a standard hosted Ubuntu runner, which
+supplies `gh` for read-only GitHub queries. Only a resolution requiring
+certification starts the existing native JY candidate builder; it receives the
+resolved SHA and exports a digest-bound Git bundle without requiring `gh`. Both
 CI passes and both family passes restore the same candidate. The CPU, Metal and
 CUDA family jobs consume immutable offline model caches and retain per-pass
 evidence. They receive no GitHub write credential.

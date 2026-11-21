@@ -27,21 +27,46 @@ env:
   SCCACHE_GHA_ENABLED: 'true'
   SKIPPY_REQUIRE_SCCACHE: '1'
 jobs:
-  candidate:
+  resolve:
     if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      upstream_sha: ${{ steps.resolve.outputs.upstream_sha }}
+      changed: ${{ steps.resolve.outputs.changed }}
+      certify: ${{ steps.resolve.outputs.certify }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - name: Resolve immutable upstream source
+        id: resolve
+        env:
+          UPSTREAM_SHA: ${{ inputs.upstream_sha }}
+          FORCE_CERTIFY: ${{ inputs.force_certify || false }}
+          GH_TOKEN: ${{ github.token }}
+        run: just automation-run upgrade resolve --upstream "$UPSTREAM_SHA" --force-certify "$FORCE_CERTIFY"
+  candidate:
+    needs: resolve
+    if: github.ref == 'refs/heads/main' && needs.resolve.outputs.certify == 'true'
     env:
       SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
       LIBCLANG_PATH: /usr/lib/llvm-22/lib
     permissions:
       contents: read
-      pull-requests: read
     runs-on:
       group: jy-rnr_vfnz8k5p4yrh334
       labels: [self-hosted, jy-linux-docker, Linux, X64]
     timeout-minutes: 180
     outputs:
-      changed: ${{ steps.resolve.outputs.changed }}
-      certify: ${{ steps.resolve.outputs.certify }}
+      changed: ${{ needs.resolve.outputs.changed }}
+      certify: ${{ needs.resolve.outputs.certify }}
       candidate_sha: ${{ steps.prepare.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -55,18 +80,10 @@ jobs:
       - uses: ./.github/actions/sccache
         with:
           scope: upgrade-candidate-${{ runner.os }}-${{ runner.arch }}
-      - name: Resolve immutable upstream source
-        id: resolve
-        env:
-          UPSTREAM_SHA: ${{ inputs.upstream_sha }}
-          FORCE_CERTIFY: ${{ inputs.force_certify || false }}
-          GH_TOKEN: ${{ github.token }}
-        run: just automation-run upgrade resolve --upstream "$UPSTREAM_SHA" --force-certify "$FORCE_CERTIFY"
       - name: Prepare and freeze candidate
         id: prepare
-        if: steps.resolve.outputs.certify == 'true'
         env:
-          UPSTREAM_SHA: ${{ steps.resolve.outputs.upstream_sha }}
+          UPSTREAM_SHA: ${{ needs.resolve.outputs.upstream_sha }}
         run: just automation-run upgrade prepare "$UPSTREAM_SHA"
       - uses: ./.github/actions/report-sccache
         if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}

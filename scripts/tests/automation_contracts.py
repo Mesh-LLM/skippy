@@ -158,6 +158,31 @@ class Generator(unittest.TestCase):
 
 
 class Upgrade(unittest.TestCase):
+    def test_resolution_certification_outputs_cover_noop_force_change_and_existing_pr(self):
+        resolver = module("upgrade-source")
+        current, newer = "a" * 40, "b" * 40
+        existing = "https://github.com/Mesh-LLM/skippy/pull/1"
+        for upstream, force, pr, certify in (
+            (current, "false", None, "false"),
+            (current, "true", None, "true"),
+            (newer, "false", None, "true"),
+            (newer, "true", existing, "false"),
+        ):
+            with self.subTest(upstream=upstream, force=force, pr=pr), \
+                    tempfile.TemporaryDirectory() as tmp:
+                pin = Path(tmp) / "pin"
+                pin.write_text(current + "\n")
+                with patch.object(resolver, "PIN", pin), \
+                        patch.object(resolver, "open_upgrade", return_value=pr) as query, \
+                        patch.object(resolver, "output") as output:
+                    resolver.resolve(upstream, force)
+                query.assert_called_once_with(upstream)
+                expected = {"upstream_sha": upstream, "changed": str(current != upstream).lower(),
+                            "certify": certify}
+                if pr:
+                    expected["existing_pr"] = pr
+                self.assertEqual(dict(call.args for call in output.call_args_list), expected)
+
     def test_bundle_accepts_only_allowed_direct_child(self):
         for relative in ("llama_cpp/upstream.txt", "elsewhere"):
             with self.subTest(relative=relative), tempfile.TemporaryDirectory() as tmp:
