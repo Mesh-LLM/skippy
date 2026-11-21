@@ -163,5 +163,6 @@ def smoke(host, runtime, product_input):
                     raise RuntimeError(f"packaged server exited with status {server.returncode}")
         artifacts.write_json(output / "smoke.json", {
             "source": artifacts.source(), "variant": variant, "backend": backend,
+            "archive_sha256": artifacts.digest(product_input / f"skippy-{variant}.tar.gz"),
             "gpu_offload_required": gpu, "model_sha256": digest, "response": response,
         })

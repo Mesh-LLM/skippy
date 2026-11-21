@@ -172,6 +172,9 @@ jobs:
   plan:
     name: Validate build targets
     needs: changes
+    permissions:
+      contents: read
+      packages: read
     if: needs.changes.outputs.code == 'true' || needs.changes.outputs.inference == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -179,6 +182,10 @@ jobs:
       SKIPPY_CI_PROFILE: ${{ inputs.profile || (github.event_name == 'schedule' && 'full' || 'pr') }}
     outputs:
       profile: ${{ steps.plan.outputs.profile }}
+      cpu_digest: ${{ steps.images.outputs.cpu }}
+      cuda12_digest: ${{ steps.images.outputs.cuda12 }}
+      cuda12_arm_digest: ${{ steps.images.outputs.cuda12_arm }}
+      cuda13_arm_digest: ${{ steps.images.outputs.cuda13_arm }}
       runtimes: ${{ steps.plan.outputs.runtimes }}
     steps:
       - name: Validate CUDA architecture mode
@@ -207,6 +214,34 @@ jobs:
           sha: ${{ inputs.candidate_sha }}
       - id: plan
         run: just ci-plan
+      - name: Authenticate compiler image lookup
+        if: needs.changes.outputs.code == 'true' || steps.plan.outputs.profile == 'full'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve compiler image digests
+        id: images
+        if: needs.changes.outputs.code == 'true' || steps.plan.outputs.profile == 'full'
+        shell: bash
+        env:
+          PROFILE: ${{ steps.plan.outputs.profile }}
+        run: |
+          set -euo pipefail
+          resolve() {
+            local manifest digest
+            manifest=$(docker buildx imagetools inspect "ghcr.io/general-inference/skippy-ci-$2")
+            digest=$(awk '$1 == "Digest:" {print $2; exit}' <<< "$manifest")
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            echo "$1=$digest" >> "$GITHUB_OUTPUT"
+          }
+          resolve cpu cpu:latest
+          if [[ "$PROFILE" == full ]]; then
+            resolve cuda12 cuda12:latest
+            resolve cuda12_arm cuda12:latest-arm64
+            resolve cuda13_arm cuda13:latest-arm64
+          fi
   quality:
     name: Quality canary
     needs: [changes, plan]
@@ -226,7 +261,7 @@ jobs:
       contents: read
       packages: read
     container:
-      image: ghcr.io/general-inference/skippy-ci-cpu:latest
+      image: ghcr.io/general-inference/skippy-ci-cpu@${{ needs.plan.outputs.cpu_digest }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -253,7 +288,7 @@ jobs:
           package-manager-cache: false
       - name: Test workflow result gates
         run: node --test .github/scripts/*.test.cjs
-      - name: Verify image toolchain and cache identity
+      - name: Verify image toolchain
         shell: bash
         run: |
           set -euo pipefail
@@ -267,19 +302,16 @@ jobs:
           "$SKIPPY_REWRITER_LLVM_PREFIX/bin/clang" --version
           test -r "$SKIPPY_REWRITER_LLVM_PREFIX/lib/cmake/llvm/LLVMConfig.cmake"
           test -r "$SKIPPY_REWRITER_LLVM_PREFIX/lib/cmake/clang/ClangConfig.cmake"
-          image_id="$(cat /etc/skippy-ci-image-id)"
-          test -n "$image_id"
-          echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
       - uses: ./.github/actions/cache
         with:
-          scope: quality-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
+          scope: quality-${{ needs.plan.outputs.cpu_digest }}
           download-scope: quality-container
           build-paths: |
             target/debug
             skippy-api-rs/target/debug
       - uses: ./.github/actions/sccache
         with:
-          scope: quality-${{ runner.os }}-${{ runner.arch }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
+          scope: quality-${{ runner.os }}-${{ runner.arch }}
       - uses: ./.github/actions/native-source
       - run: just llama-prepare
       - run: just skippy-ffi-bindgen-check
@@ -436,7 +468,7 @@ jobs:
       contents: read
       packages: read
     container:
-      image: ghcr.io/general-inference/skippy-ci-cuda12:latest
+      image: ghcr.io/general-inference/skippy-ci-cuda12@${{ needs.plan.outputs.cuda12_digest }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -453,7 +485,7 @@ jobs:
           runtime-id: linux-x86_64-cuda12
           host-id: linux-x86_64
           smoke: artifact
-          containerized: 'true'
+          compiler-image-digest: ${{ needs.plan.outputs.cuda12_digest }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
   release_smoke_linux_x86_64_cuda12:
@@ -531,7 +563,7 @@ jobs:
       contents: read
       packages: read
     container:
-      image: ghcr.io/general-inference/skippy-ci-cuda12:latest-arm64
+      image: ghcr.io/general-inference/skippy-ci-cuda12@${{ needs.plan.outputs.cuda12_arm_digest }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -548,7 +580,7 @@ jobs:
           runtime-id: linux-aarch64-cuda12
           host-id: linux-aarch64
           smoke: artifact
-          containerized: 'true'
+          compiler-image-digest: ${{ needs.plan.outputs.cuda12_arm_digest }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
   release_smoke_linux_aarch64_cuda12:
@@ -579,7 +611,7 @@ jobs:
       contents: read
       packages: read
     container:
-      image: ghcr.io/general-inference/skippy-ci-cuda13:latest-arm64
+      image: ghcr.io/general-inference/skippy-ci-cuda13@${{ needs.plan.outputs.cuda13_arm_digest }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -596,7 +628,7 @@ jobs:
           runtime-id: linux-aarch64-cuda13
           host-id: linux-aarch64
           smoke: artifact
-          containerized: 'true'
+          compiler-image-digest: ${{ needs.plan.outputs.cuda13_arm_digest }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
   release_smoke_linux_aarch64_cuda13:

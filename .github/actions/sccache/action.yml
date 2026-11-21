@@ -56,15 +56,13 @@ runs:
           chmod +x "$sccache_path"
         fi
 
-        recipe_digest="$({
-          git ls-files -z Cargo.lock skippy-api-rs/Cargo.lock rust-toolchain.toml \
-            .cargo/config.toml Justfile scripts/build-llama.sh scripts/cargo-linker\* \
-            llama_cpp/upstream.txt llama_cpp/whisper-upstream.txt llama_cpp/patches
-        } | xargs -0 git hash-object | shasum -a 256 | awk '{print $1}')"
         export SCCACHE_BASEDIRS="$GITHUB_WORKSPACE"
-        export SCCACHE_GHA_VERSION="skippy-v1-$SCCACHE_SCOPE-$recipe_digest"
+        export SCCACHE_GHA_VERSION="skippy-v2-$SCCACHE_SCOPE"
         export SCCACHE_GHA_RW_MODE=READ_ONLY
         case "${GITHUB_REF:-}:$GITHUB_EVENT_NAME" in
+          refs/pull/*/merge:pull_request)
+            export SCCACHE_GHA_RW_MODE=READ_WRITE
+            ;;
           refs/heads/main:push|refs/heads/main:schedule|refs/heads/main:workflow_dispatch)
             if [[ "${GITHUB_REF_PROTECTED:-false}" == true && "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]; then
               export SCCACHE_GHA_RW_MODE=READ_WRITE
