@@ -113,7 +113,7 @@ jobs:
         env:
           SOURCE_SHA: ${{ steps.admission.outputs.source }}
           PROFILE: ${{ steps.admission.outputs.profile }}
-          NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'general-inference/skippy' }}
+          NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'Mesh-LLM/skippy' }}
         run: |
           flags=()
           if [[ "$NIGHTLY_PUBLICATION" == true ]]; then flags+=(--include-smoke); fi
@@ -140,7 +140,7 @@ jobs:
           SOURCE_SHA: ${{ needs.plan.outputs.source }}
           PROFILE: ${{ matrix.profile }}
           CONFIGURATION: ${{ matrix.configuration }}
-          NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'general-inference/skippy' }}
+          NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'Mesh-LLM/skippy' }}
           JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
         run: |
           flags=()
@@ -166,7 +166,7 @@ jobs:
     needs: [plan, qualification]
     if: >-
       always() && !cancelled() && github.event_name == 'schedule' &&
-      github.repository == 'general-inference/skippy' && github.ref == 'refs/heads/main' &&
+      github.repository == 'Mesh-LLM/skippy' && github.ref == 'refs/heads/main' &&
       needs.plan.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 20

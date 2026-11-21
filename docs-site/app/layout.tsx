@@ -29,7 +29,7 @@ const logo = (
 const navbar = (
   <Navbar
     logo={logo}
-    projectLink="https://github.com/general-inference/skippy"
+    projectLink="https://github.com/Mesh-LLM/skippy"
   />
 );
 
@@ -43,7 +43,7 @@ export default async function RootLayout({
         <Layout
           navbar={navbar}
           pageMap={await getPageMap()}
-          docsRepositoryBase="https://github.com/general-inference/skippy/tree/main/docs-site/content"
+          docsRepositoryBase="https://github.com/Mesh-LLM/skippy/tree/main/docs-site/content"
           editLink="Edit this page on GitHub"
           feedback={{ content: "Question or correction? Open an issue →" }}
         >

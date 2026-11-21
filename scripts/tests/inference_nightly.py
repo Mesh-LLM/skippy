@@ -138,9 +138,9 @@ class NightlyTests(unittest.TestCase):
     def test_only_exact_protected_schedule_can_publish(self):
         admit = run_path(str(PR_PATH))["admit"]
         environment = {
-            "GITHUB_EVENT_NAME": "schedule", "GITHUB_REPOSITORY": "general-inference/skippy",
+            "GITHUB_EVENT_NAME": "schedule", "GITHUB_REPOSITORY": "Mesh-LLM/skippy",
             "GITHUB_REF": "refs/heads/main",
-            "GITHUB_WORKFLOW_REF": "general-inference/skippy/.github/workflows/inference.yml@refs/heads/main",
+            "GITHUB_WORKFLOW_REF": "Mesh-LLM/skippy/.github/workflows/inference.yml@refs/heads/main",
             "GITHUB_WORKFLOW_SHA": SOURCE, "GITHUB_SHA": SOURCE, "SOURCE_SHA": SOURCE,
             "GITHUB_RUN_ID": "23", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_RUN_NUMBER": "34",
             "RUN_STARTED_AT": "2026-11-21T00:00:00Z", "MATRIX_RESULT": "failure",

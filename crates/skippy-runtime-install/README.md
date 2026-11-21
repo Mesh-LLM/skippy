@@ -72,14 +72,13 @@ Artifact names and environment names are separate migration surfaces.
 
 ## Private release downloads
 
-`general-inference/skippy` is private. The native HTTP downloader does not read
-GitHub CLI credentials or send access tokens to release URLs. Download the desired
-release with an authorized `gh` login, verify its checksum, and extract the CLI
+The native HTTP downloader supports public releases. For a private release,
+download it with an authorized `gh` login, verify its checksum, and extract the CLI
 and runtime archives into one installation directory so `native-runtimes/` sits
 beside `skippy` (or `skippy.exe`). Use the release's documented asset names:
 
 ```sh
-gh release download vVERSION --repo general-inference/skippy --dir downloads
+gh release download vVERSION --repo Mesh-LLM/skippy --dir downloads
 ```
 
 An extracted runtime can also be imported into the cache explicitly:

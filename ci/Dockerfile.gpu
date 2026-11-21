@@ -57,7 +57,7 @@ ARG TARGETARCH
 ARG SKIPPY_CI_IMAGE_ID=local
 ARG SOURCE_REVISION=local
 
-LABEL org.opencontainers.image.source="https://github.com/general-inference/skippy" \
+LABEL org.opencontainers.image.source="https://github.com/Mesh-LLM/skippy" \
       org.opencontainers.image.description="Skippy ${BACKEND} CI toolchain" \
       org.opencontainers.image.revision="${SOURCE_REVISION}" \
       org.opencontainers.image.version="${TOOLKIT_VERSION}" \

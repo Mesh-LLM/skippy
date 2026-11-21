@@ -30,7 +30,7 @@ async function evaluate(options = {}) {
     if (options.apiError === method) throw new Error('GitHub API unavailable');
     return structuredClone(data[method]);
   } };
-  const context = { repo: { owner: 'general-inference', repo: 'skippy' }, runId: 42,
+  const context = { repo: { owner: 'Mesh-LLM', repo: 'skippy' }, runId: 42,
     payload: options.payload || { pull_request: pr } };
   await aggregate({ github, context, core: { info() {}, setFailed: message => failures.push(message) } });
   assert.ok(calls.every(c => c.sha === sha && c.context === 'PR checks'));

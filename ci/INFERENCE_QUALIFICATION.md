@@ -208,7 +208,7 @@ upstream, patch digest, ABI and schema identities independently of that roster.
 
 The protected inference workflow publishes one bot-owned results comment per PR,
 updating it on reruns. The heading is
-"[General Inference](https://generalinference.xyz) Lab Qualification". It shows
+"Skippy Lab Qualification". It shows
 the tested SHA, each serving configuration's Actions outcome, prefill/decode
 tokens per second, workflow timing/log links, GitHub evidence and available
 durable lab records. PR smoke does not claim AgentX performance measurements.
