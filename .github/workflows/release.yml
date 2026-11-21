@@ -48,6 +48,7 @@ jobs:
       contents: read
       packages: read
       actions: read
+      pull-requests: read
     uses: ./.github/workflows/ci.yml
     with:
       artifact_scope: release
@@ -64,7 +65,8 @@ jobs:
     needs: admission
     permissions:
       contents: read
-      pull-requests: read
+      actions: read
+      pull-requests: write
       statuses: write
     uses: ./.github/workflows/inference.yml
     with:
