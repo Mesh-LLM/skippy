@@ -48,6 +48,12 @@ class LadderTests(unittest.TestCase):
                 inference_ladder.plan("pr", self.sha)
 
 
+class BuildEntryPointTests(unittest.TestCase):
+    def test_build_script_imports_before_starting_native_build(self):
+        script = Path(__file__).resolve().parents[1] / "inference-build.py"
+        run_path(str(script))
+
+
 class PilotRequestTests(unittest.TestCase):
     def test_jy_requests_identify_the_client(self):
         pilot = Pilot()
