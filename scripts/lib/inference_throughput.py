@@ -2,9 +2,26 @@
 
 import math
 import re
+import time
 from pathlib import Path
 
 from .ci_artifacts import read_json, write_json
+from .jy_qualification import PilotHTTPError
+
+ARTIFACT_RETRIES = 6
+ARTIFACT_RETRY_DELAY = 5
+
+
+def fetch_artifact(pilot, run_id, filename):
+    path = f"/v1/artifacts/{run_id}/raw/{filename}"
+    # JY can report a successful run before its artifacts are available.
+    for remaining in range(ARTIFACT_RETRIES, -1, -1):
+        try:
+            return pilot.api("GET", path)
+        except PilotHTTPError as error:
+            if error.status != 404 or error.path != path or remaining == 0:
+                raise RuntimeError(f"{run_id}/{filename}: {error}") from error
+            time.sleep(ARTIFACT_RETRY_DELAY)
 
 
 def successful_run(job, sha):
@@ -19,9 +36,8 @@ def successful_run(job, sha):
 
 def collect(pilot, job, row, sha, output, key):
     run_id = successful_run(job, sha)
-    prefix = f"/v1/artifacts/{run_id}/raw/"
-    qualification = pilot.api("GET", prefix + "qualification.json")
-    samples = pilot.api("GET", prefix + "quality.json")
+    qualification = fetch_artifact(pilot, run_id, "qualification.json")
+    samples = fetch_artifact(pilot, run_id, "quality.json")
     identity = {"source_sha": sha, "model": key, "mode": row["mode"],
                 "profile": "pr", "status": "passed"}
     if any(qualification.get(field) != expected for field, expected in identity.items()):
