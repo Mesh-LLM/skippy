@@ -1,0 +1,54 @@
+name: Depot cache canary
+on:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  depot_cache_seed:
+    name: Seed disposable Depot cache marker
+    if: >-
+      github.workflow_ref == 'Mesh-LLM/skippy/.github/workflows/depot-cache.yml@refs/heads/main'
+    runs-on: depot-ubuntu-24.04-4
+    cache-mode: write
+    permissions: {}
+    timeout-minutes: 5
+    outputs:
+      key: ${{ steps.marker.outputs.key }}
+    steps:
+      - id: marker
+        run: |
+          key="skippy-depot-cache-canary-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf '%s\n' "$key" > depot-cache-canary.txt
+          printf 'key=%s\n' "$key" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          key: ${{ steps.marker.outputs.key }}
+          path: depot-cache-canary.txt
+  depot_cache_read:
+    name: Verify Depot allows reads and denies writes
+    needs: depot_cache_seed
+    runs-on: depot-ubuntu-24.04-4
+    cache-mode: read
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          key: ${{ needs.depot_cache_seed.outputs.key }}
+          path: depot-cache-canary.txt
+          fail-on-cache-miss: true
+      - name: Verify the restored marker
+        env:
+          EXPECTED_MARKER: ${{ needs.depot_cache_seed.outputs.key }}
+        run: test "$(cat depot-cache-canary.txt)" = "$EXPECTED_MARKER"
+      - name: Check cache service authorization
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const { checkCacheWriteDenied } = require('./.github/scripts/depot-cache-canary.cjs');
+            const status = await checkCacheWriteDenied(process.env, fetch);
+            core.info(`Cache service denied a disposable write reservation (HTTP ${status}).`);
