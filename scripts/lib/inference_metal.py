@@ -1,4 +1,9 @@
-"""Qualify native Apple M3 Ultra hardware and enforce its memory budget."""
+"""Prove native Apple silicon Metal hardware and enforce its memory budget.
+
+Qualification requires the Apple M3 Ultra; performance comparisons take any
+Apple M-series Mac, since they compare arms on one host rather than across
+hosts.
+"""
 
 import platform
 import re
@@ -11,20 +16,33 @@ from .ci_smoke import require_device
 DEVICE = "Apple M3 Ultra"
 
 
-def device_and_budget():
+def chip():
     if platform.system() != "Darwin" or platform.machine() != "arm64":
-        raise ValueError("Metal qualification requires macOS ARM64")
-    if capture(["sysctl", "-n", "machdep.cpu.brand_string"]).strip() != DEVICE:
-        raise ValueError(f"Metal qualification requires {DEVICE}")
+        raise ValueError("Metal requires macOS ARM64")
+    name = capture(["sysctl", "-n", "machdep.cpu.brand_string"]).strip()
+    if not name.startswith("Apple M"):
+        raise ValueError(f"Metal requires an Apple M-series chip, not {name!r}")
+    return name
+
+
+def working_set(name):
+    """Metal's working set limit, once Metal reports this chip's own GPU."""
     device, budget = capture(["xcrun", "swift", "-e", """
 import Metal
 let device = MTLCreateSystemDefaultDevice()!
 print(device.name)
 print(device.recommendedMaxWorkingSetSize)
 """]).strip().splitlines()
-    if device != DEVICE or int(budget) <= 0:
+    if device != name or int(budget) <= 0:
         raise ValueError("required Metal device or working set limit unavailable")
-    return device, int(budget)
+    return int(budget)
+
+
+def device_and_budget():
+    name = chip()
+    if name != DEVICE:
+        raise ValueError(f"Metal qualification requires {DEVICE}")
+    return name, working_set(name)
 
 
 def available_memory(stats, budget):

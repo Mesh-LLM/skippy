@@ -8,20 +8,14 @@ from .ci_artifacts import read_json
 LADDER = Path(__file__).resolve().parents[2] / "ci/inference-ladder.json"
 
 
-def plan(profile, sha):
-    if profile not in {"pr", "nightly", "release"}:
-        raise ValueError("unknown inference profile")
-    if not re.fullmatch(r"[0-9a-fA-F]{40}", sha):
-        raise ValueError("source must be an immutable 40-digit commit SHA")
+def ladder_models():
     ladder = read_json(LADDER)
     if set(ladder) != {"schema_version", "models"} or type(ladder["schema_version"]) is not int:
         raise ValueError("invalid inference ladder schema")
     models = ladder["models"]
     if ladder["schema_version"] != 1 or not isinstance(models, list) or not models:
         raise ValueError("unsupported or empty inference ladder")
-    checks = (["gpu-startup", "scored-quality", "streaming-smoke"] if profile == "pr"
-              else ["correctness", "scored-quality", "agentx-performance"])
-    rows, ids, names = [], set(), set()
+    ids, names = set(), set()
     for model in models:
         if set(model) != {"id", "model", "architecture", "pr", "split"}:
             raise ValueError("invalid inference model fields")
@@ -35,6 +29,19 @@ def plan(profile, sha):
             raise ValueError(f"invalid or duplicate inference model: {key}")
         ids.add(key)
         names.add(name)
+    return models
+
+
+def plan(profile, sha):
+    if profile not in {"pr", "nightly", "release"}:
+        raise ValueError("unknown inference profile")
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", sha):
+        raise ValueError("source must be an immutable 40-digit commit SHA")
+    checks = (["gpu-startup", "scored-quality", "streaming-smoke"] if profile == "pr"
+              else ["correctness", "scored-quality", "agentx-performance"])
+    rows = []
+    for model in ladder_models():
+        key, name, architecture = model["id"], model["model"], model["architecture"]
         if profile != "pr" or model["pr"]:
             for mode, machines in (("standalone", 1), ("split", 2)):
                 if mode == "standalone" or model["split"]:

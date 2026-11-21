@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""Compare Skippy commits, and llama.cpp's own server, on one Metal host at a time."""
+
+import argparse
+import base64
+import json
+import os
+import re
+import subprocess
+import sys
+import tarfile
+import time
+from pathlib import Path
+from urllib.parse import quote
+
+from lib.ci_artifacts import digest, read_json, write_json
+from lib.ci_process import cancel_on_signal, capture, command, start, stop
+from lib.ci_smoke import curl
+from lib import inference_metal
+from lib.inference_checks import ENDPOINT, offload
+from lib.inference_inputs import admit as admit_model
+from lib.inference_inputs import fixture
+from lib.jy_qualification import Pilot
+from lib.performance_arms import build, capabilities, server_args
+from lib.performance_load import run_point, tokenizer
+from lib.performance_plan import SCENARIO, arms, job_spec, models, nodes, round_order, scenario
+from lib.performance_report import markdown, summarize
+
+REPO = "general-inference/skippy"
+WORK = Path("target/inference-performance")
+BUILT = WORK / "built.json"
+TERMINAL = {"succeeded", "failed", "cancelled", "expired"}
+RESERVE = 16 * 1024**3
+
+
+def github(path):
+    return json.loads(command(["gh", "api", path], overrides={"GH_TOKEN": os.environ["GH_TOKEN"]},
+                              capture_stdout=True))
+
+
+def resolve(ref):
+    """A comparison only measures code already on protected main."""
+    if not re.fullmatch(r"[A-Za-z0-9._/-]{1,200}", ref):
+        raise ValueError(f"invalid ref: {ref!r}")
+    sha = github(f"repos/{REPO}/commits/{quote(ref, safe='')}")["sha"]
+    if github(f"repos/{REPO}/compare/{sha}...main")["status"] not in {"ahead", "identical"}:
+        raise ValueError(f"{ref} ({sha[:12]}) is not on main")
+    return sha
+
+
+def reference_pin(sha):
+    content = github(f"repos/{REPO}/contents/llama_cpp/upstream.txt?ref={sha}")
+    return base64.b64decode(content["content"]).decode("utf-8").strip()
+
+
+def admit(evidence):
+    harness = capture(["git", "rev-parse", "HEAD"]).strip()
+    candidate, baseline = resolve(os.environ["CANDIDATE"]), resolve(os.environ["BASELINE"])
+    with_reference = os.environ.get("REFERENCE", "true") == "true"
+    arm_list = arms(candidate, baseline, reference_pin(candidate) if with_reference else None)
+    keys = models([key.strip() for key in os.environ["MODELS"].split(",") if key.strip()])
+    pins = nodes([node.strip() for node in os.environ.get("NODES", "").split(",") if node.strip()])
+    rounds = int(os.environ.get("ROUNDS") or 3)
+    jobs = [{"label": node or "any", "spec": job_spec(harness, arm_list, keys, rounds, node, node or "any")}
+            for node in (pins or [None])]
+    evidence.mkdir(parents=True, exist_ok=True)
+    write_json(evidence / "plan.json", {"harness": harness, "arms": arm_list, "models": keys,
+                                        "rounds": rounds, "jobs": jobs})
+    for arm in arm_list:
+        print(f'{arm["label"]}: {arm["kind"]} {arm["sha"]}')
+    print(f"{len(jobs)} job(s), {len(keys)} model(s), {rounds} round(s); nothing has run yet")
+
+
+def resource_id(identifier):
+    if not isinstance(identifier, str) or not re.fullmatch(r"[a-zA-Z0-9_]+", identifier):
+        raise ValueError("invalid JY resource id")
+    return identifier
+
+
+def cancel(pilot, ledger):
+    for identifier in read_json(ledger):
+        job = pilot.api("GET", f"/v1/jobs/{resource_id(identifier)}")
+        if job.get("status") not in TERMINAL:
+            pilot.api("POST", f"/v1/jobs/{identifier}/cancel")
+
+
+def wait(pilot, identifier, evidence, deadline):
+    while time.monotonic() < deadline:
+        job = pilot.api("GET", f"/v1/jobs/{identifier}")
+        write_json(evidence / f"{identifier}-job.json", job)
+        if job["status"] in TERMINAL:
+            return job
+        time.sleep(30)
+    raise RuntimeError(f"{identifier} did not finish before the controller deadline")
+
+
+def collect(pilot, job, plan, label, evidence):
+    run = (job.get("runs") or [{}])[-1]
+    run_id = resource_id(run.get("id"))
+    result = pilot.api("GET", f"/v1/artifacts/{run_id}/raw/performance.json")
+    if result.get("harness") != plan["harness"] or [
+        (arm["label"], arm["sha"]) for arm in result.get("arms", [])
+    ] != [(arm["label"], arm["sha"]) for arm in plan["arms"]]:
+        raise ValueError(f"{label}: performance evidence does not match the admitted plan")
+    write_json(evidence / f"{label}-performance.json", result)
+    host = f'{result["host"]["chip"]} ({result["host"].get("node") or "unknown node"})'
+    return markdown(f"Inference performance: {label}", host, summarize(result["samples"]))
+
+
+def dispatch(evidence):
+    pilot, plan = Pilot(), read_json(evidence / "plan.json")
+    ledger, identifiers = evidence / "jobs.json", []
+    write_json(ledger, identifiers)
+    run = f'{os.environ.get("GITHUB_RUN_ID", "local")}-{os.environ.get("GITHUB_RUN_ATTEMPT", "1")}'
+    deadline = time.monotonic() + 20700
+    try:
+        for job in plan["jobs"]:
+            created = pilot.api("POST", "/v1/jobs", {
+                "spec": job["spec"], "idempotency_key": f'inference-performance-{run}-{job["label"]}'})
+            identifiers.append(resource_id(created["id"]))
+            write_json(ledger, identifiers)
+            print(f'{job["label"]}: {created["id"]} {created.get("status")}', flush=True)
+        finished = [wait(pilot, identifier, evidence, deadline) for identifier in identifiers]
+    except (Exception, KeyboardInterrupt):
+        cancel(pilot, ledger)
+        raise
+    reports, failures = [], []
+    for job, spec in zip(finished, plan["jobs"]):
+        if job["status"] != "succeeded":
+            failures.append(f'{spec["label"]}: {job["status"]}')
+            continue
+        reports.append(collect(pilot, job, plan, spec["label"], evidence))
+    report = "\n".join(reports)
+    (evidence / "summary.md").write_text(report, encoding="utf-8")
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
+            stream.write(report)
+    print(report)
+    if failures:
+        raise RuntimeError("performance jobs did not succeed: " + "; ".join(failures))
+
+
+def native_plan():
+    plan = json.loads(os.environ["SKIPPY_PERFORMANCE_PLAN"])
+    if capture(["git", "rev-parse", "HEAD"]).strip() != plan["harness"]:
+        raise ValueError("harness checkout differs from the admitted harness commit")
+    labels = {arm["label"]: arm["sha"] for arm in plan["arms"]}
+    expected = arms(labels["candidate"], labels["baseline"], labels.get("reference"))
+    if plan["arms"] != expected or plan["models"] != models(plan["models"]):
+        raise ValueError("performance plan arms or models are malformed")
+    return plan
+
+
+def build_arms():
+    plan = native_plan()
+    inference_metal.chip()
+    WORK.mkdir(parents=True, exist_ok=True)
+    write_json(BUILT, [build(arm, WORK / f'build-{arm["label"]}.log') for arm in plan["arms"]])
+
+
+def ready(server, seconds):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if server.poll() is not None:
+            raise RuntimeError("server exited before it was ready; inspect its log")
+        try:
+            curl([ENDPOINT + "/v1/models"], 5)
+            return
+        except subprocess.CalledProcessError:
+            time.sleep(2)
+    raise RuntimeError("server did not become ready")
+
+
+def measure(built, help_text, model, inputs, key, index, server, shape, output):
+    coordinate = f'{inputs["repo"]}@{inputs["revision"]}'
+    args, applied, missing = server_args(built, help_text, model, coordinate,
+                                         shape["context_per_lane"], server)
+    name = f'{key}-r{index + 1}-{built["label"]}-{server["id"]}'
+    log = output / f"{name}.log"
+    samples = []
+    with log.open("wb") as stream:
+        process = start(args, stdin=subprocess.DEVNULL, stdout=stream, stderr=stream)
+        try:
+            ready(process, 900)
+            offload(log)
+            for point in server["points"]:
+                metrics = run_point(ENDPOINT, point, coordinate, inputs["tokenizer_path"],
+                                    shape["warmup_requests"], WORK / "aiperf" / name / point["id"])
+                samples.append({"model": key, "round": index + 1, "arm": built["label"],
+                                "server": server["id"], "point": point["id"], "applied": applied,
+                                "unsupported": missing, "metrics": metrics})
+        finally:
+            stop(process)
+    return samples
+
+
+def execute():
+    if os.geteuid() == 0:
+        raise ValueError("native inference must not execute as root")
+    plan, chip = native_plan(), inference_metal.chip()
+    working_set = inference_metal.working_set(chip)
+    built = read_json(BUILT)
+    if [(entry["label"], entry["sha"]) for entry in built] != [(arm["label"], arm["sha"]) for arm in plan["arms"]]:
+        raise ValueError("built arms differ from the admitted plan")
+    for entry in built:
+        if digest(Path(entry["binary"])) != entry["binary_sha256"]:
+            raise ValueError(f'{entry["label"]} binary changed after it was built')
+    output = Path(os.environ["JIANYANG_ARTIFACT_DIR"])
+    output.mkdir(parents=True, exist_ok=True)
+    for log in WORK.glob("build-*.log"):
+        (output / log.name).write_bytes(log.read_bytes())
+    shape, helps = scenario(), {entry["label"]: capabilities(entry) for entry in built}
+    record = {"schema_version": 1, "harness": plan["harness"], "scenario_sha256": digest(SCENARIO),
+              "host": {"chip": chip, "macos": capture(["sw_vers", "-productVersion"]).strip(),
+                       "metal_working_set_bytes": working_set, "node": os.environ.get("JIANYANG_NODE")},
+              "arms": built, "rounds": plan["rounds"], "models": {}, "samples": []}
+    try:
+        for key in plan["models"]:
+            inputs = fixture(key)
+            available = inference_metal.available_memory(capture(["vm_stat"]), working_set)
+            if available < sum(file["size"] for file in inputs["files"]) + RESERVE:
+                raise ValueError(f"{key}: insufficient Metal working set or free memory for weights and reserve")
+            model = admit_model(key, inputs)
+            inputs = {**inputs, "tokenizer_path": tokenizer(inputs)}
+            record["models"][key] = {"repo": inputs["repo"], "revision": inputs["revision"],
+                                     "files": inputs["files"]}
+            for index in range(plan["rounds"]):
+                for entry in round_order(built, index):
+                    for server in shape["servers"]:
+                        record["samples"] += measure(entry, helps[entry["label"]], model, inputs, key,
+                                                     index, server, shape, output)
+                        write_json(output / "performance.json", record)
+    finally:
+        write_json(output / "performance.json", record)
+        if (WORK / "aiperf").is_dir():
+            with tarfile.open(output / "aiperf.tar.gz", "w:gz") as archive:
+                archive.add(WORK / "aiperf", arcname="aiperf")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    actions = parser.add_subparsers(dest="action", required=True)
+    for name in ("admit", "dispatch"):
+        actions.add_parser(name).add_argument("evidence", type=Path)
+    actions.add_parser("cancel").add_argument("ledger", type=Path)
+    actions.add_parser("build")
+    actions.add_parser("execute")
+    args = parser.parse_args()
+    if args.action == "admit":
+        admit(args.evidence)
+    elif args.action == "dispatch":
+        dispatch(args.evidence)
+    elif args.action == "cancel":
+        cancel(Pilot(), args.ledger)
+    elif args.action == "build":
+        build_arms()
+    else:
+        execute()
+
+
+if __name__ == "__main__":
+    try:
+        with cancel_on_signal():
+            main()
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.SubprocessError,
+            KeyboardInterrupt) as error:
+        sys.exit(str(error))

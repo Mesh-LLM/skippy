@@ -107,6 +107,10 @@ the first nightly publication and when benchmark inputs change. The longer
 dataset has no comparable release workload. A merge to `main` adds no
 qualification run.
 
+`inference-performance.yml` is dispatch-only and compares commits already on main
+on one Metal host at a time; it reports into the run summary and gates nothing
+(see [`INFERENCE_PERFORMANCE.md`](INFERENCE_PERFORMANCE.md)).
+
 Scheduled, manual and reusable full/candidate validation bypass path selection.
 Tagged releases and manual llama upgrades retain their explicit triggers. The
 `CI images` workflow retains its native paths for its workflow,

@@ -1,0 +1,100 @@
+name: Inference qualification (performance)
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Ref or SHA on main to measure.
+        type: string
+        default: main
+      baseline:
+        description: Ref or SHA on main to compare against. The candidate again gives an A/A noise run.
+        type: string
+        required: true
+      reference:
+        description: Add llama.cpp's own server at the candidate's llama_cpp/upstream.txt pin.
+        type: boolean
+        default: true
+      models:
+        description: Comma-separated ci/inference-ladder.json ids.
+        type: string
+        default: qwen35-4b
+      nodes:
+        description: Comma-separated Metal nodes, one job each. Empty runs one job on any Metal Mac that fits.
+        type: string
+        default: ''
+      rounds:
+        description: Rounds per arm; the arm order rotates every round.
+        type: number
+        default: 3
+  workflow_call:
+    inputs:
+      candidate:
+        type: string
+        default: main
+      baseline:
+        type: string
+        required: true
+      reference:
+        type: boolean
+        default: true
+      models:
+        type: string
+        default: qwen35-4b
+      nodes:
+        type: string
+        default: ''
+      rounds:
+        type: number
+        default: 3
+    secrets:
+      JIANYANG_INFERENCE_SSH_KEY:
+        required: true
+permissions:
+  contents: read
+concurrency:
+  # A comparison holds whole machines for hours; never cancel one for another.
+  group: inference-performance-${{ inputs.candidate }}-${{ inputs.baseline }}-${{ inputs.nodes }}
+  cancel-in-progress: false
+jobs:
+  measure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      EVIDENCE: target/ci-evidence/inference-performance
+    steps:
+      # Controller and harness source always come from protected main; the arms are
+      # admitted only if they are on main too.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Admit the arms and plan the jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ inputs.candidate }}
+          BASELINE: ${{ inputs.baseline }}
+          REFERENCE: ${{ inputs.reference }}
+          MODELS: ${{ inputs.models }}
+          NODES: ${{ inputs.nodes }}
+          ROUNDS: ${{ inputs.rounds }}
+        run: just inference-performance-admit "$EVIDENCE"
+      - name: Measure every arm on each Metal host
+        env:
+          JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
+        run: just inference-performance-dispatch "$EVIDENCE"
+      - name: Cancel outstanding JY jobs
+        if: cancelled() || failure()
+        env:
+          JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
+        run: |
+          if test -f "$EVIDENCE/jobs.json"; then
+            just inference-performance-cancel "$EVIDENCE/jobs.json"
+          fi
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: inference-performance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE }}
+          if-no-files-found: error
+          retention-days: 30

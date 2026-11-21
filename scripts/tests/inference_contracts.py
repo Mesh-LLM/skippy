@@ -76,6 +76,15 @@ class MetalAdmissionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Apple M3 Ultra"):
                 inference_metal.device_and_budget()
 
+    def test_comparisons_take_any_apple_m_series_chip_with_its_own_metal_gpu(self):
+        with patch.object(inference_metal.platform, "system", return_value="Darwin"), \
+             patch.object(inference_metal.platform, "machine", return_value="arm64"):
+            with patch.object(inference_metal, "capture", return_value="Apple M1 Ultra\n"):
+                self.assertEqual(inference_metal.chip(), "Apple M1 Ultra")
+            with patch.object(inference_metal, "capture", return_value="Apple Paravirtual device\n1024\n"):
+                with self.assertRaisesRegex(ValueError, "Metal device"):
+                    inference_metal.working_set("Apple M1 Ultra")
+
 
 class PilotRequestTests(unittest.TestCase):
     def test_jy_requests_identify_the_client(self):
