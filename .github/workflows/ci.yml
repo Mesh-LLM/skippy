@@ -177,8 +177,72 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: read
+    env:
+      SKIPPY_WINDOWS_ROCM_VERSION: '7.2.0'
+      SKIPPY_WINDOWS_ROCM_ARCHES: 'gfx1100;gfx1101;gfx1102;gfx1151;gfx1200;gfx1201'
     steps:
-      - run: echo skeleton-ok
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      # The native stage needs MSVC on PATH; rustc locates Visual Studio itself.
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+      - name: Install the pinned HIP SDK and report its shape
+        shell: pwsh
+        run: |
+          ./scripts/install-windows-rocm-sdk.ps1 -ExpectedVersion "$env:SKIPPY_WINDOWS_ROCM_VERSION"
+          Write-Host 'ROCM_PATH root entries:'
+          Get-ChildItem "$env:ROCM_PATH" | ForEach-Object { Write-Host "  $($_.Name)" }
+          Write-Host 'License candidates:'
+          Get-ChildItem "$env:ROCM_PATH" -Recurse -Depth 1 `
+            -Include LICENSE,LICENSE.txt,license.txt,EULA,EULA.txt,eula.txt -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host "  $($_.FullName)" }
+      - name: Verify packaged kernel architectures
+        shell: pwsh
+        run: |
+          $expected = $env:SKIPPY_WINDOWS_ROCM_ARCHES -split ';'
+          foreach ($library in 'rocblas', 'hipblaslt') {
+            $directory = Join-Path $env:ROCM_PATH "bin\$library\library"
+            $arches = Get-ChildItem $directory -File |
+              ForEach-Object { if ($_.Name -match '(gfx[0-9a-f]+)') { $Matches[1] } } |
+              Sort-Object -Unique
+            Write-Host "$library kernels: $($arches -join ' ')"
+            foreach ($target in $expected) {
+              if ($arches -notcontains $target) {
+                throw "$library ships no kernels for $target"
+              }
+            }
+          }
+      - name: Compile the HIP fingerprint probe
+        shell: bash
+        run: |
+          for arch in gfx1100 gfx1201; do
+            "$HIPCC" -O3 -std=c++17 --offload-arch="$arch" \
+              crates/skippy-gpu-bench/native/hip/membench-fingerprint.hip \
+              -o "membench-$arch.exe"
+          done
+          ls -l membench-*.exe
+      - name: Provision the pinned CUDA toolkit and compile a kernel
+        shell: bash
+        run: |
+          python scripts/ci-windows-cuda.py 12.9.2
+          printf '__global__ void probe() {}\n' > probe.cu
+          "$CUDACXX" -arch=sm_80 -c probe.cu -o probe.o
+          "$CUDACXX" --version | grep -F 'release 12.9'
+      - name: Configure llama.cpp for HIP without building
+        shell: bash
+        run: |
+          just llama-prepare
+          cmake -S .deps/llama.cpp -B hip-configure -G Ninja \
+            -DGGML_HIP=ON -DAMDGPU_TARGETS=gfx1100 \
+            -DBUILD_SHARED_LIBS=ON -DGGML_BUILD_TESTS=OFF -DGGML_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=OFF \
+            -DLLAMA_CURL=OFF
+          grep -E 'CMAKE_HIP|GGML_HIP' hip-configure/CMakeCache.txt | head
   plan:
     name: Validate build targets
     needs: changes
