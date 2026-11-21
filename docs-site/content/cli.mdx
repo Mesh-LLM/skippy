@@ -75,19 +75,23 @@ run its full path, such as `skippy models download --help`.
 
 | Invocation or option | Meaning and default |
 | --- | --- |
-| `skippy serve --model MODEL` | Serve a catalog ID, Hugging Face reference, or local model path. |
+| `skippy serve --model MODEL` | Serve a catalog ID, Hugging Face GGUF or layer-package reference, or local GGUF path. |
 | `skippy serve --model-path PATH` | Open a local GGUF file. For a multipart model, pass the first shard. |
 | `skippy serve --config FILE` | Serve a prepared JSON stage configuration. For a pipeline, add `--stage-transport binary`, and add `--worker-only` on downstream stages. |
 | `--settings FILE` | Load TOML for one model or a list of models. Each `[[models]]` entry can use a `model` reference or an explicit `model_path`. |
 | `--print-effective-config` | Report resolved settings and where they came from, then exit. |
 | `--bind-addr ADDRESS` | Set the public API address, which defaults to `127.0.0.1:9337`. In worker-only mode this overrides the binary stage listener. |
-| `--model-id ID` | Set the model ID the public API advertises and accepts. |
+| `--model-id ID` | Set the model ID the public API advertises and accepts for single-model serving. For a model list, set `id` on the entry. |
 | `--prompt` | Open an interactive prompt after the public API is ready. Off by default. |
 | `--default-max-tokens N` | Set the default API completion ceiling. Defaults to 8192, bounded by the remaining context. |
 | `--ctx-size N` | Set the context size for a local model. By default, Skippy plans it from available memory and model metadata. |
 | `--n-gpu-layers N` | Set the number of local model layers to offload. Use `-1` to offload all supported layers. |
+| `--gpu-id ID` | Pin an offloaded local model to a stable GPU ID. Use `doctor --device-inventory` to inspect IDs and visibility. |
 | `--generation-concurrency N` | Set the maximum active generation requests. Automatic local planning defaults to four lanes sharing a KV pool. |
 | `--mmproj PATH` | Select a multimodal projector GGUF. By default, Skippy looks for a matching installed projector. |
+| `--on-demand` | Defer an unsplit model's native load until the first inference request. Eager loading is the default. |
+| `--idle-evict-secs N` | Release an unsplit model after 1–86,400 idle seconds. Omit to disable idle eviction. |
+| `--residency-budget-bytes N` | Set the positive admission budget in bytes for model residency. Defaults to the identified model's source size. |
 
 Run `skippy serve --help` for the full serving flag list. The serving docs
 cover TOML keys, environment variables, and tuning controls.
@@ -114,13 +118,16 @@ Commands below are relative to `skippy models`. Each accepts `--json` for JSON
 output. For model selection and package workflows, see
 [Running models](/running-models/) and [Model packages](/pipeline-parallelism/model-packages/).
 
+Use the separate `skippy-quantize` tool to convert or quantize local weights.
+[Quantize a model](/running-models/quantization/)
+
 | Subcommand | Options and behavior |
 | --- | --- |
 | `recommended` | List models from the configured catalog. `SKIPPY_MODEL_CATALOG` overrides the default `meshllm/catalog` dataset. |
-| `search QUERY...` | Search Hugging Face. Defaults to GGUF (`--gguf`), `--limit 20`, and `--sort trending`. Use `--mlx` for MLX or `--catalog` to restrict results to the catalog. Sort values are `trending`, `downloads`, `likes`, `created`, `updated`, `parameters-desc`, and `parameters-asc`. |
+| `search QUERY...` | Search Hugging Face for GGUF models (`--gguf`). Defaults to `--limit 20` and `--sort trending`. Use `--catalog` to restrict results to the catalog. Sort values are `trending`, `downloads`, `likes`, `created`, `updated`, `parameters-desc`, and `parameters-asc`. |
 | `show MODEL` | Describe an exact model reference and its resolved files. |
 | `download MODEL` | Download a model. Use `--direct` to bypass catalog layer packages and `--draft` to also fetch the recommended speculative draft. |
-| `installed` | List models in the local Hugging Face cache. |
+| `installed` | List GGUF models and installed layer packages in the local Hugging Face cache. |
 | `updates [REPO]` | Check for newer revisions with `--check`. To refresh cached files, name a repository or use `--all`. The alias is `update`. |
 | `delete MODEL` | Preview removal of a specific model from local storage. Apply with `--yes`. |
 | `cleanup` | Preview removal of Skippy-managed model files. Filter by age with `--unused-since 30d` or `--unused-since 12h`. Apply with `--yes`. |
@@ -159,6 +166,46 @@ hardware](/running-models/runtime-and-hardware/) for runtime selection.
 | `remove ID` | Remove a cached runtime by exact ID. Use `--release RELEASE` to override the selected release. |
 | `prune` | Remove older cached runtime releases while keeping the active and previous releases. Use `--active-only` to keep just the active release, or `--release RELEASE` to select the active release. |
 
+## `serve-managed` and `manage`
+
+On Unix, `serve-managed` exposes an inference listener and a private local
+management socket. Start with an empty model registry, then load or drain
+models while the HTTP listener stays running.
+
+```console
+state_dir=$(mktemp -d)
+skippy serve-managed --management-socket "$state_dir/control.sock" &
+```
+
+Once the listener reports ready, use the same socket path for management.
+Replace `/models/model.gguf` with an absolute path to an existing local model.
+
+```console
+skippy manage --management-socket "$state_dir/control.sock" load demo /models/model.gguf
+skippy manage --management-socket "$state_dir/control.sock" status
+```
+
+| Option or operation | Meaning and default |
+| --- | --- |
+| `--management-socket PATH` | Required by both commands. Use a new absolute socket path in an existing owner-only directory, such as one created with `mktemp -d`. |
+| `serve-managed --bind-addr ADDRESS` | Public inference listener address. Defaults to `127.0.0.1:9337`. |
+| `serve-managed --eager-model ID=PATH` | Load a model at startup. Repeat for multiple models. Paths must be absolute. |
+| `serve-managed --best-effort` | Keep serving successfully loaded eager models when some fail. The default is fail-fast startup. |
+| `manage … status` | List model states and instance IDs. Successful management commands emit the current model list as JSON by default. |
+| `manage … load ID PATH` | Load a local model with an absolute path. |
+| `manage … drain ID [--instance N] [--timeout-secs N]` | Stop new requests and wait for active requests and streams to release the model. The timeout defaults to 30 seconds and accepts 0–86,400. An expired deadline requests cancellation and the model can still be draining. |
+| `manage … unload ID [--instance N]` | Request immediate cancellation and release once the model is idle. For `drain` and `unload`, use the instance ID from `status` to guard against operating on a replacement model. |
+
+## `analytics`
+
+| Subcommand | Meaning |
+| --- | --- |
+| `status` | Show whether this process reports anonymous usage and why. |
+| `enable` | Save an enabled preference. Effective reporting still depends on the project key and process settings. |
+| `disable` | Save an opt-out across restarts and upgrades. |
+
+See [Anonymous analytics](/configuration/analytics/) for precedence and the data collected.
+
 ## `plan-split`
 
 This example uses a local `model.gguf` with a release-certified split recipe
@@ -187,5 +234,5 @@ For a full split example and startup order, see [Pipeline parallelism](/pipeline
 | Command | Options and behavior |
 | --- | --- |
 | `skippy example-config` | Emit an example single-stage config as JSON without loading a runtime. |
-| `skippy doctor` | Report host hardware, native-runtime selection, and cache locations. |
+| `skippy doctor` | Report host hardware, native-runtime selection, and cache locations. Add `--device-inventory` for stable device IDs, visibility, and known capacity. |
 | `skippy gpu-benchmark` | Measure GPU bandwidth and compute using an installed Metal, CUDA, or ROCm runtime with a benchmark tool. `--timeout-secs` defaults to 120 and accepts 1–86400. |
