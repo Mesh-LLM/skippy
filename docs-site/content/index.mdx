@@ -20,30 +20,12 @@ local inference to multi-machine serving.
 
 ## Serve your first model
 
-Choose the `.tar.gz` bundle that matches your operating system, architecture,
-and backend. In a new directory, replace `ARCHIVE` in the commands below with
-that filename, including `.tar.gz`. [Latest Skippy release](https://github.com/general-inference/skippy/releases/latest)
-
-```console
-gh release download --repo general-inference/skippy --pattern "ARCHIVE*"
-```
-
-Verify the downloaded archive against its `.sha256` file, then unpack it.
-[Checksum instructions](/getting-started/#download-a-release)
-
-```console
-tar -xzf "ARCHIVE"
-```
-
-Keep `native-runtimes/` alongside the executable and run Skippy from the
-extracted directory. In Windows PowerShell, use `.\skippy.exe` for the
-executable.
+Download and unpack the [latest Skippy release](https://github.com/general-inference/skippy/releases/latest).
+Then run this command from the extracted directory.
 
 ```console
 ./skippy serve --model Qwen3-0.6B-Q4_K_M --prompt
 ```
-
-The prompt opens when the HTTP API is ready. [Make an inference request](/getting-started/first-request/)
 
 ## How Skippy serves a request
 
