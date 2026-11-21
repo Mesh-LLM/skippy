@@ -14,7 +14,7 @@ const packageJobs = rows.map(row => `package_${row.id.replaceAll('-', '_')}`);
 const prPackages = ['package_darwin_aarch64_metal', 'package_linux_x86_64_cuda13'];
 const releaseSmokes = ['release_smoke_linux_x86_64_cuda12', 'release_smoke_linux_aarch64_cuda12', 'release_smoke_linux_aarch64_cuda13'];
 
-function results({ code = true, inference = false, full = false, release = false } = {}) {
+function results({ code = true, inference = false, full = false, release = false, hostedRequiresNative = false } = {}) {
   const selected = code || inference;
   const required = ['changes'];
   if (selected) required.push('plan');
@@ -23,7 +23,7 @@ function results({ code = true, inference = false, full = false, release = false
   else if (inference) required.push(...prPackages);
   if (release) required.push(...releaseSmokes);
   const needs = Object.fromEntries(declared.map(job => [job, { result: required.includes(job) ? 'success' : 'skipped' }]));
-  needs.changes.outputs = { code: String(code), inference: String(inference) };
+  needs.changes.outputs = { code: String(code), inference: String(inference), hosted_requires_native: String(hostedRequiresNative) };
   if (selected) needs.plan.outputs = { profile: full ? 'full' : 'pr', runtimes: JSON.stringify({ include: rows }) };
   return needs;
 }
@@ -80,6 +80,27 @@ test('release validation requires the three other GPU smokes', () => {
   assert.throws(() => gate(results({ full: true }), true), /release_smoke_/);
   assert.throws(() => gate(results({ full: true, release: true })), /release_smoke_/);
   assert.throws(() => gate(results(), true), /requires full CI/);
+});
+
+test('hosted CI cannot satisfy a native inference requirement', () => {
+  assert.throws(() => gate(results({ hostedRequiresNative: true })), /require native hardware qualification on an isolated runner/);
+});
+
+test('native CI trusts only an immutable same-repository PR from a writer', async () => {
+  const admission = workflow.split('      - name: Verify the same-repository PR author\n')[1].split('\n  plan:\n')[0];
+  const script = admission.split('          script: |\n')[1];
+  const evaluate = new Function('github', 'context', 'return (async () => {\n' + script + '\n})()');
+  const candidate = { head: { sha: 'a'.repeat(40), repo: { id: 42 } }, base: { ref: 'main' }, user: { login: 'maintainer' } };
+  const assertAdmission = (pr, permission) => evaluate({ rest: { repos: {
+    getCollaboratorPermissionLevel: async ({ username }) => {
+      assert.equal(username, 'maintainer');
+      return { data: { permission } };
+    },
+  } } }, { repo: {}, payload: { pull_request: pr, repository: { id: 42 } } });
+  await assert.doesNotReject(() => assertAdmission(candidate, 'write'));
+  await assert.rejects(() => assertAdmission(candidate, 'read'), /trusted PR author/);
+  await assert.rejects(() => assertAdmission({ ...candidate, head: { ...candidate.head, repo: { id: 43 } } }, 'admin'), /same-repository PR/);
+  await assert.rejects(() => assertAdmission({ ...candidate, head: { ...candidate.head, sha: 'main' } }, 'admin'), /immutable source/);
 });
 
 test('main can reuse only a receipt for the exact release dispatch and candidate', async () => {
