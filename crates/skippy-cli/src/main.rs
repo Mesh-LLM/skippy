@@ -2,6 +2,7 @@ mod analytics;
 mod cli;
 mod conversion;
 mod disk_cache;
+mod draft;
 mod gpu_benchmark;
 mod local_model;
 mod local_resource_planning;

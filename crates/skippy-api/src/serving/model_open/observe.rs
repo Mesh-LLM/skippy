@@ -10,14 +10,13 @@ use skippy_runtime::{
 
 use super::{
     ModelLoadOutcome, ModelOpenEmitter, ModelOpenEvent, ModelOpenEventKind, ModelOpenFailure,
-    ModelOpenObservation, ModelOpenObserver, ModelOpenProgress, ModelOpenProgressUnit,
-    ModelOpenSummary,
+    ModelOpenObservation, ModelOpenProgress, ModelOpenProgressUnit, ModelOpenSummary,
 };
 
 const DRAIN_INTERVAL: Duration = Duration::from_millis(20);
 
 pub(in crate::serving) fn run_observed<T, E>(
-    observer: Option<ModelOpenObserver>,
+    observer: Option<impl FnMut(ModelOpenObservation) + Send>,
     load: impl FnOnce(Option<Arc<ModelOpenEventQueue>>) -> Result<T, E>,
 ) -> Result<T, E> {
     let Some(observer) = observer else {
@@ -62,7 +61,7 @@ struct ObservedRecords {
 fn drain(
     queue: &ModelOpenEventQueue,
     outcome: mpsc::Receiver<ModelLoadOutcome>,
-    mut observer: ModelOpenObserver,
+    mut observer: impl FnMut(ModelOpenObservation),
 ) {
     let mut observed = ObservedRecords::default();
     let mut records = Vec::new();
@@ -106,7 +105,10 @@ fn drain(
     }
 }
 
-fn deliver(observer: &mut ModelOpenObserver, observation: ModelOpenObservation) -> bool {
+fn deliver(
+    observer: &mut impl FnMut(ModelOpenObservation),
+    observation: ModelOpenObservation,
+) -> bool {
     if catch_unwind(AssertUnwindSafe(|| observer(observation))).is_err() {
         tracing::warn!("model-open observer panicked; stopping observation delivery");
         return false;
