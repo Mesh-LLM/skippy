@@ -138,16 +138,6 @@ test('host CPU packages install Just on GitHub and Depot runners', () => {
   assert.match(action, /uses: \.\/\.github\/actions\/setup\n      if: inputs.setup-host == 'true'/);
 });
 
-test('the Depot cache canary is restricted to manual runs on protected main', () => {
-  const canary = readFileSync(join(__dirname, '../workflows/depot-cache.yml'), 'utf8');
-  assert.match(canary, /^on:\n  workflow_dispatch:\npermissions: \{\}$/m);
-  assert.match(canary, /github.workflow_ref == 'Mesh-LLM\/skippy\/\.github\/workflows\/depot-cache\.yml@refs\/heads\/main'/);
-  const [seed, read] = canary.split('\n  depot_cache_read:\n');
-  assert.match(seed, /^    cache-mode: write$/m);
-  assert.match(read, /^    needs: depot_cache_seed$/m);
-  assert.match(read, /^    cache-mode: read$/m);
-});
-
 test('manual compiler image smoke can skip publication on either runner provider', () => {
   const images = readFileSync(join(__dirname, '../workflows/ci-images.yml'), 'utf8');
   const repository = 'Mesh-LLM/skippy';

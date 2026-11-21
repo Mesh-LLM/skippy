@@ -1,6 +1,5 @@
 self-hosted-runner:
   labels:
-    - depot-ubuntu-24.04-4
     - skippy-ephemeral
     - jy-linux-docker
     - native-contracts

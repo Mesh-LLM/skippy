@@ -146,7 +146,6 @@ Mesh-LLM/skippy/.github/workflows/inference.yml@refs/heads/main
 Mesh-LLM/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main
 Mesh-LLM/skippy/.github/workflows/pr-checks.yml@refs/heads/main
 Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main
-Mesh-LLM/skippy/.github/workflows/depot-cache.yml@refs/heads/main
 ```
 
 With Depot enabled, `ci-pr.yml`, `ci-images-pr.yml`, and `docs-pr.yml` retain
@@ -170,15 +169,10 @@ trusted jobs. GitHub-hosted fallback and JY actions retain their cache paths.
 [Actions cache behavior](https://depot.dev/docs/cache/integrations/github-actions)
 · [Depot sccache integration](https://depot.dev/docs/cache/integrations/sccache)
 
-After the workflows land, dispatch `Depot cache canary` on protected `main`
-before switching runner placement. The canary saves a disposable marker, then
-a separate `cache-mode: read` job restores it and checks for an explicit
-service denial on a fresh write reservation. The probe uploads no write-test
-data and fails if Depot supplies an automatic cache connection. The result
-covers the tested connection and runner label. For the placement rollout,
-verify full CI and `CI images` with `build_only=true`, then check one ordinary
-PR and one same-repository PR through the aggregate.
-[GitHub cache permissions](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#controlling-cache-access-with-cache-mode)
+After the workflows land and their runner-group refs are configured, set
+`SKIPPY_DEPOT_RUNNERS_ENABLED` to `true`. Verify full CI and `CI images`
+with `build_only=true`, then check one ordinary PR and one same-repository
+PR through the aggregate.
 
 ### PR admission and quality
 
