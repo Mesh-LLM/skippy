@@ -596,11 +596,11 @@ bundle_cuda_distribution_license() {
 }
 
 # The Windows package redistributes HIP runtime, rocBLAS, and hipBLASLt
-# libraries from the pinned HIP SDK. Keep AMD's redistribution terms next to
-# them; fail the package when the SDK layout no longer matches the candidates
-# below so the license is never silently dropped.
+# libraries from the pinned HIP SDK. Keep AMD's per-component licenses from
+# the SDK's share/doc tree next to them; fail the package when the SDK layout
+# no longer matches so the licenses are never silently dropped.
 bundle_windows_rocm_distribution_license() {
-    local root="${ROCM_PATH:-}" candidate name
+    local root="${ROCM_PATH:-}" component candidate name source
     local -a sources=()
     if [[ -n "${SKIPPY_ROCM_LICENSE_FILE:-}" ]]; then
         if [[ -f "$SKIPPY_ROCM_LICENSE_FILE" ]]; then
@@ -610,19 +610,25 @@ bundle_windows_rocm_distribution_license() {
             return 1
         fi
     elif [[ -n "$root" ]]; then
-        for candidate in LICENSE LICENSE.txt license.txt EULA EULA.txt eula.txt; do
-            [[ -f "$root/$candidate" ]] && sources+=("$root/$candidate")
+        for component in rocblas hipblaslt hipblas-common hipblas; do
+            for candidate in LICENSE.md LICENSE.txt LICENSE; do
+                if [[ -f "$root/share/doc/$component/$candidate" ]]; then
+                    sources+=("$root/share/doc/$component/$candidate")
+                    break
+                fi
+            done
         done
     fi
     if [[ "${#sources[@]}" -eq 0 ]]; then
-        echo "AMD HIP SDK license material was not found under ${root:-\$ROCM_PATH}; set SKIPPY_ROCM_LICENSE_FILE" >&2
+        echo "AMD HIP SDK component licenses were not found under ${root:-\$ROCM_PATH}/share/doc; set SKIPPY_ROCM_LICENSE_FILE" >&2
         return 1
     fi
     mkdir -p "$stage_dir/licenses"
     for source in "${sources[@]}"; do
-        name="$(basename "$source")"
-        cp "$source" "$stage_dir/licenses/AMD-HIP-SDK-$name"
-        license_paths+=("licenses/AMD-HIP-SDK-$name")
+        component="$(basename "$(dirname "$source")")"
+        name="AMD-HIP-SDK-$component-$(basename "$source")"
+        cp "$source" "$stage_dir/licenses/$name"
+        license_paths+=("licenses/$name")
     done
 }
 
