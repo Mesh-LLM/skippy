@@ -18,17 +18,21 @@ gh workflow run inference-performance.yml -f candidate=main \
 
 | input | meaning |
 |---|---|
-| `candidate` | ref or SHA to measure; default `main` |
-| `baseline` | ref or SHA to compare against; passing the candidate again gives an A/A noise run |
+| `candidate` | ref or SHA on main to measure, or `pr:N` for the head of open pull request N; default `main` |
+| `baseline` | ref, SHA or `pr:N` to compare against; passing the candidate again gives an A/A noise run |
 | `reference` | add llama.cpp's `llama-server` at the candidate's `llama_cpp/upstream.txt` pin; default on |
 | `models` | `ci/inference-ladder.json` ids; shards are the hash-pinned files in `ci/inference-artifacts.json` |
 | `nodes` | Metal nodes, one job each; empty runs one job on any Metal Mac with room for the largest model plus 16 GiB |
 | `rounds` | rounds per arm, at most 9; default 3 |
 | `trace` | after the rounds, one diagnostic pass of the candidate with debug telemetry; default off |
 
-Both commits must be on protected main. The controller and the harness always
-come from main, so every arm is driven by the same scripts and scenario, and an
-older commit is never asked to run code it does not have.
+Both commits must be on protected main, unless an arm is `pr:N`: the head of an
+open pull request from this repository, never a fork's, so only code that could
+already run on trusted CI reaches the lab. Such an arm is reported, and stored,
+as not on main; with `pr:N` as the baseline, a change stacked on another pull
+request is measured against that one alone. The controller and the harness
+always come from main, so every arm is driven by the same scripts and scenario,
+and an older commit is never asked to run code it does not have.
 
 ## What one job does
 
@@ -90,12 +94,15 @@ For graphs over time it also writes `LABEL-rows.jsonl` beside each job's
 with the job, when the run started, the host, the arm's commit and when it was
 committed, the model revision, the server's lanes and pool, the point's
 concurrency, depth and token counts, the round, and each metric as its own column.
-Rows from every run can share one table. With DuckDB, over a folder per run:
+An arm taken from a pull request has `on_main` false and its number in
+`pull_request`; llama.cpp's server has `on_main` null. Rows from every run can
+share one table. With DuckDB, over a folder per run, main's history alone:
 
 ```sql
 select committed_at, arm, model, point,
        median(output_tok_s) as output_tok_s, median(ttft_ms_p50) as ttft_ms_p50
 from read_json_auto('runs/*/*-rows.jsonl', union_by_name = true)
+where on_main is not false
 group by all order by committed_at, model, point, arm;
 ```
 

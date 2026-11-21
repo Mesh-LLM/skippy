@@ -3,11 +3,11 @@ on:
   workflow_dispatch:
     inputs:
       candidate:
-        description: Ref or SHA on main to measure.
+        description: Ref or SHA on main to measure, or pr:N for the head of an open pull request from this repository.
         type: string
         default: main
       baseline:
-        description: Ref or SHA on main to compare against. The candidate again gives an A/A noise run.
+        description: Ref or SHA on main, or pr:N, to compare against. The candidate again gives an A/A noise run.
         type: string
         required: true
       reference:

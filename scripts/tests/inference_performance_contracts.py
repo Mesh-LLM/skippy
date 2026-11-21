@@ -44,6 +44,18 @@ class PlanTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 performance_plan.arms(bad, self.baseline, None)
 
+    def test_an_arm_can_be_an_open_pull_request_from_this_repository_only(self):
+        self.assertEqual(performance_plan.pull_request_number("pr:130"), 130)
+        for ref in ("main", "pr:0", "pr:x", "a" * 40):
+            self.assertIsNone(performance_plan.pull_request_number(ref))
+        repo = "general-inference/skippy"
+        pull = {"number": 130, "state": "open", "head": {"sha": self.candidate, "repo": {"full_name": repo}}}
+        self.assertEqual(performance_plan.pull_request_head(pull, repo), self.candidate)
+        fork = {**pull, "head": {"sha": self.candidate, "repo": {"full_name": "someone/skippy"}}}
+        for refused in ({**pull, "state": "closed"}, fork, {**pull, "head": {"sha": self.candidate, "repo": None}}):
+            with self.assertRaises(ValueError):
+                performance_plan.pull_request_head(refused, repo)
+
     def test_every_arm_leads_one_round(self):
         arm_list = performance_plan.arms(self.candidate, self.baseline, self.pin)
         firsts = [performance_plan.round_order(arm_list, index)[0]["label"] for index in range(3)]
@@ -135,11 +147,15 @@ class ReportTests(unittest.TestCase):
                     "metrics": {"output_tok_s": 99.5, "ttft_ms_p50": None}}
         record = {"harness": "d" * 40, "scenario_sha256": "e" * 64, "started_at": "2026-11-21T10:00:00+00:00",
                   "host": {"chip": "Apple M1 Ultra", "node": "n1"},
-                  "arms": [{"label": "baseline", "kind": "skippy", "sha": "b" * 40, "binary_sha256": "f" * 64}],
-                  "models": {"qwen35-4b": {"revision": "r1"}}, "samples": [measured],
+                  "arms": [{"label": "baseline", "kind": "skippy", "sha": "b" * 40, "binary_sha256": "f" * 64},
+                           {"label": "candidate", "kind": "skippy", "sha": "a" * 40, "binary_sha256": "f" * 64}],
+                  "models": {"qwen35-4b": {"revision": "r1"}}, "samples": [measured, {**measured, "arm": "candidate"}],
                   "diagnostic": {"samples": [{**measured, "round": None}]}}
-        [row] = performance_report.rows(record, shape, {"b" * 40: "2026-11-20T10:16:30Z"}, "job_1")
+        row, pulled = performance_report.rows(record, shape, {"b" * 40: "2026-11-20T10:16:30Z"}, "job_1",
+                                              {"candidate": 130, "baseline": None})
         self.assertEqual((row["sha"], row["committed_at"], row["round"]), ("b" * 40, "2026-11-20T10:16:30Z", 2))
+        self.assertEqual((row["on_main"], row["pull_request"]), (True, None))
+        self.assertEqual((pulled["sha"], pulled["on_main"], pulled["pull_request"]), ("a" * 40, False, 130))
         self.assertEqual((row["lanes"], row["concurrency"], row["depth"]),
                          (server["lanes"], point["concurrency"], point["depth"]))
         self.assertEqual((row["output_tok_s"], row["ttft_ms_p50"], row["chip"]), (99.5, None, "Apple M1 Ultra"))

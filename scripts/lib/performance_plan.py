@@ -14,6 +14,7 @@ SCENARIO = ROOT / "ci/inference-performance.json"
 SKIPPY = "https://github.com/general-inference/skippy.git"
 LLAMA = "https://github.com/ggml-org/llama.cpp.git"
 SHA = re.compile(r"[0-9a-f]{40}")
+PULL_REQUEST = re.compile(r"pr:([1-9][0-9]{0,6})")
 NODE = re.compile(r"[A-Za-z0-9._-]{1,64}")
 RESERVE_GIB = 16
 MAX_ROUNDS = 9
@@ -55,6 +56,19 @@ def scenario():
             if point["depth"] + point["input_tokens"] + point["output_tokens"] > context:
                 raise ValueError(f'{point["id"]}: one request exceeds a lane\'s context')
     return value
+
+
+def pull_request_number(ref):
+    """`pr:N` names the head of pull request N; any other ref names a commit on main."""
+    match = PULL_REQUEST.fullmatch(ref)
+    return int(match[1]) if match else None
+
+
+def pull_request_head(pull, repository):
+    """The head of an open pull request from this repository: a fork's code never runs on the lab."""
+    if pull.get("state") != "open" or (pull.get("head", {}).get("repo") or {}).get("full_name") != repository:
+        raise ValueError(f'#{pull.get("number")} is not an open pull request from {repository}')
+    return pull["head"]["sha"]
 
 
 def arms(candidate, baseline, reference):
