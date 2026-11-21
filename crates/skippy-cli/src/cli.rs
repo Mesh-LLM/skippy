@@ -51,7 +51,11 @@ impl From<OutputFormat> for skippy_commands::console::OutputMode {
 #[derive(Subcommand)]
 pub enum Command {
     /// Inspect hardware, caches, and the selected native runtime.
-    Doctor,
+    Doctor {
+        /// Include device capacity and visibility from the installed runtime.
+        #[arg(long)]
+        device_inventory: bool,
+    },
     /// Measure bandwidth and compute on the selected runtime's GPUs.
     GpuBenchmark {
         /// Maximum benchmark execution time in seconds.
@@ -259,6 +263,9 @@ pub struct ServeOpenAiArgs {
     /// GPU layers for a local model; -1 offloads all supported layers.
     #[arg(long, conflicts_with = "config", allow_hyphen_values = true)]
     pub n_gpu_layers: Option<i32>,
+    /// Pin a local model to a device ID reported by doctor --device-inventory.
+    #[arg(long, conflicts_with = "config")]
+    pub gpu_id: Option<String>,
     /// Multimodal projector GGUF; otherwise use a matching installed sidecar.
     #[arg(long, conflicts_with = "config")]
     pub mmproj: Option<PathBuf>,

@@ -444,7 +444,7 @@ pub fn section(name: &str) -> &'static str {
     }
     match name {
         "ctx-size" => "kv",
-        "n-gpu-layers" => "execution",
+        "n-gpu-layers" | "gpu-id" => "execution",
         "mmproj" => "media",
         "bind-addr" | "model-id" | "default-max-tokens" | "guardrails" | "prompt" => "api",
         "config"
