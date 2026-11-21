@@ -20,32 +20,30 @@ local inference to multi-machine serving.
 
 ## Serve your first model
 
-In a new directory, download the Skippy release bundle for your platform using
-an authorized GitHub CLI session. This example uses Metal on Apple silicon.
+Choose the `.tar.gz` bundle that matches your operating system, architecture,
+and backend. In a new directory, replace `ARCHIVE` in the commands below with
+that filename, including `.tar.gz`. [Latest Skippy release](https://github.com/general-inference/skippy/releases/latest)
 
 ```console
-gh release download --repo general-inference/skippy \
-  --pattern 'skippy-*-darwin-aarch64-metal.tar.gz*'
-shasum -a 256 -c skippy-*-darwin-aarch64-metal.tar.gz.sha256 && \
-  tar -xzf skippy-*-darwin-aarch64-metal.tar.gz
+gh release download --repo general-inference/skippy --pattern "ARCHIVE*"
 ```
 
-Keep `native-runtimes/` alongside the unpacked `skippy` executable. For other
-platforms, choose the matching release bundle. [Install and run Skippy](/getting-started/#download-a-release)
+Verify the downloaded archive against its `.sha256` file, then unpack it.
+[Checksum instructions](/getting-started/#download-a-release)
 
-From the directory containing `skippy`, run the bundled executable.
+```console
+tar -xzf "ARCHIVE"
+```
+
+Keep `native-runtimes/` alongside the executable and run Skippy from the
+extracted directory. In Windows PowerShell, use `.\skippy.exe` for the
+executable.
 
 ```console
 ./skippy serve --model Qwen3-0.6B-Q4_K_M --prompt
 ```
 
-The prompt and HTTP API are available together. From another terminal:
-
-```console
-curl http://127.0.0.1:9337/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"Qwen3-0.6B-Q4_K_M","messages":[{"role":"user","content":"Hello"}]}'
-```
+The prompt opens when the HTTP API is ready. [Make an inference request](/getting-started/first-request/)
 
 ## How Skippy serves a request
 
