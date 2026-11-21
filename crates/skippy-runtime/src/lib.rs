@@ -5,7 +5,6 @@ pub(crate) use skippy_ffi::TensorRole;
 mod activation;
 mod capability_probe;
 mod chat_sampling_metadata;
-mod checkpoint;
 pub mod clef;
 mod config;
 pub mod decision;
@@ -20,9 +19,12 @@ mod media;
 mod native;
 mod native_mtp;
 mod native_test_evidence;
+pub mod native_timing;
+pub mod native_tracing;
 mod ngram;
 pub mod package;
 mod path_cstring;
+mod resident_prefix;
 mod runtime_event_reporter;
 mod runtime_events;
 mod session;
@@ -38,7 +40,6 @@ pub use activation::{
     DecodeFrameBatchRequest, IterationBatchPhase, IterationBatchRequest, PartialBatchExecution,
 };
 pub use capability_probe::{CapabilityReport, probe_capabilities};
-pub use checkpoint::{CheckpointQuantization, is_safetensors_checkpoint};
 pub use clef::{ClefModel, ClefModelInfo};
 pub use config::{
     FlashAttentionType, GGML_TYPE_F16, GGML_TYPE_F32, GGML_TYPE_I32, GGML_TYPE_Q4_0,
@@ -50,7 +51,7 @@ pub use decision::{
     DecisionError, DecisionModel, DecisionOutput, DecisionQuestion, DecisionQuestionKind,
     DecisionRequest, DecisionValue,
 };
-pub use devices::{BackendDevice, BackendDeviceType, backend_devices};
+pub use devices::{BackendDevice, BackendDeviceType, backend_devices, backend_devices_untraced};
 pub use dflash::{
     DFLASH_BORROWED_TARGET_TENSOR, DFlashDraftInfo, DFlashDraftOptions, DFlashDraftStats,
     DFlashFeatureEncoding, DFlashFeatureRows, DFlashHealth, DFlashProposal, DFlashVariant,

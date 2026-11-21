@@ -51,11 +51,27 @@ impl From<OutputFormat> for skippy_commands::console::OutputMode {
 #[derive(Subcommand)]
 pub enum Command {
     /// Inspect hardware, caches, and the selected native runtime.
-    Doctor,
+    Doctor {
+        /// Include device capacity and visibility from the installed runtime.
+        #[arg(long)]
+        device_inventory: bool,
+    },
+    /// Measure bandwidth and compute on the selected runtime's GPUs.
+    GpuBenchmark {
+        /// Maximum benchmark execution time in seconds.
+        #[arg(long, default_value_t = 120)]
+        timeout_secs: u64,
+    },
     /// Prompt a running Skippy OpenAI endpoint interactively.
     Prompt(PromptArgs),
     /// Serve OpenAI and Anthropic APIs, or an explicitly selected stage transport.
     Serve(Box<ServeCommandArgs>),
+    /// Run an inference listener with local model lifecycle controls.
+    #[cfg(unix)]
+    ServeManaged(crate::managed::ServerArgs),
+    /// Operate a running server over its private Unix control socket.
+    #[cfg(unix)]
+    Manage(crate::managed::ClientArgs),
     ExampleConfig,
     /// Download models or inspect the shared Hugging Face cache.
     Models {
@@ -69,6 +85,21 @@ pub enum Command {
         #[command(subcommand)]
         command: RuntimeCommand,
     },
+    /// Show or change anonymous usage analytics.
+    Analytics {
+        #[command(subcommand)]
+        command: AnalyticsCommand,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Subcommand)]
+pub enum AnalyticsCommand {
+    /// Show whether this machine reports anonymous usage, and why.
+    Status,
+    /// Turn anonymous usage analytics on.
+    Enable,
+    /// Turn anonymous usage analytics off, permanently.
+    Disable,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -78,15 +109,14 @@ pub enum StageTransport {
 
 #[derive(Parser)]
 pub struct ServeCommandArgs {
-    /// Complete serving settings file (TOML); CLI overrides environment and file values.
+    /// Serving settings (TOML) for one model or a list of local models.
     #[arg(long)]
     pub settings: Option<PathBuf>,
+    #[arg(skip)]
+    pub local_models: Vec<ServeOpenAiArgs>,
     /// Print resolved settings and their sources without starting the server.
     #[arg(long)]
     pub print_effective_config: bool,
-    /// Local model path or Hugging Face repository reference.
-    #[arg(long, conflicts_with_all = ["model_path", "config"])]
-    pub model: Option<String>,
     /// Open an interactive prompt after the public API is ready.
     #[arg(long)]
     pub prompt: bool,
@@ -226,34 +256,36 @@ pub struct ServeBinaryArgs {
 pub struct ServeOpenAiArgs {
     #[arg(skip)]
     pub settings: crate::serve_settings::ServeSettings,
+    /// Local model path or Hugging Face repository reference.
+    #[arg(long, conflicts_with_all = ["model_path", "config"])]
+    pub model: Option<String>,
     /// Prepared stage configuration; mutually exclusive with --model-path and --model.
     #[arg(long, conflicts_with = "model_path")]
     pub config: Option<PathBuf>,
-    /// Local GGUF (first shard) or safetensors checkpoint to prepare and serve.
+    /// Local GGUF file to prepare and serve (first shard for multipart models).
     #[arg(long, conflicts_with = "config")]
     pub model_path: Option<PathBuf>,
+    /// Defer native loading until a request arrives.
+    #[arg(long)]
+    pub on_demand: bool,
+    /// Evict the unsplit model after this much idle time.
+    #[arg(long)]
+    pub idle_evict_secs: Option<u64>,
+    /// Capacity budget for the model residency controller.
+    #[arg(long)]
+    pub residency_budget_bytes: Option<u64>,
     /// Context size for a local model. Defaults to the VRAM-aware model plan (up to 128k).
     #[arg(long, conflicts_with = "config")]
     pub ctx_size: Option<u32>,
     /// GPU layers for a local model; -1 offloads all supported layers.
     #[arg(long, conflicts_with = "config", allow_hyphen_values = true)]
     pub n_gpu_layers: Option<i32>,
-    /// Quantize SafeTensors weights while loading; defaults to preserve.
-    #[arg(
-        long = "quant",
-        visible_alias = "checkpoint-quantization",
-        conflicts_with = "config"
-    )]
-    pub checkpoint_quantization: Option<String>,
-    /// Importance matrix for low-bit SafeTensors checkpoint quantization.
+    /// Pin a local model to a device ID reported by doctor --device-inventory.
     #[arg(long, conflicts_with = "config")]
-    pub checkpoint_imatrix: Option<PathBuf>,
+    pub gpu_id: Option<String>,
     /// Multimodal projector GGUF; otherwise use a matching installed sidecar.
     #[arg(long, conflicts_with = "config")]
     pub mmproj: Option<PathBuf>,
-    /// Optional advisory digest cache directory for local checkpoint files.
-    #[arg(long, conflicts_with = "config")]
-    pub hash_cache: Option<PathBuf>,
     #[arg(long)]
     pub topology: Option<PathBuf>,
     /// Public API address (default: 127.0.0.1:9337); in worker mode,
@@ -553,7 +585,7 @@ mod tests {
             "search",
             "qwen",
             "vision",
-            "--mlx",
+            "--gguf",
             "--catalog",
             "--sort",
             "parameters-desc",
@@ -564,7 +596,7 @@ mod tests {
         };
         let ModelCommand::Search {
             query,
-            mlx,
+            gguf,
             sort,
             catalog,
             ..
@@ -573,7 +605,7 @@ mod tests {
             panic!("expected model search");
         };
         assert_eq!(query, ["qwen", "vision"]);
-        assert!(mlx);
+        assert!(gguf);
         assert_eq!(
             sort,
             skippy_commands::models::cli::ModelSearchSort::ParametersDesc
@@ -643,9 +675,7 @@ mod tests {
             assert_eq!(sort, expected);
             assert!(json);
         }
-        assert!(
-            Cli::try_parse_from(["skippy", "models", "search", "qwen", "--mlx", "--gguf"]).is_err()
-        );
+        assert!(Cli::try_parse_from(["skippy", "models", "search", "qwen", "--mlx"]).is_err());
     }
 
     #[test]
@@ -665,7 +695,7 @@ mod tests {
         let Command::Serve(args) = cli.command else {
             panic!("expected serve command");
         };
-        assert_eq!(args.model.as_deref(), Some("Qwen3-0.6B-Q4_K_M"));
+        assert_eq!(args.public.model.as_deref(), Some("Qwen3-0.6B-Q4_K_M"));
         assert_eq!(args.public.ctx_size, Some(8192));
         assert_eq!(args.public.n_gpu_layers, Some(-1));
         assert!(args.prompt);

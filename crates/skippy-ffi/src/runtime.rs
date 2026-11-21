@@ -5,7 +5,7 @@ use crate::dynamic;
 #[cfg(not(feature = "dynamic-runtime"))]
 use crate::static_bindings;
 
-use crate::Opaque;
+use crate::{Error, Model, Opaque, RuntimeConfig, SkippyRuntimeEventReporterV1, Status};
 #[cfg(not(feature = "dynamic-runtime"))]
 use crate::{
     LlamaPerfContextData, LlamaPerfContextFn, SkippyDecodeStepSampledMtpFn,
@@ -217,6 +217,36 @@ pub fn skippy_model_attach_mtp_draft_model_fn() -> Option<SkippyModelAttachMtpDr
 #[cfg(not(feature = "dynamic-runtime"))]
 pub fn skippy_decode_step_sampled_mtp_fn() -> Option<SkippyDecodeStepSampledMtpFn> {
     Some(static_bindings::skippy_decode_step_sampled_mtp)
+}
+
+pub(crate) type SkippyModelOpenWithEventsFn = unsafe extern "C" fn(
+    path: *const c_char,
+    config: *const RuntimeConfig,
+    reporter: *const SkippyRuntimeEventReporterV1,
+    out_model: *mut *mut Model,
+    out_error: *mut *mut Error,
+) -> Status;
+
+pub(crate) type SkippyModelOpenFromPartsWithEventsFn = unsafe extern "C" fn(
+    paths: *const *const c_char,
+    path_count: usize,
+    config: *const RuntimeConfig,
+    reporter: *const SkippyRuntimeEventReporterV1,
+    out_model: *mut *mut Model,
+    out_error: *mut *mut Error,
+) -> Status;
+
+// Static archives use the pinned ABI and may be linked without exporting
+// their symbols. Reference the functions directly so the linker retains them.
+#[cfg(not(feature = "dynamic-runtime"))]
+pub fn skippy_model_open_with_events_fn() -> Option<SkippyModelOpenWithEventsFn> {
+    Some(static_bindings::skippy_model_open_with_events)
+}
+
+#[cfg(not(feature = "dynamic-runtime"))]
+pub fn skippy_model_open_from_parts_with_events_fn() -> Option<SkippyModelOpenFromPartsWithEventsFn>
+{
+    Some(static_bindings::skippy_model_open_from_parts_with_events)
 }
 
 /// Graph reuse counters for a statically linked native runtime.

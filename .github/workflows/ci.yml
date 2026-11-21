@@ -95,7 +95,13 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: skippy-ci-${{ github.workflow }}-${{ inputs.artifact_scope || 'ci' }}-${{ github.event.pull_request.number || github.run_id }}
+  # Main pushes share one slot. GitHub's default queue replaces a pending run
+  # when another push arrives, and the running build finishes.
+  group: >-
+    skippy-ci-${{ github.workflow }}-${{ inputs.artifact_scope || 'ci' }}-${{
+      github.event.pull_request.number ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'main-push') ||
+      github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   CARGO_INCREMENTAL: '0'
@@ -108,6 +114,9 @@ env:
   SKIPPY_CUDA_ARCHITECTURE_MODE: ${{ inputs.cuda_architecture_mode || 'native' }}
   SKIPPY_CI_SOURCE_REF: ${{ inputs.source_ref || github.sha }}
   SKIPPY_ARTIFACT_SCOPE: ${{ inputs.artifact_scope || 'ci' }}
+  # Release builds report anonymous usage; every other build is keyless and
+  # reports nothing. The key is a public ingestion token, not a secret.
+  SKIPPY_POSTHOG_KEY: ${{ inputs.artifact_scope == 'release' && vars.SKIPPY_POSTHOG_KEY || '' }}
 jobs:
   changes:
     name: Select checks by path

@@ -37,8 +37,8 @@ pub fn command_options(options: &NativeRuntimeOptions) -> RuntimeRunOptions {
     }
 }
 
-pub fn doctor(options: &NativeRuntimeOptions) -> Result<()> {
-    let hardware = skippy_runtime_install::host_runtime_profile();
+pub fn doctor(options: &NativeRuntimeOptions, device_inventory: bool) -> Result<()> {
+    let hardware = skippy_api::hardware::physical_hardware();
     let runtime = skippy_api::native_runtime::local_native_runtime_plan(options);
     let runtime_summary = runtime.as_ref().ok().map(|plan| {
         serde_json::json!({
@@ -48,13 +48,28 @@ pub fn doctor(options: &NativeRuntimeOptions) -> Result<()> {
     });
     let issue = runtime.err().map(|error| format!("{error:#}"));
     let model_cache = skippy_commands::models::model_cache_dir();
-    let report = serde_json::json!({
+    let mut report = serde_json::json!({
         "hardware": hardware,
         "native_runtime": runtime_summary,
         "runtime_issue": issue,
         "runtime_cache": options.cache_dir,
         "model_cache": model_cache,
     });
+    if device_inventory {
+        #[cfg(feature = "dynamic-native-runtime")]
+        let devices = skippy_api::native_runtime::load_local_native_runtime(options)
+            .and_then(|()| skippy_api::hardware::runtime_devices());
+        #[cfg(not(feature = "dynamic-native-runtime"))]
+        let devices = skippy_api::hardware::runtime_devices();
+        report["device_inventory"] = serde_json::to_value(skippy_api::hardware::inventory(
+            &hardware,
+            devices.as_deref().ok(),
+            &Default::default(),
+        ))?;
+        if let Err(error) = devices {
+            report["device_inventory_issue"] = serde_json::Value::String(format!("{error:#}"));
+        }
+    }
     skippy_commands::console::present(&report, |output| {
         writeln!(output, "🩺 Skippy doctor")?;
         writeln!(output, "   Machine: {} {}", hardware.os, hardware.arch)?;
@@ -76,7 +91,18 @@ pub fn doctor(options: &NativeRuntimeOptions) -> Result<()> {
             writeln!(output, "   Runtime: none compatible")?;
             writeln!(output, "   Try: skippy runtime install")?;
         }
-        writeln!(output, "   Model cache: {}", model_cache.display())
+        writeln!(output, "   Model cache: {}", model_cache.display())?;
+        if device_inventory {
+            writeln!(
+                output,
+                "   Device inventory: {}",
+                report["device_inventory"]
+            )?;
+            if let Some(issue) = report["device_inventory_issue"].as_str() {
+                writeln!(output, "   Device inventory issue: {issue}")?;
+            }
+        }
+        Ok(())
     })
 }
 

@@ -1,4 +1,5 @@
 mod cache;
+mod catalog_match;
 mod discovery;
 mod import;
 mod install;

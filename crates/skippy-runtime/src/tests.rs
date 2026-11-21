@@ -5,7 +5,7 @@ mod tests {
 
     use super::{
         ChatReasoningFormat, ChatTemplateJsonOptions, ChatTemplateMessage, DecodeFrameBatchRequest,
-        CheckpointQuantization, FlashAttentionType, GGML_TYPE_F16, GlmDsaPolicy,
+        FlashAttentionType, GGML_TYPE_F16, GlmDsaPolicy,
         IterationBatchPhase, IterationBatchRequest, ModelInfo, MtpSource, NativeMtpDraft,
         RuntimeConfig, RuntimeLoadMode, SamplingConfig, SplitMode, StageModel, StageSession, Status,
         TensorRole, format_skippy_error,
@@ -124,6 +124,11 @@ mod tests {
             kv_offload: None,
             kv_unified: None,
             swa_full: None,
+            kv_pool_tokens: None,
+            kv_lazy_clear: None,
+            kv_release_pages: None,
+            kv_row_attention: None,
+            sample_threads: None,
             op_offload: None,
             no_host_buffer: false,
             check_tensors: false,
@@ -132,9 +137,9 @@ mod tests {
             split_mode: SplitMode::Auto,
             host_expert_layers: None,
             recurrent_rollback_tokens: 0,
-            checkpoint_quantization: CheckpointQuantization::Preserve,
-            checkpoint_imatrix: None,
-            checkpoint_imatrix_sha256: None,
+
+
+
         };
         StageModel::open(model_path, &config)
     }

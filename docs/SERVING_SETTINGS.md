@@ -26,7 +26,7 @@ flags, so file settings can be disabled explicitly. Unknown keys, incorrect
 sections and invalid values are rejected. Conflicting model sources are errors;
 override the same source option when changing the model from a settings file.
 With a prepared `--config`, model preparation options (`ctx_size`,
-`n_gpu_layers`, `quant`, `checkpoint_imatrix`, `mmproj`, `hash_cache`) retain
+`n_gpu_layers`, `mmproj`) retain
 their existing conflicts; those values belong in the prepared stage plan.
 
 Use snake_case option names in TOML, under the section shown below. CLI-only
@@ -34,8 +34,8 @@ Use snake_case option names in TOML, under the section shown below. CLI-only
 `version = 1` is optional and identifies the current file format.
 
 Paths in the file are relative to its directory. Model repository references
-remain repository references; explicit local paths and `.gguf` filenames are
-resolved relative to the settings file. The CLI keeps paths relative to the
+stay intact. Explicit relative paths and bare `.gguf` filenames resolve from
+the settings file. The CLI keeps paths relative to the
 working directory. `runtime_bundle` accepts an array of directories.
 
 JSON-valued CLI options accept inline JSON or `@file.json`. In TOML, use native
@@ -116,6 +116,77 @@ The `options` map includes CLI defaults; `null` marks an automatic or omitted
 operator value whose resolved behavior is represented by the stage/frontend or
 selected after loading. `overrides` contains only explicitly supplied settings.
 
+## Serve multiple local models
+
+Save this as `serving.toml` to serve two Hugging Face GGUFs on one listener.
+
+```toml
+version = 1
+
+[[models]]
+model = "Qwen/Qwen3-0.6B-GGUF:Q8_0"
+
+[[models]]
+model = "Qwen/Qwen3-1.7B-GGUF:Q8_0"
+```
+
+```sh
+skippy serve --settings serving.toml
+```
+
+Both `[model].model` and `[[models]].model` accept the same inputs as
+`skippy serve --model`. Skippy resolves catalog names and Hugging Face
+references, then reuses cached files or downloads what it needs. To open a
+local GGUF, use `model = "./qwen.gguf"` or `model_path = "qwen.gguf"`.
+Relative paths start in the directory containing the settings file. Choose
+one source key per entry. Existing multi-model files must rename `path` to
+`model_path` and keep `version = 1`.
+
+Skippy loads every model before opening the listener. `GET /v1/models` lists
+the IDs that clients can use in the request's `model` field. By default, the
+ID is the catalog or Hub reference, or the filename stem for a local model.
+Set `id` on an entry to give it an explicit name. All IDs must be unique.
+
+Put common tuning under `[defaults]` and overrides under `[models.settings]`.
+Environment variables and CLI tuning options apply to all entries. The list
+defines the model sources, so use either `[model]` or `[[models]]` and
+omit global source selectors such as `--model` when serving the list. Set the
+listener with top-level `bind_addr` and the shared runtime under `[runtime]`.
+Use `--print-effective-config` to inspect the settings and IDs before native
+model load. Skippy can acquire the model files while preparing the report.
+
+## Model residency
+
+For an infrequently used model, defer native loading until the first inference
+request and release the model after a minute without active requests.
+
+```toml
+[model]
+model_path = "/models/model.gguf"
+
+[execution]
+on_demand = true
+idle_evict_secs = 60
+```
+
+Save this as `serve.toml` and run `skippy serve --settings serve.toml`. The same
+settings are available as `--on-demand` and `--idle-evict-secs 60`.
+
+Skippy still acquires and prepares the source at startup. Concurrent cold
+requests share one native load. Active requests and streams keep the model
+resident. After eviction, the next inference request loads it again. You can
+also enable eviction with eager startup by leaving `on_demand` at `false`.
+
+Residency controls require an unsplit public server and a local source with a
+known size. `--prompt` and `--stage-transport` are incompatible with these
+controls. The admission budget charges the model's source size. A budget below
+that size causes loading to fail. Actual memory use also depends on runtime
+allocations. A timed-out load can be retried once the native worker has returned
+and released its reservation.
+
+The environment overrides are `SKIPPY_SERVE_ON_DEMAND`,
+`SKIPPY_SERVE_IDLE_EVICT_SECS`, and `SKIPPY_SERVE_RESIDENCY_BUDGET_BYTES`.
+
 ## Mode and resource constraints
 
 Local and split-stage serving consume the same operator controls. Sampling,
@@ -136,9 +207,13 @@ to measured verify cost and acceptance, up to `--dflash-max-tokens`;
 `SKIPPY_DFLASH_ADAPTIVE=0` is an off switch that pins blocks at the cap. DSpark
 drafts (DFlash with a Markov head) run the same way. LiliCorr drafts are rejected
 unless `SKIPPY_DFLASH_LILICORR_HEADLESS=1`, which runs one as plain DFlash without
-its correlation head. DFlash is opt-in: `--dflash-max-tokens` without
-`--speculative-strategy dflash` is an error, but a `--speculative-config` plan
-that already has a `dflash` field runs under `auto`.
+its correlation head. An explicit `--dflash-max-tokens` requires
+`--speculative-strategy dflash` or a speculative plan with DFlash enabled.
+For unsplit serving under `auto`, the package policy and release-pinned draft
+catalog can select a compatible DFlash draft. The resolver uses target
+metadata and the actual runtime backend, and verifies the chosen draft.
+When `HF_HUB_OFFLINE=1` or `--print-effective-config` is set, draft preparation
+only considers cached assets. Explicit speculative options take precedence.
 
 Live K/V precision is independent of weight quantization. Supported explicit
 values are `f16`, `q8_0`, and `q4_0`. Quantized V requires compatible Flash
@@ -185,9 +260,6 @@ with their runtime purpose; existing controls follow in the same sections.
 | `--no-host-buffer` | `no_host_buffer` | Bypass the model host buffer |
 | `--model` | `model` | See `skippy serve --help` for values and defaults. |
 | `--model-path` | `model_path` | See `skippy serve --help` for values and defaults. |
-| `--quant` | `quant` | See `skippy serve --help` for values and defaults. |
-| `--checkpoint-imatrix` | `checkpoint_imatrix` | See `skippy serve --help` for values and defaults. |
-| `--hash-cache` | `hash_cache` | See `skippy serve --help` for values and defaults. |
 
 ### [execution]
 
@@ -197,12 +269,19 @@ with their runtime purpose; existing controls follow in the same sections.
 | `--split-mode` | `split_mode` | Multi-GPU split mode: auto, none, layer, row, tensor |
 | `--glm-dsa-policy` | `glm_dsa_policy` | GLM DSA execution policy: auto or v1 |
 | `--main-gpu` | `main_gpu` | GPU index for an unsplit model |
-| `--batch-size` | `batch_size` | Native batch token limit |
-| `--microbatch-size` | `microbatch_size` | Native microbatch token limit |
+| `--batch-size` | `batch_size` | Native batch token limit. Local preparation defaults to 2048. |
+| `--microbatch-size` | `microbatch_size` | Native microbatch token limit. Local preparation defaults to 512. |
 | `--threads` | `threads` | CPU threads for generation |
 | `--threads-batch` | `threads_batch` | CPU threads for prompt processing |
 | `--op-offload` | `op_offload` | Offload supported host operations to the backend |
 | `--n-gpu-layers` | `n_gpu_layers` | See `skippy serve --help` for values and defaults. |
+| `--gpu-id` | `gpu_id` | Pin an offloaded local model to a stable GPU ID. Conflicts with `--device` and `--config`. |
+| `--on-demand` | `on_demand` | Defer native loading until the first inference request. Defaults to `false` (eager loading). |
+| `--idle-evict-secs` | `idle_evict_secs` | Evict an unsplit model after 1–86,400 idle seconds. Omit to disable eviction. |
+| `--residency-budget-bytes` | `residency_budget_bytes` | Positive native-load admission budget in bytes. Defaults to the model's identified source size. |
+
+The residency options require an unsplit public server and a local model of
+known size. Use them without `--prompt` or `--stage-transport`.
 
 ### [kv]
 
@@ -214,6 +293,10 @@ with their runtime purpose; existing controls follow in the same sections.
 | `--kv-cache-offload` | `kv_cache_offload` | Offload live KV memory to the backend |
 | `--swa-full` | `swa_full` | Use a full cache window for sliding-window attention |
 | `--cache-idle-slots` | `cache_idle_slots` | Maximum retained idle sessions; zero retains none |
+| `--kv-pool-tokens` | `kv_pool_tokens` | Cells in the KV pool the lanes share, at least ctx-size; unset reserves ctx-size for every lane |
+| `--kv-lazy-clear` | `kv_lazy_clear` | Zero KV cells as they are first used instead of all at load |
+| `--kv-release-pages` | `kv_release_pages` | Return the memory of freed KV cells to the system |
+| `--kv-row-attention` | `kv_row_attention` | Read the shared KV pool through per-request row lists where the backend supports them |
 | `--ctx-size` | `ctx_size` | See `skippy serve --help` for values and defaults. |
 
 ### [cache]
@@ -223,13 +306,15 @@ with their runtime purpose; existing controls follow in the same sections.
 | `--prefix-cache` | `prefix_cache` | Prompt reuse: auto, on, off, record |
 | `--prefix-cache-codec` | `prefix_cache_codec` | Durable representation: native or experimental cachegen |
 | `--prefix-cache-budget` | `prefix_cache_budget` | Retention target: auto, unbounded, or IEC size; exact snapshots may exceed it |
-| `--prefix-cache-ram` | `prefix_cache_ram` | Host-RAM tier: off or IEC size; requires disk caching |
+| `--prefix-cache-ram` | `prefix_cache_ram` | Native recurrent-checkpoint RAM budget, independent of disk; off/unset selects the bounded default. Serialized runtimes use an optional host-RAM tier requiring disk caching |
 | `--prefix-cache-max-entries` | `prefix_cache_max_entries` | Maximum retained prefix entries |
 | `--prefix-cache-min-tokens` | `prefix_cache_min_tokens` | Minimum prefix length to record or reuse |
 | `--prefix-cache-stride-tokens` | `prefix_cache_stride_tokens` | Shared-prefix checkpoint spacing in tokens |
 | `--prefix-cache-record-limit` | `prefix_cache_record_limit` | Maximum shared-prefix checkpoints per recording |
+| `--prefix-cache-retention-tokens` | `prefix_cache_retention_tokens` | KV cells finished requests keep resident for reuse: a token count or unbounded |
+| `--prefill-admission` | `prefill_admission` | How a prompt's uncached suffix is prefilled: cooperative or serialized |
 | `--prefix-cache-exact-budget` | `prefix_cache_exact_budget` | Exact-state retention ceiling: auto, unbounded, or IEC size; one snapshot may exceed it |
-| `--kv-cache-disk` | `kv_cache_disk` | See `skippy serve --help` for values and defaults. |
+| `--kv-cache-disk` | `kv_cache_disk` | `off` (default), `auto` (up to 64 GiB), or a fixed IEC size. |
 | `--kv-cache-disk-dir` | `kv_cache_disk_dir` | See `skippy serve --help` for values and defaults. |
 | `--kv-cache-min-free` | `kv_cache_min_free` | See `skippy serve --help` for values and defaults. |
 
@@ -239,6 +324,11 @@ with their runtime purpose; existing controls follow in the same sections.
 |---|---|---|
 | `--continuous-batching` | `continuous_batching` | Allow the iteration scheduler to serve concurrent lanes |
 | `--pipeline-decode-groups` | `pipeline_decode_groups` | Number of decode dispatch groups |
+| `--prefill-coalesce-max-ms` | `prefill_coalesce_max_ms` | Longest a prompt waits for others to join its prefill wave, in milliseconds; zero never waits |
+| `--sample-threads` | `sample_threads` | Threads that sample one decode wave: 0 as many as the wave and the hardware allow, 1 the scheduler thread alone, N at most N |
+| `--batch-policy` | `batch_policy` | Algorithm that forms the scheduler's batches: arrival_order |
+| `--batch-decode-window-us` | `batch_decode_window_us` | How long generated tokens wait for the other active requests to join their batch, in microseconds |
+| `--batch-prefill-window-per-token-us` | `batch_prefill_window_per_token_us` | How long a prompt waits for others to join its prefill wave, per prompt token, in microseconds |
 | `--generation-signal-window` | `generation_signal_window` | Generation signal observation window in tokens |
 | `--generation-concurrency` | `generation_concurrency` | See `skippy serve --help` for values and defaults. |
 | `--adaptive-generation-concurrency` | `adaptive_generation_concurrency` | See `skippy serve --help` for values and defaults. |
@@ -405,7 +495,172 @@ with their runtime purpose; existing controls follow in the same sections.
 | `--metrics-otlp-grpc` | `metrics_otlp_grpc` | See `skippy serve --help` for values and defaults. |
 | `--telemetry-queue-capacity` | `telemetry_queue_capacity` | See `skippy serve --help` for values and defaults. |
 | `--telemetry-level` | `telemetry_level` | See `skippy serve --help` for values and defaults. |
-| `--startup-timeout-secs` | `startup_timeout_secs` | See `skippy serve --help` for values and defaults. |
+| `--startup-timeout-secs` | `startup_timeout_secs` | Defaults to 60 seconds. With model residency enabled, bounds every native load. In that mode, `0` acts as one second and values above 86,400 are rejected. |
+
+Two local telemetry sinks need no collector and are enabled by environment
+rather than settings. `SKIPPY_TELEMETRY_STDERR=1` writes Skippy's own event
+JSON to stderr. `SKIPPY_TELEMETRY_OTLP_FILE=/path/trace.otlp.jsonl` appends
+OTLP/JSON trace requests, one per line, in the OpenTelemetry file-exporter
+format that collectors and trace viewers ingest. Either raises an `off` level
+to `debug` but never lowers an explicit level, so pass
+`--telemetry-level debug` for scheduler-iteration spans under `serve`.
+
+A process exports one trace. The `skippy.process` root span is written at
+graceful shutdown (SIGINT or SIGTERM), and everything else nests under it:
+
+```text
+skippy.process
+├── stage.embedded_runtime_load        model open; native.* load calls (debug)
+│   ├── native.skippy_set_native_span_callback   the first traced call installs tracing
+│   │   └── mtl.library_init / mtl.library_compile / mtl.pipeline_cache_open
+│   └── native.skippy_model_open_with_events
+│       └── skippy.backend_init / llama.model_load / llama.context_init
+│           └── llama.sched_reserve / llama.graph_reserve
+├── stage.openai_server_setup          prewarm and cache wiring
+├── stage.scheduler                    the scheduler worker, for its lifetime
+│   ├── stage.scheduler_iteration      one planned step (debug), linked to its requests
+│   └── stage.scheduler_feature_iteration   one direct batch (debug), linked likewise
+└── stage.openai_http_request          one per request; a stream ends with its body
+    └── stage.openai_request_summary / chat_template / tokenize / generation_admit
+        └── stage.openai_generation_summary
+            └── stage.openai_scheduler_generation | prefill | decode | decode_token
+                └── native.*           native calls made for this request (debug)
+                    ├── skippy.* / llama.*     host phases inside the call (debug)
+                    └── mtl.command_buffer     GPU work the call submitted (debug)
+                        └── mtl.encode / mtl.queue / mtl.execute
+```
+
+Each span's resource names the part of the system it belongs to as
+`service.name`, within `service.namespace` `skippy`, so viewers that colour a
+trace by service colour it by component: `skippy` (process lifecycle),
+`skippy-http`, `skippy-scheduler`, `skippy-decode`, `skippy-kv`,
+`skippy-transport`, `skippy-native` (`native.*` ABI calls), `skippy-runtime`
+(the native runtime's `skippy.*` phases), `llama`, `metal-compile` and
+`metal-gpu`. They remain one trace.
+
+Point events such as `stage.embedded_runtime_ready` become span events on the
+span that was active when they fired. Batched scheduler work belongs to every
+request it served, so it sits under `stage.scheduler` and carries span links to
+those requests rather than one parent. A debug-level trace of a long benchmark
+holds every iteration and native call; open a short run in a trace viewer, and
+query the file directly for long ones.
+
+At debug level a native call's span is filled by the native runtime's own
+spans, so its time is accounted for phase by phase. A decode step shows
+`skippy.decode_prepare` or `skippy.batch_prepare`, then `llama.decode` with
+`llama.batch_init`, `llama.memory_init_batch`, `llama.output_reserve` and, per
+ubatch, `llama.process_ubatch` (detail `build` or `reuse`, for graph reuse)
+holding `llama.memory_apply`, `llama.graph_build`, `llama.graph_alloc`,
+`llama.set_inputs` and `llama.graph_compute` (encoding and submitting the
+graph), then `llama.output_extract` and, for recurrent and hybrid models,
+`llama.recurrent_sync`. `llama.synchronize` is the host waiting for the
+device, and `skippy.sample` and `skippy.token_logprobs` follow. Phase spans
+carry `skippy.native.detail` and one measured value such as
+`skippy.native.tokens` or `skippy.native.nodes`. Compilation appears where it
+happens: `mtl.library_compile` per kernel library and `mtl.pipeline_cache_open`
+while the Metal device initialises, under the tracing install or the root
+when it ran before anything was traced, and `mtl.pipeline_compile` (detail:
+the pipeline) the first time a graph uses a kernel variant, under the
+`llama.graph_compute` or native call that needed it.
+
+Other native work is named too. Model load splits into `llama.gguf_open`,
+`llama.load_hparams`, `llama.load_vocab` and `llama.load_tensors` with
+`llama.load_tensor_data`, and context creation into `llama.backend_init`,
+`llama.memory_create`, `llama.sched_reserve` and `llama.graph_reserve`, with
+`mtl.buffer_alloc`, `mtl.buffer_map` and `mtl.residency_set` beneath them.
+KV and recurrent state operations appear as `llama.kv_*` and
+`llama.recurrent_*` (clear, `seq_rm`, `seq_cp`, `seq_keep`, `seq_add`, state
+read and write), with `llama.kv_page_export`, `llama.kv_page_import`,
+`llama.state_seq_save` and `llama.state_seq_restore`. Sampling shows
+`llama.sampler_apply` per sampler (detail: its name), `llama.grammar_apply`
+and `llama.grammar_accept`; `llama.tokenize` shows tokenization. On Metal,
+`mtl.wait` is the wait on the last command buffer, `mtl.copy_out` queues an
+output copy, `mtl.upload` and `mtl.download` are blocking copies to private
+buffers, and `mtl.graph_optimize` is the backend reordering a new graph.
+
+Between native calls, the scheduler names its own waits: `stage.scheduler_idle`
+(no work queued), `stage.scheduler_coalesce` (a direct batch held open for up
+to 2 ms for more sessions, with the target, the queue before and after, and
+whether it timed out), `stage.scheduler_cache_defer`, `stage.scheduler_interval`
+and `stage.runtime_lock_wait`. A planned step adds `stage.scheduler_plan`,
+`stage.scheduler_session_setup` and `stage.scheduler_complete`; a direct batch
+adds `stage.scheduler_align` and `stage.scheduler_reply`, and a cache-aware
+runtime operation is the span `stage.scheduler_feature_runtime`.
+
+On Metal, each command buffer a native call submits becomes a
+`mtl.command_buffer` span under that call, from the start of its CPU encode
+to the end of its GPU execution, split into `mtl.encode`, `mtl.queue`
+(committed, waiting for the GPU) and `mtl.execute`. Gaps between `mtl.execute`
+spans are time the GPU sat idle. Attributes give
+`skippy.gpu.encode_ms`, `skippy.gpu.queue_ms`, `skippy.gpu.execute_ms`,
+`skippy.gpu.node_count`, and `skippy.gpu.context_id` with
+`skippy.gpu.compute_index`. Apple GPUs time command buffers, not individual
+kernels; for per-kernel timing, capture one graph for Xcode. The compute index
+counts the way `GGML_METAL_CAPTURE_COMPUTE` does, so to capture the graph a
+span shows, rerun the same workload with
+`METAL_CAPTURE_ENABLED=1 GGML_METAL_CAPTURE_COMPUTE=<compute_index>` and open
+`/tmp/perf-metal-<pid>.gputrace`. Every Metal context counts separately, and
+the first to reach that index is the one captured.
+
+Debug telemetry also samples resource gauges, every 250 ms by default
+(`SKIPPY_TELEMETRY_METRICS_INTERVAL_MS`), and exports them as OTLP metrics to
+the same `--metrics-otlp-grpc` endpoint and, when
+`SKIPPY_TELEMETRY_OTLP_METRICS_FILE` names a file, appends them there in the
+same JSON-lines format as the trace file. They cover:
+
+| Gauge | Meaning |
+|---|---|
+| `process.cpu.utilization` | CPU seconds per second, by `cpu.mode` (`user`, `system`); 1 is one core |
+| `process.memory.usage`, `skippy.process.memory.footprint`, `skippy.process.memory.wired` | Resident, charged (Metal buffers included on macOS) and wired memory |
+| `skippy.process.pageins`, `skippy.process.disk.read` | Pages and bytes read from disk per second, such as mapped weights |
+| `system.memory.usage`, `system.memory.limit` | System memory by `system.memory.state` (macOS: free, active, inactive, wired, compressed) |
+| `skippy.system.swap.used`, `skippy.system.memory.pressure`, `skippy.system.paging` | Swap in use, macOS pressure (1, 2, 4) and page-in/out and swap-in/out rates |
+| `skippy.gpu.busy`, `skippy.gpu.command_buffers`, `skippy.gpu.queue_wait` | GPU execution time per wall second, command buffers per second, and the mean wait before the GPU starts one |
+| `skippy.gpu.memory.usage`, `skippy.gpu.memory.limit` | Memory the device has allocated, and its recommended working set, by `device` |
+| `skippy.gpu.input_bytes` | Bytes GPU commands read per second, by `op_class` (`attention`, `matmul`, `recurrent`, `kv_write`, `other`): gathers from and row writes into a cache count only their rows, and attention only the K/V rows it addresses |
+| `skippy.gpu.class_busy` | GPU execution time per wall second by `op_class`, only from graphs split by class (`GGML_METAL_OP_PROFILE=1`) |
+| `skippy.attention.kv_cells`, `skippy.attention.queries` | The most KV cells one attention query addressed in the interval (its row list, or the whole K/V span), and the most query rows one attention node processed |
+| `skippy.recurrent.states`, `skippy.recurrent.states_carried` | The most recurrent states one step gathered in the interval (the states of the batch's sequences and every state between them), and the most of those copied back unchanged; carried states are memory traffic no sequence in the batch needed |
+| `skippy.runtime.busy`, `skippy.decode.tokens` | Runtime lock-held native time per wall second, and decode tokens per second |
+| `skippy.scheduler.running`, `.waiting`, `.batch_size`, `skippy.kv.used_cells` | The scheduler's queue and KV occupancy as of its latest step |
+| `skippy.telemetry.dropped` | Spans, native spans and GPU records lost to full queues |
+
+With prefix caching enabled, the KV cache tiers of
+[the prompt cache](PROMPT_CACHE.md) add their pressure and misses. L1 is the
+resident radix cache over the native KV pool, with recurrent checkpoints in
+host RAM; L2 is the optional host-RAM mirror of L3 fills; L3 is the durable
+store. Each tier's `skippy.kv.<tier>.lookups` gives lookups per second by
+`result` (`hit`, `miss`), and `skippy.kv.<tier>.miss_ratio` the share of the
+interval's lookups that missed.
+
+| Gauge | Meaning |
+|---|---|
+| `skippy.kv.l1.pool.limit`, `skippy.kv.l1.pool.utilization` | Cells in the shared native KV pool, and the share in use by requests and retained prefixes |
+| `skippy.kv.l1.entries`, `.tokens`, `.pinned_tokens` | Retained prefixes, their tokens (a shared prefix once per entry), and those a restore holds |
+| `skippy.kv.l1.recurrent.usage`, `.limit`, `.utilization` | Recurrent checkpoint RAM against its budget |
+| `skippy.kv.l1.evictions`, `skippy.kv.l1.evicted_tokens` | Evictions per second by `component` (`attention`, `recurrent`), and the tokens they release |
+| `skippy.kv.l1.hit_tokens`, `skippy.kv.l1.restored_tokens` | Prompt tokens matched by hits, and tokens restored onto requests, per second |
+| `skippy.kv.l1.admission_shortfalls` | Admissions per second left below the free-space watermark after evicting all they could; each one's size is its `skippy.kv.admission_shortfall` event |
+| `skippy.kv.l2.usage`, `.limit`, `.utilization`, `.entries` | L2 bytes against its budget |
+| `skippy.kv.l2.inserts`, `.evictions`, `.refusals` | L2 admissions, budget evictions and verification refusals per second |
+| `skippy.kv.l3.usage`, `.limit`, `.utilization`, `.reserved`, `.filesystem.available` | L3 bytes against its budget (a zero limit is unlimited), bytes reserved by writes in flight, and free space on its filesystem |
+| `skippy.kv.l3.fills`, `.writes`, `.io`, `.evictions`, `.corrupt` | L3 restores, writes, bytes by `direction`, budget evictions and quarantined objects per second |
+| `skippy.kv.record_queue.records`, `.bytes`, `.dropped` | Exact-state records waiting to publish to L1 and write through to L3, and those dropped because the queue was full |
+
+The GPU gauges come from native tracing's command buffer timings, so they
+need a runtime with `SKIPPY_FEATURE_NATIVE_TRACING`. A `skippy.resources`
+event with the same readings, keyed `skippy.resources.*`, marks chosen points
+in the trace: `runtime_ready`, `server_start`, each request's `request_start`
+and `request_response`, and `shutdown`. It includes each tier's cumulative
+hits and misses and how much it holds.
+
+Telemetry also reports log-based events, such as cache lookups and evictions
+by tier, compute-buffer reserves and pipeline compiles while serving, and
+attention path changes, to the same endpoint and, when
+`SKIPPY_TELEMETRY_OTLP_LOGS_FILE` names a file, to that file. Command buffer
+spans say what their graph nodes did by op class, and `GGML_METAL_OP_PROFILE=1`
+splits graphs so the GPU times each class alone. See
+[the telemetry events reference](TELEMETRY_EVENTS.md).
 
 ### [network]
 

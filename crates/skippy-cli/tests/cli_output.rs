@@ -12,6 +12,31 @@ fn invalid_serving_settings_preserve_the_explanation() {
 }
 
 #[test]
+fn serve_rejects_an_explicit_checkpoint_before_resolving_it() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_skippy"))
+        .env("HF_HOME", temp.path())
+        .env("HF_ENDPOINT", "http://127.0.0.1:1")
+        .args([
+            "--output",
+            "human",
+            "serve",
+            "--model",
+            "owner/repo/model.safetensors.index.json",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        error.contains("Convert the SafeTensors checkpoint to GGUF"),
+        "{error}"
+    );
+    assert!(!error.contains("Checking local model cache"), "{error}");
+}
+
+#[test]
 fn effective_serving_config_is_json_without_loading_a_runtime_or_model() {
     let temp = tempfile::tempdir().unwrap();
     let config = temp.path().join("stage.json");

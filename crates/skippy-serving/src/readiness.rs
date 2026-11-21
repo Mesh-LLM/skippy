@@ -31,6 +31,12 @@ impl StageReadinessProbe {
     }
 }
 
+impl Drop for StageReadinessProbe {
+    fn drop(&mut self) {
+        self.cancelled.store(true, Ordering::Release);
+    }
+}
+
 pub fn parse_bind_addr(bind_addr: &str) -> Result<SocketAddr> {
     bind_addr
         .parse()

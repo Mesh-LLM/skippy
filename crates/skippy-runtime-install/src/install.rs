@@ -437,6 +437,11 @@ async fn download_and_install_runtime(
     })?;
     extract_runtime_archive(&archive, &extracted)?;
     let bundle_dir = find_extracted_runtime_dir(&extracted)?;
+    let downloaded = NativeRuntimeManifest::read_from_dir(&bundle_dir)?;
+    crate::catalog_match::ensure_downloaded_runtime_matches_catalog_entry(
+        artifact,
+        &downloaded.runtime,
+    )?;
     cache.install_from_dir(&bundle_dir)
 }
 
@@ -585,4 +590,30 @@ pub(crate) fn collect_runtime_manifest_dirs(dir: &Path, matches: &mut Vec<PathBu
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A release archive holds the CLI beside the one runtime it ships with.
+    #[test]
+    fn a_release_product_archive_yields_the_runtime_it_carries() {
+        let extracted = tempfile::tempdir().unwrap();
+        let runtime = extracted
+            .path()
+            .join("native-runtimes/darwin-aarch64-metal");
+        fs::create_dir_all(runtime.join("lib")).unwrap();
+        for file in ["skippy", "provenance.json", "host-imports.json"] {
+            fs::write(extracted.path().join(file), b"product file").unwrap();
+        }
+        for file in ["manifest.json", "provenance.json", "lib/libllama.dylib"] {
+            fs::write(runtime.join(file), b"runtime file").unwrap();
+        }
+
+        assert_eq!(
+            find_extracted_runtime_dir(extracted.path()).unwrap(),
+            runtime
+        );
+    }
 }
