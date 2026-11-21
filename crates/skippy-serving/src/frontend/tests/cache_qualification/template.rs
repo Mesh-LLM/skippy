@@ -26,7 +26,7 @@ pub(super) struct Observation {
 }
 
 impl Observation {
-    pub(super) fn validate(&self, family: Family) -> Result<()> {
+    pub(super) fn validate(&self) -> Result<()> {
         ensure!(
             self.offloaded_layers.is_some_and(|layers| layers > 0),
             "template case lacks GPU offload evidence"
@@ -38,14 +38,14 @@ impl Observation {
         let seed = self.seed.as_ref().context("missing template seed")?;
         let checkpoint = self.checkpoint.context("missing template checkpoint")?;
         let prompt_tokens = u32::try_from(cold.generation.prompt_ids.len())?;
-        validate_miss(prompt_tokens, seed, family).context("original template seed")?;
+        validate_miss(prompt_tokens, seed).context("original template seed")?;
         compare(&cold.generation, &seed.generation).context("original template seed")?;
         ensure!(
             self.restored.len() == 3,
             "incomplete template restore sequence"
         );
         for (source, replay) in ["l3", "l3", "l2"].into_iter().zip(&self.restored) {
-            validate_durable_replay(prompt_tokens, replay, source, checkpoint, family)
+            validate_durable_replay(prompt_tokens, replay, source, checkpoint)
                 .with_context(|| format!("original template {source} restore"))?;
             compare(&cold.generation, &replay.generation)
                 .with_context(|| format!("original template {source} output"))?;
@@ -54,7 +54,7 @@ impl Observation {
             .revised
             .as_ref()
             .context("missing revised template observation")?;
-        validate_miss(prompt_tokens, revised, family).context("revised template prefill")?;
+        validate_miss(prompt_tokens, revised).context("revised template prefill")?;
         compare(&cold.generation, &revised.generation).context("revised template output")?;
         ensure!(
             self.revised_disk_payload_bytes == Some(0),
@@ -81,7 +81,7 @@ fn equivalent_renderers_do_not_share_state() -> Result<()> {
     let config = stage_config(&fixture, &model, &model_sha256)?;
     let mut observation = Observation::default();
     capture(&directory, backend, config, &fixture, &mut observation)?;
-    observation.validate(family)
+    observation.validate()
 }
 
 pub(super) fn capture(
@@ -125,25 +125,16 @@ fn observe(
     revised: &skippy_inference_api::generation::GenerationRequest,
     observation: &mut Observation,
 ) -> Result<()> {
-    let cold = observation.cold.insert(runner.generate(original)?);
+    observation.cold = Some(runner.generate(original)?);
     let manager = tiers::open_store(directory)?;
     let cache = runner.enable_cache(Some(manager.clone()))?;
     let seed = observation.seed.insert(runner.generate(original)?);
-    let prefill = cold
-        .generation
-        .prompt_ids
-        .len()
-        .checked_sub(1)
-        .context("empty prompt")?;
-    let checkpoint = seed
-        .chat_checkpoint_tokens
-        .map(u64::from)
-        .or_else(|| cache.exact_shared_checkpoint_token_count(prefill as u64))
-        .context("template fixture did not publish an exact checkpoint")?;
-    observation.checkpoint = Some(u32::try_from(checkpoint)?);
-    tiers::wait_for_checkpoint(&manager, checkpoint)?;
-    for _ in 0..3 {
-        tiers::evict_l1(&runner, &cache)?;
+    tiers::evict_l1(&runner, &cache)?;
+    observation.checkpoint = Some(tiers::published_checkpoint(&manager, seed)?);
+    for attempt in 0..3 {
+        if attempt > 0 {
+            tiers::evict_l1(&runner, &cache)?;
+        }
         observation.restored.push(runner.generate(original)?);
         tiers::drain_workers(&cache)?;
     }

@@ -39,8 +39,9 @@ pub(super) fn observe(
 
     let seed = observations.seed.insert(runner.generate(request)?);
     observations.evictions.push(evict_l1(&runner, &cache)?);
-    observations.checkpoint_tokens = Some(published_checkpoint(&manager, seed)?);
-    let pack_name = published_pack_name(directory)?;
+    let checkpoint = published_checkpoint(&manager, seed)?;
+    observations.checkpoint_tokens = Some(checkpoint);
+    let pack_name = published_pack_name(directory, &cache, checkpoint)?;
 
     // For shorter checkpoints the production host policy promotes after
     // two disk fills. Drain L1 before each fill while retaining the same L2.
@@ -107,14 +108,25 @@ pub(super) fn open_store(directory: &Path) -> Result<L3CacheManager> {
     )
 }
 
-fn published_pack_name(directory: &Path) -> Result<PathBuf> {
-    let mut packs = fs::read_dir(directory.join("l3/packs"))?;
-    let pack = packs.next().context("missing published disk payload")??;
-    ensure!(
-        pack.file_type()?.is_file() && packs.next().is_none(),
-        "expected one packed object in the new qualification cache"
-    );
-    Ok(pack.file_name().into())
+fn published_pack_name(
+    directory: &Path,
+    cache: &KvStageIntegration,
+    checkpoint: u32,
+) -> Result<PathBuf> {
+    let store = cache.l3.as_ref().context("missing disk tier")?.store();
+    let mut found = None;
+    for digest in store.list_manifests()? {
+        let manifest = store.load_manifest(&digest)?;
+        if manifest.token_count == u64::from(checkpoint) {
+            let pack = PathBuf::from(digest).with_extension("pack");
+            ensure!(
+                directory.join("l3/packs").join(&pack).is_file() && found.is_none(),
+                "expected one packed object for the qualification checkpoint"
+            );
+            found = Some(pack);
+        }
+    }
+    found.context("missing packed payload for the qualification checkpoint")
 }
 
 pub(super) fn wait_for_checkpoint(manager: &L3CacheManager, tokens: u64) -> Result<()> {

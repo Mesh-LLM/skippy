@@ -309,7 +309,14 @@ impl CandidateRunner {
             .events
             .try_iter()
             .filter(|event| event.event == "stage.openai_kv_lookup_decision")
-            .filter(|event| event.attributes.contains_key("skippy.exact_cache.source"));
+            .filter(|event| {
+                event.attributes.contains_key("skippy.exact_cache.source")
+                    || event
+                        .attributes
+                        .get("skippy.kv.decision")
+                        .and_then(Value::as_str)
+                        == Some("resident_hit")
+            });
         if let Some(event) = restores.next() {
             let attr = |key| {
                 event
@@ -319,6 +326,9 @@ impl CandidateRunner {
                     .map(str::to_owned)
             };
             cache.restore_source = attr("skippy.exact_cache.source");
+            if cache.restore_source.is_none() {
+                cache.hit_kind = Some("resident_prefix".into());
+            }
             cache.payload_kind = attr("skippy.exact_cache.payload_kind");
         }
         ensure!(

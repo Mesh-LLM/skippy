@@ -88,7 +88,6 @@ async fn observe(directory: &Path, report: &mut Report) -> Result<()> {
         &restarted.replay,
         "l3",
         checkpoint,
-        family,
     )?;
     evidence::compare(cold, &restarted.replay.generation).context("L3 output")?;
     ensure!(
