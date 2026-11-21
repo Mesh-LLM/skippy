@@ -34,7 +34,9 @@ def save_preparation_diagnostics(checkout, destination):
     for name, args in {
         "source-status.txt": ("status", "--short"),
         "source.diff": ("diff", "HEAD", "--"),
-        "failed.patch": ("am", "--show-current-patch=diff"),
+        # Even this read-only am operation checks committer identity on clean CI hosts.
+        "failed.patch": ("-c", "user.name=Skippy diagnostics", "-c", "user.email=ci@skippy.local",
+                         "am", "--show-current-patch=diff"),
     }.items():
         try:
             text = git(source, *args)

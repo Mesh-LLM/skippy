@@ -238,7 +238,12 @@ class Upgrade(unittest.TestCase):
                     "am", "--3way", str(mail))
             raise failure
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
+            "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "user.useConfigOnly", "GIT_CONFIG_VALUE_0": "true",
+        }):
+            for key in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"):
+                os.environ.pop(key, None)
             root, base = self.prepare_fixture(Path(tmp))
             with self.assertRaises(RuntimeError) as raised:
                 self.run_prepare(root, conflicting, "b" * 40)
