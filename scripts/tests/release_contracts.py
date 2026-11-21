@@ -146,6 +146,44 @@ class ReleaseContract(unittest.TestCase):
         self.assertEqual([entry["version"] for entry in packages], [TAG[1:], TAG[1:], "0.80.0"])
         self.assertEqual(packages[0]["dependencies"], [f"skippy-b {TAG[1:]}"])
 
+    def test_automatic_release_takes_the_next_unreleased_patch(self):
+        from importlib.util import module_from_spec, spec_from_file_location
+        spec = spec_from_file_location("candidate", SCRIPTS / "ci-release-candidate.py")
+        candidate = module_from_spec(spec)
+        spec.loader.exec_module(candidate)
+        cases = (
+            ("0.80.0", [], "v0.80.0"),
+            ("0.80.0", ["v0.80.0"], "v0.80.1"),
+            ("0.80.1", ["v0.80.0", "v0.80.1", "v0.80.10", "v0.80.11-rc.1", "v0.79.40"], "v0.80.11"),
+            ("0.81.0", ["v0.80.7"], "v0.81.0"),
+        )
+        for version, tags, expected in cases:
+            self.assertEqual(candidate.next_patch(version, tags), expected)
+        with self.assertRaisesRegex(ValueError, "stable workspace version"):
+            candidate.next_patch("0.81.0-rc.1", [])
+
+    def test_automatic_release_skips_a_main_that_is_already_released(self):
+        self.assertEqual(self.release("next").stdout.strip(), "v0.80.0")
+        self.git("tag", "-a", "v0.80.0", "-m", "Skippy v0.80.0")
+        self.git("push", "origin", "refs/tags/v0.80.0")
+        self.assertEqual(self.release("next").stdout.strip(), "")
+        self.git("commit", "--allow-empty", "-m", "change")
+        self.env["GITHUB_SHA"] = self.git("rev-parse", "HEAD")
+        self.assertEqual(self.release("next").stdout.strip(), "v0.80.1")
+
+    def test_automatic_release_skips_a_main_released_by_a_tag_beside_it(self):
+        self.git("tag", "v0.80.0")
+        self.git("commit", "--allow-empty", "-m", "change")
+        head = self.env["GITHUB_SHA"] = self.git("rev-parse", "HEAD")
+        self.git("push", "origin", "main", "refs/tags/v0.80.0")
+        self.git("commit", "--allow-empty", "-m", "release: prepare v0.80.1")
+        self.git("push", "origin", "HEAD:refs/tags/v0.80.1")
+        self.git("reset", "--hard", head)
+        self.assertEqual(self.release("next").stdout.strip(), "")
+        self.git("commit", "--allow-empty", "-m", "change")
+        self.env["GITHUB_SHA"] = self.git("rev-parse", "HEAD")
+        self.assertEqual(self.release("next").stdout.strip(), "v0.80.2")
+
     def test_stage_retry_and_atomic_promotion(self):
         candidate = self.stage()
         tag_ref = f"refs/tags/{TAG}"

@@ -54,6 +54,39 @@ def verify_commit(tag, base, candidate):
         raise ValueError("checkout is not the version commit prepared by this release run")
 
 
+def next_patch(version, tags):
+    """The workspace version if it is unreleased, otherwise the patch after the newest tag."""
+    match = re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version)
+    if not match:
+        raise ValueError("automatic releases require a stable workspace version")
+    series, patch = f"v{match[1]}.{match[2]}.", int(match[3])
+    released = [int(tag[len(series):]) for tag in tags
+                if tag.startswith(series) and tag[len(series):].isdecimal()]
+    return f"{series}{max([patch, *(number + 1 for number in released)])}"
+
+
+def parents(commit):
+    git("fetch", "--no-tags", "--depth=1", "origin", commit, remote=True)
+    # The raw commit keeps its parents even where a shallow fetch cut history.
+    header = git("cat-file", "commit", commit, output=True).split("\n\n", 1)[0]
+    return [line.split()[1] for line in header.splitlines() if line.startswith("parent ")]
+
+
+def next_release():
+    prefix = "refs/tags/"
+    # A peeled entry sorts after its tag and gives an annotated tag's commit.
+    rows = git("ls-remote", "--tags", "origin", f"{prefix}v*", remote=True, output=True)
+    refs = sorted(row.split("\t")[::-1] for row in rows.splitlines())
+    tags = {ref.removeprefix(prefix).removesuffix("^{}"): sha for ref, sha in refs}
+    head = revision(os.environ["GITHUB_SHA"])
+    tag = next_patch(workspace_version(), tags)
+    series, patch = tag.rsplit(".", 1)
+    # A release tagged beside main is a version commit whose parent is the released head.
+    newest = tags.get(f"{series}.{int(patch) - 1}")
+    if head not in tags.values() and not (newest and head in parents(newest)):
+        print(tag)
+
+
 def stage(tag):
     prerelease = parse_tag(tag)
     base = revision(os.environ["GITHUB_SHA"])
@@ -83,7 +116,8 @@ def stage(tag):
     if ref not in refs:
         git("push", "origin", f"{candidate}:{ref}", remote=True)
     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-        print(f"base={base}\nsource={candidate}\nprerelease={str(prerelease).lower()}", file=output)
+        print(f"tag={tag}\nbase={base}\nsource={candidate}\nprerelease={str(prerelease).lower()}",
+              file=output)
 
 
 def promote_tag(tag, base, candidate):
@@ -133,6 +167,7 @@ def cleanup(candidate):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     actions = parser.add_subparsers(dest="action", required=True)
+    actions.add_parser("next")
     actions.add_parser("stage").add_argument("tag")
     promotion = actions.add_parser("promote")
     for label in ("tag", "base", "candidate"):
@@ -140,7 +175,7 @@ def main():
     actions.add_parser("cleanup").add_argument("candidate")
     args = vars(parser.parse_args())
     action = args.pop("action")
-    {"stage": stage, "promote": promote, "cleanup": cleanup}[action](**args)
+    {"next": next_release, "stage": stage, "promote": promote, "cleanup": cleanup}[action](**args)
 
 
 if __name__ == "__main__":

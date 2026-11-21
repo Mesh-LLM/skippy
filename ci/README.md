@@ -327,8 +327,10 @@ publication or signing secrets.
 
 ## Cut a release
 
-Run `just release vX.Y.Z`, or dispatch **Release** from `main` in GitHub
-Actions. For a rehearsal, run `just release vX.Y.Z true`. The canary stages a
+The **Release** workflow runs daily at 17:00 UTC with the next patch version and
+skips a `main` that is already released; see [RELEASE.md](../RELEASE.md). For a
+chosen version run `just release vX.Y.Z`, or dispatch **Release** from `main` in
+GitHub Actions. For a rehearsal, run `just release vX.Y.Z true`. The canary stages a
 temporary candidate and runs the full package, device, inference and docs
 matrix. It leaves `main`, version tags, GitHub releases and deployed docs
 untouched.
