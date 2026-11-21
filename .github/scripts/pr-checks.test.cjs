@@ -109,6 +109,7 @@ test('native trigger patterns distinguish metadata, code-only, inference and mix
     ['.github/scripts/pr-checks.cjs', ['ci.yml']],
     ['.github/path-filters.yml', ['ci.yml']],
     ['.github/workflows/inference.yml', ['ci.yml']],
+    ['.github/workflows/llama-upgrade.yml', ['ci.yml']],
     ['.cargo/config.toml', ['ci.yml', 'inference.yml']],
     ['Justfile', ['ci.yml', 'inference.yml', 'ci-images.yml']],
   ];
