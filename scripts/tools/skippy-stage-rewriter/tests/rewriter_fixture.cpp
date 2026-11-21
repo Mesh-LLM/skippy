@@ -233,6 +233,13 @@ int main(int argc, char **argv) {
     check(tool, root, temp, "embedding-prelude-else.cpp", "unsupported_shape", {}, "pre-loop activation conditional has an else branch");
     check(tool, root, temp, "hyperconnection-unproven.cpp", "unsupported_shape", {},
           "layer-carried activation differs from the embedding without a proven hyperconnection prelude");
+    // A gather from a helper-returned table is not an embedding proof.
+    check(tool, root, temp, "helper-table-local.cpp", "unsupported_shape", {},
+          "cannot prove a unique token embedding producer");
+    check(tool, root, temp, "helper-table-direct.cpp", "unsupported_shape", {},
+          "cannot prove a unique token embedding producer");
+    check(tool, root, temp, "helper-table-mixed.cpp", "unsupported_shape", {},
+          "cannot prove a unique token embedding producer");
     return 0;
   } catch (const std::exception &error) {
     std::cerr << "fixture failure: " << error.what() << '\n';

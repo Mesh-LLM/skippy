@@ -1292,6 +1292,24 @@ private:
   std::vector<const CallExpr *> calls_;
 };
 
+// A token table returned by a call, directly or through the initializer of
+// the local it names, has unproven provenance: the helper may return this
+// model's table or another context's. Such a gather is not an embedding proof.
+bool tableFromCall(const Expr *table) {
+  if (table == nullptr) {
+    return false;
+  }
+  table = table->IgnoreParenImpCasts();
+  if (const auto *ref = llvm::dyn_cast<DeclRefExpr>(table)) {
+    const auto *local = llvm::dyn_cast<VarDecl>(ref->getDecl());
+    if (local == nullptr || !local->isLocalVarDecl() || !local->hasInit()) {
+      return false;
+    }
+    table = local->getInit()->IgnoreParenImpCasts();
+  }
+  return llvm::isa<CallExpr>(table);
+}
+
 // True when the statement sequence owns exactly one token embedding producer,
 // the same condition the decoder analysis proves for its rewrite target.
 bool ownsTokenEmbeddingProducer(const Stmt *body) {
@@ -1316,6 +1334,9 @@ bool ownsTokenEmbeddingProducer(const Stmt *body) {
     }
     if (name == "ggml_get_rows" && call->getNumArgs() >= 2 &&
         containsName(call->getArg(1), "tok_embd")) {
+      if (tableFromCall(call->getArg(1))) {
+        return false;
+      }
       ++token_gathers;
     }
   }
@@ -1636,13 +1657,15 @@ public:
       standard_embedding = true;
     } else if (embedding_calls.empty()) {
       std::vector<const CallExpr *> token_gathers;
+      bool unproven_token_table = false;
       for (const CallExpr *call : facts.calls["ggml_get_rows"]) {
         if (call->getNumArgs() >= 2 &&
             containsName(call->getArg(1), "tok_embd")) {
+          unproven_token_table |= tableFromCall(call->getArg(1));
           token_gathers.push_back(call);
         }
       }
-      if (token_gathers.size() == 1) {
+      if (!unproven_token_table && token_gathers.size() == 1) {
         embedding = token_gathers.front();
       }
     }
