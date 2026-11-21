@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 use serde_json::Value;
 use skippy_inference_api::ModelId;
@@ -27,8 +27,9 @@ struct Config {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Model {
-    id: String,
-    path: PathBuf,
+    id: Option<String>,
+    model: Option<String>,
+    model_path: Option<String>,
     #[serde(default)]
     settings: toml::Table,
 }
@@ -46,6 +47,10 @@ impl SettingsFile {
         command: &clap::Command,
         listener: &mut ServeSettings,
     ) -> Result<Self> {
+        ensure!(
+            !table.contains_key("model"),
+            "use either [model] or [[models]] in serving settings"
+        );
         let config: Config = toml::Value::Table(table)
             .try_into()
             .with_context(|| format!("parse multi-model settings {}", path.display()))?;
@@ -55,18 +60,9 @@ impl SettingsFile {
         );
         ensure!(!config.models.is_empty(), "provide at least one model");
         let mut ids = BTreeSet::new();
-        for model in &config.models {
-            ModelId::new(&model.id)?;
-            ensure!(
-                ids.insert(&model.id),
-                "duplicate served model ID {:?}",
-                model.id
-            );
-            ensure!(
-                !model.path.as_os_str().is_empty(),
-                "model {:?} has an empty path",
-                model.id
-            );
+        for id in config.models.iter().filter_map(|model| model.id.as_deref()) {
+            ModelId::new(id)?;
+            ensure!(ids.insert(id), "duplicate served model ID {id:?}");
         }
 
         let mut shared = toml::Table::new();
@@ -121,23 +117,31 @@ impl SettingsFile {
         apply_file(&mut defaults, self.defaults, "defaults")?;
         self.models
             .into_iter()
-            .map(|model| {
+            .enumerate()
+            .map(|(index, model)| {
+                let source = format!("models[{index}]");
+                let (key, name, value) = match (model.model, model.model_path) {
+                    (Some(value), None) => ("model", "model", value),
+                    (None, Some(value)) => ("model_path", "model-path", value),
+                    _ => bail!("{source} must specify exactly one of model or model_path"),
+                };
+                ensure!(!value.trim().is_empty(), "{source}.{key} must not be empty");
                 let mut settings = defaults.clone();
-                let source = format!("models.{}", model.id);
                 apply_file(&mut settings, model.settings, &format!("{source}.settings"))?;
                 settings.values.extend(overrides.values.clone());
                 settings.sources.extend(overrides.sources.clone());
-                let path = directory.join(model.path);
                 settings.insert(
-                    "model-path",
-                    Value::String(path.to_str().context("model path must be UTF-8")?.into()),
-                    format!("file:{}:{source}.path", self.path.display()),
+                    name,
+                    file_value(name, Value::String(value), directory)?,
+                    format!("file:{}:{source}.{key}", self.path.display()),
                 )?;
-                settings.insert(
-                    "model-id",
-                    Value::String(model.id),
-                    format!("file:{}:{source}.id", self.path.display()),
-                )?;
+                if let Some(id) = model.id {
+                    settings.insert(
+                        "model-id",
+                        Value::String(id),
+                        format!("file:{}:{source}.id", self.path.display()),
+                    )?;
+                }
                 let Command::Serve(args) = resolve(command, settings)?.command else {
                     unreachable!("resolved a serve command")
                 };

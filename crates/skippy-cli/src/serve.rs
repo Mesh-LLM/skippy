@@ -4,7 +4,6 @@ use std::{
     future::Future,
     io::IsTerminal,
     net::SocketAddr,
-    path::Path,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -34,105 +33,22 @@ pub async fn run(mut args: ServeCommandArgs) -> Result<()> {
     if !args.local_models.is_empty() {
         return crate::multi_model::run(args).await;
     }
-    if let Some(model) = args.model.take() {
-        console::status(&format!("🔎 Checking local model cache for {model}"))?;
-        let existing = installed_model_path(&model);
-        let catalog_model = (!Path::new(&model).exists())
-            .then(|| {
-                let exact = if existing.is_some() && model.contains('/') {
-                    skippy_model_hf::remote_catalog::find_loaded_model_exact(&model)
-                } else {
-                    skippy_model_hf::remote_catalog::find_model_exact(&model)
-                };
-                exact.or_else(|| {
-                    (!model.contains('/'))
-                        .then(|| skippy_model_hf::remote_catalog::resolve_model_download(&model))
-                        .flatten()
-                        .and_then(|resolved| {
-                            skippy_model_hf::remote_catalog::matching_model_for_huggingface(
-                                &resolved.repo,
-                                resolved.revision.as_deref(),
-                                &resolved.file,
-                            )
-                        })
-                })
-            })
-            .flatten();
-        let catalog_name = catalog_model.as_ref().map(|entry| entry.name.clone());
-        let (path, downloaded_projector) = if let Some(local_path) = existing {
-            console::status("📂 Using cached model")?;
-            (local_path, None)
-        } else {
-            let cache = skippy_commands::models::model_cache_dir();
-            let downloaded =
-                skippy_commands::models::download_model(&cache, &model, None, None).await?;
-            (downloaded.load_path, downloaded.projector_path)
-        };
-        args.public.model_path = Some(path);
-        if args.public.mmproj.is_none() {
-            args.public.mmproj = downloaded_projector;
-        }
-        if args.public.mmproj.is_none()
-            && let Some(asset) = catalog_model.and_then(|entry| entry.mmproj)
-        {
-            let projector_ref = asset.download_ref();
-            let cache = skippy_commands::models::model_cache_dir();
-            args.public.mmproj = Some(
-                skippy_commands::models::download_model(&cache, &projector_ref, None, None)
-                    .await?
-                    .primary_path,
-            );
-        }
-        if !Path::new(&model).exists() {
-            args.public.model_id.get_or_insert(model);
-        }
-        // Only a catalog entry is named on analytics events, by its catalog
-        // name, whatever the model is served as. Anything else stays
-        // `redacted`.
-        if let (Some(catalog_name), Some(served)) = (catalog_name, args.public.model_id.as_deref())
-        {
-            skippy_analytics::models::register(
-                served,
-                skippy_analytics::models::ModelIdentity {
-                    model: skippy_analytics::Label::sanitize_or_redact(&catalog_name),
-                    ..skippy_analytics::models::ModelIdentity::redacted()
-                },
-            );
-        }
-    }
+    crate::model_source::resolve(&mut args.public).await?;
     match args.stage_transport {
         Some(StageTransport::Binary) => serve_binary_stage(args).await,
         None => serve_public(args).await,
     }
 }
 
-fn installed_model_path(model: &str) -> Option<std::path::PathBuf> {
-    let path = Path::new(model);
-    if path.is_file() || path.is_dir() {
-        return Some(path.to_path_buf());
-    }
-    // Mesh prefers catalog resolution for short curated names, then falls
-    // back to local cache stems. Exact Hub refs can use the cache directly.
-    if model.contains('/') || skippy_model_hf::remote_catalog::find_model_exact(model).is_none() {
-        let cached = skippy_model_hf::store::local::find_model_path(model);
-        if cached.exists() {
-            return Some(cached);
-        }
-    }
-    None
-}
-
 pub(crate) fn validate(args: &ServeCommandArgs) -> Result<()> {
-    if let Some(model) = args.model.as_deref() {
-        skippy_commands::models::reject_safetensors_model_ref(model)?;
-    }
     args.public.settings.validate_mode(args)?;
     if args.local_models.is_empty() {
         validate_public_settings(&args.public)?;
     } else {
         for model in &args.local_models {
-            validate_public_settings(model)
-                .with_context(|| format!("settings for model {:?}", model.model_id))?;
+            validate_public_settings(model).with_context(|| {
+                format!("settings for {}", crate::multi_model::describe_model(model))
+            })?;
         }
     }
     if args.stage_transport.is_some() && args.public.config.is_none() {
@@ -153,7 +69,7 @@ pub(crate) fn validate(args: &ServeCommandArgs) -> Result<()> {
     if args.local_models.is_empty()
         && args.public.config.is_none()
         && args.public.model_path.is_none()
-        && args.model.is_none()
+        && args.public.model.is_none()
     {
         bail!("provide --model, --model-path, --config, or a model in --settings");
     }
@@ -161,6 +77,9 @@ pub(crate) fn validate(args: &ServeCommandArgs) -> Result<()> {
 }
 
 fn validate_public_settings(args: &ServeOpenAiArgs) -> Result<()> {
+    if let Some(model) = args.model.as_deref() {
+        skippy_commands::models::reject_safetensors_model_ref(model)?;
+    }
     args.settings.tuning(args.openai_guardrails)?;
     let mut stage = skippy_protocol::StageConfig::default();
     args.settings.apply_stage(&mut stage)
@@ -812,14 +731,6 @@ mod tests {
                 expected.parse().unwrap()
             );
         }
-    }
-
-    #[test]
-    fn existing_local_model_path_is_used_without_hub_resolution() {
-        let temp = tempfile::tempdir().unwrap();
-        let model = temp.path().join("model.gguf");
-        std::fs::write(&model, b"GGUF").unwrap();
-        assert_eq!(installed_model_path(model.to_str().unwrap()), Some(model));
     }
 
     #[test]

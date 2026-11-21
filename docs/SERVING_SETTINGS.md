@@ -34,8 +34,8 @@ Use snake_case option names in TOML, under the section shown below. CLI-only
 `version = 1` is optional and identifies the current file format.
 
 Paths in the file are relative to its directory. Model repository references
-remain repository references; explicit local paths and `.gguf` filenames are
-resolved relative to the settings file. The CLI keeps paths relative to the
+stay intact. Explicit relative paths and bare `.gguf` filenames resolve from
+the settings file. The CLI keeps paths relative to the
 working directory. `runtime_bundle` accepts an array of directories.
 
 JSON-valued CLI options accept inline JSON or `@file.json`. In TOML, use native
@@ -118,44 +118,42 @@ selected after loading. `overrides` contains only explicitly supplied settings.
 
 ## Serve multiple local models
 
-Save one file named `serving.toml`.
+Save this as `serving.toml` to serve two Hugging Face GGUFs on one listener.
 
 ```toml
 version = 1
-bind_addr = "127.0.0.1:9337"
-
-[defaults]
-ctx_size = 4096
 
 [[models]]
-id = "small"
-path = "models/small.gguf"
-
-[models.settings]
-ctx_size = 2048
+model = "Qwen/Qwen3-0.6B-GGUF:Q8_0"
 
 [[models]]
-id = "large"
-path = "models/large.gguf"
+model = "Qwen/Qwen3-1.7B-GGUF:Q8_0"
 ```
 
 ```sh
 skippy serve --settings serving.toml
 ```
 
-Each entry names an unsplit local model and a unique served ID. Relative paths
-resolve from the TOML file. Put per-model options such as `ctx_size`,
-`n_gpu_layers`, and `temperature` directly under `[defaults]` or
-`[models.settings]`. Entries override the shared defaults.
-`SKIPPY_SERVE_<OPTION_NAME>` variables and explicit CLI options override
-the corresponding settings for every model. Use the top-level `bind_addr`
-for the listener and `[runtime]` for shared native runtime settings.
+Both `[model].model` and `[[models]].model` accept the same inputs as
+`skippy serve --model`. Skippy resolves catalog names and Hugging Face
+references, then reuses cached files or downloads what it needs. To open a
+local GGUF, use `model = "./qwen.gguf"` or `model_path = "qwen.gguf"`.
+Relative paths start in the directory containing the settings file. Choose
+one source key per entry. Existing multi-model files must rename `path` to
+`model_path` and keep `version = 1`.
 
-Skippy loads all models before opening the listener. If a load fails, startup
-fails and releases any models already opened. `GET /v1/models` lists the
-served IDs. Set the request's `model` field to the exact ID, such as `small`
-or `large`. Add `--print-effective-config` to inspect the resolved configuration
-for each model before loading it.
+Skippy loads every model before opening the listener. `GET /v1/models` lists
+the IDs that clients can use in the request's `model` field. By default, the
+ID is the catalog or Hub reference, or the filename stem for a local model.
+Set `id` on an entry to give it an explicit name. All IDs must be unique.
+
+Put common tuning under `[defaults]` and overrides under `[models.settings]`.
+Environment variables and CLI tuning options apply to all entries. The list
+defines the model sources, so use either `[model]` or `[[models]]` and
+omit global source selectors such as `--model` when serving the list. Set the
+listener with top-level `bind_addr` and the shared runtime under `[runtime]`.
+Use `--print-effective-config` to inspect the settings and IDs before native
+model load. Skippy can acquire the model files while preparing the report.
 
 ## Mode and resource constraints
 

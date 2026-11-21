@@ -39,7 +39,7 @@ temperature = 0.2
 
 [[models]]
 id = "small"
-path = "models/small.gguf"
+model_path = "models/small.gguf"
 
 [models.settings]
 ctx_size = 2048
@@ -47,7 +47,7 @@ temperature = 0.5
 
 [[models]]
 id = "large"
-path = "models/large.gguf"
+model_path = "models/large.gguf"
 "#,
         &["--temperature", "0.8", "--print-effective-config"],
         |name| match name {
@@ -86,8 +86,8 @@ path = "models/large.gguf"
 
 #[test]
 fn serve_rejects_duplicate_ids_and_conflicting_launch_modes() {
-    let file = "version = 1\n[[models]]\nid = 'small'\npath = 'small.gguf'\n";
-    let duplicate = format!("{file}[[models]]\nid = 'small'\npath = 'other.gguf'\n");
+    let file = "version = 1\n[[models]]\nid = 'small'\nmodel_path = 'small.gguf'\n";
+    let duplicate = format!("{file}[[models]]\nid = 'small'\nmodel_path = 'other.gguf'\n");
     let error = parse(&duplicate, &[], |_| None).err().unwrap();
     assert!(error.to_string().contains("duplicate served model ID"));
 
@@ -104,4 +104,86 @@ fn serve_rejects_duplicate_ids_and_conflicting_launch_modes() {
                 .contains("cannot be used with a multi-model settings file")
         );
     }
+}
+
+#[test]
+fn serve_uses_the_same_model_values_in_both_settings_forms() {
+    for reference in [
+        "repo/Qwen3-6B:Q4_K_M",
+        "repo/Qwen3-6B@revision:weights/Qwen3-6B-Q4_K_M.gguf",
+        "repo/Qwen3-6B@revision:Qwen3-6B-Q4_K_M.gguf",
+        "Qwen3-0.6B-Q4_K_M",
+        "./local/qwen.gguf",
+        "qwen.gguf",
+    ] {
+        for (section, multi_model) in [("[model]", false), ("[[models]]", true)] {
+            let file = format!("version = 1\n{section}\nmodel = {reference:?}\n");
+            let (directory, cli) = parse(&file, &[], |_| None).unwrap();
+            let Command::Serve(args) = cli.command else {
+                panic!("expected serve");
+            };
+            let model = if multi_model {
+                &args.local_models[0]
+            } else {
+                &args.public
+            };
+            let expected = match reference {
+                "./local/qwen.gguf" | "qwen.gguf" => directory.path().join(reference),
+                _ => PathBuf::from(reference),
+            };
+            assert_eq!(model.model.as_deref(), expected.to_str());
+            assert!(model.model_path.is_none());
+            assert!(model.model_id.is_none());
+        }
+    }
+}
+
+#[test]
+fn model_path_is_relative_to_either_settings_form() {
+    for (section, multi_model) in [("[model]", false), ("[[models]]", true)] {
+        let file = format!("version = 1\n{section}\nmodel_path = 'models/local.gguf'\n");
+        let (directory, cli) = parse(&file, &[], |_| None).unwrap();
+        let Command::Serve(args) = cli.command else {
+            panic!("expected serve");
+        };
+        let model = if multi_model {
+            &args.local_models[0]
+        } else {
+            &args.public
+        };
+        assert_eq!(
+            model.model_path,
+            Some(directory.path().join("models/local.gguf"))
+        );
+        assert!(model.model.is_none());
+    }
+}
+
+#[test]
+fn serve_rejects_ambiguous_or_legacy_multi_model_sources() {
+    for (file, expected) in [
+        (
+            "[[models]]\nmodel = 'some/repo'\nmodel_path = 'local.gguf'",
+            "exactly one of model or model_path",
+        ),
+        ("[[models]]\nid = 'a'", "exactly one of model or model_path"),
+        ("[[models]]\nmodel = ' '", "must not be empty"),
+        ("[[models]]\npath = 'local.gguf'", "unknown field `path`"),
+        (
+            "[model]\nmodel = 'some/repo'\n[[models]]\nmodel = 'other/repo'",
+            "either [model] or [[models]]",
+        ),
+    ] {
+        let file = format!("version = 1\n{file}");
+        let error = parse(&file, &[], |_| None).err().unwrap();
+        assert!(format!("{error:#}").contains(expected), "{error:#}");
+    }
+
+    let file = "version = 1\n[[models]]\nmodel = 'some/repo'";
+    let error = parse(file, &[], |name| {
+        (name == "SKIPPY_SERVE_MODEL").then(|| "other/repo".into())
+    })
+    .err()
+    .unwrap();
+    assert!(error.to_string().contains("--model cannot be used"));
 }

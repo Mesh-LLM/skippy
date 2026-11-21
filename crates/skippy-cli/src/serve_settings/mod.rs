@@ -99,7 +99,7 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Cli> {
     parse_with_environment(args, |name| std::env::var(name).ok())
 }
 
-fn parse_with_environment(
+pub(crate) fn parse_with_environment(
     args: impl IntoIterator<Item = OsString>,
     environment: impl Fn(&str) -> Option<String>,
 ) -> Result<Cli> {
@@ -383,15 +383,19 @@ fn file_value(name: &str, value: Value, directory: &Path) -> Result<Value> {
     let Some(text) = value.as_str() else {
         return Ok(value);
     };
-    if name == "model"
-        && (text.starts_with("./")
-            || text.starts_with("../")
-            || text.ends_with(".gguf")
-            || directory.join(text).exists())
-    {
-        return Ok(Value::String(
-            directory.join(text).to_string_lossy().into_owned(),
-        ));
+    if name == "model" {
+        let path = Path::new(text);
+        let relative = directory.join(path);
+        // Bare GGUF names and explicit relative paths are local. Hub
+        // selectors can also end in .gguf, so keep those references intact.
+        if !path.is_absolute()
+            && (path.starts_with(".")
+                || path.starts_with("..")
+                || (path.file_name() == Some(path.as_os_str()) && text.ends_with(".gguf"))
+                || relative.exists())
+        {
+            return Ok(Value::String(relative.to_string_lossy().into_owned()));
+        }
     }
     if is_path(name) && !Path::new(text).is_absolute() {
         return Ok(Value::String(

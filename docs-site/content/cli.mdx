@@ -76,9 +76,9 @@ run its full path, such as `skippy models download --help`.
 | Invocation or option | Meaning and default |
 | --- | --- |
 | `skippy serve --model MODEL` | Serve a catalog ID, Hugging Face reference, or local model path. |
-| `skippy serve --model-path PATH` | Open a local GGUF file (the first shard for a multipart model) or a supported SafeTensors checkpoint. |
+| `skippy serve --model-path PATH` | Open a local GGUF file. For a multipart model, pass the first shard. |
 | `skippy serve --config FILE` | Serve a prepared JSON stage configuration. For a pipeline, add `--stage-transport binary`, and add `--worker-only` on downstream stages. |
-| `--settings FILE` | Load serving settings from TOML. |
+| `--settings FILE` | Load TOML for one model or a list of models. Each `[[models]]` entry can use a `model` reference or an explicit `model_path`. |
 | `--print-effective-config` | Report resolved settings and where they came from, then exit. |
 | `--bind-addr ADDRESS` | Set the public API address, which defaults to `127.0.0.1:9337`. In worker-only mode this overrides the binary stage listener. |
 | `--model-id ID` | Set the model ID the public API advertises and accepts. |
@@ -87,7 +87,6 @@ run its full path, such as `skippy models download --help`.
 | `--ctx-size N` | Set the context size for a local model. By default, Skippy plans it from available memory and model metadata. |
 | `--n-gpu-layers N` | Set the number of local model layers to offload. Use `-1` to offload all supported layers. |
 | `--generation-concurrency N` | Set the maximum active generation requests. Automatic local planning defaults to four lanes sharing a KV pool. |
-| `--quant RECIPE` | Quantize a supported SafeTensors checkpoint during loading. Defaults to `preserve`. |
 | `--mmproj PATH` | Select a multimodal projector GGUF. By default, Skippy looks for a matching installed projector. |
 
 Run `skippy serve --help` for the full serving flag list. The serving docs

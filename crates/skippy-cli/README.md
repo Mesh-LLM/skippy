@@ -23,6 +23,8 @@ Source builds can have a newer ABI than a published release. Use
 
 To serve several local models on one listener, list them as `[[models]]`
 entries in one TOML file and run `skippy serve --settings serving.toml`.
+Each entry can use the same catalog name, Hugging Face reference, or local
+path accepted by `--model`. Set `id` when clients need an explicit model name.
 See the [multi-model example](../../docs/SERVING_SETTINGS.md#serve-multiple-local-models).
 Use `--settings serve.toml` for a complete serving configuration and
 `--print-effective-config` to inspect the resolved launch before loading a model.
