@@ -191,16 +191,6 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
           arch: x64
-      - name: Install the pinned HIP SDK and report its shape
-        shell: pwsh
-        run: |
-          ./scripts/install-windows-rocm-sdk.ps1 -ExpectedVersion "$env:SKIPPY_WINDOWS_ROCM_VERSION"
-          Write-Host 'ROCM_PATH root entries:'
-          Get-ChildItem "$env:ROCM_PATH" | ForEach-Object { Write-Host "  $($_.Name)" }
-          Write-Host 'License candidates:'
-          Get-ChildItem "$env:ROCM_PATH" -Recurse -Depth 1 `
-            -Include LICENSE,LICENSE.txt,license.txt,EULA,EULA.txt,eula.txt -ErrorAction SilentlyContinue |
-            ForEach-Object { Write-Host "  $($_.FullName)" }
   plan:
     name: Validate build targets
     needs: changes
