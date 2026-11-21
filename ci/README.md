@@ -6,8 +6,8 @@ require the full workflow result independently
 of the check name. The single required status is `PR checks`, the
 aggregate of all applicable PR workflows, checks and statuses.
 
-`pr-checks.yml` evaluates that aggregate on a standard GitHub-hosted
-`ubuntu-24.04` runner, using protected-main code and no Rust setup, candidate
+`pr-checks.yml` evaluates that aggregate on the selected Ubuntu runner, using
+protected-main code and no Rust setup, candidate
 execution, model inputs or lab credentials. It re-evaluates on PR events and
 producer workflow starts/completions, including reruns. Failed, cancelled,
 timed-out and startup-failed runs fail the gate; queued/running or missing
@@ -110,7 +110,7 @@ produced by the protected-main llama upgrade workflow.
 `targets.json` defines four hosts and eleven runtimes. Three hosts and eight
 runtimes are active. Windows qualification and publication are deferred. After
 the quality and automation canary, each CPU job builds, packages and tests its
-runtime on `ubuntu-24.04`, `ubuntu-24.04-arm` or `macos-15` by default. Each
+runtime on the selected Ubuntu x64, Ubuntu ARM64, or macOS ARM64 runner. Each
 also produces the shared CLI for its platform. Linux x64 builds the shared CLI
 on Ubuntu 24.04 for compatibility with the CUDA toolchain images. Each backend
 job waits for its matching CPU job only. Linux x64 CUDA 12 and Linux ARM64
@@ -123,47 +123,60 @@ CI gate matches all package jobs to the plan and checks required device results.
 
 ### Depot runners
 
-Direct `ci.yml` runs on protected `main` and release validation can use Depot
-for the quality canary, Linux CPU packages, and compiler-only CUDA packages.
-The jobs use four-core Ubuntu 24.04 runners matching their existing
-architectures. PRs and llama upgrades use their default runners. Depot's
-Actions cache is shared across branches within a repository.
-[Depot cache behavior](https://depot.dev/docs/cache/integrations/github-actions)
+The repository Actions variable `SKIPPY_DEPOT_RUNNERS_ENABLED=true` selects
+Depot for every job that otherwise uses a GitHub-hosted runner. This includes
+PR validation and its aggregate, code and package CI, compiler images and
+publishing, documentation and deployment, release validation and publication,
+the inference controllers, and the llama upgrade publisher. The Linux jobs
+use four-core Ubuntu 24.04 runners of the existing architecture, and the
+macOS CPU package uses Depot's macOS 15 ARM64 runner. Device jobs use their
+specified JY groups. Clearing the variable or setting it to `false` restores
+GitHub-hosted placement and direct PR workflow routing for subsequent runs.
+[Depot runner labels](https://depot.dev/docs/github-actions/runner-types)
 
-Before opting in, verify that the Depot GitHub App covers `Mesh-LLM/skippy`
-and that Depot's GitHub runner group admits this public repository. Restrict
-the group's workflow access to exact protected refs and include
-`Mesh-LLM/skippy/.github/workflows/ci.yml@refs/heads/main` alongside the
-existing approved workflows. This restriction keeps PR-defined jobs out of
-Skippy's Depot cache namespace.
-[Depot runner setup](https://depot.dev/docs/github-actions/quickstart)
+The Depot runner group admits Skippy and uses exact protected workflow refs.
+Allow these entries alongside the existing approved workflows:
 
-From `main`, dispatch `CI` with `profile=full` and `use_depot=true` to verify
-runner assignment, compiler image pulls, and package smoke. After that run
-passes, set the repository Actions variable `SKIPPY_DEPOT_RUNNERS_ENABLED` to
-`true` to opt in for pushes, scheduled runs, manual runs, and the `Release`
-workflow's reusable build validation on `main`. Release verification and
-publication use GitHub-hosted runners. Clear the variable or set it to `false`
-to restore GitHub-hosted placement unless the manual input is enabled.
+```text
+Mesh-LLM/skippy/.github/workflows/ci.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/ci-images.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/ci-image-builds.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/docs.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/inference.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/pr-checks.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/depot-cache.yml@refs/heads/main
+```
 
-`CI images` can use Depot for CPU, CUDA, and ROCm compiler image builds and
-smoke tests. Its runner group entry is
-`Mesh-LLM/skippy/.github/workflows/ci-images.yml@refs/heads/main`. With that
-entry in place, dispatch `CI images` on `main` with `use_depot=true` to build
-and test every image while skipping publication. After that run passes, set
-`SKIPPY_DEPOT_IMAGE_RUNNERS_ENABLED` to `true` for regular main-branch image
-builds. The publisher jobs run on GitHub-hosted Linux and use the tested
-archives from the build jobs. Clearing the variable or setting it to `false`
-restores GitHub-hosted placement unless the manual input is enabled.
+With Depot enabled, `ci-pr.yml`, `ci-images-pr.yml`, and `docs-pr.yml` retain
+GitHub's ordinary PR triggers and call their runner-owning workflows from
+protected `main` without forwarding secrets. The read-only image-build
+workflow supplies the exact artifacts for the separate image publishers. The
+dispatcher jobs request
+`cache-mode: none`. This keeps GitHub's fork-run approval policy in effect.
+Same-repository PRs to main continue to use the protected `ci.yml` path for
+code and native admission. The PR controller expects the producer for the
+active route. Refresh affected open PRs with a new PR event after cutover so
+their selected workflows run against the current head.
 
-To check Depot's Actions cache permissions, dispatch `CI` from protected
-`main` with `profile=depot-cache`. The canary saves a disposable marker in a
-write-enabled job. A separate `cache-mode: read` job must restore that marker
-and receive an explicit cache-service denial when it requests a fresh write
-reservation. The probe uploads no write-test data and fails if Depot supplies
-a separate cache token. The workflow runs only these canary jobs for this
-profile and uses the protected workflow source. A passing result demonstrates
-read-only enforcement for the tested Depot connection and runner label.
+Depot Actions cache entries are shared across branches in a repository.
+Ordinary Depot jobs skip shared Cargo, compiler, model, native source, and
+npm caches. sccache uses the local runner disk. Keep automatic Depot Cache
+connections off so PR jobs cannot receive a second cache credential. Depot
+WebDAV sccache can be evaluated separately with a credential restricted to
+trusted jobs. GitHub-hosted fallback and JY actions retain their cache paths.
+[Actions cache behavior](https://depot.dev/docs/cache/integrations/github-actions)
+· [Depot sccache integration](https://depot.dev/docs/cache/integrations/sccache)
+
+After the workflows land, dispatch `Depot cache canary` on protected `main`
+before switching runner placement. The canary saves a disposable marker, then
+a separate `cache-mode: read` job restores it and checks for an explicit
+service denial on a fresh write reservation. The probe uploads no write-test
+data and fails if Depot supplies an automatic cache connection. The result
+covers the tested connection and runner label. For the placement rollout,
+verify full CI and `CI images` with `build_only=true`, then check one ordinary
+PR and one same-repository PR through the aggregate.
 [GitHub cache permissions](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#controlling-cache-access-with-cache-mode)
 
 ### PR admission and quality
@@ -171,7 +184,7 @@ read-only enforcement for the tested Depot connection and runner label.
 Same-repository PRs to `main` use the workflow definition on protected `main`.
 The workflow verifies repository identity, the PR author's write access and the
 exact candidate SHA before running candidate code. The ordinary PR workflow
-runs approved forks on GitHub-hosted runners. Changes requiring native hardware
+runs approved forks on the selected ephemeral runner. Changes requiring native hardware
 stay blocked until an isolated native runner path is available.
 
 Restrict each Skippy lab runner group to the protected workflow references

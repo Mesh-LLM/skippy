@@ -4,8 +4,8 @@ async function checkCacheWriteDenied(env, request) {
   if (!env.RUNNER_NAME?.startsWith('depot-') || env.ACTIONS_CACHE_MODE !== 'read') {
     throw new Error('The cache probe needs a Depot runner with effective cache-mode: read');
   }
-  if (env.DEPOT_CACHE_TOKEN) {
-    throw new Error('Depot injected a separate cache token into the read-only job');
+  if (env.DEPOT_CACHE_TOKEN || env.SCCACHE_WEBDAV_ENDPOINT) {
+    throw new Error('Depot injected a separate cache connection into the read-only job');
   }
   if (!env.ACTIONS_CACHE_SERVICE_V2 || !env.ACTIONS_RESULTS_URL || !env.ACTIONS_RUNTIME_TOKEN) {
     throw new Error('The runner did not expose its Actions Cache v2 connection');

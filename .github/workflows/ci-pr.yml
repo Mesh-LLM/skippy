@@ -1,0 +1,48 @@
+name: CI PR
+on:
+  pull_request:
+    # Include the inference-only inputs as well as the code filter.
+    paths:
+      - 'crates/**'
+      - 'skippy-api-rs/**'
+      - 'skippy_api/**'
+      - 'llama_cpp/**'
+      - 'tools/**'
+      - 'scripts/**'
+      - '.cargo/**'
+      - '.github/actions/**'
+      - '.github/scripts/**'
+      - '.github/path-filters.yml'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/ci-pr.yml'
+      - '.github/workflows/depot-cache.yml'
+      - '.github/workflows/inference.yml'
+      - '.github/workflows/llama-upgrade.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'Justfile'
+      - 'ci/targets.json'
+      - 'ci/llama-canary/**'
+      - '.gi/templates.yaml'
+      - 'ci/inference-ladder.json'
+      - 'ci/inference-artifacts.json'
+      - 'ci/inference-quality.json'
+      - '!**/*.md'
+      - '!**/*.mdx'
+      - '!**/*.rst'
+      - '!**/*.adoc'
+      - '!**/docs/**'
+      - '!docs-site/**'
+jobs:
+  validation:
+    if: >-
+      github.repository == 'Mesh-LLM/skippy' && vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' &&
+      (github.event.pull_request.head.repo.id != github.event.repository.id || github.base_ref != 'main')
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+      pull-requests: read
+    cache-mode: none
+    uses: Mesh-LLM/skippy/.github/workflows/ci.yml@main

@@ -86,39 +86,30 @@ test('hosted CI cannot satisfy a native inference requirement', () => {
   assert.throws(() => gate(results({ hostedRequiresNative: true })), /require native hardware qualification on an isolated runner/);
 });
 
-test('Depot placement requires opt-in from protected CI or release validation', () => {
-  const expression = workflow.match(/^      linux-runner-provider: >-\n\s+\$\{\{([\s\S]+?)\}\}/m)[1];
-  const evaluateProvider = new Function('github', 'vars', 'inputs', `return (${expression});`);
-  const main = 'Mesh-LLM/skippy/.github/workflows/ci.yml@refs/heads/main';
-  const release = main.replace('ci.yml', 'release.yml');
-  function provider(event_name, { workflow_ref = main, enabled = '', use_depot = false, artifact_scope = '' } = {}) {
-    return evaluateProvider({ workflow_ref, event_name }, { SKIPPY_DEPOT_RUNNERS_ENABLED: enabled }, { use_depot, artifact_scope });
+test('the repository switch moves every hosted job to Depot', () => {
+  const workflows = ['ci', 'ci-images', 'ci-image-builds', 'docs', 'inference', 'llama-upgrade', 'pr-checks', 'release'];
+  for (const name of workflows) {
+    const yaml = readFileSync(join(__dirname, '../workflows', name + '.yml'), 'utf8');
+    const labels = [...yaml.matchAll(/^    runs-on: (.+)\n((?:      .+\n)*)/gm)]
+      .map(([, label, continuation]) => `${label} ${continuation.trim().replaceAll(/\s+/g, ' ')}`.trim());
+    assert.ok(labels.some(label => label.includes('SKIPPY_DEPOT_RUNNERS_ENABLED')), name);
+    for (const label of labels) {
+      if (name === 'llama-upgrade' && label === '${{ matrix.runner }}') continue;
+      assert.match(label, /vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true'.*depot-/, name);
+    }
   }
+});
 
-  for (const event of ['push', 'schedule', 'workflow_dispatch']) {
-    assert.equal(provider(event), 'github', event);
-    assert.equal(provider(event, { enabled: 'true' }), 'depot', event);
+test('ordinary PRs call protected workflows with no cache access or publisher permissions', () => {
+  const workflows = { 'ci-pr': 'ci', 'ci-images-pr': 'ci-image-builds', 'docs-pr': 'docs' };
+  for (const [caller, callee] of Object.entries(workflows)) {
+    const yaml = readFileSync(join(__dirname, '../workflows', caller + '.yml'), 'utf8');
+    assert.ok(yaml.includes(`uses: Mesh-LLM/skippy/.github/workflows/${callee}.yml@main`));
+    assert.match(yaml, /^    cache-mode: none$/m);
+    assert.doesNotMatch(yaml, /runs-on:|secrets:|: write$/m);
+    const reusable = readFileSync(join(__dirname, '../workflows', callee + '.yml'), 'utf8');
+    assert.doesNotMatch(reusable, /^(?:    )+\w+: write$/m);
   }
-  assert.equal(provider('workflow_dispatch', { enabled: 'false', use_depot: true }), 'depot');
-  for (const event of ['pull_request', 'pull_request_target', 'workflow_call']) {
-    assert.equal(provider(event, { enabled: 'true', use_depot: true }), 'github', event);
-  }
-  for (const workflow_ref of [
-    main.replace('heads/main', 'heads/topic'),
-    main.replace('heads/main', 'tags/v1.0.0'),
-    main.replace('ci.yml', 'llama-upgrade.yml'),
-    main.replace('Mesh-LLM', 'fork-owner'),
-  ]) {
-    assert.equal(provider('workflow_dispatch', { workflow_ref, enabled: 'true', use_depot: true }), 'github', workflow_ref);
-  }
-
-  const releaseOptions = { workflow_ref: release, enabled: 'true', artifact_scope: 'release' };
-  for (const event of ['schedule', 'workflow_dispatch']) {
-    assert.equal(provider(event, releaseOptions), 'depot', event);
-    assert.equal(provider(event, { ...releaseOptions, enabled: '', use_depot: true }), 'github', event);
-    assert.equal(provider(event, { ...releaseOptions, artifact_scope: 'ci' }), 'github', event);
-  }
-  assert.equal(provider('pull_request_target', releaseOptions), 'github');
 });
 
 test('host CPU packages install Just on GitHub and Depot runners', () => {
@@ -132,50 +123,27 @@ test('host CPU packages install Just on GitHub and Depot runners', () => {
 });
 
 test('the Depot cache canary is restricted to manual runs on protected main', () => {
-  const seed = workflow.split('\n  depot_cache_seed:\n')[1].split('\n  depot_cache_read:\n')[0];
-  const read = workflow.split('\n  depot_cache_read:\n')[1].split('\n  changes:\n')[0];
-  const admission = seed.match(/if: >-\n([\s\S]+?)\n    runs-on:/)[1];
-  const enabled = new Function('github', 'inputs', `return (${admission});`);
-  const main = 'Mesh-LLM/skippy/.github/workflows/ci.yml@refs/heads/main';
-  assert.equal(enabled({ workflow_ref: main, event_name: 'workflow_dispatch' }, { profile: 'depot-cache' }), true);
-  assert.equal(enabled({ workflow_ref: main, event_name: 'push' }, { profile: 'depot-cache' }), false);
-  assert.equal(enabled({ workflow_ref: main.replace('heads/main', 'heads/topic'), event_name: 'workflow_dispatch' },
-    { profile: 'depot-cache' }), false);
-  assert.equal(enabled({ workflow_ref: main, event_name: 'workflow_dispatch' }, { profile: 'full' }), false);
+  const canary = readFileSync(join(__dirname, '../workflows/depot-cache.yml'), 'utf8');
+  assert.match(canary, /^on:\n  workflow_dispatch:\npermissions: \{\}$/m);
+  assert.match(canary, /github.workflow_ref == 'Mesh-LLM\/skippy\/\.github\/workflows\/depot-cache\.yml@refs\/heads\/main'/);
+  const [seed, read] = canary.split('\n  depot_cache_read:\n');
   assert.match(seed, /^    cache-mode: write$/m);
   assert.match(read, /^    needs: depot_cache_seed$/m);
   assert.match(read, /^    cache-mode: read$/m);
 });
 
-test('Depot compiler image canaries build on protected main without publishing', () => {
+test('manual compiler image smoke can skip publication on either runner provider', () => {
   const images = readFileSync(join(__dirname, '../workflows/ci-images.yml'), 'utf8');
   const repository = 'Mesh-LLM/skippy';
   const ref = 'refs/heads/main';
-  const main = `${repository}/.github/workflows/ci-images.yml@${ref}`;
-  for (const [kind, runners] of [['cpu', ['ubuntu-24.04']], ['gpu', ['ubuntu-24.04', 'ubuntu-24.04-arm']]]) {
-    const build = images.split(`\n  ${kind}-build:\n`)[1].split(`\n  ${kind}-publish:\n`)[0];
+  for (const kind of ['cpu', 'gpu']) {
     const publish = images.split(`\n  ${kind}-publish:\n`)[1];
-    const buildPolicy = build.match(/runs-on: >-\n\s+\$\{\{([\s\S]+?)\}\}/)[1];
     const publishPolicy = publish.match(/if: >-\n([\s\S]+?)\n    runs-on:/)[1];
-    const placement = new Function('github', 'vars', 'inputs', 'matrix', 'format', `return (${buildPolicy});`);
     const publishImage = new Function('github', 'inputs', `return (${publishPolicy});`);
-
-    for (const runner of runners) {
-      function choose(event_name, { enabled = '', use_depot = false, workflow_ref = main } = {}) {
-        return placement({ event_name, workflow_ref }, { SKIPPY_DEPOT_IMAGE_RUNNERS_ENABLED: enabled },
-          { use_depot }, { runner }, (pattern, label) => pattern.replace('{0}', label));
-      }
-      assert.equal(choose('push'), runner);
-      assert.equal(choose('push', { enabled: 'true' }), `depot-${runner}-4`);
-      assert.equal(choose('workflow_dispatch', { use_depot: true }), `depot-${runner}-4`);
-      assert.equal(choose('workflow_dispatch', { workflow_ref: main.replace('heads/main', 'heads/topic'), use_depot: true }), runner);
-      assert.equal(choose('pull_request', { enabled: 'true', use_depot: true }), runner);
-    }
-    assert.equal(publishImage({ repository, ref, event_name: 'workflow_dispatch' }, { use_depot: true }), false);
-    assert.equal(publishImage({ repository, ref, event_name: 'workflow_dispatch' }, { use_depot: false }), true);
+    assert.equal(publishImage({ repository, ref, event_name: 'workflow_dispatch' }, { build_only: true }), false);
+    assert.equal(publishImage({ repository, ref, event_name: 'workflow_dispatch' }, { build_only: false }), true);
     assert.equal(publishImage({ repository, ref, event_name: 'push' }, {}), true);
     assert.equal(publishImage({ repository, ref, event_name: 'pull_request' }, {}), false);
-    assert.doesNotMatch(publish.split(/\n  [\w-]+:\n/)[0], /runs-on: .*depot-/);
   }
 });
 

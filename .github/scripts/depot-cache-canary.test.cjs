@@ -43,7 +43,8 @@ test('a successful reservation or inconclusive response fails the canary', async
 test('never sends credentials to a different service or in the wrong mode', async () => {
   const noRequest = () => assert.fail('request must be skipped');
   await assert.rejects(checkCacheWriteDenied({ ...env, ACTIONS_CACHE_MODE: 'write' }, noRequest), /effective cache-mode/);
-  await assert.rejects(checkCacheWriteDenied({ ...env, DEPOT_CACHE_TOKEN: 'separate-token' }, noRequest), /separate cache token/);
+  await assert.rejects(checkCacheWriteDenied({ ...env, DEPOT_CACHE_TOKEN: 'separate-token' }, noRequest), /separate cache connection/);
+  await assert.rejects(checkCacheWriteDenied({ ...env, SCCACHE_WEBDAV_ENDPOINT: 'https://cache.depot.dev' }, noRequest), /separate cache connection/);
   for (const ACTIONS_RESULTS_URL of [
     'https://results-receiver.actions.githubusercontent.com/',
     'https://cache.depot.dev.example.test/',
