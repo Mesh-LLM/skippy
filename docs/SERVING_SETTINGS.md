@@ -118,15 +118,25 @@ selected after loading. `overrides` contains only explicitly supplied settings.
 
 ## Serve multiple local models
 
-Save this as `serving.toml` to serve two Hugging Face GGUFs on one listener.
+Save this as `serving.toml` to serve two Hugging Face GGUFs locally through one
+listener. Skippy reuses cached weights or downloads them from Hugging Face.
 
 ```toml
 version = 1
+bind_addr = "127.0.0.1:9337" # One listener for both models.
+
+[defaults]
+ctx_size = 4096 # Shared context size in tokens.
 
 [[models]]
+id = "small" # Use this ID in the API request's model field.
 model = "Qwen/Qwen3-0.6B-GGUF:Q8_0"
 
+[models.settings]
+ctx_size = 2048 # Override the context size for small.
+
 [[models]]
+id = "large" # This model inherits the shared context size.
 model = "Qwen/Qwen3-1.7B-GGUF:Q8_0"
 ```
 
@@ -134,26 +144,86 @@ model = "Qwen/Qwen3-1.7B-GGUF:Q8_0"
 skippy serve --settings serving.toml
 ```
 
-Both `[model].model` and `[[models]].model` accept the same inputs as
-`skippy serve --model`. Skippy resolves catalog names and Hugging Face
-references, then reuses cached files or downloads what it needs. To open a
-local GGUF, use `model = "./qwen.gguf"` or `model_path = "qwen.gguf"`.
-Relative paths start in the directory containing the settings file. Choose
-one source key per entry. Existing multi-model files must rename `path` to
-`model_path` and keep `version = 1`.
+Skippy opens the listener after both models load. If a load fails, startup
+stops and Skippy releases any models already opened. From a second terminal,
+list the served IDs and send a chat request to each model.
 
-Skippy loads every model before opening the listener. `GET /v1/models` lists
-the IDs that clients can use in the request's `model` field. By default, the
-ID is the catalog or Hub reference, or the filename stem for a local model.
-Set `id` on an entry to give it an explicit name. All IDs must be unique.
+```sh
+curl -fsS http://127.0.0.1:9337/v1/models
 
-Put common tuning under `[defaults]` and overrides under `[models.settings]`.
-Environment variables and CLI tuning options apply to all entries. The list
-defines the model sources, so use either `[model]` or `[[models]]` and
-omit global source selectors such as `--model` when serving the list. Set the
-listener with top-level `bind_addr` and the shared runtime under `[runtime]`.
-Use `--print-effective-config` to inspect the settings and IDs before native
-model load. Skippy can acquire the model files while preparing the report.
+for model in small large; do
+  curl -fsS http://127.0.0.1:9337/v1/chat/completions \
+    -H 'Content-Type: application/json' \
+    -w '\n' \
+    --data-binary @- <<JSON
+{"model":"$model","messages":[{"role":"user","content":"Reply with OK"}],"max_tokens":64}
+JSON
+done
+```
+
+### Pin each model to a specific GPU
+
+Use a runtime that can see both GPUs. Find two distinct `stable_id` values in
+`device_inventory.physical_gpus` with `visibility` set to `selectable`.
+
+```sh
+skippy doctor --device-inventory --output json
+```
+
+Save this as `serving-gpus.toml` and replace the GPU ID placeholders with those
+values.
+
+```toml
+version = 1
+bind_addr = "127.0.0.1:9337" # One listener for both models.
+
+[defaults]
+ctx_size = 4096   # Shared context size in tokens.
+n_gpu_layers = -1 # Offload all supported layers to each model's GPU.
+
+[[models]]
+id = "small"
+model = "Qwen/Qwen3-0.6B-GGUF:Q8_0"
+
+[models.settings]
+gpu_id = "FIRST_GPU_STABLE_ID" # Pin small to the first GPU.
+ctx_size = 2048                # Override the context size for small.
+
+[[models]]
+id = "large"
+model = "Qwen/Qwen3-1.7B-GGUF:Q8_0"
+
+[models.settings]
+gpu_id = "SECOND_GPU_STABLE_ID" # Pin large to the second GPU.
+```
+
+Stop the first server before reusing the address. Skippy checks each model's
+estimated memory against its chosen GPU's capacity before loading. Use the same
+API requests to call the two models.
+
+```sh
+skippy serve --settings serving-gpus.toml
+```
+
+### Multi-model settings
+
+Each entry takes exactly one source. Both `[model].model` and `[[models]].model`
+accept the same catalog names, Hugging Face references, and local paths as
+`skippy serve --model`. For a local GGUF, either `model` or `model_path` accepts
+the path. Relative paths resolve from the settings file. In an existing
+multi-model file, rename `path` to `model_path` and keep `version = 1`.
+
+All served IDs must be unique. If you omit `id`, Skippy uses the catalog or Hub
+reference, or the filename stem for a local GGUF.
+
+Put shared tuning under `[defaults]` and per-model overrides under
+`[models.settings]`. Environment variables and CLI tuning options override the
+same setting for every model. Specify sources in `[[models]]` when serving a
+list and omit global selectors such as `[model]` and `--model`. Set the listener
+with top-level `bind_addr` and the shared runtime under `[runtime]`. Use
+`--print-effective-config` to inspect each model's resolved settings and ID
+before native model loading. Skippy can acquire model files while preparing the
+report.
 
 ## Model residency
 
