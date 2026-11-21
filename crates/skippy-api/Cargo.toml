@@ -16,7 +16,7 @@ dynamic-native-runtime = ["skippy-runtime/dynamic-native-runtime", "skippy-servi
 skippy-topology = { path = "../skippy-topology", version = "0.80.0" }
 skippy-coordinator = { path = "../skippy-coordinator", version = "0.80.0" }
 reqwest = { version = "0.13", features = ["json"] }
-tokio = { version = "1", features = ["rt"] }
+tokio = { version = "1", features = ["net", "rt"] }
 skippy-config = { path = "../skippy-config", version = "0.80.0" }
 skippy-cache = { path = "../skippy-cache", version = "0.80.0" }
 skippy-serving = { path = "../skippy-serving", version = "0.80.0" }
@@ -45,6 +45,7 @@ same-file = "1.0.6"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
+async-trait = "0.1"
 futures-util = "0.3"
 tokio = { version = "1", features = ["macros", "rt", "net", "io-util"] }
 tempfile = "3"

@@ -34,8 +34,8 @@ Use snake_case option names in TOML, under the section shown below. CLI-only
 `version = 1` is optional and identifies the current file format.
 
 Paths in the file are relative to its directory. Model repository references
-remain repository references; explicit local paths and `.gguf` filenames are
-resolved relative to the settings file. The CLI keeps paths relative to the
+stay intact. Explicit relative paths and bare `.gguf` filenames resolve from
+the settings file. The CLI keeps paths relative to the
 working directory. `runtime_bundle` accepts an array of directories.
 
 JSON-valued CLI options accept inline JSON or `@file.json`. In TOML, use native
@@ -115,6 +115,45 @@ backend capability checks and package request profiles can resolve later.
 The `options` map includes CLI defaults; `null` marks an automatic or omitted
 operator value whose resolved behavior is represented by the stage/frontend or
 selected after loading. `overrides` contains only explicitly supplied settings.
+
+## Serve multiple local models
+
+Save this as `serving.toml` to serve two Hugging Face GGUFs on one listener.
+
+```toml
+version = 1
+
+[[models]]
+model = "Qwen/Qwen3-0.6B-GGUF:Q8_0"
+
+[[models]]
+model = "Qwen/Qwen3-1.7B-GGUF:Q8_0"
+```
+
+```sh
+skippy serve --settings serving.toml
+```
+
+Both `[model].model` and `[[models]].model` accept the same inputs as
+`skippy serve --model`. Skippy resolves catalog names and Hugging Face
+references, then reuses cached files or downloads what it needs. To open a
+local GGUF, use `model = "./qwen.gguf"` or `model_path = "qwen.gguf"`.
+Relative paths start in the directory containing the settings file. Choose
+one source key per entry. Existing multi-model files must rename `path` to
+`model_path` and keep `version = 1`.
+
+Skippy loads every model before opening the listener. `GET /v1/models` lists
+the IDs that clients can use in the request's `model` field. By default, the
+ID is the catalog or Hub reference, or the filename stem for a local model.
+Set `id` on an entry to give it an explicit name. All IDs must be unique.
+
+Put common tuning under `[defaults]` and overrides under `[models.settings]`.
+Environment variables and CLI tuning options apply to all entries. The list
+defines the model sources, so use either `[model]` or `[[models]]` and
+omit global source selectors such as `--model` when serving the list. Set the
+listener with top-level `bind_addr` and the shared runtime under `[runtime]`.
+Use `--print-effective-config` to inspect the settings and IDs before native
+model load. Skippy can acquire the model files while preparing the report.
 
 ## Mode and resource constraints
 

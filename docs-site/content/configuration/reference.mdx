@@ -17,10 +17,22 @@ controls supported by a measurement or deployment requirement.
 
 | TOML key | Purpose |
 | --- | --- |
-| `model`, `model_path` | Select a catalog, Hugging Face, or local source |
-| `model_id` | Set the public model identifier where supported |
+| `model` | Select a catalog name, Hugging Face reference, or local GGUF |
+| `model_path` | Select a local GGUF path explicitly |
 | `mmproj` | Select a multimodal projector |
 | `mmap`, `mlock` | Control model weight mapping and page locking |
+
+## `[[models]]`
+
+Each entry accepts one source. Use the [multi-model example](/configuration/#serve-multiple-local-models)
+to configure the shared listener.
+
+| TOML key | Purpose |
+| --- | --- |
+| `model` | Resolve a source using the same rules as `[model].model` and `--model` |
+| `model_path` | Open a local GGUF path explicitly |
+| `id` | Override the public model ID for this entry |
+| `settings` | Override the per-model controls in `[defaults]` |
 
 ## `[execution]`
 
@@ -98,7 +110,8 @@ Multimodal projector and request media limits. Model loading uses `mmproj` in
 ## `[api]`
 
 Public bind address, response limits, compatibility guardrails, prompt mode,
-and context compaction. Common controls include `bind_addr`,
+and context compaction. Use `model_id` to override the public ID for one model.
+Common controls include `bind_addr`,
 `default_max_tokens`, `guardrails`, `compact`, `compact_trigger_percent`, and
 `compact_target_percent`.
 

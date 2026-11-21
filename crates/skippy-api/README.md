@@ -176,3 +176,16 @@ let package = acquisition.resolve_and_inspect_package(
 Use `CacheOnly` for offline resolution. `AllowUpstream` fetches missing metadata and resolves a mutable revision upstream once when its cached manifest declares schema 1. A full Hub commit pin stays fixed. `PackageInspectionError::UnsupportedSchema` reports the schema and whether it came from a local package, the cache, or upstream. Missing offline Hub metadata produces `MetadataNotCached`. Malformed manifests and integrity failures surface as errors.
 
 Use `package.package_dir` for graph planning and `package.package_id` for exact stage admission. Carry `package.identity.manifest_sha256` with the stage load and pass `package.identity.package_ref` to `resolve_package_v2_stage_to_local`. For Hub packages this reference contains the verified snapshot’s full commit hash, so later stage acquisition uses the same snapshot when a branch moves. Inspection verifies the manifest and carrier. Stage acquisition fetches and verifies the required layer artifacts after admission.
+
+### Several local models on one listener
+
+Build a `serving::multi_model::LocalModelDefinition` for each served ID and
+load request, then call `MultiModelServer::load`. Duplicate IDs fail before
+load. A failed eager load releases already loaded models and leaves the
+listener unopened. Call `backend` for in-process inference or `serve` with a
+bound listener. Requests route to the exact ID and retain that model through
+stream completion. Supply a single public-listener policy when using HTTP
+exchange admission hooks. Model-specific execution hooks remain on each load
+request.
+
+For a standalone server, see the [multi-model serving settings](../../docs/SERVING_SETTINGS.md#serve-multiple-local-models).

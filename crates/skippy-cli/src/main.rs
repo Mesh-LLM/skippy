@@ -5,6 +5,8 @@ mod disk_cache;
 mod gpu_benchmark;
 mod local_model;
 mod local_resource_planning;
+mod model_source;
+mod multi_model;
 mod native_logging;
 mod runtime;
 mod serve;

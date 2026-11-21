@@ -103,15 +103,14 @@ pub enum StageTransport {
 
 #[derive(Parser)]
 pub struct ServeCommandArgs {
-    /// Complete serving settings file (TOML); CLI overrides environment and file values.
+    /// Serving settings (TOML) for one model or a list of local models.
     #[arg(long)]
     pub settings: Option<PathBuf>,
+    #[arg(skip)]
+    pub local_models: Vec<ServeOpenAiArgs>,
     /// Print resolved settings and their sources without starting the server.
     #[arg(long)]
     pub print_effective_config: bool,
-    /// Local model path or Hugging Face repository reference.
-    #[arg(long, conflicts_with_all = ["model_path", "config"])]
-    pub model: Option<String>,
     /// Open an interactive prompt after the public API is ready.
     #[arg(long)]
     pub prompt: bool,
@@ -251,6 +250,9 @@ pub struct ServeBinaryArgs {
 pub struct ServeOpenAiArgs {
     #[arg(skip)]
     pub settings: crate::serve_settings::ServeSettings,
+    /// Local model path or Hugging Face repository reference.
+    #[arg(long, conflicts_with_all = ["model_path", "config"])]
+    pub model: Option<String>,
     /// Prepared stage configuration; mutually exclusive with --model-path and --model.
     #[arg(long, conflicts_with = "model_path")]
     pub config: Option<PathBuf>,
@@ -678,7 +680,7 @@ mod tests {
         let Command::Serve(args) = cli.command else {
             panic!("expected serve command");
         };
-        assert_eq!(args.model.as_deref(), Some("Qwen3-0.6B-Q4_K_M"));
+        assert_eq!(args.public.model.as_deref(), Some("Qwen3-0.6B-Q4_K_M"));
         assert_eq!(args.public.ctx_size, Some(8192));
         assert_eq!(args.public.n_gpu_layers, Some(-1));
         assert!(args.prompt);

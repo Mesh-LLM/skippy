@@ -24,6 +24,10 @@ skippy serve --model /models/qwen3-8b-q4_k_m.gguf
 Remote GGUF files resolve to an immutable revision and are cached before
 loading. Serving the same exact reference reuses the Hugging Face cache.
 
+To serve several local models on one listener, put them in a single
+[serving settings file](/configuration/#serve-multiple-local-models) and run
+`skippy serve --settings serving.toml`.
+
 ## Migrate a SafeTensors checkpoint
 
 Skippy serves GGUF models only. If you have a SafeTensors checkpoint, choose

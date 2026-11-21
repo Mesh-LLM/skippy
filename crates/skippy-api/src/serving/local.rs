@@ -152,7 +152,8 @@ impl LocalOpenAiOptions {
         Ok(openai)
     }
 
-    fn into_request(self) -> Result<(SocketAddr, ModelLoadRequest)> {
+    /// Resolve local options to a load request without opening the native model.
+    pub fn into_request(self) -> Result<(SocketAddr, ModelLoadRequest)> {
         let openai = self.resolved_openai_options()?;
         let native_mtp_enabled = openai.native_mtp_enabled;
         let mtp_source = if native_mtp_enabled {
