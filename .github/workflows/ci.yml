@@ -48,6 +48,7 @@ on:
       - '.github/path-filters.yml'
       - '.github/workflows/ci.yml'
       - '.github/workflows/inference.yml'
+      - '.github/workflows/llama-upgrade.yml'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'rust-toolchain.toml'
