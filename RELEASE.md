@@ -1,25 +1,26 @@
 # Releasing Skippy
 
-Releases are private GitHub releases in `general-inference/skippy`. Prepare the
-production workspace version in a normal reviewed PR. Once its CI passes and
-it is merged, tag that exact commit with the matching version:
+Releases are private GitHub releases in `general-inference/skippy`, produced by
+the **Release** workflow from `main`. The workflow writes the version commit
+itself, so no version PR or hand-made tag is needed.
 
-```sh
-git switch main
-git pull --ff-only
-git tag -a v1.2.3 -m 'Skippy v1.2.3'
-git push origin refs/tags/v1.2.3
-```
+A release runs every day at 17:00 UTC with the next patch version: the patch
+after the newest `vX.Y.*` tag for the workspace's `X.Y`. A day on which `main`
+has no commits since its last release publishes nothing. To start a new `X.Y`
+series, for example when the native ABI or another compatibility contract
+changes, merge a PR that sets the workspace version to `X.Y.0`; the next release
+uses that version unchanged.
 
-Use the actual committed version; the example above is illustrative. A
-prerelease version such as `v1.2.3-rc.1` creates a prerelease. Protect the version
-tag namespace from movement/deletion and restrict tag creation. The workflow
-never changes versions or pushes source. Tags created with an ordinary workflow
-`GITHUB_TOKEN` do not trigger another push workflow; use a maintainer or a scoped
-App if tag creation is automated.
+Dispatch by hand with `just release vX.Y.Z` for a chosen version, or
+`just release vX.Y.Z true` for a canary that publishes nothing. A prerelease
+version such as `v1.2.3-rc.1` creates a prerelease. Keep the version tag
+namespace protected from movement and deletion.
 
-`release.yml` checks the tag against the committed Cargo version and main
-ancestry, then calls the same `ci.yml` used by PRs and main in release CUDA
+The workspace version is also the native runtime release identity and cache
+directory. Every release therefore makes hosts download its runtime, and changed
+runtime contents can never ship under an earlier release's identity.
+
+`release.yml` stages the version commit, then calls the same `ci.yml` used by PRs and main in release CUDA
 architecture mode. It requires all three enabled hosts and eight complete
 bundles. Windows targets remain declared but disabled until infrastructure is
 available:
@@ -35,8 +36,14 @@ native runtime under `native-runtimes/`, licenses and provenance. SHA-256 sideca
 and `release.json` bind the complete roster and source. Native manifests include
 ABI and llama recipe identities. CUDA release products compile and advertise the
 complete architecture lists from `ci/targets.json`; release preparation rejects
-native-only CUDA products. Only Skippy-owned `skippy-*` assets are published. No
-public registry or package-manager publication happens as a side effect.
+native-only CUDA products.
+
+The release also publishes `native-runtimes.json`, the catalog a host reads to
+download a runtime (`skippy runtime install`, and products that embed Skippy).
+Each entry names one of the release archives and its SHA-256, and `release.json`
+binds the catalog. Only the `skippy-*` archives, the catalog, `release.json` and
+their checksums are published. No public registry or package-manager publication
+happens as a side effect.
 
 The publisher uploads to a source-bound draft, downloads every asset, checks all
 hashes and the exact roster, then publishes. A partial draft may be resumed only

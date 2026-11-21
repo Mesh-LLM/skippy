@@ -35,13 +35,13 @@ manifests/lockfiles, and any `Justfile` edit still count as changes to those fil
 Separate test files/directories and standalone tools are excluded from GPU
 qualification; `.gi/templates.yaml` is exact and `.gi/agents/**` is excluded.
 
-Code paths select formatting, Clippy, FFI, Rust and C++ tests, and CI
-automation tests. CI reads PR path rules from the base commit. PRs matching the
-inference filter also require Linux x64 CUDA 13 and macOS ARM64 Metal packages to
-build and serve a short inference request on real hardware. Both jobs wait for
-applicable code and automation checks. Docs-only and metadata-only PRs do not
-start CI. The CI result gate rejects missing, failed or unexpectedly skipped
-results.
+Code paths select Quality canary, which runs CI automation tests before
+formatting, Clippy, FFI, and Rust and C++ tests. CI reads PR path rules from the
+base commit. PRs matching the inference filter also require Linux x64 CUDA 13 and
+macOS ARM64 Metal packages to build and serve a short inference request on real
+hardware. Both jobs wait for Quality canary when code checks apply. Docs-only
+and metadata-only PRs do not start CI. The CI result gate rejects missing,
+failed or unexpectedly skipped results.
 
 The `kv` filter also selects the Metal and Linux x64 CUDA 13 package jobs for KV
 changes in PRs and main pushes. PRs use the base revision's filter. Pushes use
@@ -50,9 +50,13 @@ fixture for cold and warm output, L1 reuse, and L3 restoration in a fresh
 process. See the [KV correctness gate](../docs/CACHE_CORRECTNESS_GATE.md).
 
 The protected inference workflow uses native `pull_request_target` path filters
-for the same inference inputs. Relevant PRs retain same-repository/collaborator
-admission, a fresh-head check and all seven GPU smoke configurations.
-The credentialed controller runs only protected source.
+for the same inference inputs. PR qualification is manual: it runs only when
+the PR carries the `qualify` label, and the workflow still triggers on path
+matches so the intentionally skipped run satisfies the `PR checks` aggregate.
+Manual qualification may queue behind another PR's atomic Spark pair; the PR
+budget waits for placement instead of failing fast. Relevant PRs retain
+same-repository/collaborator admission, a fresh-head check and all seven GPU
+smoke configurations. The credentialed controller runs only protected source.
 Python admission verifies trust and source identity.
 The syntax/dependency classifier and offline replay command have been removed.
 The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
@@ -115,9 +119,9 @@ logs and patch reports.
 `main`. It installs the lockfile, builds Nextra, generates the Pagefind index
 and retains `docs-site/out`. The protected PR aggregate waits for this workflow
 on docs-only and mixed PRs. Only the main push deploys to `beta.skippy.sh`.
-The tagged release calls the workflow to create the `release-docs-site` artifact.
+Release validation calls the workflow to create the `release-docs-site` artifact.
 
-For a version tag, the release workflow downloads that exact
+The release workflow downloads that exact
 `release-docs-site` artifact after validation and GitHub release publication,
 then deploys it to `skippy.sh` with `just docs-publish`. The publication job
 does not rebuild the site. It installs the lockfile-pinned `cf` CLI and exposes
@@ -128,7 +132,7 @@ secret. Create it from Cloudflare's **Edit Cloudflare Workers** token template
 and scope it to the account that owns the `skippy-docs`, `skippy-docs-beta`,
 `skippy.sh` and `beta.skippy.sh` resources. The workflow maps it to the
 `CLOUDFLARE_API_TOKEN` environment variable expected by `cf` only in the
-protected-main beta deploy step and the tagged-release production deploy step.
+protected-main beta deploy step and the release production deploy step.
 Pull requests, documentation builds and shared release validation do not
 receive this secret.
 
@@ -220,6 +224,14 @@ are selected from the admitted checkout. Cache paths exclude native build trees,
 packages and qualification evidence. Dependency downloads are separate from
 compiled outputs, and the GitHub-backed sccache is not redundantly archived as a
 local disk cache.
+
+Jobs that initialize the shared compiler cache send Cargo and CMake C/C++
+compilation through sccache. Pushes, scheduled runs, and manual runs on protected
+`main` warm the GitHub compiler cache when they build the triggering commit. PRs
+and other builds can read compatible entries. The job log shows the access mode.
+sccache 0.19.0 counts writes skipped in read-only mode as write errors. Quality
+canary records cumulative statistics after lint and again after tests, including
+JSON counters in its evidence artifact.
 
 Native jobs separately cache prepared llama.cpp sources by upstream pin, complete
 ordered patch queues and preparation recipe, and whisper.cpp sources by their
@@ -334,6 +346,45 @@ metadata. Product provenance hashes the complete file roster. Actions artifacts
 are same-run transfer inputs, never cross-run cache authority. CI has no
 publication or signing secrets.
 
+## Cut a release
+
+The **Release** workflow runs daily at 17:00 UTC with the next patch version and
+skips a `main` that is already released; see [RELEASE.md](../RELEASE.md). For a
+chosen version run `just release vX.Y.Z`, or dispatch **Release** from `main` in
+GitHub Actions. For a rehearsal, run `just release vX.Y.Z true`. The canary stages a
+temporary candidate and runs the full package, device, inference and docs
+matrix. It leaves `main`, version tags, GitHub releases and deployed docs
+untouched.
+
+The workflow creates one version commit from the dispatched main SHA. The
+commit updates workspace crate versions, internal path dependency pins and
+`Cargo.lock`. The candidate ref under `release-candidates/` lets native
+runners fetch the same SHA as hosted builds. The full matrix produces the
+release manifest before the publisher receives any credentials.
+
+Set up a repository-scoped release GitHub App with Contents write permission
+and authorize it to fast-forward protected `main`. Configure the `release`
+environment to accept deployments from `main`, with `SKIPPY_RELEASE_APP_ID` as
+a variable and `SKIPPY_RELEASE_APP_PRIVATE_KEY` as a secret. The temporary
+candidate namespace must be writable by the repository Actions token. Keep
+the release tag deletion and non-fast-forward protections in place.
+
+Without `SKIPPY_RELEASE_APP_ID` the publisher uses the built-in Actions token,
+which cannot push to protected `main`. It then creates the tag only: the release
+is the version commit one commit ahead of `main`, and `main` keeps its version.
+
+With the App configured and once the candidate passes, the publisher advances `main` and creates the new
+tag in one atomic push, then publishes the verified archives and deploys the
+prebuilt docs. Main CI reuses the protected Release run's validation receipt
+for that exact commit. An ordinary push without a matching receipt runs
+ordinary CI.
+
+If `main` moves before promotion, dispatch again from the new `main`. If
+publication fails after promotion, rerun the failed jobs in the original run
+while its artifacts remain available. This reuses the same commit, tag and
+archives. Completed runs remove their temporary refs. Failed runs retain
+theirs for retry and diagnosis.
+
 ## Llama upgrades
 
 `llama-upgrade.yml` runs from protected main. The controller resolves a release
@@ -362,8 +413,9 @@ and label are fixture compatibility data, not a downstream product dependency.
 ## Bring-up evidence
 
 Before requiring CI, execute a complete PR and main run and prove the summary
-rejects a failed row. Then exercise a prerelease tag, verify all enabled bundles,
-private authenticated downloads, clean installation and CPU/Metal/CUDA serving.
+rejects a failed row. Then exercise a canary and a dispatched prerelease. Verify
+all enabled bundles, private authenticated downloads, clean installation and
+CPU/Metal/CUDA serving.
 Exercise partial draft upload recovery and published-release overwrite refusal.
 Only after source regeneration, both full candidate passes and exact-commit PR
 publication work should the llama schedule be enabled.

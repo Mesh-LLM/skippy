@@ -93,6 +93,27 @@ format:
     @cargo fmt --all
     @cargo fmt --manifest-path skippy-api-rs/Cargo.toml --all
 
+embedding-contract-check:
+    @cargo fmt -p skippy-api -p skippy-inference-api -p skippy-serving --check
+    @cargo check --locked --offline -p skippy-api -p skippy-inference-api -p skippy-serving --features skippy-api/dynamic-native-runtime
+    @cargo clippy --locked --offline -p skippy-api -p skippy-inference-api -p skippy-serving --features skippy-api/dynamic-native-runtime --all-targets -- -D warnings
+    @cargo test --locked --offline -p skippy-api -p skippy-inference-api --features skippy-api/dynamic-native-runtime
+    @cargo test --locked --offline -p skippy-serving --features dynamic-native-runtime --lib embedded::tests
+    @cargo test --locked --offline -p skippy-serving --features dynamic-native-runtime --lib readiness::tests
+    @python3 scripts/embedding-consumer.py check
+
+[positional-arguments]
+embedding-serving-test bundle_root:
+    @SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR="$1" cargo test --locked --offline -p skippy-serving --features dynamic-native-runtime
+
+[positional-arguments]
+embedding-consumer-check *args:
+    @python3 scripts/embedding-consumer.py check "$@"
+
+[positional-arguments]
+embedding-consumer-qualify *args:
+    @python3 scripts/embedding-consumer.py qualify "$@"
+
 lint: llama-prepare
     @cargo fmt --all --check
     @cargo clippy --workspace --all-targets -- -D warnings
@@ -138,6 +159,23 @@ llama-prepare:
 
 llama-build: llama-prepare
     @scripts/build-llama.sh
+
+# Includes placement, released-page compaction, sampling-pool, and row-list
+# operator regressions. Accelerator qualification selects its backend explicitly.
+native-full-replay backend="cpu": llama-prepare
+    @LLAMA_STAGE_BACKEND="{{ backend }}" LLAMA_STAGE_FULL_REPLAY=ON scripts/build-llama.sh
+
+cache-reuse-smoke base_url model prompt_file output wave="4":
+    @cargo run --locked -p skippy-correctness -- open-ai-cache-reuse --base-url "{{ base_url }}" --model "{{ model }}" --prompt-file "{{ prompt_file }}" --wave "{{ wave }}" > "{{ output }}"
+
+kv-matrix-build native_lib_dir: llama-prepare
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source_dir="$(cd "{{ llama_dir }}" && pwd)"
+    cmake -S evals/kv-validation/native -B target/kv-validation -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release -DNATIVE_SOURCE="$source_dir" \
+      -DNATIVE_LIB_DIR="{{ native_lib_dir }}"
+    cmake --build target/kv-validation --parallel
 
 skippy-ffi-bindgen-check: llama-prepare
     @SKIPPY_FFI_BINDGEN=check SKIPPY_FFI_BINDGEN_SELFTEST=1 cargo check -p skippy-ffi
@@ -185,6 +223,7 @@ inference-contracts:
 
 automation-contracts: inference-contracts
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/automation_contracts.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/release_contracts.py
 
 [positional-arguments]
 inference-dispatch profile source output="target/ci-evidence/inference" *configuration:
@@ -308,12 +347,28 @@ ci-extract-runtime runtime product_dir output:
 ci: lint test llama-check
 
 [positional-arguments]
+release version canary="false":
+    @bash scripts/release-dispatch.sh "$@"
+
+[positional-arguments]
+release-version tag:
+    @"{{ automation_python }}" scripts/ci-release.py bump "$@"
+
+[positional-arguments]
+release-candidate *args:
+    @"{{ automation_python }}" scripts/ci-release-candidate.py "$@"
+
+[positional-arguments]
 check-release tag:
     @"{{ automation_python }}" scripts/ci-release.py validate "$@"
 
 [positional-arguments]
 release-prepare tag input_dir:
     @"{{ automation_python }}" scripts/ci-release.py prepare "$@"
+
+[positional-arguments]
+release-prepare-candidate tag input_dir:
+    @"{{ automation_python }}" scripts/ci-release.py prepare-candidate "$@"
 
 [positional-arguments]
 release-verify directory="dist/release":

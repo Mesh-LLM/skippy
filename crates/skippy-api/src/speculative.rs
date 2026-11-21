@@ -1,7 +1,21 @@
 //! Automatic draft discovery and conservative pairing shared by serving products.
 use crate::serving::InferenceOptions;
-use skippy_model_artifact::gguf::scan_gguf_compact_meta;
+use skippy_model_artifact::gguf::{GgufCompactMeta, scan_gguf_compact_meta};
 use std::path::{Path, PathBuf};
+
+mod acquisition;
+mod catalog;
+mod pairing;
+
+pub use acquisition::{DraftAcquisition, DraftPreparationError, PreparedDraft};
+pub use catalog::{
+    DFLASH_PAIRING_INDEX_REPO, DFLASH_PAIRING_INDEX_SHA256, DraftCatalog, DraftIndexStatus,
+};
+pub use hf_hub::progress as download_progress;
+pub use pairing::{
+    DraftBackend, DraftOverride, DraftPlan, DraftProvenance, DraftSource, DraftTarget,
+    DraftUnavailable,
+};
 
 /// Apply automatic draft selection only when the caller has no explicit plan.
 /// An incompatible sibling disables speculation, matching the warn-disable policy.
@@ -24,6 +38,7 @@ pub fn apply_auto_speculation(options: &mut InferenceOptions, model_path: &Path)
         options.draft_model_path = Some(draft);
         options.speculative_window = skippy_config::local_serving::DRAFT_MODEL_TOKENS;
         options.adaptive_speculative_window = true;
+        options.speculative.effective_strategy = "draft-model".into();
     }
 }
 
@@ -78,15 +93,19 @@ pub fn is_dflash_draft(path: &Path) -> bool {
     model_architecture_from_path(path).as_deref() == Some("dflash")
 }
 
-fn model_architecture_from_path(path: &Path) -> Option<String> {
+/// Read model metadata from a GGUF file or an acquired layer package.
+pub fn scan_model_metadata(path: &Path) -> Option<GgufCompactMeta> {
     scan_gguf_compact_meta(path)
         .or_else(|| scan_gguf_compact_meta(&path.join("shared/metadata.gguf")))
-        .map(|meta| {
-            meta.architecture
-                .trim()
-                .to_ascii_lowercase()
-                .replace('-', "_")
-        })
+}
+
+fn normalize_architecture(architecture: &str) -> String {
+    architecture.trim().to_ascii_lowercase().replace('-', "_")
+}
+
+fn model_architecture_from_path(path: &Path) -> Option<String> {
+    scan_model_metadata(path)
+        .map(|meta| normalize_architecture(&meta.architecture))
         .filter(|architecture| !architecture.is_empty())
 }
 

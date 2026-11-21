@@ -1,6 +1,6 @@
 # skippy-commands
 
-Skippy command execution and output formatting. This crate owns the `models` argument contract, model discovery and variant selection, human-readable tables, JSON schemas, cache maintenance, and package-job commands used by `skippy models`. Embedding applications can supply console destinations and detected memory budgets.
+Skippy command execution and output formatting. This crate owns the `models` argument contract, human-readable tables, command hints, JSON presentation, cache maintenance, and package-job commands used by `skippy models`. Model discovery, remote details, and variant selection live in `skippy-model-hf`. Startup source policy lives in `skippy-model-resolver`. Embedding applications can supply console destinations and detected memory budgets.
 
 `models` resolves Hub references, downloads verified artifacts with size/SHA-256 verification and manages the local model cache. `runtime` lists, installs from explicit catalogs, imports and migrates native runtime caches. `split` plans and admits direct GGUF splits against the release-bound certification roster, publishing stage configs and admission descriptors only after every stage is admitted. `console` installs the standalone diagnostics sink and writes JSON documents.
 

@@ -1,8 +1,10 @@
 # Skippy
 
-Skippy is a standalone model server for local and distributed staged inference.
-It owns model management, native runtimes, layer-package execution, scheduling,
-and OpenAI-compatible serving. This repository contains no MeshLLM product code.
+Skippy is an AI inference engine for local and distributed workloads. It is the inference engine that powers Mesh LLM.
+
+Built on llama.cpp, Skippy adds production-focused model and runtime management, OpenAI- and Anthropic-compatible APIs, explicit pipeline parallelism, multi-tier KV caching, memory-aware scheduling, and hardware-specific optimizations.
+
+Skippy supports CPU inference and GPU acceleration through Metal, CUDA, ROCm, and Vulkan. Run it on a single machine or divide one verified model across an ordered set of workers. A single CLI and configuration model takes you from local inference to multi-machine serving.
 
 ## Build and run
 
@@ -24,15 +26,6 @@ A typical local invocation is:
 See the [CLI guide](crates/skippy-cli/README.md) for runtime management, model
 downloads, single-model serving, and explicit split-worker commands. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow.
-
-## Sponsors
-
-Skippy is developed and sponsored by
-[General Inference](https://generalinference.xyz).
-
-<a href="https://generalinference.xyz">
-  <img src="docs-site/public/general-inference-logo.png" alt="General Inference" width="360">
-</a>
 
 ## Source layout
 
@@ -68,3 +61,12 @@ shared HTTP surface in
 The repository was extracted with filtered Git history from the original
 workspace. Its native ABI and selected compatibility field names remain stable
 where changing them would invalidate existing packages or clients.
+
+## Health
+
+[![CI](https://github.com/general-inference/skippy/actions/workflows/ci.yml/badge.svg)](https://github.com/general-inference/skippy/actions/workflows/ci.yml)
+[![Inference qualification](https://github.com/general-inference/skippy/actions/workflows/inference.yml/badge.svg?event=schedule)](https://github.com/general-inference/skippy/actions/workflows/inference.yml)
+[![Release](https://github.com/general-inference/skippy/actions/workflows/release.yml/badge.svg)](https://github.com/general-inference/skippy/actions/workflows/release.yml)
+[![Documentation](https://github.com/general-inference/skippy/actions/workflows/docs.yml/badge.svg)](https://github.com/general-inference/skippy/actions/workflows/docs.yml)
+[![Llama upgrade](https://github.com/general-inference/skippy/actions/workflows/llama-upgrade.yml/badge.svg)](https://github.com/general-inference/skippy/actions/workflows/llama-upgrade.yml)
+[![CI images](https://github.com/general-inference/skippy/actions/workflows/ci-images.yml/badge.svg)](https://github.com/general-inference/skippy/actions/workflows/ci-images.yml)

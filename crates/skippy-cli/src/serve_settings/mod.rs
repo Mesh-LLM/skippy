@@ -1,6 +1,7 @@
 //! Complete standalone serving settings: CLI > environment > TOML > defaults.
 
 mod catalog;
+mod multi_model;
 mod report;
 mod resolution;
 #[cfg(test)]
@@ -98,7 +99,7 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Cli> {
     parse_with_environment(args, |name| std::env::var(name).ok())
 }
 
-fn parse_with_environment(
+pub(crate) fn parse_with_environment(
     args: impl IntoIterator<Item = OsString>,
     environment: impl Fn(&str) -> Option<String>,
 ) -> Result<Cli> {
@@ -108,14 +109,39 @@ fn parse_with_environment(
         return Ok(Cli::from_arg_matches(&matches)?);
     };
     let mut settings = ServeSettings::default();
+    let mut models = None;
     if let Some(path) = serve.get_one::<std::path::PathBuf>("settings") {
-        settings.load_file(path, &command)?;
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("read serving settings {}", path.display()))?;
+        let table: toml::Table = toml::from_str(&content)
+            .with_context(|| format!("parse serving settings {}", path.display()))?;
+        if table.contains_key("models") {
+            models = Some(multi_model::SettingsFile::parse(
+                path,
+                table,
+                &command,
+                &mut settings,
+            )?);
+        } else {
+            settings.load_file(path, table, &command)?;
+        }
     }
     settings.load_environment(&command, environment)?;
     settings.load_cli(&matches, &command)?;
+    let local_models = models
+        .map(|file| file.resolve(&command, &settings))
+        .transpose()?;
+    let mut cli = resolve(&command, settings)?;
+    if let (Command::Serve(args), Some(models)) = (&mut cli.command, local_models) {
+        args.local_models = models;
+    }
+    Ok(cli)
+}
+
+fn resolve(command: &clap::Command, settings: ServeSettings) -> Result<Cli> {
     let mut argv = vec![OsString::from("skippy"), OsString::from("serve")];
     settings.append_arguments(&mut argv)?;
-    let resolved = command.try_get_matches_from(argv)?;
+    let resolved = command.clone().try_get_matches_from(argv)?;
     let mut cli = Cli::from_arg_matches(&resolved)?;
     if let Command::Serve(args) = &mut cli.command {
         args.public.settings = settings;
@@ -140,12 +166,13 @@ impl ServeSettings {
         Ok(())
     }
 
-    fn load_file(&mut self, path: &Path, command: &clap::Command) -> Result<()> {
-        let content = std::fs::read_to_string(path)
-            .with_context(|| format!("read serving settings {}", path.display()))?;
-        let value: toml::Value = toml::from_str(&content)
-            .with_context(|| format!("parse serving settings {}", path.display()))?;
-        let object = serde_json::to_value(value)?;
+    fn load_file(
+        &mut self,
+        path: &Path,
+        table: toml::Table,
+        command: &clap::Command,
+    ) -> Result<()> {
+        let object = serde_json::to_value(table)?;
         let object = object
             .as_object()
             .context("serving settings must be a table")?;
@@ -356,15 +383,19 @@ fn file_value(name: &str, value: Value, directory: &Path) -> Result<Value> {
     let Some(text) = value.as_str() else {
         return Ok(value);
     };
-    if name == "model"
-        && (text.starts_with("./")
-            || text.starts_with("../")
-            || text.ends_with(".gguf")
-            || directory.join(text).exists())
-    {
-        return Ok(Value::String(
-            directory.join(text).to_string_lossy().into_owned(),
-        ));
+    if name == "model" {
+        let path = Path::new(text);
+        let relative = directory.join(path);
+        // Bare GGUF names and explicit relative paths are local. Hub
+        // selectors can also end in .gguf, so keep those references intact.
+        if !path.is_absolute()
+            && (path.starts_with(".")
+                || path.starts_with("..")
+                || (path.file_name() == Some(path.as_os_str()) && text.ends_with(".gguf"))
+                || relative.exists())
+        {
+            return Ok(Value::String(relative.to_string_lossy().into_owned()));
+        }
     }
     if is_path(name) && !Path::new(text).is_absolute() {
         return Ok(Value::String(
@@ -392,9 +423,7 @@ fn is_path(name: &str) -> bool {
         name,
         "config"
             | "model-path"
-            | "checkpoint-imatrix"
             | "mmproj"
-            | "hash-cache"
             | "topology"
             | "speculative-config"
             | "draft-model-path"
@@ -446,8 +475,9 @@ pub fn section(name: &str) -> &'static str {
     }
     match name {
         "ctx-size" => "kv",
-        "n-gpu-layers" => "execution",
+        "n-gpu-layers" | "gpu-id" => "execution",
         "mmproj" => "media",
+        "on-demand" | "idle-evict-secs" | "residency-budget-bytes" => "execution",
         "bind-addr" | "model-id" | "default-max-tokens" | "guardrails" | "prompt" => "api",
         "config"
         | "topology"

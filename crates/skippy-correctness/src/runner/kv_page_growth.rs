@@ -141,9 +141,7 @@ pub fn kv_page_growth(args: KvPageGrowthArgs) -> Result<()> {
         load_mode: runtime_load_mode(args.runtime.stage_load_mode),
         projector_path: None,
         projector_use_gpu: None,
-        checkpoint_quantization: skippy_runtime::CheckpointQuantization::Preserve,
-        checkpoint_imatrix: None,
-        checkpoint_imatrix_sha256: None,
+
         media_marker: None,
         image_min_tokens: None,
         image_max_tokens: None,
@@ -162,6 +160,11 @@ pub fn kv_page_growth(args: KvPageGrowthArgs) -> Result<()> {
         kv_offload: None,
         kv_unified: None,
         swa_full: None,
+        kv_pool_tokens: None,
+        kv_lazy_clear: None,
+        kv_release_pages: None,
+        kv_row_attention: None,
+        sample_threads: None,
     };
     plan.apply_to(&mut config);
     let model = StageModel::open(&args.runtime.model, &config)

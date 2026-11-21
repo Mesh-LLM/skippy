@@ -47,15 +47,11 @@ async fn observe(directory: &Path, report: &mut Report) -> Result<()> {
         report.cold = Some(runner.generate(&request)?);
         let cache = runner.enable_cache(Some(manager.clone()))?;
         report.seed = Some(runner.generate(&request)?);
-        let checkpoint = tiers::published_checkpoint(
-            &manager,
-            &cache,
-            report.seed.as_ref().context("missing cache seed")?,
-        )?;
         tiers::drain_workers(&cache)?;
         report.replay = Some(runner.generate(&request)?);
         tiers::drain_workers(&cache)?;
-        Ok::<_, anyhow::Error>(checkpoint)
+        tiers::evict_l1(&runner, &cache)?;
+        tiers::published_checkpoint(&manager, report.seed.as_ref().context("missing cache seed")?)
     })();
     skippy_runtime::restore_native_logs();
     let checkpoint = observed?;

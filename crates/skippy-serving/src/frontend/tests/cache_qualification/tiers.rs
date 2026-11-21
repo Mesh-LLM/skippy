@@ -38,12 +38,12 @@ pub(super) fn observe(
         .context("loaded runtime did not admit L2")?;
 
     let seed = observations.seed.insert(runner.generate(request)?);
-    observations.checkpoint_tokens = Some(published_checkpoint(&manager, &cache, seed)?);
+    observations.evictions.push(evict_l1(&runner, &cache)?);
+    observations.checkpoint_tokens = Some(published_checkpoint(&manager, seed)?);
     let pack_name = published_pack_name(directory)?;
 
     // For shorter checkpoints the production host policy promotes after
     // two disk fills. Drain L1 before each fill while retaining the same L2.
-    observations.evictions.push(evict_l1(&runner, &cache)?);
     observations.first_l3 = Some(runner.generate(request)?);
     observations.evictions.push(evict_l1(&runner, &cache)?);
     observations.second_l3 = Some(runner.generate(request)?);
@@ -68,7 +68,6 @@ pub(super) fn observe(
 
 pub(super) fn published_checkpoint(
     manager: &L3CacheManager,
-    cache: &KvStageIntegration,
     seed: &Candidate,
 ) -> Result<u32> {
     let prefill = seed
@@ -80,8 +79,7 @@ pub(super) fn published_checkpoint(
     let tokens = seed
         .chat_checkpoint_tokens
         .map(u64::from)
-        .or_else(|| cache.exact_shared_checkpoint_token_count(prefill as u64))
-        .context("fixture did not produce a durable checkpoint")?;
+        .unwrap_or(prefill as u64);
     wait_for_checkpoint(manager, tokens)?;
     Ok(u32::try_from(tokens)?)
 }

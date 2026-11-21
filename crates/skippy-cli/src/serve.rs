@@ -4,7 +4,6 @@ use std::{
     future::Future,
     io::IsTerminal,
     net::SocketAddr,
-    path::Path,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -13,8 +12,11 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+use skippy_api::serving::{
+    ModelOpenEvent, ModelOpenEventKind, ModelOpenEvents, ModelOpenObservation,
+    ModelOpenProgressUnit,
+};
 use skippy_commands::console::{self, OutputMode};
-use skippy_runtime::{ModelOpenEventQueue, RuntimeEventKind, RuntimeEventProgressUnit};
 use tokio::{process::Command, sync::oneshot, task::JoinHandle};
 
 use crate::{
@@ -28,85 +30,28 @@ pub(crate) fn default_public_bind_addr() -> SocketAddr {
 
 pub async fn run(mut args: ServeCommandArgs) -> Result<()> {
     validate(&args)?;
-    if let Some(model) = args.model.take() {
-        console::status(&format!("🔎 Checking local model cache for {model}"))?;
-        let existing = installed_model_path(&model);
-        let catalog_model = (!Path::new(&model).exists())
-            .then(|| {
-                let exact = if existing.is_some() && model.contains('/') {
-                    skippy_model_hf::remote_catalog::find_loaded_model_exact(&model)
-                } else {
-                    skippy_model_hf::remote_catalog::find_model_exact(&model)
-                };
-                exact.or_else(|| {
-                    (!model.contains('/'))
-                        .then(|| skippy_model_hf::remote_catalog::resolve_model_download(&model))
-                        .flatten()
-                        .and_then(|resolved| {
-                            skippy_model_hf::remote_catalog::matching_model_for_huggingface(
-                                &resolved.repo,
-                                resolved.revision.as_deref(),
-                                &resolved.file,
-                            )
-                        })
-                })
-            })
-            .flatten();
-        let (path, downloaded_projector) = if let Some(local_path) = existing {
-            console::status("📂 Using cached model")?;
-            (local_path, None)
-        } else {
-            let cache = skippy_commands::models::model_cache_dir();
-            let downloaded =
-                skippy_commands::models::download_model(&cache, &model, None, None).await?;
-            (downloaded.load_path, downloaded.projector_path)
-        };
-        args.public.model_path = Some(path);
-        if args.public.mmproj.is_none() {
-            args.public.mmproj = downloaded_projector;
-        }
-        if args.public.mmproj.is_none()
-            && let Some(asset) = catalog_model.and_then(|entry| entry.mmproj)
-        {
-            let projector_ref = asset.download_ref();
-            let cache = skippy_commands::models::model_cache_dir();
-            args.public.mmproj = Some(
-                skippy_commands::models::download_model(&cache, &projector_ref, None, None)
-                    .await?
-                    .primary_path,
-            );
-        }
-        if !Path::new(&model).exists() {
-            args.public.model_id.get_or_insert(model);
-        }
+    if !args.local_models.is_empty() {
+        return crate::multi_model::run(args).await;
     }
+    crate::model_source::resolve(&mut args.public).await?;
     match args.stage_transport {
         Some(StageTransport::Binary) => serve_binary_stage(args).await,
         None => serve_public(args).await,
     }
 }
 
-fn installed_model_path(model: &str) -> Option<std::path::PathBuf> {
-    let path = Path::new(model);
-    if path.is_file() || path.is_dir() {
-        return Some(path.to_path_buf());
-    }
-    // Mesh prefers catalog resolution for short curated names, then falls
-    // back to local cache stems. Exact Hub refs can use the cache directly.
-    if model.contains('/') || skippy_model_hf::remote_catalog::find_model_exact(model).is_none() {
-        let cached = skippy_model_hf::store::local::find_model_path(model);
-        if cached.exists() {
-            return Some(cached);
-        }
-    }
-    None
-}
-
 pub(crate) fn validate(args: &ServeCommandArgs) -> Result<()> {
     args.public.settings.validate_mode(args)?;
-    args.public.settings.tuning(args.public.openai_guardrails)?;
-    let mut stage = skippy_protocol::StageConfig::default();
-    args.public.settings.apply_stage(&mut stage)?;
+    crate::residency::validate(args)?;
+    if args.local_models.is_empty() {
+        validate_public_settings(&args.public)?;
+    } else {
+        for model in &args.local_models {
+            validate_public_settings(model).with_context(|| {
+                format!("settings for {}", crate::multi_model::describe_model(model))
+            })?;
+        }
+    }
     if args.stage_transport.is_some() && args.public.config.is_none() {
         bail!("--stage-transport requires --config, supplied directly or through serving settings");
     }
@@ -122,10 +67,23 @@ pub(crate) fn validate(args: &ServeCommandArgs) -> Result<()> {
     if console::mode() == OutputMode::Json && !args.print_effective_config {
         bail!("serving produces a stream of events; use --output jsonl or --output human");
     }
-    if args.public.config.is_none() && args.public.model_path.is_none() && args.model.is_none() {
-        bail!("provide --model, --model-path, or --config");
+    if args.local_models.is_empty()
+        && args.public.config.is_none()
+        && args.public.model_path.is_none()
+        && args.public.model.is_none()
+    {
+        bail!("provide --model, --model-path, --config, or a model in --settings");
     }
     Ok(())
+}
+
+fn validate_public_settings(args: &ServeOpenAiArgs) -> Result<()> {
+    if let Some(model) = args.model.as_deref() {
+        skippy_commands::models::reject_safetensors_model_ref(model)?;
+    }
+    args.settings.tuning(args.openai_guardrails)?;
+    let mut stage = skippy_protocol::StageConfig::default();
+    args.settings.apply_stage(&mut stage)
 }
 
 async fn serve_public(args: ServeCommandArgs) -> Result<()> {
@@ -135,18 +93,32 @@ async fn serve_public(args: ServeCommandArgs) -> Result<()> {
         .unwrap_or_else(default_public_bind_addr);
     let startup_timeout = Duration::from_secs(args.public.startup_timeout_secs.max(1));
     console::status("🧠 Preparing model")?;
+    let residency = crate::residency::options(&args.public);
     let settings = args.public.settings.clone();
+    let discover_draft = args.public.speculative_config.is_none();
     let mut options = conversion::local_openai_options(args.public)?;
+    let draft = if discover_draft {
+        crate::draft::prepare_default_draft(&mut options, &settings, args.print_effective_config)
+            .await
+    } else {
+        None
+    };
     if args.print_effective_config {
-        let frontend = options.resolved_openai_options()?;
+        let mut frontend = options.resolved_openai_options()?;
+        if let Some(draft) = &draft {
+            draft.apply_to(&mut frontend);
+            options.config.native_mtp_enabled = false;
+        }
         return console::write_json(&settings.report(
             &options.config,
             Some(&frontend),
             &options.tuning,
         ));
     }
-    let model_open_events = ModelOpenEventQueue::new(skippy_runtime::next_operation_id());
-    options.model_open_events = Some(Arc::clone(&model_open_events));
+    if let Some(residency) = residency {
+        return crate::residency::serve(options, residency, draft).await;
+    }
+    options.model_open_events = model_open_events();
     let model_id = options
         .model_id
         .clone()
@@ -159,10 +131,11 @@ async fn serve_public(args: ServeCommandArgs) -> Result<()> {
     let server = async move {
         let (bind_addr, request) = options.into_request()?;
         let _admin = crate::kv_cache::start_admin(request.l3_manager.as_ref()).await?;
-        request
-            .load()?
-            .serve_http_with_shutdown(bind_addr, shutdown)
-            .await
+        let loaded = match draft.as_ref() {
+            Some(draft) => request.load_with_default_draft(draft),
+            None => request.load(),
+        }?;
+        loaded.serve_http_with_shutdown(bind_addr, shutdown).await
     };
     serve_with_readiness(
         ReadinessServer {
@@ -174,7 +147,6 @@ async fn serve_public(args: ServeCommandArgs) -> Result<()> {
         args.prompt,
         stop,
         startup_timeout,
-        Some(model_open_events),
     )
     .await
 }
@@ -205,7 +177,7 @@ async fn serve_binary_stage(mut args: ServeCommandArgs) -> Result<()> {
     let mut options = conversion::binary_stage_options(args.stage)?;
     args.public
         .settings
-        .validate_cache_dependencies(&options.config, disk_cache.is_some())?;
+        .validate_cache_dependencies(&options.config)?;
     if args.print_effective_config {
         let frontend = options.openai.as_ref().map(|stage| {
             let mut frontend = skippy_api::serving::InferenceOptions::embedded_stage_defaults(
@@ -295,7 +267,6 @@ async fn serve_binary_stage(mut args: ServeCommandArgs) -> Result<()> {
         args.prompt,
         stop,
         startup_timeout,
-        None,
     )
     .await
 }
@@ -398,25 +369,27 @@ async fn serve_with_readiness(
     prompt: bool,
     stop: oneshot::Sender<()>,
     startup_timeout: Duration,
-    model_open_events: Option<Arc<ModelOpenEventQueue>>,
 ) -> Result<()> {
     if bind_addr.port() == 0 {
         bail!("--bind-addr must use a fixed port so readiness can be reported");
     }
     let api_base = format!("http://{}/v1", readiness_addr(bind_addr));
     let shutdown_requested = server.shutdown_requested;
-    let mut server = tokio::spawn(server.future);
     console::status("🧠 Loading model and starting the API")?;
+    let load_started = std::time::Instant::now();
+    let mut server = tokio::spawn(server.future);
     let readiness = wait_for_ready(
         &api_base,
         &model_id,
         &mut server,
         startup_timeout,
-        model_open_events.as_deref(),
         &shutdown_requested,
     )
-    .await?;
-    if readiness == ReadinessOutcome::ShutdownRequested {
+    .await;
+    if !matches!(readiness, Ok(ReadinessOutcome::ShutdownRequested)) {
+        record_model_load(&model_id, load_started.elapsed(), readiness.is_ok());
+    }
+    if readiness? == ReadinessOutcome::ShutdownRequested {
         return Ok(());
     }
     console::event(
@@ -433,6 +406,8 @@ async fn serve_with_readiness(
     // process so server shutdown can terminate and join the prompt reliably.
     let mut prompt_process =
         Command::new(std::env::current_exe().context("locate skippy executable")?)
+            // Part of this serve session, which is already reported.
+            .env(skippy_analytics::ENV_ANALYTICS, "0")
             .args([
                 "--output",
                 "human",
@@ -462,6 +437,26 @@ async fn serve_with_readiness(
             Ok(())
         }
     }
+}
+
+pub(crate) fn model_open_events() -> ModelOpenEvents {
+    ModelOpenEvents::observe(|observation| {
+        if let ModelOpenObservation::Event(event) = observation {
+            let _ = report_model_open_event(event);
+        }
+    })
+}
+
+/// Report `model_load` for the public API's model.
+pub(crate) fn record_model_load(model_id: &str, elapsed: Duration, succeeded: bool) {
+    let properties = skippy_analytics::models::lookup(model_id)
+        .apply(skippy_analytics::Properties::new())
+        .with(
+            "load_ms",
+            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
+        )
+        .with("outcome", if succeeded { "loaded" } else { "failed" });
+    skippy_analytics::capture(skippy_analytics::Event::ModelLoad, properties);
 }
 
 fn readiness_addr(bind_addr: SocketAddr) -> SocketAddr {
@@ -498,15 +493,11 @@ async fn wait_for_ready(
     model_id: &str,
     server: &mut JoinHandle<Result<()>>,
     startup_timeout: Duration,
-    model_open_events: Option<&ModelOpenEventQueue>,
     shutdown_requested: &AtomicBool,
 ) -> Result<ReadinessOutcome> {
     let client = readiness_client()?;
     let deadline = Instant::now() + startup_timeout;
     loop {
-        if let Some(queue) = model_open_events {
-            report_model_open_events(queue)?;
-        }
         // AN ALREADY-FINISHED TASK IS NOT A RACE TO SAMPLE. `tokio::select!`
         // polls its branches in random order, so when the serving task has
         // already exited its outcome competes with the API probe's connection
@@ -538,9 +529,6 @@ async fn wait_for_ready(
                     let body: serde_json::Value = response.json().await.context("read ready model list")?;
                     let listed = body["data"].as_array().is_some_and(|items| items.iter().any(|item| item["id"] == model_id));
                     if listed && !server.is_finished() {
-                        if let Some(queue) = model_open_events {
-                            report_model_open_events(queue)?;
-                        }
                         return Ok(ReadinessOutcome::Ready);
                     }
                 }
@@ -556,45 +544,33 @@ async fn wait_for_ready(
     }
 }
 
-fn report_model_open_events(queue: &ModelOpenEventQueue) -> Result<()> {
-    let mut records = Vec::new();
-    queue.drain(&mut records, usize::MAX);
-    for record in records {
-        let event = record.to_event();
-        match event.kind {
-            RuntimeEventKind::ModelOpenProgress if event.progress_total > 0 => {
-                let unit = match event.progress_unit {
-                    RuntimeEventProgressUnit::Bytes => "bytes",
-                    RuntimeEventProgressUnit::Items => "items",
-                    RuntimeEventProgressUnit::Tensors => "tensors",
-                    RuntimeEventProgressUnit::Steps => "steps",
-                    RuntimeEventProgressUnit::None | RuntimeEventProgressUnit::Unknown(_) => {
-                        "units"
-                    }
-                };
-                console::progress_with_unit(
-                    "Model load",
-                    event.progress_current,
-                    event.progress_total,
-                    unit,
-                )?;
-            }
-            RuntimeEventKind::BackendDeviceSelected => {
-                console::event(
-                    "backend_device_selected",
-                    &serde_json::json!({"detail": String::from_utf8_lossy(&event.detail_bytes)}),
-                )?;
-            }
-            RuntimeEventKind::ModelOpenFailedHandled => {
-                console::event(
-                    "model_open_failed_handled",
-                    &serde_json::json!({"detail": String::from_utf8_lossy(&event.detail_bytes)}),
-                )?;
-            }
-            _ => {}
+fn report_model_open_event(event: ModelOpenEvent) -> std::io::Result<()> {
+    match event.kind {
+        ModelOpenEventKind::Progress(progress) => {
+            let unit = match progress.unit {
+                ModelOpenProgressUnit::Bytes => "bytes",
+                ModelOpenProgressUnit::Items => "items",
+                ModelOpenProgressUnit::Tensors => "tensors",
+                ModelOpenProgressUnit::Steps => "steps",
+                _ => "units",
+            };
+            console::progress_with_unit(
+                "Model load",
+                progress.current,
+                progress.total.unwrap_or(0),
+                unit,
+            )
         }
+        ModelOpenEventKind::BackendDeviceSelected => console::event(
+            "backend_device_selected",
+            &serde_json::json!({"detail": String::from_utf8_lossy(&event.detail)}),
+        ),
+        ModelOpenEventKind::FailedHandled(_) => console::event(
+            "model_open_failed_handled",
+            &serde_json::json!({"detail": String::from_utf8_lossy(&event.detail)}),
+        ),
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -702,7 +678,6 @@ mod tests {
             "never-ready",
             &mut server,
             Duration::from_secs(1),
-            None,
             &shutdown_requested,
         )
         .await
@@ -715,7 +690,6 @@ mod tests {
             "never-ready",
             &mut server,
             Duration::from_secs(1),
-            None,
             &AtomicBool::new(false),
         )
         .await
@@ -739,7 +713,6 @@ mod tests {
             "never-ready",
             &mut server,
             Duration::from_secs(1),
-            None,
             &shutdown_requested,
         )
         .await
@@ -787,14 +760,6 @@ mod tests {
                 expected.parse().unwrap()
             );
         }
-    }
-
-    #[test]
-    fn existing_local_model_path_is_used_without_hub_resolution() {
-        let temp = tempfile::tempdir().unwrap();
-        let model = temp.path().join("model.gguf");
-        std::fs::write(&model, b"GGUF").unwrap();
-        assert_eq!(installed_model_path(model.to_str().unwrap()), Some(model));
     }
 
     #[test]

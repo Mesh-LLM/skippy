@@ -1,20 +1,17 @@
 use super::formatters::{
     DownloadRenderInput, InstalledRow, JsonFormatter, ModelsFormatter, SearchFormatter,
-    capabilities_json, catalog_model_capabilities, catalog_model_kind_code,
-    fit_code_for_size_label, format_installed_size, huggingface_cache_dir,
-    installed_model_kind_code, local_capacity_json, model_kind_code, print_json,
+    capabilities_json, catalog_model_capabilities, fit_code_for_size_label, format_installed_size,
+    huggingface_cache_dir, local_capacity_json, model_kind_code, print_json,
 };
-use crate::models::details::{
-    ModelDetails, remote_catalog_model_draft_ref, remote_catalog_model_ref,
-};
-use crate::models::search::{
-    SearchArtifactFilter, SearchHit, SearchSort, search_catalog_json_payload,
-    search_huggingface_json_payload,
-};
+use crate::models::search::{search_catalog_json_payload, search_huggingface_json_payload};
 use crate::models::storage::remote_catalog;
 use crate::models::storage::{DeleteResult as CliDeleteResult, ResolvedModel as CliResolvedModel};
 use anyhow::Result;
 use serde_json::{Value, json};
+use skippy_model_hf::details::{
+    ModelDetails, remote_catalog_model_draft_ref, remote_catalog_model_ref,
+};
+use skippy_model_hf::search::{SearchArtifactFilter, SearchHit, SearchSort};
 use std::path::Path;
 
 fn show_payload(details: &ModelDetails, variants: Option<&[ModelDetails]>) -> Value {
@@ -150,7 +147,7 @@ impl ModelsFormatter for JsonFormatter {
                     "size": model.size,
                     "description": model.description,
                     "draft": remote_catalog_model_draft_ref(model),
-                    "type": catalog_model_kind_code(model),
+                    "type": "gguf",
                     "ref": model_ref,
                     "show": format!("{program} models show {model_ref}", program = crate::models::output::program()),
                     "download": format!("{program} models download {model_ref}", program = crate::models::output::program()),
@@ -170,7 +167,7 @@ impl ModelsFormatter for JsonFormatter {
             .map(|row| {
                 json!({
                     "name": row.name,
-                    "type": installed_model_kind_code(&row.path),
+                    "type": "gguf",
                     "size_bytes": row.size,
                     "size": row.size.map(super::formatters::format_installed_size),
                     "layer_count": row.layer_count,
@@ -269,8 +266,8 @@ impl ModelsFormatter for JsonFormatter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::capabilities::ModelCapabilities;
     use crate::models::formatters::DownloadRenderInput;
+    use skippy_model_hf::capabilities::ModelCapabilities;
     use std::path::Path;
 
     #[test]

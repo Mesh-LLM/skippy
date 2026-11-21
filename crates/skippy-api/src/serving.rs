@@ -186,7 +186,13 @@ impl InferenceOptions {
 }
 
 mod lifecycle;
-pub use lifecycle::{LoadedModelBackend, ModelLoadRequest, ModelOpenEvents};
+pub use lifecycle::{LoadedModelBackend, ModelLoadRequest};
+mod model_open;
+pub use model_open::{
+    ModelLoadOutcome, ModelOpenContradiction, ModelOpenEmitter, ModelOpenEvent, ModelOpenEventKind,
+    ModelOpenEvents, ModelOpenFailure, ModelOpenObservation, ModelOpenObserver, ModelOpenProgress,
+    ModelOpenProgressUnit, ModelOpenSummary,
+};
 
 #[derive(Clone, Debug)]
 pub struct ServingTelemetryOptions {
@@ -228,7 +234,14 @@ impl ServingTelemetryOptions {
 }
 
 mod local;
-pub use local::{LocalDiskCacheOptions, LocalOpenAiOptions, serve_local_openai_with_shutdown};
+pub use local::{
+    LocalDiskCacheOptions, LocalOpenAiOptions, serve_local_openai_with_default_draft,
+    serve_local_openai_with_shutdown,
+};
 
 /// Startup handshakes and cancellation shared by embedded stage hosts.
 pub use skippy_serving::readiness;
+
+pub mod managed;
+pub mod multi_model;
+pub mod residency;

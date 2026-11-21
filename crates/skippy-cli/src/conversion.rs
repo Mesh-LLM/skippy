@@ -201,7 +201,12 @@ pub fn local_openai_options(
         .transpose()
         .context("load speculative config")?;
     let mut tuning = args.settings.tuning(args.openai_guardrails)?;
-    let speculative = if args.settings.has_speculative_overrides() {
+    let resolve_speculative_overrides = args.settings.has_speculative_overrides()
+        && (!args.settings.allows_default_draft()
+            || speculative.is_some()
+            || tuning.draft_model_path.is_some()
+            || tuning.native_mtp_draft_model_path.is_some());
+    let speculative = if resolve_speculative_overrides {
         let mut defaults = skippy_api::serving::InferenceOptions::embedded_stage_defaults(
             args.model_id.clone(),
             args.default_max_tokens,
@@ -277,8 +282,7 @@ pub fn local_openai_options(
     {
         cache.l2_max_bytes = crate::disk_cache::DEFAULT_HOST_CACHE_BYTES;
     }
-    args.settings
-        .validate_cache_dependencies(&config, disk_cache.is_some())?;
+    args.settings.validate_cache_dependencies(&config)?;
     Ok(skippy_api::serving::LocalOpenAiOptions {
         tuning,
         config,
@@ -305,7 +309,7 @@ pub fn local_openai_options(
         telemetry_queue_capacity: args.telemetry_queue_capacity,
         telemetry_level: args.telemetry_level.into(),
         openai_guardrails: args.openai_guardrails.into(),
-        model_open_events: None,
+        model_open_events: skippy_api::serving::ModelOpenEvents::Disabled,
         disk_cache,
     })
 }

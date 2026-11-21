@@ -27,7 +27,6 @@ mod quant_run;
 mod quantize;
 mod records;
 mod residency;
-mod safetensors_load;
 mod splits;
 mod tool_paths;
 mod type_catalog;
@@ -67,7 +66,6 @@ use projector_validate::{ValidateProjectorArgs, run_validate_projector};
 use quant_run::{RunQuantArgs, run_quant, run_quant_unlocked};
 use records::{WindowRunRecordInput, unix_timestamp_ms, write_window_record};
 use residency::remove_dir_if_exists;
-use safetensors_load::{ValidateSafetensorsLoadArgs, run_validate_safetensors_load};
 use skippy_model::hf_checkpoint::resolve_auto_output_type;
 use splits::{
     SplitWindow, find_first_shard, next_missing_window_in_range, split_status, stage_source_window,
@@ -117,7 +115,6 @@ enum Command {
     ValidateProjector(ValidateProjectorArgs),
     ValidateTensorTypes(ValidateTensorTypesArgs),
     ValidateSplits(ValidateSplitsArgs),
-    ValidateSafetensorsLoad(ValidateSafetensorsLoadArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -521,7 +518,6 @@ fn main() -> Result<()> {
             args.basename.as_deref(),
             args.json,
         ),
-        Command::ValidateSafetensorsLoad(args) => run_validate_safetensors_load(args),
     }
 }
 

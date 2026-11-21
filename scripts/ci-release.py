@@ -3,36 +3,26 @@
 
 import argparse
 import os
-import re
 import shutil
 import subprocess
 import sys
 import tempfile
-import tomllib
 from pathlib import Path
 
 from lib import ci_artifacts as artifacts
 from lib.ci_process import cancel_on_signal, capture, command
 from lib.ci_targets import targets, validate_native_identity
+from lib.release_version import bump, parse_tag, workspace_version
+
+# The host installer downloads this name; keep both in step with
+# NativeRuntimeCatalog in crates/skippy-runtime-install/src/types.rs.
+CATALOG = "native-runtimes.json"
+RELEASES_URL = "https://github.com/general-inference/skippy/releases"
 
 
 def version(tag):
-    match = re.fullmatch(
-        r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
-        r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
-        r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?", tag,
-    )
-    if not match or any(int(part) >= 2**64 for part in match.groups()[:3]):
-        raise ValueError("release tag is not canonical SemVer")
-    prerelease = match.group(4)
-    if prerelease and any(
-        len(part) > 1 and part.startswith("0") and part.isdigit()
-        for part in prerelease.split(".")
-    ):
-        raise ValueError("release tag is not canonical SemVer")
-    with open("Cargo.toml", "rb") as stream:
-        committed = tomllib.load(stream)["workspace"]["package"]["version"]
-    if committed != tag[1:]:
+    prerelease = parse_tag(tag)
+    if workspace_version() != tag[1:]:
         raise ValueError("tag version differs from committed workspace version")
     return "true" if prerelease else "false"
 
@@ -49,14 +39,65 @@ def validate(tag):
     source = artifacts.source()
     if capture(["git", "rev-parse", f"refs/tags/{tag}^{{commit}}"]).strip() != source:
         raise ValueError("checkout is not the exact tagged commit")
-    command(["git", "merge-base", "--is-ancestor", source, "refs/remotes/origin/main"], timeout=60)
+    # A release is on main, or is the version commit a release run made on top of main.
+    parents = capture(["git", "show", "-s", "--format=%P", source]).split()
+    subject = capture(["git", "show", "-s", "--format=%s", source]).strip()
+    tip = parents[0] if len(parents) == 1 and subject == f"release: prepare {tag}" else source
+    for commit in dict.fromkeys((source, tip)):
+        if subprocess.run(["git", "merge-base", "--is-ancestor", commit,
+                           "refs/remotes/origin/main"], timeout=60).returncode == 0:
+            break
+    else:
+        raise ValueError("release commit is not on main or a version commit on top of main")
     github_output("prerelease", prerelease)
     github_output("source", source)
     return source
 
 
 def prepare(tag, input_dir):
-    source = validate(tag)
+    inventory(tag, input_dir, validate(tag))
+
+
+def prepare_candidate(tag, input_dir):
+    version(tag)
+    inventory(tag, input_dir, artifacts.source())
+
+
+def catalog_entry(runtime, tag, archive, sha256):
+    """Describe one product archive as the download for the runtime it carries."""
+    if runtime.get("release_version") != tag[1:]:
+        raise ValueError(f'runtime {runtime.get("id")} was not built for release {tag[1:]}')
+    return {**runtime, "url": f"{RELEASES_URL}/download/{tag}/{archive}", "sha256": sha256}
+
+
+def catalog(tag, entries):
+    abis = {entry["skippy_abi"] for entry in entries}
+    if len(abis) != 1:
+        raise ValueError("release runtimes disagree on the Skippy ABI")
+    return {"schema_version": 2, "release_version": tag[1:], "skippy_abi": abis.pop(),
+            "artifacts": entries}
+
+
+def verify_catalog(value, tag, archives):
+    """Every archive is the download of exactly one runtime of this release."""
+    if (type(value) is not dict
+            or set(value) != {"schema_version", "release_version", "skippy_abi", "artifacts"}
+            or value["schema_version"] != 2 or value["release_version"] != tag[1:]
+            or type(value["artifacts"]) is not list):
+        raise ValueError("runtime catalog does not describe this release")
+    downloads = {}
+    for entry in value["artifacts"]:
+        prefix = f"{RELEASES_URL}/download/{tag}/"
+        if (type(entry) is not dict or not str(entry.get("url", "")).startswith(prefix)
+                or entry.get("release_version") != tag[1:]
+                or entry.get("skippy_abi") != value["skippy_abi"]):
+            raise ValueError("runtime catalog entry does not belong to this release")
+        downloads[entry["url"][len(prefix):]] = entry.get("sha256")
+    if len(downloads) != len(value["artifacts"]) or downloads != archives:
+        raise ValueError("runtime catalog does not match the release archives")
+
+
+def inventory(tag, input_dir, source):
     hosts, runtimes = targets()
     output = Path("dist/release")
     if output.exists() and any(output.iterdir()):
@@ -65,7 +106,7 @@ def prepare(tag, input_dir):
     with tempfile.TemporaryDirectory(dir=output.parent, prefix=".release-") as tmp:
         stage = Path(tmp) / "release"
         stage.mkdir()
-        assets = {}
+        assets, entries = {}, []
         for variant, runtime in runtimes.items():
             directory = input_dir / f"release-product-{variant}"
             host = hosts[runtime["host"]]
@@ -75,6 +116,7 @@ def prepare(tag, input_dir):
                 artifacts.verify(root, "product", host["target"], variant)
                 arches = runtime["gpu_architectures"] if runtime["backend"] == "cuda" else None
                 validate_native_identity(root / "native-runtimes" / variant, host, runtime, arches)
+                native = artifacts.read_json(root / "native-runtimes" / variant / "manifest.json")
             evidence = artifacts.read_json(directory / "evidence/smoke.json")
             if (evidence.get("source"), evidence.get("variant"), evidence.get("backend")) != (
                 source, variant, runtime["backend"]
@@ -84,6 +126,11 @@ def prepare(tag, input_dir):
             shutil.copyfile(directory / f"skippy-{variant}.tar.gz", file)
             artifacts.write_checksum(file)
             assets[file.name] = artifacts.digest(file)
+            entries.append(catalog_entry(native["runtime"], tag, file.name, assets[file.name]))
+        runtime_catalog = stage / CATALOG
+        artifacts.write_json(runtime_catalog, catalog(tag, entries))
+        artifacts.write_checksum(runtime_catalog)
+        assets[CATALOG] = artifacts.digest(runtime_catalog)
         index = stage / "release.json"
         artifacts.write_json(index, {
             "schema_version": 1, "tag": tag, "source": source,
@@ -108,7 +155,8 @@ def verify(directory):
         raise ValueError("release roster/source mismatch")
     tag = release["tag"]
     version(tag)
-    filenames = {f"skippy-{tag}-{variant}.tar.gz" for variant in runtimes}
+    archives = {f"skippy-{tag}-{variant}.tar.gz" for variant in runtimes}
+    filenames = archives | {CATALOG}
     if type(release["assets"]) is not dict or set(release["assets"]) != filenames:
         raise ValueError("release archive roster mismatch")
     for name, expected in release["assets"].items():
@@ -117,6 +165,8 @@ def verify(directory):
             raise ValueError(f"release archive identity mismatch: {name}")
         artifacts.check_checksum(file)
     artifacts.check_checksum(index)
+    verify_catalog(artifacts.read_json(directory / CATALOG), tag,
+                   {name: release["assets"][name] for name in archives})
     assets = filenames | {index.name}
     if {file.name for file in directory.iterdir()} != assets | {name + ".sha256" for name in assets}:
         raise ValueError("release contains unrecognized assets")
@@ -137,10 +187,11 @@ def select(tag, path):
     releases = artifacts.read_json(path)
     if not isinstance(releases, list):
         raise ValueError("expected a release list")
-    matches = sum(release.get("tagName") == tag for release in releases)
-    if matches > 1:
+    matches = [release for release in releases if release.get("tagName") == tag]
+    if len(matches) > 1:
         raise ValueError("duplicate release tags in API response")
     github_output("exists", "true" if matches else "false")
+    github_output("published", "true" if matches and matches[0]["isDraft"] is False else "false")
 
 
 def upload_plan(directory, path):
@@ -166,8 +217,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     actions = parser.add_subparsers(dest="action", required=True)
     for func, arguments in (
+        (bump, (("tag", str),)),
         (validate, (("tag", str),)),
         (prepare, (("tag", str), ("input_dir", Path))),
+        (prepare_candidate, (("tag", str), ("input_dir", Path))),
         (verify, (("directory", Path),)),
         (admit_draft, (("path", Path),)),
         (select, (("tag", str), ("path", Path))),

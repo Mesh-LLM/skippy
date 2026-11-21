@@ -19,7 +19,7 @@ function results({ code = true, inference = false, kv = false, full = false, rel
   const selected = code || inference || kv;
   const required = ['changes'];
   if (selected) required.push('plan');
-  if (code) required.push('automation', 'quality');
+  if (code) required.push('quality');
   if (full) required.push('native_contracts', ...packageJobs, spark);
   else if (inference || kv) required.push(...prPackages);
   if (release) required.push(...releaseSmokes);
@@ -39,7 +39,7 @@ test('all eight runtime packages match the planned matrix and depend on the cana
   for (const row of rows) {
     const job = `package_${row.id.replaceAll('-', '_')}`;
     const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
-    assert.match(body, /^    needs: \[plan, quality, automation[\],]/m);
+    assert.match(body, /^    needs: \[plan, quality[\],]/m);
     assert.ok(body.includes(`runtime-id: ${row.id}\n`));
     if (row.backend !== 'cpu') assert.ok(body.includes(`package_${row.host.replaceAll('-', '_')}_cpu`));
     assert.equal(body.includes("needs.changes.outputs.inference == 'true'"), prPackages.includes(job));
@@ -68,7 +68,7 @@ test('inference and KV changes require the two short package and smoke jobs', ()
 });
 
 test('missing, skipped, failed and cancelled required work cannot pass full CI', () => {
-  for (const job of ['changes', 'plan', 'automation', 'quality', 'native_contracts', ...packageJobs, spark]) {
+  for (const job of ['changes', 'plan', 'quality', 'native_contracts', ...packageJobs, spark]) {
     for (const result of ['skipped', 'failure', 'cancelled', undefined]) {
       const needs = results({ full: true });
       if (result === undefined) delete needs[job];
@@ -86,4 +86,55 @@ test('releases require the two CUDA 12 device smokes in addition to the full sui
   assert.throws(() => gate(results({ full: true }), true), /release_smoke_/);
   assert.throws(() => gate(results({ full: true, release: true })), /release_smoke_/);
   assert.throws(() => gate(results(), true), /requires full CI/);
+});
+
+test('main can reuse only a receipt for the exact release dispatch and candidate', async () => {
+  const changes = workflow.split('\n  changes:\n')[1].split('\n  plan:\n')[0];
+  const receiptScript = changes.split('          script: |\n')[1].split('\n      - uses:')[0];
+  const evaluateReceipt = new Function('github', 'context', 'core',
+    'return (async () => {\n' + receiptScript + '\n})()');
+  const sha = 'a'.repeat(40);
+  const base = 'b'.repeat(40);
+  const full_name = 'general-inference/skippy';
+  const commit = {
+    commit: { message: 'release: prepare v0.81.0\n\nSkippy-Release-Run: 123' },
+    parents: [{ sha: base }],
+  };
+  const run = {
+    path: '.github/workflows/release.yml',
+    event: 'workflow_dispatch',
+    head_branch: 'main',
+    head_sha: base,
+    head_repository: { full_name },
+  };
+  const receipt = { name: 'validated-release-' + sha, expired: false };
+  const context = { sha, repo: {}, payload: { before: base, repository: { full_name } } };
+  async function checked(candidate, workflowRun, artifact) {
+    const out = {};
+    const github = { rest: {
+      repos: { getCommit: async () => ({ data: candidate }) },
+      actions: {
+        getWorkflowRun: async ({ run_id }) => {
+          assert.equal(run_id, '123');
+          return { data: workflowRun };
+        },
+        listWorkflowRunArtifacts: async ({ name }) => {
+          assert.equal(name, receipt.name);
+          return { data: { artifacts: [artifact] } };
+        },
+      },
+    } };
+    const core = {
+      info() {},
+      warning(message) { assert.fail(message); },
+      setOutput(key, value) { out[key] = value; },
+    };
+    await evaluateReceipt(github, context, core);
+    return out.verified;
+  }
+  assert.equal(await checked(commit, run, receipt), 'true');
+  assert.equal(await checked({ ...commit, parents: [{ sha }] }, run, receipt), undefined);
+  assert.equal(await checked(commit, { ...run, head_branch: 'other' }, receipt), undefined);
+  assert.equal(await checked(commit, run, { ...receipt, name: 'other-receipt' }), undefined);
+  assert.equal(await checked(commit, run, { ...receipt, expired: true }), undefined);
 });
