@@ -38,7 +38,10 @@ pub fn validate(args: &ServeCommandArgs) -> Result<()> {
     if !args.local_models.is_empty() {
         ensure!(
             options(&args.public).is_none()
-                && args.local_models.iter().all(|model| options(model).is_none()),
+                && args
+                    .local_models
+                    .iter()
+                    .all(|model| options(model).is_none()),
             "residency controls require a single unsplit model"
         );
     }
