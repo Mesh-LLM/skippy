@@ -13,6 +13,7 @@ from pathlib import Path
 from lib.ci_artifacts import read_json, write_json
 from lib.ci_process import cancel_on_signal
 from lib.inference_ladder import plan
+from lib.inference_nightly_metrics import collect_nightly
 from lib.inference_throughput import collect
 from lib.jy_qualification import Pilot, placement
 
@@ -118,7 +119,7 @@ def record(ledger, identifiers):
         temporary.unlink(missing_ok=True)
 
 
-def dispatch(pilot, profile, sha, output, configuration):
+def dispatch(pilot, profile, sha, output, configuration, collect_public=False):
     result = plan(profile, sha)
     if configuration is not None:
         result["rows"] = [row for row in result["rows"] if row["id"] == configuration]
@@ -153,7 +154,9 @@ def dispatch(pilot, profile, sha, output, configuration):
             record(ledger, identifiers)
             write_json(output / f"{identity}-launch.json", launched)
             job = wait(pilot, handle, identity, sha, output, deadline)
-            if profile == "pr":
+            if collect_public:
+                collect_nightly(pilot, job, row, sha, output, model_key, profile)
+            elif profile == "pr":
                 try:
                     collect(pilot, job, row, sha, output, model_key)
                 except (OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
@@ -174,12 +177,13 @@ def main():
     action.add_argument("sha")
     action.add_argument("output", type=Path)
     action.add_argument("configuration", nargs="?")
+    action.add_argument("--collect-public", action="store_true")
     actions.add_parser("cancel").add_argument("ledger", type=Path)
     actions.add_parser("control-preflight")
     args = parser.parse_args()
     pilot = Pilot()
     if args.action == "dispatch":
-        dispatch(pilot, args.profile, args.sha, args.output, args.configuration)
+        dispatch(pilot, args.profile, args.sha, args.output, args.configuration, args.collect_public)
     elif args.action == "cancel":
         cancel(pilot, args.ledger)
     else:

@@ -12,7 +12,7 @@ from pathlib import Path
 from lib.ci_artifacts import read_json, write_json
 from lib.ci_process import command
 
-from lib.inference_ladder import plan
+from lib.inference_ladder import matrix, plan
 
 REPO = "general-inference/skippy"
 
@@ -98,14 +98,17 @@ def main():
         action.add_argument("sha")
         if name == "plan":
             action.add_argument("output", type=Path)
+        else:
+            action.add_argument("--include-smoke", action="store_true")
     args = parser.parse_args()
     if args.action == "admit":
         admit()
         return
-    result = plan(args.profile, args.sha)
     if args.action == "matrix":
-        output(matrix=json.dumps({"include": result["rows"]}, separators=(",", ":")))
+        rows = matrix(args.profile, args.sha, args.include_smoke)
+        output(matrix=json.dumps({"include": rows}, separators=(",", ":")))
     else:
+        result = plan(args.profile, args.sha)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         write_json(args.output, result)
         print(f'Wrote {len(result["rows"])} planned configurations; no inference was executed')
