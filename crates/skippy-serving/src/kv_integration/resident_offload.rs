@@ -43,6 +43,21 @@ impl Drop for NativeOffloadClaim {
 }
 
 impl KvStageIntegration {
+    pub(super) fn rewarm_resident_prefix(
+        &self,
+        runtime: &mut RuntimeState,
+        session_id: &str,
+        identity: &PrefillKvIdentity,
+        tokens: &[i32],
+    ) -> Result<()> {
+        runtime.restore_token_history(session_id, tokens)?;
+        let mut prefix = identity.clone();
+        prefix.token_ids = tokens.to_vec();
+        prefix.identity.token_count = tokens.len() as u64;
+        let _ = self.record_resident_prefix(runtime, session_id, &prefix, tokens);
+        Ok(())
+    }
+
     pub(super) fn native_payload_is_complete(
         &self,
         kind: skippy_cache::ExactStatePayloadKind,
