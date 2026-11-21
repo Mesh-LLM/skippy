@@ -39,9 +39,10 @@ downloading or producing the GGUF.
 
 ## Choose how models are loaded
 
-Use one settings file to load multiple local models at startup and route
-requests by model ID through the same API address. Use a managed server when
-you need to load, drain, or unload models while the listener is running.
+List Hugging Face references, catalog names, or local GGUF paths in one
+settings file to load several models at startup. Clients select a model by ID
+on the same API address. Use a managed server when you need to load, drain,
+or unload models while the listener is running.
 [Multi-model settings](/configuration/#serve-multiple-local-models) · [Managed serving commands](/cli/#serve-managed-and-manage)
 
 ## Load a model on demand

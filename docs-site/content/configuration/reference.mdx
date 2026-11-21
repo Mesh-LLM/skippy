@@ -17,8 +17,21 @@ controls supported by a measurement or deployment requirement.
 
 | TOML key | Purpose |
 | --- | --- |
-| `model`, `model_path` | Select a catalog ID, Hugging Face GGUF or layer package, or a local GGUF source |
+| `model` | Select a catalog ID, Hugging Face GGUF or layer package, or a local GGUF path |
+| `model_path` | Select a local GGUF path explicitly |
 | `mmap`, `mlock` | Control model weight mapping and page locking |
+
+## `[[models]]`
+
+Set `version = 1` and choose exactly one source per entry.
+[Multi-model settings example](/configuration/#serve-multiple-local-models)
+
+| TOML key | Purpose |
+| --- | --- |
+| `model` | Resolve a model using the same rules as `[model].model` and `--model` |
+| `model_path` | Open a local GGUF path explicitly. Replaces the previous `path` key. |
+| `id` | Override the public model ID. Defaults to the model reference or local filename stem. IDs must be unique. |
+| `settings` | Override per-model controls from `[defaults]` |
 
 ## `[execution]`
 

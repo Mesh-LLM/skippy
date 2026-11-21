@@ -76,52 +76,42 @@ can be inspected without loading a native runtime.
 
 ## Serve multiple local models
 
-Download two GGUFs directly from Hugging Face. Skippy stores them in its
-Hugging Face cache and prints each file's path. [Qwen3-0.6B](https://huggingface.co/Qwen/Qwen3-0.6B-GGUF) · [Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B-GGUF)
-
-```console
-skippy models download Qwen/Qwen3-0.6B-GGUF:Q8_0 --direct
-skippy models download Qwen/Qwen3-1.7B-GGUF:Q8_0 --direct
-```
-
-Save this as `serving.toml` and replace each placeholder with the corresponding
-cached GGUF path printed above.
+Save this as `serving.toml` to serve two Hugging Face GGUFs on one listener.
 
 ```toml
 version = 1
-bind_addr = "127.0.0.1:9337"
-
-[defaults]
-ctx_size = 4096
 
 [[models]]
-id = "qwen3-0.6b"
-path = "<cached path for Qwen3-0.6B>"
-
-[models.settings]
-ctx_size = 2048
+model = "Qwen/Qwen3-0.6B-GGUF:Q8_0"
 
 [[models]]
-id = "qwen3-1.7b"
-path = "<cached path for Qwen3-1.7B>"
+model = "Qwen/Qwen3-1.7B-GGUF:Q8_0"
 ```
 
 ```console
 skippy serve --settings serving.toml
 ```
 
-Each entry needs a unique ID and an unsplit local model path. Relative paths
-resolve from the settings file.
-Put per-model controls directly under `[defaults]` or `[models.settings]`.
-Model entries override shared defaults. Environment variables and explicit
-CLI options override the same setting for every model. Configure the listener
-with top-level `bind_addr` and shared runtime options under `[runtime]`.
+Each entry takes exactly one source. Use `model` for the same catalog names,
+Hugging Face references, and local paths accepted by `skippy serve --model`.
+Skippy reuses cached artifacts and downloads missing ones during startup. Use
+`model_path` to select a local GGUF explicitly. Relative paths resolve from
+the settings file. In an existing multi-model file, rename `path` to
+`model_path` and keep `version = 1`.
 
 Skippy opens one listener after all models load successfully. A failed load
 aborts startup and releases the models already opened. `GET /v1/models` lists
-the configured IDs. Set `model` to `qwen3-0.6b` or `qwen3-1.7b` in an
-inference request to choose which model answers. Add
-`--print-effective-config` to inspect the settings resolved for each model.
+the IDs clients can send in a request's `model` field. The example uses the
+full Hugging Face references as IDs. Local files default to the filename stem.
+Set `id` to override a default, and use a unique ID for each entry.
+
+Put shared tuning under `[defaults]` and per-model overrides under
+`[models.settings]`. Environment variables and explicit CLI tuning options
+override the same setting for every model. Specify sources in `[[models]]`
+when serving a list and omit global selectors such as `[model]` and `--model`.
+Set the listener with top-level `bind_addr` and the shared runtime under
+`[runtime]`. `--print-effective-config` reports each model's resolved settings
+and ID before native loading, and can acquire model files to prepare the report.
 
 ## Benchmark serving settings
 

@@ -78,10 +78,10 @@ run its full path, such as `skippy models download --help`.
 | `skippy serve --model MODEL` | Serve a catalog ID, Hugging Face GGUF or layer-package reference, or local GGUF path. |
 | `skippy serve --model-path PATH` | Open a local GGUF file. For a multipart model, pass the first shard. |
 | `skippy serve --config FILE` | Serve a prepared JSON stage configuration. For a pipeline, add `--stage-transport binary`, and add `--worker-only` on downstream stages. |
-| `--settings FILE` | Load TOML for one model or several local models listed under `[[models]]`. |
+| `--settings FILE` | Load TOML for one model or a list of models. Each `[[models]]` entry can use a `model` reference or an explicit `model_path`. |
 | `--print-effective-config` | Report resolved settings and where they came from, then exit. |
 | `--bind-addr ADDRESS` | Set the public API address, which defaults to `127.0.0.1:9337`. In worker-only mode this overrides the binary stage listener. |
-| `--model-id ID` | Set the model ID the public API advertises and accepts. |
+| `--model-id ID` | Set the model ID the public API advertises and accepts for single-model serving. For a model list, set `id` on the entry. |
 | `--prompt` | Open an interactive prompt after the public API is ready. Off by default. |
 | `--default-max-tokens N` | Set the default API completion ceiling. Defaults to 8192, bounded by the remaining context. |
 | `--ctx-size N` | Set the context size for a local model. By default, Skippy plans it from available memory and model metadata. |

@@ -116,11 +116,17 @@ The `options` map includes CLI defaults; `null` marks an automatic or omitted
 operator value whose resolved behavior is represented by the stage/frontend or
 selected after loading. `overrides` contains only explicitly supplied settings.
 
-For `[[models]]`, the file supplies unique local model IDs and paths, shared
-`[defaults]`, and per-model `[models.settings]`. The per-model settings take
-precedence over shared defaults. CLI options and `SKIPPY_SERVE_*` override the
-same setting across the list. The top-level `bind_addr` and `[runtime]` apply
-to the listener. See the [multi-model settings example](../docs-site/content/configuration/index.mdx#serve-multiple-local-models).
+For `[[models]]`, set `version = 1` and provide exactly one source per entry.
+`model` resolves the same catalog names, Hugging Face references, and local
+paths as `--model`, including cache reuse and downloads. `model_path` selects
+a local GGUF explicitly and replaces the previous `path` key. The optional
+`id` overrides the model reference or local filename stem. IDs must be unique.
+
+Per-model `[models.settings]` takes precedence over shared `[defaults]`.
+CLI tuning options and `SKIPPY_SERVE_*` override the same setting across the
+list. The top-level `bind_addr` and `[runtime]` apply to the listener.
+`--print-effective-config` reports each entry's ID and can acquire model files
+before native model load. See the [multi-model settings example](../docs-site/content/configuration/index.mdx#serve-multiple-local-models).
 
 ## Mode and resource constraints
 
