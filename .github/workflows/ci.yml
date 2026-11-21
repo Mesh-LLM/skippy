@@ -181,7 +181,13 @@ jobs:
       SKIPPY_WINDOWS_ROCM_VERSION: '7.2.0'
       SKIPPY_WINDOWS_ROCM_ARCHES: 'gfx1100;gfx1101;gfx1102;gfx1151;gfx1200;gfx1201'
     steps:
-      - run: echo env-bisect-ok
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - run: echo no-msvc-bisect-ok
   plan:
     name: Validate build targets
     needs: changes
