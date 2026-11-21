@@ -42,6 +42,7 @@ pub async fn run(mut args: ServeCommandArgs) -> Result<()> {
 
 pub(crate) fn validate(args: &ServeCommandArgs) -> Result<()> {
     args.public.settings.validate_mode(args)?;
+    crate::residency::validate(args)?;
     if args.local_models.is_empty() {
         validate_public_settings(&args.public)?;
     } else {
@@ -92,6 +93,7 @@ async fn serve_public(args: ServeCommandArgs) -> Result<()> {
         .unwrap_or_else(default_public_bind_addr);
     let startup_timeout = Duration::from_secs(args.public.startup_timeout_secs.max(1));
     console::status("🧠 Preparing model")?;
+    let residency = crate::residency::options(&args.public);
     let settings = args.public.settings.clone();
     let discover_draft = args.public.speculative_config.is_none();
     let mut options = conversion::local_openai_options(args.public)?;
@@ -113,11 +115,10 @@ async fn serve_public(args: ServeCommandArgs) -> Result<()> {
             &options.tuning,
         ));
     }
-    options.model_open_events = ModelOpenEvents::observe(|observation| {
-        if let ModelOpenObservation::Event(event) = observation {
-            let _ = report_model_open_event(event);
-        }
-    });
+    if let Some(residency) = residency {
+        return crate::residency::serve(options, residency, draft).await;
+    }
+    options.model_open_events = model_open_events();
     let model_id = options
         .model_id
         .clone()
@@ -436,8 +437,16 @@ async fn serve_with_readiness(
     }
 }
 
+pub(crate) fn model_open_events() -> ModelOpenEvents {
+    ModelOpenEvents::observe(|observation| {
+        if let ModelOpenObservation::Event(event) = observation {
+            let _ = report_model_open_event(event);
+        }
+    })
+}
+
 /// Report `model_load` for the public API's model.
-fn record_model_load(model_id: &str, elapsed: Duration, succeeded: bool) {
+pub(crate) fn record_model_load(model_id: &str, elapsed: Duration, succeeded: bool) {
     let properties = skippy_analytics::models::lookup(model_id)
         .apply(skippy_analytics::Properties::new())
         .with(

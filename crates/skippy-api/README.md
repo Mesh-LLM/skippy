@@ -181,6 +181,30 @@ to list all states. The same command accepts `load ID /absolute/model.gguf`,
 `drain ID --timeout-secs 30`, and `unload ID`. Startup can use repeated
 `--eager-model ID=/absolute/model.gguf` flags and `--best-effort`.
 
+### Local model residency
+
+`serving::residency::LocalResidency` accepts an eager or on-demand policy,
+a caller-owned source loader and optional prefetch hook, a shared capacity
+budget, and an idle deadline. Concurrent cold requests share one load. Its
+lease retains the loaded model during requests and streaming responses.
+Failed loads release capacity and subsequent requests can retry. A timed-out
+native load is discarded when the native worker returns. A pause closes
+admission and drains current requests before releasing the model. Resume
+permits subsequent cold loads. Idle eviction uses the same release gate.
+
+Standalone serving is eager by default. To defer the native load and enable
+idle eviction, run `skippy serve --model-path MODEL --on-demand
+--idle-evict-secs 60`. The standalone budget uses known source bytes as its
+weight estimate. Embedders can supply a full measured footprint and share
+the budget across controllers.
+
+To qualify native residency, supply an actual compatible unsplit model and
+runtime bundle. Start the command with a short idle deadline, make concurrent
+requests, and observe one native model open. Hold a stream beyond the idle
+deadline, finish it, wait for the configured idle interval, then request
+again and observe a second load. Record the model and runtime identity along
+with the load and release evidence.
+
 ## Resolving a package for stage planning
 
 Use `PackageAcquisition::resolve_and_inspect_package` with the original local or Hugging Face reference. Mesh and other embedding hosts can replace their schema checks, cache fallback, and metadata inspection calls with this operation. Keep passing the existing explicit cache root, lazy Hub client factory, and progress observer to `PackageAcquisition`.

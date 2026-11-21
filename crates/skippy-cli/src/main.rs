@@ -11,6 +11,7 @@ mod managed;
 mod model_source;
 mod multi_model;
 mod native_logging;
+mod residency;
 mod runtime;
 mod serve;
 mod serve_settings;

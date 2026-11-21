@@ -155,6 +155,38 @@ listener with top-level `bind_addr` and the shared runtime under `[runtime]`.
 Use `--print-effective-config` to inspect the settings and IDs before native
 model load. Skippy can acquire the model files while preparing the report.
 
+## Model residency
+
+For an infrequently used model, defer native loading until the first inference
+request and release the model after a minute without active requests.
+
+```toml
+[model]
+model_path = "/models/model.gguf"
+
+[execution]
+on_demand = true
+idle_evict_secs = 60
+```
+
+Save this as `serve.toml` and run `skippy serve --settings serve.toml`. The same
+settings are available as `--on-demand` and `--idle-evict-secs 60`.
+
+Skippy still acquires and prepares the source at startup. Concurrent cold
+requests share one native load. Active requests and streams keep the model
+resident. After eviction, the next inference request loads it again. You can
+also enable eviction with eager startup by leaving `on_demand` at `false`.
+
+Residency controls require an unsplit public server and a local source with a
+known size. `--prompt` and `--stage-transport` are incompatible with these
+controls. The admission budget charges the model's source size. A budget below
+that size causes loading to fail. Actual memory use also depends on runtime
+allocations. A timed-out load can be retried once the native worker has returned
+and released its reservation.
+
+The environment overrides are `SKIPPY_SERVE_ON_DEMAND`,
+`SKIPPY_SERVE_IDLE_EVICT_SECS`, and `SKIPPY_SERVE_RESIDENCY_BUDGET_BYTES`.
+
 ## Mode and resource constraints
 
 Local and split-stage serving consume the same operator controls. Sampling,
@@ -239,6 +271,9 @@ with their runtime purpose; existing controls follow in the same sections.
 | `--threads-batch` | `threads_batch` | CPU threads for prompt processing |
 | `--op-offload` | `op_offload` | Offload supported host operations to the backend |
 | `--n-gpu-layers` | `n_gpu_layers` | See `skippy serve --help` for values and defaults. |
+| `--on-demand` | `on_demand` | Defer native loading until the first inference request. Defaults to `false` (eager). |
+| `--idle-evict-secs` | `idle_evict_secs` | Release the model after 1–86,400 idle seconds. Omit to disable eviction. |
+| `--residency-budget-bytes` | `residency_budget_bytes` | Positive admission budget in bytes. Defaults to the model's known source size. |
 
 ### [kv]
 
@@ -452,7 +487,7 @@ with their runtime purpose; existing controls follow in the same sections.
 | `--metrics-otlp-grpc` | `metrics_otlp_grpc` | See `skippy serve --help` for values and defaults. |
 | `--telemetry-queue-capacity` | `telemetry_queue_capacity` | See `skippy serve --help` for values and defaults. |
 | `--telemetry-level` | `telemetry_level` | See `skippy serve --help` for values and defaults. |
-| `--startup-timeout-secs` | `startup_timeout_secs` | See `skippy serve --help` for values and defaults. |
+| `--startup-timeout-secs` | `startup_timeout_secs` | Defaults to 60 seconds. With residency enabled, applies to every native load, including reloads after eviction. In that mode, zero is treated as one second and values above 86,400 seconds are rejected. |
 
 Two local telemetry sinks need no collector and are enabled by environment
 rather than settings. `SKIPPY_TELEMETRY_STDERR=1` writes Skippy's own event

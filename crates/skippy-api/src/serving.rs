@@ -244,3 +244,4 @@ pub use skippy_serving::readiness;
 
 pub mod managed;
 pub mod multi_model;
+pub mod residency;
