@@ -218,9 +218,12 @@ compiled outputs, and the GitHub-backed sccache is not redundantly archived as a
 local disk cache.
 
 Jobs that initialize the shared compiler cache send Cargo and CMake C/C++
-compilation through sccache. The job logs and summary show cumulative compiler
-cache counters. The evidence artifacts include the JSON counters, and Quality
-canary captures them after lint and again after tests.
+compilation through sccache. Pushes, scheduled runs, and manual runs on protected
+`main` warm the GitHub compiler cache when they build the triggering commit. PRs
+and other builds can read compatible entries. The job log shows the access mode.
+sccache 0.19.0 counts writes skipped in read-only mode as write errors. Quality
+canary records cumulative statistics after lint and again after tests, including
+JSON counters in its evidence artifact.
 
 Native jobs separately cache prepared llama.cpp sources by upstream pin, complete
 ordered patch queues and preparation recipe, and whisper.cpp sources by their
