@@ -32,7 +32,7 @@ mod runtime_identity;
 use durable_spill::{
     DurableRecordTarget, PendingDurableSpill, spill_exact_record_to_l3, start_durable_spill_worker,
 };
-use exact_state_limits::exact_state_byte_limits;
+use exact_state_limits::{exact_state_byte_limits, exact_state_working_set};
 use exact_state_retention::enforce_exact_state_limits;
 
 // Recurrent and hybrid payloads share the native n_ctx cell pool across
@@ -213,6 +213,7 @@ impl KvStageIntegration {
             cache_config.max_bytes,
             cache_config.exact_max_bytes,
             std::env::var(EXACT_STATE_MAX_BYTES_ENV).ok().as_deref(),
+            exact_state_working_set(config.lane_count, exact_max_entries),
         );
         let radix = Arc::new(Mutex::new(UnifiedRadixCache::new()));
         let exact_blobs = Arc::new(Mutex::new(CacheBlobStore::default()));
@@ -963,6 +964,7 @@ fn parse_cache_mode(value: &str) -> Option<StageKvCacheMode> {
 
 #[cfg(test)]
 mod tests {
+    use super::exact_state_limits::EXACT_STATE_MIN_RETAINED_ENTRIES;
     use super::*;
     use skippy_protocol::{FlashAttentionType, LoadMode};
 
@@ -977,6 +979,7 @@ mod tests {
             soft_bytes,
             hard_bytes,
             hard_is_explicit: false,
+            working_set_entries: EXACT_STATE_MIN_RETAINED_ENTRIES,
         }
     }
 

@@ -7,16 +7,6 @@ use skippy_cache::{CacheBlobStore, UnifiedRadixCache};
 use super::{ExactStateByteLimits, RadixExactEntry};
 use crate::kv_integration::RadixResidentEntry;
 
-// Exact-state snapshots are indivisible and carry architecture-specific state
-// (recurrent and convolution buffers) that `estimate_stage_cache_max_bytes`
-// cannot see, because that estimate is derived from attention KV metadata
-// alone. A single snapshot therefore routinely exceeds the soft cap. Keep this
-// many snapshots (subject to the configured entry limit) before the soft cap
-// evicts anything: falling to one entry
-// turns the catalog into a single-entry cache, where two concurrent sessions
-// on the same stage evict each other on every request.
-const EXACT_STATE_MIN_RETAINED_ENTRIES: usize = 4;
-
 pub(super) fn enforce_exact_state_limits(
     radix: &Mutex<UnifiedRadixCache<RadixResidentEntry, RadixExactEntry>>,
     blobs: &Mutex<CacheBlobStore>,
@@ -24,14 +14,13 @@ pub(super) fn enforce_exact_state_limits(
     max_entries: usize,
     logical_bytes: u64,
 ) -> Result<()> {
-    // Exact snapshots are indivisible, and the soft cap is estimated from
-    // attention KV metadata that cannot include architecture-specific
-    // recurrent state, so one snapshot can legitimately exceed it. Hold a
-    // working set of conversations past the soft cap (never more than the
-    // configured entry limit) so concurrent sessions on a stage stop evicting
-    // each other. The floor counts each conversation's latest continuation:
-    // a checkpoint that a longer retained checkpoint extends is evicted first.
-    let retention_floor = EXACT_STATE_MIN_RETAINED_ENTRIES.min(max_entries);
+    // Exact snapshots are indivisible, so one long conversation's snapshot can
+    // legitimately exceed the soft cap. Hold one conversation per lane past
+    // the soft cap (never more than the configured entry limit) so concurrent
+    // sessions on a stage stop evicting each other. The floor counts each
+    // conversation's latest continuation: a checkpoint that a single longer
+    // retained checkpoint extends is evicted first.
+    let retention_floor = limits.working_set_entries.min(max_entries);
     let conversations = RetentionFloor::Conversations(retention_floor.max(1));
     evict_exact_entries_over(radix, blobs, limits.soft_bytes, conversations)?;
     // Zero means unbounded: no hard pass at all.

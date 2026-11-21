@@ -77,9 +77,8 @@ fn explicit_exact_budget_stays_a_strict_ceiling_past_the_retention_floor() {
     let radix = Mutex::new(UnifiedRadixCache::new());
     let blobs = Mutex::new(CacheBlobStore::new(4));
     let explicit_ceiling = ExactStateByteLimits {
-        soft_bytes: 10,
-        hard_bytes: 40,
         hard_is_explicit: true,
+        ..limits(10, 40)
     };
     store_sessions(
         &radix,
@@ -102,9 +101,8 @@ fn explicit_exact_budget_evicts_a_continuation_when_its_parent_is_leased() {
     let radix = Mutex::new(UnifiedRadixCache::new());
     let blobs = Mutex::new(CacheBlobStore::new(4));
     let explicit_ceiling = ExactStateByteLimits {
-        soft_bytes: 10,
-        hard_bytes: 40,
         hard_is_explicit: true,
+        ..limits(10, 40)
     };
     let checkpoint = [1, 2];
     let continuation = [1, 2, 3];
@@ -126,6 +124,30 @@ fn explicit_exact_budget_evicts_a_continuation_when_its_parent_is_leased() {
     assert!(radix.recurrent_exact("model", &continuation).is_none());
     assert!(radix.release_recurrent("model", &checkpoint));
     assert_eq!(blobs.lock().unwrap().physical_bytes(), 32);
+}
+
+#[test]
+fn the_soft_cap_keeps_one_conversation_per_lane() {
+    let radix = Mutex::new(UnifiedRadixCache::new());
+    let blobs = Mutex::new(CacheBlobStore::new(4));
+    let six_lanes = ExactStateByteLimits {
+        working_set_entries: 6,
+        ..limits(10, 1_024)
+    };
+    store_sessions(
+        &radix,
+        &blobs,
+        six_lanes,
+        &[
+            ("a", &[1, 2], 0),
+            ("b", &[1, 3], 1),
+            ("c", &[1, 4], 2),
+            ("d", &[1, 5], 3),
+            ("e", &[1, 6], 4),
+            ("f", &[1, 7], 5),
+        ],
+    );
+    assert_eq!(radix.lock().unwrap().stats().recurrent_entries, 6);
 }
 
 #[test]
