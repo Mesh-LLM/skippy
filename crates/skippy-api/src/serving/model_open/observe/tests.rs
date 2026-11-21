@@ -1,4 +1,5 @@
 use super::*;
+use crate::serving::ModelOpenObserver;
 use crate::serving::{ModelOpenContradiction, ModelOpenEvents};
 use skippy_ffi::{
     RUNTIME_EVENT_CATEGORY_MODEL_OPEN, RUNTIME_EVENT_EMITTER_WORKER_THREAD,
@@ -311,7 +312,7 @@ fn stalled_observer_preserves_native_progress_and_reports_queue_loss() {
 
 #[test]
 fn enabled_without_observer_runs_the_load_without_a_queue() {
-    let result = run_observed(None, |queue| {
+    let result = run_observed(None::<ModelOpenObserver>, |queue| {
         assert!(queue.is_none());
         Ok::<_, ()>(42)
     });

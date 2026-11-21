@@ -1,10 +1,12 @@
-use std::{error::Error, net::SocketAddr, path::PathBuf, time::Duration};
+use std::{error::Error, net::SocketAddr, path::PathBuf, sync::mpsc, time::Duration};
 
 use skippy_api::execution::{
     ExecutionCapabilities, ExecutionErrorKind, ExecutionState, GenerationMessage,
     GenerationRequest, GenerationStream, MessageContent, ModelOptions, ReasoningEffort,
     RuntimeBundle, SplitOptions, StageCompatibility,
 };
+
+use skippy_api::serving::{ModelLoadOutcome, ModelOpenEvents, ModelOpenObservation};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -157,11 +159,19 @@ fn reject_incompatible(inputs: &Inputs) -> Result<()> {
 async fn local(inputs: &Inputs) -> Result<()> {
     let options = ModelOptions::new("qualification", &inputs.model, inputs.runtime()?)?
         .with_limits(512, 1, 32);
+    let (summaries, reported) = mpsc::channel();
+    let events = ModelOpenEvents::observe(move |observation| {
+        if let ModelOpenObservation::Summary(summary) = observation {
+            let _ = summaries.send(summary);
+        }
+    });
     let model = match &inputs.device {
         Some(device) => options.with_backend_device(device, -1),
         None => options.with_backend_device("CPU", 0),
     }
-    .load()?;
+    .load_with_model_open_events(events)?;
+    let summary = reported.try_recv()?;
+    assert_eq!(summary.outcome, ModelLoadOutcome::Succeeded);
     let ready = model.inspect();
     assert_eq!(ready.state(), ExecutionState::Ready);
     assert_eq!(ready.settings().lanes(), 1);

@@ -9,8 +9,8 @@ Skippy reports a small amount of anonymous usage data to its maintainers so
 we can see which platforms and hardware to support, how fast real models load
 and generate, and whether speculative decoding and the prompt cache pay off
 outside our lab. Official release builds have an analytics key compiled in,
-so for them it is on by default, disclosed on first run, and takes one
-command to turn off permanently. A build with no key, compiled in or set at
+so for them it is on by default, disclosed on first run, and can be turned
+off with a persistent preference. A build with no key, compiled in or set at
 run time, reports nothing at all.
 
 This page is the complete description of what is collected. If something
@@ -27,7 +27,8 @@ survives restarts and upgrades. Any of these also turns reporting off:
 
 | Control | Effect |
 |---|---|
-| `skippy analytics disable` | Permanent opt-out |
+| `skippy analytics disable` | Save a reporting opt-out across runs |
+| `skippy analytics enable` | Save a preference to report when a project key and process settings allow it |
 | `SKIPPY_ANALYTICS=0` | Off for one invocation or one shell |
 | `DO_NOT_TRACK=1` | Off, honoring the [console opt-out convention](https://consoledonottrack.com) |
 | `CI=true` (or another CI variable) | Off automatically; CI runs are not users |
@@ -39,6 +40,13 @@ doing:
 ```bash
 skippy analytics status
 ```
+
+A project key is required. When a key is present, an explicit
+`SKIPPY_ANALYTICS` value takes precedence over `DO_NOT_TRACK`, the saved
+preference, and CI detection. Values `1`, `true`, `yes`, and `on` enable
+reporting. Other set values disable it. Without an override, Skippy honors
+`DO_NOT_TRACK`, a saved opt-out, and CI detection in that order. An unreadable
+saved preference disables reporting.
 
 ## Skippy inside another product
 
@@ -69,7 +77,7 @@ And one of these events:
 |---|---|---|
 | `install_first_run` | none | How many installs there are (standalone only) |
 | `install_updated` | `from_version` | Whether people upgrade, and how fast a release spreads (standalone only) |
-| `cli_command` | `family` (`models`, `runtime`, `doctor`, …), `outcome` (`completed`, `failed`) | Which commands are used, and which fail (standalone only) |
+| `cli_command` | `family` (`models`, `runtime`, `doctor`, `gpu_benchmark`, …), `outcome` (`completed`, `failed`) | Which commands are used, and which fail (standalone only) |
 | `serve_started` | `surface` (`public`, `stage`) | How `skippy serve` is used (standalone only) |
 | `serve_stopped` | `session_length` (`under_1m`, `1m-15m`, …), `succeeded` | Whether servers stay up (standalone only) |
 | `model_load` | the model properties below, `load_ms`, `outcome` (`loaded`, `failed`) | How long models take to load, and which fail |

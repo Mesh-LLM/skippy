@@ -2,10 +2,16 @@ mod analytics;
 mod cli;
 mod conversion;
 mod disk_cache;
+mod draft;
 mod gpu_benchmark;
 mod local_model;
 mod local_resource_planning;
+#[cfg(unix)]
+mod managed;
+mod model_source;
+mod multi_model;
 mod native_logging;
+mod residency;
 mod runtime;
 mod serve;
 mod serve_settings;
@@ -167,6 +173,10 @@ async fn run_command(cli: Cli, native_logs: Arc<native_logging::NativeDiagnostic
             skippy_serving::telemetry::finish_process_telemetry();
             served
         }
+        #[cfg(unix)]
+        Command::ServeManaged(args) => managed::serve(args, native_options).await,
+        #[cfg(unix)]
+        Command::Manage(args) => managed::manage(args).await,
         Command::Models { command } => skippy_commands::models::run_standalone(&command).await,
         Command::PlanSplit(args) => skippy_commands::split::run(args.into()),
         Command::Runtime { command } => {

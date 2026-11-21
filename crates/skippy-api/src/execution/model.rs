@@ -108,7 +108,16 @@ impl ModelOptions {
 
     /// Open model resources synchronously. On failure all per-model resources
     /// are dropped. A successfully activated native bundle remains process-wide.
-    pub fn load(mut self) -> Result<ModelHandle, ExecutionError> {
+    pub fn load(self) -> Result<ModelHandle, ExecutionError> {
+        self.load_with_model_open_events(ModelOpenEvents::Disabled)
+    }
+
+    /// Open the model with typed diagnostics for this load. The returned
+    /// result determines readiness independently of observation delivery.
+    pub fn load_with_model_open_events(
+        mut self,
+        open_events: ModelOpenEvents,
+    ) -> Result<ModelHandle, ExecutionError> {
         self.validate()
             .map_err(|cause| ExecutionError::new(ExecutionErrorKind::InvalidOptions, cause))?;
         let model_path = local_model_path(&self.stage.model_path)?;
@@ -121,6 +130,7 @@ impl ModelOptions {
         let config = single_stage_config(&self.stage, identity.into(), scope.to_string())
             .map_err(|cause| ExecutionError::new(ExecutionErrorKind::InvalidPackage, cause))?;
         let mut request = self.request(config, None)?;
+        request.open_events = open_events;
         if let Some(capacity) = self.queue_capacity {
             request.openai.generation_queue_capacity = capacity;
         }

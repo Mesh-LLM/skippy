@@ -124,7 +124,7 @@ Release jobs publish `native-runtimes.json`:
       "backend": { "kind": "cpu" },
       "rank": 0,
       "libraries": ["lib/libllama.so"],
-      "url": "https://github.com/general-inference/skippy/releases/download/v0.80.0/skippy-native-runtime-linux-x86_64-cpu.tar.gz",
+      "url": "https://github.com/general-inference/skippy/releases/download/v0.80.0/skippy-v0.80.0-linux-x86_64-cpu.tar.gz",
       "sha256": "2f1c..."
     }
   ]
@@ -345,11 +345,7 @@ SKIPPY_NATIVE_RUNTIME_RANK=1000 scripts/package-native-runtime.sh --backend vulk
   --id-suffix nixpkgs
 ```
 
-Generate the release manifest:
-
-```bash
-scripts/generate-native-runtime-release-manifest.sh \
-  --tag v0.80.0 \
-  --out dist/native-runtimes/native-runtimes.json \
-  dist/native-runtimes/*.tar.gz
-```
+The release workflow writes the release manifest (`scripts/ci-release.py`). Each
+entry is the manifest of the runtime inside one release archive, with `url` and
+`sha256` naming that `skippy-<tag>-<variant>.tar.gz`. The installer downloads the
+archive and installs the one runtime it carries.

@@ -96,8 +96,10 @@ Shared serving defaults are defined by `SingleStageOptions` and `InferenceOption
 using [`skippy-config`](../skippy-config/README.md). [`kv_cache`](src/kv_cache.rs)
 owns publisher-declared live-KV dtype selection and model compatibility fallback;
 [`speculative`](src/speculative.rs) owns installed sibling draft discovery and
-conservative automatic pairing. Standalone Skippy and embedding applications consume these same
-policies. Explicit caller settings take precedence.
+the default DFlash-family pairing catalog, compatibility checks, and preparation
+policy. Standalone Skippy and embedding applications use the same resolver.
+See the [draft pairing policy and adapter guide](../../docs/design/SKIPPY_DRAFT_PAIRING.md).
+Explicit caller settings take precedence.
 
 ### Serving profiles
 
@@ -160,6 +162,49 @@ manifest and endpoints before starting downstream stages first.
 adapter can use `start_binary_stage_ready_probe` for the existing readiness
 handshake. Cancel the execution to release stages in reverse startup order.
 
+### Running server lifecycle
+
+`serving::managed::ManagedModels` can start with zero models or apply a
+fail-fast or best-effort eager startup policy. Its backend lists only ready
+instances. Load acceptance appears as `loading` in status and the load future
+waits for completion. A drain closes admission immediately, then waits for
+existing requests and streams. At the deadline the registry signals their
+cancellation and retains the instance until execution releases its leases.
+A load cancelled during native initialization releases its result when the
+native call finishes. An optional instance number prevents stale operator
+requests from affecting a replacement.
+
+On Unix, create an owner-only directory and use
+`skippy serve-managed --management-socket /absolute/private/control.sock`.
+Use `skippy manage --management-socket /absolute/private/control.sock status`
+to list all states. The same command accepts `load ID /absolute/model.gguf`,
+`drain ID --timeout-secs 30`, and `unload ID`. Startup can use repeated
+`--eager-model ID=/absolute/model.gguf` flags and `--best-effort`.
+
+### Local model residency
+
+`serving::residency::LocalResidency` accepts an eager or on-demand policy,
+a caller-owned source loader and optional prefetch hook, a shared capacity
+budget, and an idle deadline. Concurrent cold requests share one load. Its
+lease retains the loaded model during requests and streaming responses.
+Failed loads release capacity and subsequent requests can retry. A timed-out
+native load is discarded when the native worker returns. A pause closes
+admission and drains current requests before releasing the model. Resume
+permits subsequent cold loads. Idle eviction uses the same release gate.
+
+Standalone serving is eager by default. To defer the native load and enable
+idle eviction, run `skippy serve --model-path MODEL --on-demand
+--idle-evict-secs 60`. The standalone budget uses known source bytes as its
+weight estimate. Embedders can supply a full measured footprint and share
+the budget across controllers.
+
+To qualify native residency, supply an actual compatible unsplit model and
+runtime bundle. Start the command with a short idle deadline, make concurrent
+requests, and observe one native model open. Hold a stream beyond the idle
+deadline, finish it, wait for the configured idle interval, then request
+again and observe a second load. Record the model and runtime identity along
+with the load and release evidence.
+
 ## Resolving a package for stage planning
 
 Use `PackageAcquisition::resolve_and_inspect_package` with the original local or Hugging Face reference. Mesh and other embedding hosts can replace their schema checks, cache fallback, and metadata inspection calls with this operation. Keep passing the existing explicit cache root, lazy Hub client factory, and progress observer to `PackageAcquisition`.
@@ -176,3 +221,16 @@ let package = acquisition.resolve_and_inspect_package(
 Use `CacheOnly` for offline resolution. `AllowUpstream` fetches missing metadata and resolves a mutable revision upstream once when its cached manifest declares schema 1. A full Hub commit pin stays fixed. `PackageInspectionError::UnsupportedSchema` reports the schema and whether it came from a local package, the cache, or upstream. Missing offline Hub metadata produces `MetadataNotCached`. Malformed manifests and integrity failures surface as errors.
 
 Use `package.package_dir` for graph planning and `package.package_id` for exact stage admission. Carry `package.identity.manifest_sha256` with the stage load and pass `package.identity.package_ref` to `resolve_package_v2_stage_to_local`. For Hub packages this reference contains the verified snapshot’s full commit hash, so later stage acquisition uses the same snapshot when a branch moves. Inspection verifies the manifest and carrier. Stage acquisition fetches and verifies the required layer artifacts after admission.
+
+### Several local models on one listener
+
+Build a `serving::multi_model::LocalModelDefinition` for each served ID and
+load request, then call `MultiModelServer::load`. Duplicate IDs fail before
+load. A failed eager load releases already loaded models and leaves the
+listener unopened. Call `backend` for in-process inference or `serve` with a
+bound listener. Requests route to the exact ID and retain that model through
+stream completion. Supply a single public-listener policy when using HTTP
+exchange admission hooks. Model-specific execution hooks remain on each load
+request.
+
+For a standalone server, see the [multi-model serving settings](../../docs/SERVING_SETTINGS.md#serve-multiple-local-models).

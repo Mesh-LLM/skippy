@@ -1,5 +1,6 @@
 """Offline checks for release versioning and Git ref promotion."""
 
+import importlib.util
 import os
 import subprocess
 import sys
@@ -13,6 +14,68 @@ from lib.release_version import bump, parse_tag
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 TAG = "v0.81.0-rc.1"
+
+
+def release_script():
+    spec = importlib.util.spec_from_file_location("ci_release", SCRIPTS / "ci-release.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class RuntimeCatalogContract(unittest.TestCase):
+    """The catalog a host downloads names each release archive exactly once."""
+
+    def setUp(self):
+        self.release = release_script()
+        self.archives = {f"skippy-{TAG}-{variant}.tar.gz": digit * 64
+                         for variant, digit in (("linux-x86_64-cpu", "a"), ("darwin-aarch64-metal", "b"))}
+        self.value = self.release.catalog(TAG, [
+            self.release.catalog_entry(
+                {"id": f"skippy-native-runtime-{name}", "release_version": TAG[1:],
+                 "skippy_abi": "0.1.86", "url": None, "sha256": None},
+                TAG, name, sha256)
+            for name, sha256 in self.archives.items()
+        ])
+
+    def test_catalog_points_each_runtime_at_its_release_archive(self):
+        self.release.verify_catalog(self.value, TAG, self.archives)
+        self.assertEqual(self.value["release_version"], TAG[1:])
+        first = self.value["artifacts"][0]
+        self.assertEqual(first["url"], "https://github.com/general-inference/skippy/releases/"
+                         f"download/{TAG}/skippy-{TAG}-linux-x86_64-cpu.tar.gz")
+        self.assertEqual(first["sha256"], "a" * 64)
+
+    def test_installer_and_release_agree_on_the_catalog_location(self):
+        installer = (SCRIPTS.parent / "crates/skippy-runtime-install/src/types.rs").read_text()
+        self.assertIn(f'releases_url: "{self.release.RELEASES_URL}"', installer)
+        self.assertIn(f"/download/{{tag}}/{self.release.CATALOG}", installer)
+
+    def test_catalog_rejects_a_runtime_from_another_release_or_abi(self):
+        stale = {"id": "old", "release_version": "0.76.1", "skippy_abi": "0.1.86"}
+        with self.assertRaisesRegex(ValueError, "not built for release"):
+            self.release.catalog_entry(stale, TAG, "skippy.tar.gz", "a" * 64)
+        mixed = [dict(entry) for entry in self.value["artifacts"]]
+        mixed[1]["skippy_abi"] = "0.1.87"
+        with self.assertRaisesRegex(ValueError, "disagree on the Skippy ABI"):
+            self.release.catalog(TAG, mixed)
+
+    def test_verification_rejects_a_catalog_that_differs_from_the_archives(self):
+        def changed(edit):
+            value = {**self.value, "artifacts": [dict(entry) for entry in self.value["artifacts"]]}
+            edit(value)
+            return value
+
+        cases = (
+            lambda value: value["artifacts"][0].update(sha256="c" * 64),
+            lambda value: value["artifacts"].pop(),
+            lambda value: value["artifacts"][1].update(url=value["artifacts"][0]["url"]),
+            lambda value: value["artifacts"][0].update(url="https://example.invalid/runtime.tar.gz"),
+            lambda value: value.update(release_version="0.80.0"),
+        )
+        for edit in cases:
+            with self.assertRaises(ValueError):
+                self.release.verify_catalog(changed(edit), TAG, self.archives)
 
 
 class ReleaseContract(unittest.TestCase):
@@ -83,6 +146,44 @@ class ReleaseContract(unittest.TestCase):
         self.assertEqual([entry["version"] for entry in packages], [TAG[1:], TAG[1:], "0.80.0"])
         self.assertEqual(packages[0]["dependencies"], [f"skippy-b {TAG[1:]}"])
 
+    def test_automatic_release_takes_the_next_unreleased_patch(self):
+        from importlib.util import module_from_spec, spec_from_file_location
+        spec = spec_from_file_location("candidate", SCRIPTS / "ci-release-candidate.py")
+        candidate = module_from_spec(spec)
+        spec.loader.exec_module(candidate)
+        cases = (
+            ("0.80.0", [], "v0.80.0"),
+            ("0.80.0", ["v0.80.0"], "v0.80.1"),
+            ("0.80.1", ["v0.80.0", "v0.80.1", "v0.80.10", "v0.80.11-rc.1", "v0.79.40"], "v0.80.11"),
+            ("0.81.0", ["v0.80.7"], "v0.81.0"),
+        )
+        for version, tags, expected in cases:
+            self.assertEqual(candidate.next_patch(version, tags), expected)
+        with self.assertRaisesRegex(ValueError, "stable workspace version"):
+            candidate.next_patch("0.81.0-rc.1", [])
+
+    def test_automatic_release_skips_a_main_that_is_already_released(self):
+        self.assertEqual(self.release("next").stdout.strip(), "v0.80.0")
+        self.git("tag", "-a", "v0.80.0", "-m", "Skippy v0.80.0")
+        self.git("push", "origin", "refs/tags/v0.80.0")
+        self.assertEqual(self.release("next").stdout.strip(), "")
+        self.git("commit", "--allow-empty", "-m", "change")
+        self.env["GITHUB_SHA"] = self.git("rev-parse", "HEAD")
+        self.assertEqual(self.release("next").stdout.strip(), "v0.80.1")
+
+    def test_automatic_release_skips_a_main_released_by_a_tag_beside_it(self):
+        self.git("tag", "v0.80.0")
+        self.git("commit", "--allow-empty", "-m", "change")
+        head = self.env["GITHUB_SHA"] = self.git("rev-parse", "HEAD")
+        self.git("push", "origin", "main", "refs/tags/v0.80.0")
+        self.git("commit", "--allow-empty", "-m", "release: prepare v0.80.1")
+        self.git("push", "origin", "HEAD:refs/tags/v0.80.1")
+        self.git("reset", "--hard", head)
+        self.assertEqual(self.release("next").stdout.strip(), "")
+        self.git("commit", "--allow-empty", "-m", "change")
+        self.env["GITHUB_SHA"] = self.git("rev-parse", "HEAD")
+        self.assertEqual(self.release("next").stdout.strip(), "v0.80.2")
+
     def test_stage_retry_and_atomic_promotion(self):
         candidate = self.stage()
         tag_ref = f"refs/tags/{TAG}"
@@ -96,6 +197,27 @@ class ReleaseContract(unittest.TestCase):
         self.release("cleanup", candidate)
         self.assertEqual(self.refs("refs/heads/main", tag_ref, candidate_ref),
                          {"refs/heads/main": candidate, tag_ref: candidate})
+
+    def test_tag_only_promotion_leaves_main_and_survives_a_moved_main(self):
+        candidate = self.stage()
+        tag_ref = f"refs/tags/{TAG}"
+        self.git("checkout", "--detach", self.base)
+        self.git("commit", "--allow-empty", "-m", "concurrent change")
+        advanced = self.git("rev-parse", "HEAD")
+        self.git("push", "origin", "HEAD:refs/heads/main")
+        self.git("checkout", "--detach", candidate)
+        self.env["SKIPPY_RELEASE_TAG_ONLY"] = "1"
+        self.release("promote", TAG, self.base, candidate)
+        self.release("promote", TAG, self.base, candidate)
+        self.assertEqual(self.refs("refs/heads/main", tag_ref),
+                         {"refs/heads/main": advanced, tag_ref: candidate})
+        self.git("fetch", "origin", "refs/heads/main:refs/remotes/origin/main", f"{tag_ref}:{tag_ref}")
+        check = [sys.executable, str(SCRIPTS / "ci-release.py"), "validate", TAG]
+        self.run_command(*check)
+        self.git("checkout", "--detach", advanced)
+        self.git("commit", "--allow-empty", "-m", "not a release")
+        self.git("tag", "-f", TAG)
+        self.assertNotEqual(self.run_command(*check, check=False).returncode, 0)
 
     def test_promotion_rejects_moved_main_and_occupied_tag(self):
         candidate = self.stage()

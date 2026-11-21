@@ -66,6 +66,12 @@ pub enum Command {
     Prompt(PromptArgs),
     /// Serve OpenAI and Anthropic APIs, or an explicitly selected stage transport.
     Serve(Box<ServeCommandArgs>),
+    /// Run an inference listener with local model lifecycle controls.
+    #[cfg(unix)]
+    ServeManaged(crate::managed::ServerArgs),
+    /// Operate a running server over its private Unix control socket.
+    #[cfg(unix)]
+    Manage(crate::managed::ClientArgs),
     ExampleConfig,
     /// Download models or inspect the shared Hugging Face cache.
     Models {
@@ -103,15 +109,14 @@ pub enum StageTransport {
 
 #[derive(Parser)]
 pub struct ServeCommandArgs {
-    /// Complete serving settings file (TOML); CLI overrides environment and file values.
+    /// Serving settings (TOML) for one model or a list of local models.
     #[arg(long)]
     pub settings: Option<PathBuf>,
+    #[arg(skip)]
+    pub local_models: Vec<ServeOpenAiArgs>,
     /// Print resolved settings and their sources without starting the server.
     #[arg(long)]
     pub print_effective_config: bool,
-    /// Local model path or Hugging Face repository reference.
-    #[arg(long, conflicts_with_all = ["model_path", "config"])]
-    pub model: Option<String>,
     /// Open an interactive prompt after the public API is ready.
     #[arg(long)]
     pub prompt: bool,
@@ -251,12 +256,24 @@ pub struct ServeBinaryArgs {
 pub struct ServeOpenAiArgs {
     #[arg(skip)]
     pub settings: crate::serve_settings::ServeSettings,
+    /// Local model path or Hugging Face repository reference.
+    #[arg(long, conflicts_with_all = ["model_path", "config"])]
+    pub model: Option<String>,
     /// Prepared stage configuration; mutually exclusive with --model-path and --model.
     #[arg(long, conflicts_with = "model_path")]
     pub config: Option<PathBuf>,
     /// Local GGUF file to prepare and serve (first shard for multipart models).
     #[arg(long, conflicts_with = "config")]
     pub model_path: Option<PathBuf>,
+    /// Defer native loading until a request arrives.
+    #[arg(long)]
+    pub on_demand: bool,
+    /// Evict the unsplit model after this much idle time.
+    #[arg(long)]
+    pub idle_evict_secs: Option<u64>,
+    /// Capacity budget for the model residency controller.
+    #[arg(long)]
+    pub residency_budget_bytes: Option<u64>,
     /// Context size for a local model. Defaults to the VRAM-aware model plan (up to 128k).
     #[arg(long, conflicts_with = "config")]
     pub ctx_size: Option<u32>,
@@ -678,7 +695,7 @@ mod tests {
         let Command::Serve(args) = cli.command else {
             panic!("expected serve command");
         };
-        assert_eq!(args.model.as_deref(), Some("Qwen3-0.6B-Q4_K_M"));
+        assert_eq!(args.public.model.as_deref(), Some("Qwen3-0.6B-Q4_K_M"));
         assert_eq!(args.public.ctx_size, Some(8192));
         assert_eq!(args.public.n_gpu_layers, Some(-1));
         assert!(args.prompt);

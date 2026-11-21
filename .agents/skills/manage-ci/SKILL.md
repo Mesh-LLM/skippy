@@ -45,7 +45,8 @@ contract; no downstream product's workflow topology applies here.
   pushes the exact tested image. The package jobs use the matching x86_64 or
   ARM64 CUDA image. Bootstrap image publication before changing consumers, and
   require actual device results for GPU qualification.
-- `.github/workflows/release.yml` dispatches on protected main, stages the
+- `.github/workflows/release.yml` runs daily and on dispatch from protected main
+  (a daily run takes the next patch version and skips an already released main), stages the
   version-only candidate, and calls the shared validation implementations on
   its exact SHA. Only the publisher can promote the verified commit and create
   its tag together. It cannot move an existing tag or publish an incomplete
@@ -104,8 +105,10 @@ contract; no downstream product's workflow topology applies here.
   Caches are accelerators, not artifact correctness or qualification evidence.
   Restore Cargo and compiler caches on native runners as well as hosted runners;
   image-provided tooling does not make fresh containers retain compiler outputs.
-- Cancel superseded PR validation only. Release and upgrade concurrency must
-  retain evidence and never cancel another release or an independent CI run.
+- Cancel in-progress validation only for superseded PRs. Main-push runs of
+  `ci.yml` share one running slot and one pending slot. Newer pushes replace
+  the pending run while the active run finishes. Release and upgrade concurrency
+  must retain evidence and never cancel another release or an independent CI run.
 - The code workflow's `CI` summary rejects failed, cancelled, or missing selected jobs;
   `PR checks` additionally covers the separate inference and image workflows.
   Upload diagnostic evidence on failure before cleanup.

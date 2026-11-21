@@ -7,7 +7,8 @@ description: Persist reusable prompt state across process restarts.
 
 The disk tier stores verified prompt state below the in-process prefix cache.
 It lets reusable prefixes survive process restarts and extends retention beyond
-the resident cache. It is disabled by default and must be enabled deliberately.
+the resident cache. Set an automatic disk budget of up to 64 GiB,
+subject to available space and the free-space reserve.
 
 Use it when repeated prompts are valuable across restarts or do not fit in the
 resident retention budget. Keep it off when local storage latency, capacity, or
@@ -33,8 +34,9 @@ skippy serve \
   --kv-cache-min-free 16GiB
 ```
 
-Use `auto` instead of a fixed size for an automatically bounded disk budget,
-or `off` to disable the tier.
+Use `auto` instead of a fixed size for a budget capped at 20% of the sum of
+free and already managed space. Skippy also applies the 64 GiB cap and
+honors the minimum free-space reserve. Use `off` to disable the tier.
 
 ## How the tiers interact
 
@@ -61,7 +63,8 @@ prefix_cache_ram = "4GiB"
 kv_cache_disk = "32GiB"
 ```
 
-On unified-memory systems, keep the optional serialized L2 tier disabled.
+On unified-memory systems, use `prefix_cache_ram = "off"` to disable the
+serialized L2 tier.
 Native recurrent checkpoints still need their own bounded RAM allocation.
 See [Unified-memory systems](/kv-caching/#unified-memory-systems).
 
@@ -72,9 +75,9 @@ kill switches. Unset them before explicitly enabling prefix caching.
 
 | Setting | Values | Purpose |
 | --- | --- | --- |
-| `kv_cache_disk` | `off`, `auto`, or IEC size | Enable and bound durable storage |
-| `kv_cache_disk_dir` | Local directory | Choose the cache root |
-| `kv_cache_min_free` | IEC size | Reserve free space on the volume |
+| `kv_cache_disk` | `off` (default), `auto`, or IEC size | Enable and bound durable storage |
+| `kv_cache_disk_dir` | Local directory | Choose the cache root. Defaults to `$SKIPPY_HOME/kv-cache` or `~/.skippy/kv-cache`. |
+| `kv_cache_min_free` | IEC size of at least `1GiB` | Reserve free space on the volume. Defaults to `16GiB`. |
 | `prefix_cache_ram` | `off` or IEC size | Bound native checkpoint RAM; serialized runtimes can add a RAM tier above disk |
 
 Invalid startup configuration is fatal. Runtime storage failure is not:

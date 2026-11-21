@@ -327,8 +327,10 @@ publication or signing secrets.
 
 ## Cut a release
 
-Run `just release vX.Y.Z`, or dispatch **Release** from `main` in GitHub
-Actions. For a rehearsal, run `just release vX.Y.Z true`. The canary stages a
+The **Release** workflow runs daily at 17:00 UTC with the next patch version and
+skips a `main` that is already released; see [RELEASE.md](../RELEASE.md). For a
+chosen version run `just release vX.Y.Z`, or dispatch **Release** from `main` in
+GitHub Actions. For a rehearsal, run `just release vX.Y.Z true`. The canary stages a
 temporary candidate and runs the full package, device, inference and docs
 matrix. It leaves `main`, version tags, GitHub releases and deployed docs
 untouched.
@@ -346,7 +348,11 @@ a variable and `SKIPPY_RELEASE_APP_PRIVATE_KEY` as a secret. The temporary
 candidate namespace must be writable by the repository Actions token. Keep
 the release tag deletion and non-fast-forward protections in place.
 
-Once the candidate passes, the publisher advances `main` and creates the new
+Without `SKIPPY_RELEASE_APP_ID` the publisher uses the built-in Actions token,
+which cannot push to protected `main`. It then creates the tag only: the release
+is the version commit one commit ahead of `main`, and `main` keeps its version.
+
+With the App configured and once the candidate passes, the publisher advances `main` and creates the new
 tag in one atomic push, then publishes the verified archives and deploys the
 prebuilt docs. Main CI reuses the protected Release run's validation receipt
 for that exact commit. An ordinary push without a matching receipt runs

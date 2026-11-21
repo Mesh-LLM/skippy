@@ -6,6 +6,7 @@ use skippy_serving::{EmbeddedRuntimeOptions, SpeculativeDecodeConfig};
 use std::{future::Future, net::SocketAddr, path::PathBuf};
 
 /// Node disk cache settings, resolved by the caller from its configuration.
+#[derive(Clone)]
 pub struct LocalDiskCacheOptions {
     pub directory: PathBuf,
     pub budget: skippy_cache::disk_policy::DiskCacheBudget,
@@ -58,6 +59,21 @@ pub struct LocalOpenAiOptions {
 }
 
 impl LocalOpenAiOptions {
+    /// Keep the target's native MTP or plain decode baseline when a higher
+    /// priority package or catalog default owns the draft choice.
+    pub fn keep_native_speculation_default(&mut self) {
+        self.speculative = Some(
+            InferenceOptions::embedded_stage_defaults(
+                None,
+                self.default_max_tokens,
+                1,
+                0,
+                self.config.native_mtp_enabled,
+            )
+            .speculative,
+        );
+    }
+
     pub fn resolved_openai_options(&self) -> Result<InferenceOptions> {
         self.tuning.validate()?;
         skippy_config::validate_config(&self.config, self.topology.as_ref())?;
@@ -152,7 +168,17 @@ impl LocalOpenAiOptions {
         Ok(openai)
     }
 
-    fn into_request(self) -> Result<(SocketAddr, ModelLoadRequest)> {
+    /// Resolve local options to a load request without opening the native model.
+    pub fn into_request(mut self) -> Result<(SocketAddr, ModelLoadRequest)> {
+        let events = std::mem::take(&mut self.model_open_events);
+        self.load_request(events)
+    }
+
+    /// Prepare a fresh load from the same options with a per-load observer.
+    pub fn load_request(
+        &self,
+        open_events: ModelOpenEvents,
+    ) -> Result<(SocketAddr, ModelLoadRequest)> {
         let openai = self.resolved_openai_options()?;
         let native_mtp_enabled = openai.native_mtp_enabled;
         let mtp_source = if native_mtp_enabled {
@@ -164,31 +190,34 @@ impl LocalOpenAiOptions {
         } else {
             skippy_runtime::MtpSource::Disabled
         };
-        let mut config = self.config;
+        let mut config = self.config.clone();
         config.native_mtp_enabled = native_mtp_enabled;
-        let l3_manager = self.disk_cache.and_then(LocalDiskCacheOptions::acquire);
+        let l3_manager = self
+            .disk_cache
+            .clone()
+            .and_then(LocalDiskCacheOptions::acquire);
         Ok((
             self.bind_addr,
             ModelLoadRequest {
                 runtime: EmbeddedRuntimeOptions {
                     config,
-                    topology: self.topology,
+                    topology: self.topology.clone(),
                     n_threads: self.tuning.n_threads,
                     n_threads_batch: self.tuning.n_threads_batch,
                     mtp_source,
                     recurrent_rollback_tokens: 0,
-                    metrics_otlp_grpc: self.metrics_otlp_grpc,
+                    metrics_otlp_grpc: self.metrics_otlp_grpc.clone(),
                     telemetry_queue_capacity: self.telemetry_queue_capacity,
                     telemetry_level: self.telemetry_level,
                     session_lifecycle_observer: None,
                 },
                 openai,
-                open_events: self.model_open_events,
+                open_events,
                 hooks_factory: None,
                 generation_observer: None,
                 kv_observer: None,
                 hook_policy: None,
-                guardrails: self.tuning.guardrails.or_else(|| {
+                guardrails: self.tuning.guardrails.clone().or_else(|| {
                     Some(
                         skippy_serving::InferenceGuardrailsConfig::for_standalone_mode(
                             self.openai_guardrails,
@@ -210,11 +239,21 @@ pub async fn serve_local_openai_with_shutdown(
     options: LocalOpenAiOptions,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
+    serve_local_openai_with_default_draft(options, None, shutdown).await
+}
+
+/// Serve using a caller-prepared default draft and the existing fallback plan.
+pub async fn serve_local_openai_with_default_draft(
+    options: LocalOpenAiOptions,
+    draft: Option<&crate::speculative::PreparedDraft>,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
     let (bind_addr, request) = options.into_request()?;
-    request
-        .load()?
-        .serve_http_with_shutdown(bind_addr, shutdown)
-        .await
+    let loaded = match draft {
+        Some(draft) => request.load_with_default_draft(draft),
+        None => request.load(),
+    }?;
+    loaded.serve_http_with_shutdown(bind_addr, shutdown).await
 }
 
 #[cfg(test)]

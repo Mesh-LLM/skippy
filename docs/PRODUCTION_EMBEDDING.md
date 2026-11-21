@@ -41,6 +41,10 @@ while the process-wide libraries stay resident.
   resident. Options express the model path, runtime bundle, context and lane
   limits, device selection, queue capacity, threads, and telemetry policy.
   The ordinary builder starts with speculation disabled.
+- Use `ModelOptions::load_with_model_open_events` with
+  `serving::ModelOpenEvents::observe` for typed load progress, diagnostics,
+  and a summary. Delivery is best-effort and the load result determines
+  readiness. Keep the observer short so it can drain promptly.
 - Submit the protocol-neutral `GenerationRequest` with `generate` in a Tokio
   runtime. Read events with `next`. Cancel explicitly with `cancel`, or drop
   the stream or its pending startup future. Cancellation is cooperative.
@@ -84,6 +88,12 @@ and waits for a binary readiness handshake. `SplitExecution` owns the
 in-process frontend and joins the worker after frontend drain. Split defaults
 keep MTP, speculative drafting, and cross-lane batching off. Experimental
 split admission is an explicit opt-in. See the [external fixture](../fixtures/production-embedding/README.md).
+
+Resolve a package reference with
+`PackageAcquisition::resolve_and_inspect_package` before stage planning. A
+Hub result pins the verified snapshot commit. Pass its package reference and
+manifest digest through admission and stage acquisition. Use
+`PackageInspectionPolicy::CacheOnly` when the host must stay offline.
 
 For host-managed placement, staged package materialization, transport, and
 advanced inference policy, use the Skippy-owned semantic types in
