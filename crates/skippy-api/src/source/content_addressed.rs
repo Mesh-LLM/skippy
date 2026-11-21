@@ -62,6 +62,7 @@ pub(super) fn huggingface_source_files(
     );
 
     let snapshot_path = snapshot_root.join(&identity.file);
+    skippy_model_ref::validate_gguf_model_path(&snapshot_path).map_err(anyhow::Error::msg)?;
     anyhow::ensure!(
         snapshot_path.exists(),
         "Hugging Face GGUF snapshot entry is unavailable: {}",

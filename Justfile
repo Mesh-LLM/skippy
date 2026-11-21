@@ -1,3 +1,4 @@
+automation_python := env("SKIPPY_PYTHON", "python3")
 llama_dir := env("SKIPPY_LLAMA_DIR", ".deps/llama.cpp")
 macos_target := env("MACOSX_DEPLOYMENT_TARGET", "")
 export MACOSX_DEPLOYMENT_TARGET := if macos_target == "" { trim(read(justfile_directory() / "scripts/lib/macos-deployment-target.txt")) } else { macos_target }
@@ -22,8 +23,9 @@ docs-publish:
 docs-publish-beta:
     @npm --prefix docs-site run deploy:prebuilt:beta
 
+[positional-arguments]
 automation-run *args:
-    @cargo xtool {{ args }}
+    @bash scripts/automation-run.sh "$@"
 
 [private]
 [unix]
@@ -91,6 +93,27 @@ format:
     @cargo fmt --all
     @cargo fmt --manifest-path skippy-api-rs/Cargo.toml --all
 
+embedding-contract-check:
+    @cargo fmt -p skippy-api -p skippy-inference-api -p skippy-serving --check
+    @cargo check --locked --offline -p skippy-api -p skippy-inference-api -p skippy-serving --features skippy-api/dynamic-native-runtime
+    @cargo clippy --locked --offline -p skippy-api -p skippy-inference-api -p skippy-serving --features skippy-api/dynamic-native-runtime --all-targets -- -D warnings
+    @cargo test --locked --offline -p skippy-api -p skippy-inference-api --features skippy-api/dynamic-native-runtime
+    @cargo test --locked --offline -p skippy-serving --features dynamic-native-runtime --lib embedded::tests
+    @cargo test --locked --offline -p skippy-serving --features dynamic-native-runtime --lib readiness::tests
+    @python3 scripts/embedding-consumer.py check
+
+[positional-arguments]
+embedding-serving-test bundle_root:
+    @SKIPPY_NATIVE_RUNTIME_BUNDLE_DIR="$1" cargo test --locked --offline -p skippy-serving --features dynamic-native-runtime
+
+[positional-arguments]
+embedding-consumer-check *args:
+    @python3 scripts/embedding-consumer.py check "$@"
+
+[positional-arguments]
+embedding-consumer-qualify *args:
+    @python3 scripts/embedding-consumer.py qualify "$@"
+
 lint: llama-prepare
     @cargo fmt --all --check
     @cargo clippy --workspace --all-targets -- -D warnings
@@ -109,7 +132,10 @@ cache-correctness-cuda:
     @SKIPPY_CACHE_QUAL_BACKEND="${SKIPPY_CACHE_QUAL_BACKEND:-cuda}" LLAMA_STAGE_BACKEND=cuda just with-lld cargo test --locked -p skippy-serving --lib frontend::tests::cache_qualification::cross_tier -- --ignored --exact --nocapture
 
 cache-correctness-matrix backend output *options:
-    @cargo xtool cache-qualification "{{ backend }}" "{{ output }}" {{ options }}
+    @cargo run --locked -p xtask -- "{{ backend }}" "{{ output }}" {{ options }}
+
+cache-correctness-package variant profile product output:
+    @cargo run --locked -p xtask -- package {{ quote(variant) }} {{ quote(profile) }} {{ quote(product) }} {{ quote(output) }}
 
 [unix]
 cache-correctness-verify backend report:
@@ -117,37 +143,37 @@ cache-correctness-verify backend report:
 
 [unix]
 cache-correctness-verify-matrix backend source report_dir:
-    @cargo xtool cache-qualification verify {{ quote(backend) }} {{ quote(source) }} {{ quote(report_dir) }}
+    @cargo run --locked -p xtask -- verify {{ quote(backend) }} {{ quote(source) }} {{ quote(report_dir) }}
 
 cache-parity-plan-identity:
-    @cargo xtool cache-parity plan-identity
+    @cargo run --locked -p xtask -- cache-parity plan-identity
 
 cache-parity-verify plan evidence raw_dir:
-    @cargo xtool cache-parity verify {{ quote(plan) }} {{ quote(evidence) }} {{ quote(raw_dir) }}
+    @cargo run --locked -p xtask -- cache-parity verify {{ quote(plan) }} {{ quote(evidence) }} {{ quote(raw_dir) }}
 
 cache-parity-verify-diagnostic plan evidence raw_dir:
-    @cargo xtool cache-parity verify-diagnostic {{ quote(plan) }} {{ quote(evidence) }} {{ quote(raw_dir) }}
+    @cargo run --locked -p xtask -- cache-parity verify-diagnostic {{ quote(plan) }} {{ quote(evidence) }} {{ quote(raw_dir) }}
 
 cache-parity-verify-inputs plan evidence raw_dir metal_correctness cuda_correctness output:
-    @cargo xtool cache-parity verify-inputs {{ quote(plan) }} {{ quote(evidence) }} {{ quote(raw_dir) }} {{ quote(metal_correctness) }} {{ quote(cuda_correctness) }} {{ quote(output) }}
+    @cargo run --locked -p xtask -- cache-parity verify-inputs {{ quote(plan) }} {{ quote(evidence) }} {{ quote(raw_dir) }} {{ quote(metal_correctness) }} {{ quote(cuda_correctness) }} {{ quote(output) }}
 
 cache-parity-summarize-trial raw:
-    @cargo xtool cache-parity summarize-trial "{{ raw }}"
+    @cargo run --locked -p xtask -- cache-parity summarize-trial "{{ raw }}"
 
 cache-parity-capture-request address request output:
-    @cargo xtool cache-parity capture-request "{{ address }}" "{{ request }}" "{{ output }}"
+    @cargo run --locked -p xtask -- cache-parity capture-request "{{ address }}" "{{ request }}" "{{ output }}"
 
 cache-parity-capture-pairs config request output:
-    @cargo xtool cache-parity capture-pairs "{{ config }}" "{{ request }}" "{{ output }}"
+    @cargo run --locked -p xtask -- cache-parity capture-pairs "{{ config }}" "{{ request }}" "{{ output }}"
 
 cache-parity-capture-trace config workload output:
-    @cargo xtool cache-parity capture-trace {{ quote(config) }} {{ quote(workload) }} {{ quote(output) }}
+    @cargo run --locked -p xtask -- cache-parity capture-trace {{ quote(config) }} {{ quote(workload) }} {{ quote(output) }}
 
 cache-parity-make-workload model state shape width output:
-    @cargo xtool cache-parity make-workload {{ quote(model) }} {{ quote(state) }} {{ quote(shape) }} {{ quote(width) }} {{ quote(output) }}
+    @cargo run --locked -p xtask -- cache-parity make-workload {{ quote(model) }} {{ quote(state) }} {{ quote(shape) }} {{ quote(width) }} {{ quote(output) }}
 
 cache-parity-export-trace plan cell capture raw_dir:
-    @cargo xtool cache-parity export-trace {{ quote(plan) }} {{ quote(cell) }} {{ quote(capture) }} {{ quote(raw_dir) }}
+    @cargo run --locked -p xtask -- cache-parity export-trace {{ quote(plan) }} {{ quote(cell) }} {{ quote(capture) }} {{ quote(raw_dir) }}
 
 [macos]
 cache-parity-build-metal-probe output:
@@ -167,6 +193,23 @@ llama-prepare:
 
 llama-build: llama-prepare
     @scripts/build-llama.sh
+
+# Includes placement, released-page compaction, sampling-pool, and row-list
+# operator regressions. Accelerator qualification selects its backend explicitly.
+native-full-replay backend="cpu": llama-prepare
+    @LLAMA_STAGE_BACKEND="{{ backend }}" LLAMA_STAGE_FULL_REPLAY=ON scripts/build-llama.sh
+
+cache-reuse-smoke base_url model prompt_file output wave="4":
+    @cargo run --locked -p skippy-correctness -- open-ai-cache-reuse --base-url "{{ base_url }}" --model "{{ model }}" --prompt-file "{{ prompt_file }}" --wave "{{ wave }}" > "{{ output }}"
+
+kv-matrix-build native_lib_dir: llama-prepare
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source_dir="$(cd "{{ llama_dir }}" && pwd)"
+    cmake -S evals/kv-validation/native -B target/kv-validation -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release -DNATIVE_SOURCE="$source_dir" \
+      -DNATIVE_LIB_DIR="{{ native_lib_dir }}"
+    cmake --build target/kv-validation --parallel
 
 skippy-ffi-bindgen-check: llama-prepare
     @SKIPPY_FFI_BINDGEN=check SKIPPY_FFI_BINDGEN_SELFTEST=1 cargo check -p skippy-ffi
@@ -197,41 +240,44 @@ llama-check: skippy-ffi-bindgen-check
     scripts/build-llama.sh --build-only
     build_dir="$(scripts/build-llama.sh --print-build-dir)"
     LLAMA_STAGE_BUILD_DIR="$build_dir" scripts/check-skippy-generated-family-patch.sh
-    cargo xtool automation native-generator contracts api-doc --check
+    just automation-run automation native-generator contracts api-doc --check
 
 ci-plan:
-    @cargo xtool ci plan
+    @bash scripts/ci-plan.sh
 
+[positional-arguments]
 inference-plan profile source output="target/ci-evidence/inference-plan.json":
-    @cargo xtool inference plan "{{ profile }}" "{{ source }}" "{{ output }}"
+    @"{{ automation_python }}" scripts/inference-plan.py plan "$@"
+
+process-supervision-test:
+    @cargo test --locked -p process-supervision
 
 inference-contracts:
-    @cargo test --locked -p xtask inference::
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_contracts.py
 
-inference-dispatch profile source output="target/ci-evidence/inference":
-    @cargo xtool inference dispatch "{{ profile }}" "{{ source }}" "{{ output }}"
+automation-contracts: inference-contracts
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/automation_contracts.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/release_contracts.py
 
+[positional-arguments]
+inference-dispatch profile source output="target/ci-evidence/inference" *configuration:
+    @"{{ automation_python }}" scripts/inference-dispatch.py dispatch "$@"
+
+[positional-arguments]
 inference-execute profile model mode:
-    @cargo xtool inference execute "{{ profile }}" "{{ model }}" "{{ mode }}"
+    @"{{ automation_python }}" scripts/inference-execute.py "$@"
 
+[positional-arguments]
 inference-cancel ledger="target/ci-evidence/inference/jobs.json":
-    @cargo xtool inference cancel "{{ ledger }}"
+    @"{{ automation_python }}" scripts/inference-dispatch.py cancel "$@"
 
 inference-build:
-    @cargo xtool inference build
+    @"{{ automation_python }}" scripts/inference-build.py
 
 inference-build-uncached:
     @command -v hf uv nvidia-smi
     @SCCACHE_BASEDIRS="$PWD" LLAMA_STAGE_BACKEND=cuda LLAMA_STAGE_CUDA_ARCHITECTURES=121 LLAMA_STAGE_LINK_MODE=static just llama-build
     @LLAMA_STAGE_BACKEND=cuda LLAMA_STAGE_CUDA_ARCHITECTURES=121 LLAMA_STAGE_LINK_MODE=static cargo build --locked -p skippy-cli -p skippy-correctness
-
-inference-tool-check:
-    @cargo check --locked -p xtask
-    @cargo clippy --locked -p xtask --all-targets -- -D warnings
-    @cargo test --locked -p xtask
-
-inference-format:
-    @rustfmt --edition 2024 tools/xtask/src/inference.rs tools/xtask/src/inference/tests.rs
 
 # Linux diagnostic: retain all MiMo2 graph assertions and report peak memory.
 native-contract-build: llama-prepare
@@ -245,31 +291,134 @@ native-mimo2-contract:
     ctest --test-dir "$build_dir" -R '^skippy_generate_contract_mimo2$' --output-on-failure --no-tests=error
     /usr/bin/time -v ctest --test-dir "$build_dir" -R '^skippy_graph_contract_mimo2$' --output-on-failure --no-tests=error
 
-ci-contracts:
-    @cargo xtool ci contracts
+ci-image-build:
+    @docker buildx build --load --platform linux/amd64 --file ci/Dockerfile --tag skippy-ci-cpu:build --build-arg SKIPPY_CI_IMAGE_ID --build-arg SOURCE_REVISION .
 
-ci-summary:
-    @cargo xtool ci summary
+ci-image-smoke:
+    @docker run --rm --platform linux/amd64 --network none --read-only --tmpfs /github/home:uid=1001,gid=1001 --env HOME=/github/home skippy-ci-cpu:build bash -euc 'test -z "${CARGO_HOME:-}"; python3 --version; jq --version; rustc --version; cargo clippy --version; rustfmt --version; just --version; sccache --version; gcc --version; g++ --version; make --version; mold --version; clang++ --version; cmake --version; ninja --version; ssh -V; command -v ssh-keygen; test -r /usr/lib/llvm-22/lib/cmake/llvm/LLVMConfig.cmake; test -r /usr/lib/llvm-22/lib/cmake/clang/ClangConfig.cmake; test -s /etc/skippy-ci-image-id; test "$(id -u)" = 1001'
 
+ci-image-export:
+    @mkdir -p target/ci-image
+    @docker image save --output target/ci-image/skippy-ci-cpu.tar skippy-ci-cpu:build
+
+ci-gpu-image-build backend toolkit_base toolkit_version arch="amd64":
+    @docker buildx build --load --platform "linux/{{ arch }}" --file ci/Dockerfile.gpu --tag skippy-ci-{{ backend }}:build --build-arg TOOLKIT_BASE="{{ toolkit_base }}" --build-arg BACKEND="{{ backend }}" --build-arg TOOLKIT_VERSION="{{ toolkit_version }}" --build-arg SKIPPY_CI_IMAGE_ID --build-arg SOURCE_REVISION .
+
+ci-gpu-image-smoke backend arch="amd64":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    docker run --rm --platform "linux/{{ arch }}" --network none --read-only "skippy-ci-{{ backend }}:build" bash -euc '
+      test "$(dpkg --print-architecture)" = "{{ arch }}"
+      python3 --version
+      jq --version
+      rustc --version
+      cargo clippy --version
+      rustfmt --version
+      just --version
+      sccache --version
+      /usr/bin/clang --version
+      /usr/bin/clang++ --version
+      cmake --version
+      ninja --version
+      llvm-config --version
+      test -r /usr/lib/llvm-18/lib/cmake/llvm/LLVMConfig.cmake
+      test -r /usr/lib/llvm-18/lib/cmake/clang/ClangConfig.cmake
+      test -s /etc/skippy-ci-image-id
+      test "$(id -u)" = 1001
+      test "$SKIPPY_CI_BACKEND" = "{{ backend }}"
+      case "$SKIPPY_CI_BACKEND" in
+        cuda13)
+          /usr/local/cuda-13.1/bin/nvcc --version | grep -F "release 13.1,"
+          test -e /usr/local/cuda-13.1/lib64/libcudart.so
+          ;;
+        cuda12)
+          /usr/local/cuda-12.9/bin/nvcc --version | grep -F "release 12.9,"
+          test -e /usr/local/cuda-12.9/lib64/libcudart.so
+          ;;
+        rocm) hipcc --version ;;
+        *) exit 2 ;;
+      esac
+    '
+
+ci-gpu-image-export backend:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p target/ci-image
+    archive="target/ci-image/skippy-ci-{{ backend }}.tar.gz"
+    temporary_archive="$archive.tmp"
+    trap 'rm -f "$temporary_archive"' EXIT
+    docker image save skippy-ci-{{ backend }}:build | gzip -1 > "$temporary_archive"
+    mv "$temporary_archive" "$archive"
+    docker image inspect --format '{{"{{.Id}}"}}' skippy-ci-{{ backend }}:build > target/ci-image/skippy-ci-{{ backend }}.id
+
+[positional-arguments]
 ci-host host:
-    @cargo xtool ci host "{{ host }}"
+    @"{{ automation_python }}" scripts/ci-product.py host "$@"
 
+[positional-arguments]
 ci-runtime runtime:
-    @cargo xtool ci runtime "{{ runtime }}"
+    @"{{ automation_python }}" scripts/ci-product.py runtime "$@"
 
+[positional-arguments]
 ci-package runtime host_dir runtime_dir:
-    @cargo xtool ci package "{{ runtime }}" "{{ host_dir }}" "{{ runtime_dir }}"
+    @"{{ automation_python }}" scripts/ci-product.py package "$@"
 
+[positional-arguments]
 ci-smoke runtime product_dir:
-    @cargo xtool ci smoke "{{ runtime }}" "{{ product_dir }}"
+    @"{{ automation_python }}" scripts/ci-product.py smoke "$@"
 
-ci: lint ci-contracts test llama-check
+ci-model-fetch:
+    @bash scripts/ci-model-fetch.sh
 
+[positional-arguments]
+ci-artifact-smoke runtime product_dir:
+    @"{{ automation_python }}" scripts/ci-product.py artifact-smoke "$@"
+
+[positional-arguments]
+ci-extract-runtime runtime product_dir output:
+    @"{{ automation_python }}" scripts/ci-product.py extract-runtime "$@"
+
+ci: lint test llama-check
+
+[positional-arguments]
+release version canary="false":
+    @bash scripts/release-dispatch.sh "$@"
+
+[positional-arguments]
+release-version tag:
+    @"{{ automation_python }}" scripts/ci-release.py bump "$@"
+
+[positional-arguments]
+release-candidate *args:
+    @"{{ automation_python }}" scripts/ci-release-candidate.py "$@"
+
+[positional-arguments]
 check-release tag:
-    @cargo xtool release validate "{{ tag }}"
+    @"{{ automation_python }}" scripts/ci-release.py validate "$@"
 
+[positional-arguments]
 release-prepare tag input_dir:
-    @cargo xtool release prepare "{{ tag }}" "{{ input_dir }}"
+    @"{{ automation_python }}" scripts/ci-release.py prepare "$@"
 
+[positional-arguments]
+release-prepare-candidate tag input_dir:
+    @"{{ automation_python }}" scripts/ci-release.py prepare-candidate "$@"
+
+[positional-arguments]
 release-verify directory="dist/release":
-    @cargo xtool release verify "{{ directory }}"
+    @"{{ automation_python }}" scripts/ci-release.py verify "$@"
+
+[positional-arguments]
+release-select tag index:
+    @"{{ automation_python }}" scripts/ci-release.py select "$@"
+
+[positional-arguments]
+release-upload-plan directory remote:
+    @"{{ automation_python }}" scripts/ci-release.py upload-plan "$@"
+
+inference-admit:
+    @"{{ automation_python }}" scripts/inference-plan.py admit
+
+[positional-arguments]
+inference-matrix profile source:
+    @"{{ automation_python }}" scripts/inference-plan.py matrix "$@"

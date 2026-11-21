@@ -1,11 +1,20 @@
 use crate::BenchmarkOutput;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum BenchmarkBackend {
     Metal,
     Cuda,
     Hip,
     Intel,
+}
+
+impl BenchmarkBackend {
+    pub fn has_native_helper(self) -> bool {
+        matches!(self, Self::Metal | Self::Cuda | Self::Hip)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

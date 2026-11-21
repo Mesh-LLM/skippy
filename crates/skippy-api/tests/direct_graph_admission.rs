@@ -1,5 +1,5 @@
 //! Opt-in real native planning gate; the fixture stays outside the repository.
-use skippy_api::{source, split_certification, stage_admission, stage_load};
+use skippy_api::{source, stage_admission, stage_load};
 use std::path::PathBuf;
 
 #[test]
@@ -7,14 +7,10 @@ use std::path::PathBuf;
 fn real_direct_model_admits_two_stages_with_exact_tensor_and_frontier_bindings() {
     let path =
         PathBuf::from(std::env::var_os("SKIPPY_TEST_GGUF_PATH").expect("model fixture path"));
-    let identity = source::synthetic_direct_gguf_package("pinned-model", &path, None).unwrap();
+    let identity = source::synthetic_direct_gguf_package("pinned-model", &path).unwrap();
     let (manifest, _) =
         source::planning::direct_gguf_planning_manifest_from_identity("pinned-model", &identity)
             .unwrap();
-    let architecture = manifest.model_metadata["general.architecture"]
-        .as_str()
-        .unwrap();
-    split_certification::require_split_certification(&identity, architecture, false).unwrap();
     assert!(identity.layer_count >= 2);
     let middle = identity.layer_count / 2;
     let profiles = [

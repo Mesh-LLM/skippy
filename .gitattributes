@@ -6,4 +6,10 @@
 
 # Patch fixtures preserve mail-format signature separators and blank context
 # lines byte-for-byte; their trailing spaces are test data, not source style.
-tools/xtask/tests/fixtures/migration/** -whitespace
+scripts/tests/fixtures/rewriter-patch*/** -whitespace
+
+# Authoritative mail patches contain blank diff-context lines and signature
+# separators whose spaces are part of the digest-bound patch bytes.
+llama_cpp/patches/*.patch -whitespace
+llama_cpp/patches/model_support/*.patch -whitespace
+llama_cpp/patches/generated/*.patch -whitespace

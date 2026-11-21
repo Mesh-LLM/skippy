@@ -114,19 +114,23 @@ source. It verifies the fixture manifest, then checks each report digest and
 recomputes its decision. Dirty worktree results can still be used for
 diagnostics.
 
-The main CI workflow runs all four KV architecture cases on isolated Metal and Linux Arm64
-CUDA runners for source-changing pull requests, merge groups, and pushes to
-`main`. Full CI always requires both jobs, including nightly, release and llama
-upgrade runs. The jobs use `hf download` with each fixture's pinned revision
-and reuse the runners' default Hugging Face cache on the NAS. The jobs run in
-parallel, build once per job for all four models, and
-cache the pinned llama.cpp reference by backend and toolchain. They retain
-summaries, cell reports, and logs. A failing model, missing fixture, absent GPU,
-or incomplete required job fails the CI summary.
+For KV-affecting PRs and pushes to `main`, CI runs one dense fixture inside
+the Metal and Linux x64 CUDA 13 package jobs after device smoke. It compares
+cold, warm L1, and L3 restart outputs and checks that the selected cache tier
+actually restored the expected tokens. Full CI, including nightly, release and
+llama upgrade validation, runs all four cases on Metal and Linux ARM64 CUDA 13
+on Spark. Each backend runs its models in sequence with separate cache roots
+and reports. Full runs build the pinned upstream reference only on a cache miss.
 
-## State handoff batch
+The Rust test harness loads the verified runtime from the same source-bound
+package used for device smoke. It uses `hf download` at each pinned revision
+with the runner's Hugging Face cache on the NAS. CI retains the runtime
+manifest digest, fixture reports, and logs. A failed model, missing fixture,
+absent GPU, or incomplete required job fails CI.
 
-Prepare local observations with the existing operator owner:
+## Historical state handoff batch
+
+Earlier checkouts that include the state-handoff operator prepare local observations with:
 
 ```sh
 cargo xtool automation cache-family-run prepare-full --input /absolute/operator.json --output /absolute/fresh-preparation

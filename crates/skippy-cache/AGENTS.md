@@ -1,10 +1,7 @@
 # Cache change validation
 
-New benchmark orchestration belongs in typed `tools/xtask` commands under the
-rule in `.agents/skills/manage-ci/SKILL.md`; from the repository root,
-`cargo xtool repo-consistency ci-crate-lists` is a working alias example. Use
-the native competitive prepared-run/report commands documented in
-`docs/COMPETITIVE_BENCHMARK.md`. Do not add new Python tooling.
+Use Just recipes and shell or Python scripts for benchmark orchestration.
+See `.agents/skills/manage-ci/SKILL.md` for repository automation.
 
 Any change under `crates/skippy-cache/` must be checked for performance regressions before it is merged.
 

@@ -1,9 +1,7 @@
 use super::{DynResult, contract::is_digest, raw};
-use crate::{
-    artifact, cache_qualification::MANIFEST, execution, native,
-    upgrade::evidence::digest_source_paths,
-};
+use crate::{artifact, cache_qualification::MANIFEST, execution};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::{env, fs, path::Path};
 
 #[derive(Serialize)]
@@ -40,7 +38,17 @@ impl Checkout {
             llama_pin: pin,
             patch_queue_sha256: patch_queue_digest,
             model_manifest_sha256: artifact::digest(manifest.as_bytes())?,
-            abi_version: native::checked_in_abi_version()?,
+            abi_version: execution::output(
+                "python3",
+                &execution::strings(&[
+                    "scripts/native-source.py",
+                    "package-source-version",
+                    "abi",
+                    "crates/skippy-ffi/src/lib.rs",
+                ]),
+            )?
+            .trim()
+            .to_owned(),
             cache_format_version: cache_format_version(&fs::read_to_string(
                 "crates/skippy-cache/src/l3.rs",
             )?)?,
@@ -76,21 +84,50 @@ fn patch_queue_sha256(root: &Path, pin: &Path) -> DynResult<String> {
 }
 
 fn harness_sha256(root: &Path) -> DynResult<String> {
-    digest_source_paths(
-        root,
-        &[
-            "Justfile",
-            "tools/xtask/Cargo.toml",
-            "tools/xtask/src/cache_parity.rs",
-            "tools/xtask/src/cache_parity",
-            "tools/xtask/src/execution.rs",
-            "tools/xtask/native/metal_memory_probe.m",
-            "tools/process-supervision",
-            "ci/cache-qualification/parity.schema.json",
-            "ci/cache-qualification/raw-trial.schema.json",
-            "ci/cache-qualification/workload.schema.json",
-        ],
-    )
+    let inputs = [
+        "Justfile",
+        "tools/xtask/Cargo.toml",
+        "tools/xtask/src/cache_parity.rs",
+        "tools/xtask/src/cache_parity",
+        "tools/xtask/src/execution.rs",
+        "tools/xtask/native/metal_memory_probe.m",
+        "tools/process-supervision",
+        "ci/cache-qualification/parity.schema.json",
+        "ci/cache-qualification/raw-trial.schema.json",
+        "ci/cache-qualification/workload.schema.json",
+    ];
+    let mut paths = Vec::new();
+    for relative in inputs {
+        inventory_harness(root, &root.join(relative), &mut paths)?;
+    }
+    paths.sort();
+    let mut digest = Sha256::new();
+    for path in paths {
+        digest.update(path.as_bytes());
+        digest.update([0]);
+        digest.update(fs::read(root.join(path))?);
+        digest.update([0]);
+    }
+    Ok(hex::encode(digest.finalize()))
+}
+
+fn inventory_harness(root: &Path, path: &Path, paths: &mut Vec<String>) -> DynResult<()> {
+    let kind = path.symlink_metadata()?.file_type();
+    if kind.is_file() {
+        paths.push(
+            path.strip_prefix(root)?
+                .to_str()
+                .ok_or("non-UTF8 harness path")?
+                .replace('\\', "/"),
+        );
+    } else if kind.is_dir() {
+        for entry in fs::read_dir(path)? {
+            inventory_harness(root, &entry?.path(), paths)?;
+        }
+    } else {
+        return Err("benchmark harness contains a symlink or special file".into());
+    }
+    Ok(())
 }
 
 fn cache_format_version(source: &str) -> DynResult<u32> {

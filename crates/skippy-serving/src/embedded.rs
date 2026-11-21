@@ -20,7 +20,11 @@ use crate::{
         RuntimeLaunchOverrides, RuntimeSessionStats, RuntimeState, load_runtime_with_overrides,
         load_runtime_with_overrides_and_open_events,
     },
-    telemetry::{Telemetry, TelemetryLevel, TelemetryStats, lifecycle_attrs, now_unix_nanos},
+    telemetry::{
+        Telemetry, TelemetryLevel, TelemetryStats,
+        active_span::{ActiveSpan, SpanLevel},
+        lifecycle_attrs, now_unix_nanos,
+    },
     tokenizer::{TokenizerCapability, TokenizerCapabilityError, tokenizer_http_router},
 };
 
@@ -200,6 +204,12 @@ impl SkippyRuntimeHandle {
             options.config.clone(),
             options.telemetry_level,
         );
+        let load = ActiveSpan::start(
+            Some(&telemetry),
+            "stage.embedded_runtime_load",
+            SpanLevel::Summary,
+        );
+        let entered = load.enter();
         telemetry.emit(
             "stage.embedded_runtime_load_start",
             lifecycle_attrs(&options.config),
@@ -219,6 +229,10 @@ impl SkippyRuntimeHandle {
             "stage.embedded_runtime_ready",
             lifecycle_attrs(&options.config),
         );
+        telemetry.record_resources("runtime_ready");
+        crate::telemetry::log_events::mark_serving();
+        drop(entered);
+        load.end();
         Ok(Self::ready(
             options.config,
             options.topology,
@@ -241,6 +255,12 @@ impl SkippyRuntimeHandle {
             options.config.clone(),
             options.telemetry_level,
         );
+        let load = ActiveSpan::start(
+            Some(&telemetry),
+            "stage.embedded_runtime_load",
+            SpanLevel::Summary,
+        );
+        let entered = load.enter();
         telemetry.emit(
             "stage.embedded_runtime_load_start",
             lifecycle_attrs(&options.config),
@@ -261,6 +281,10 @@ impl SkippyRuntimeHandle {
             "stage.embedded_runtime_ready",
             lifecycle_attrs(&options.config),
         );
+        telemetry.record_resources("runtime_ready");
+        crate::telemetry::log_events::mark_serving();
+        drop(entered);
+        load.end();
         Ok(Self::ready(
             options.config,
             options.topology,
@@ -332,6 +356,9 @@ impl SkippyRuntimeHandle {
         }
     }
 
+    /// Stop this model's runtime. The host and its other models keep the
+    /// process trace; the host ends it with
+    /// [`crate::telemetry::finish_process_telemetry`] when it exits.
     pub fn shutdown(&self) {
         self.tokenizer_active.store(false, Ordering::Release);
         let runtime = lock_runtime(&self.runtime);
@@ -346,6 +373,7 @@ impl SkippyRuntimeHandle {
             "stage.embedded_runtime_stopped",
             lifecycle_attrs(&self.config),
         );
+        self.telemetry.flush_queued();
     }
 }
 
@@ -395,11 +423,36 @@ impl EmbeddedServerHandle {
     }
 
     pub async fn shutdown(mut self) -> Result<()> {
+        self.request_shutdown();
+        self.join().await
+    }
+
+    /// Signal cooperative shutdown. The listener and workers are released by `join`.
+    pub fn request_shutdown(&mut self) {
         if let Some(shutdown) = self.shutdown.take() {
+            let mut status = self.status.lock().expect("server status lock poisoned");
+            if matches!(status.state, EmbeddedState::Starting | EmbeddedState::Ready) {
+                status.state = EmbeddedState::Stopping;
+            }
             let _ = shutdown.send(());
         }
-        let task = self.task.take().expect("server task already taken");
-        task.await?
+    }
+
+    /// Wait for the server task without detaching it if this wait is cancelled.
+    pub async fn join(&mut self) -> Result<()> {
+        let Some(task) = self.task.as_mut() else {
+            return Ok(());
+        };
+        let result = task.await;
+        self.task.take();
+        match result {
+            Ok(result) => result,
+            Err(error) => {
+                let result = Err(anyhow::Error::new(error).context("join embedded server task"));
+                finish_server_status(&self.status, &result);
+                result
+            }
+        }
     }
 
     pub fn abort(mut self) {
@@ -602,7 +655,9 @@ fn publish_binary_stage_boundaries(
         .unwrap_or_default();
     status.split_dflash_target_layers =
         split_dflash_attached.map(|attached| attached.target_layers);
-    status.state = EmbeddedState::Ready;
+    if status.state == EmbeddedState::Starting {
+        status.state = EmbeddedState::Ready;
+    }
 }
 
 fn spawn_async_server<F, Fut>(
@@ -632,7 +687,9 @@ where
     let task = tokio::spawn(async move {
         {
             let mut status = task_status.lock().expect("server status lock poisoned");
-            status.state = EmbeddedState::Ready;
+            if status.state == EmbeddedState::Starting {
+                status.state = EmbeddedState::Ready;
+            }
         }
         let result = serve(shutdown_rx).await;
         finish_server_status(&task_status, &result);
@@ -713,6 +770,41 @@ mod tests {
         fn reset_after_panic(&mut self) {
             *self = 0;
         }
+    }
+
+    #[tokio::test]
+    async fn failed_server_load_releases_its_bound_resources() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut owner = spawn_async_server("failed-load", address, move |_| async move {
+            let _listener = listener;
+            Err(anyhow::anyhow!("startup failed after binding"))
+        });
+        assert!(owner.join().await.is_err());
+        assert_eq!(owner.status().state, EmbeddedState::Failed);
+        owner.request_shutdown();
+        owner.join().await.unwrap();
+        std::net::TcpListener::bind(address).unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancelling_join_keeps_shutdown_joinable() {
+        let mut owner = spawn_async_server(
+            "join-cancel",
+            "127.0.0.1:0".parse().unwrap(),
+            |shutdown| async move {
+                shutdown.await?;
+                Ok(())
+            },
+        );
+        tokio::select! {
+            biased;
+            _ = owner.join() => panic!("server stopped before shutdown"),
+            _ = tokio::task::yield_now() => {}
+        }
+        owner.request_shutdown();
+        owner.join().await.unwrap();
+        assert_eq!(owner.status().state, EmbeddedState::Stopped);
     }
 
     #[test]

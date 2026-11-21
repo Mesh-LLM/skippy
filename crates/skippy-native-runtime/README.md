@@ -124,7 +124,7 @@ Release jobs publish `native-runtimes.json`:
       "backend": { "kind": "cpu" },
       "rank": 0,
       "libraries": ["lib/libllama.so"],
-      "url": "https://github.com/general-inference/skippy/releases/download/v0.80.0/skippy-native-runtime-linux-x86_64-cpu.tar.gz",
+      "url": "https://github.com/general-inference/skippy/releases/download/v0.80.0/skippy-v0.80.0-linux-x86_64-cpu.tar.gz",
       "sha256": "2f1c..."
     }
   ]
@@ -273,6 +273,14 @@ Installed runtimes are stored under:
 Skippy can install the newly selected runtime, switch to it, and remove older
 runtime caches after success.
 
+`release_version` is always the Skippy workspace version: the host reads it from
+its own crate version and the packaging script stamps it from `Cargo.toml`.
+Every Skippy release is a new runtime identity, so a runtime cached by an
+earlier release is never reused, even when its native contents are unchanged.
+An upgraded host with no network needs the matching runtime supplied first
+(`--runtime-bundle` or a pre-populated cache); it does not fall back to an
+older release's cache.
+
 ## Load Plan Boundary
 
 This crate does not load dynamic libraries. `InstalledNativeRuntime::load_plan`
@@ -337,11 +345,7 @@ SKIPPY_NATIVE_RUNTIME_RANK=1000 scripts/package-native-runtime.sh --backend vulk
   --id-suffix nixpkgs
 ```
 
-Generate the release manifest:
-
-```bash
-scripts/generate-native-runtime-release-manifest.sh \
-  --tag v0.80.0 \
-  --out dist/native-runtimes/native-runtimes.json \
-  dist/native-runtimes/*.tar.gz
-```
+The release workflow writes the release manifest (`scripts/ci-release.py`). Each
+entry is the manifest of the runtime inside one release archive, with `url` and
+`sha256` naming that `skippy-<tag>-<variant>.tar.gz`. The installer downloads the
+archive and installs the one runtime it carries.

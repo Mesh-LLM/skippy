@@ -1,48 +1,21 @@
 mod artifact;
-mod automation;
 mod cache_parity;
 mod cache_qualification;
-mod ci;
 mod command;
 mod execution;
-mod fixture_paths;
 mod huggingface;
-mod inference;
-mod native;
-mod release;
-mod upgrade;
-use process_supervision as process;
 
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if let Err(error) = run(&args) {
-        eprintln!("{error}");
-        std::process::exit(1);
-    }
-}
-
-fn run(args: &[String]) -> command::DynResult<()> {
-    let Some((domain, args)) = args.split_first() else {
-        return help();
+fn main() -> std::process::ExitCode {
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    let result = match args.split_first() {
+        Some((domain, rest)) if domain == "cache-parity" => cache_parity::run(rest),
+        _ => cache_qualification::run(&args),
     };
-    match domain.as_str() {
-        "native" => native::run(args),
-        "automation" => automation::run(args),
-        "cache-parity" => cache_parity::run(args),
-        "cache-qualification" => cache_qualification::run(args),
-        "artifact" => artifact::run(args),
-        "ci" => ci::run(args),
-        "inference" => inference::run(args),
-        "release" => release::run(args),
-        "upgrade" => upgrade::run(args),
-        "--help" | "-h" => help(),
-        _ => Err(format!("unknown automation domain: {domain}").into()),
+    match result {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::ExitCode::FAILURE
+        }
     }
-}
-
-fn help() -> command::DynResult<()> {
-    println!(
-        "cargo xtool {{native|automation|artifact|cache-parity|cache-qualification|ci|inference|release}} COMMAND [OPTIONS]"
-    );
-    Ok(())
 }

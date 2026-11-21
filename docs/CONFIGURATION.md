@@ -41,4 +41,4 @@ runtime bundle.
 ## Repository automation
 
 Build, test, and release settings are expressed through the root `Justfile` and
-typed commands under `tools/xtask`. See [CONTRIBUTING.md](../CONTRIBUTING.md).
+shell and Python commands under `scripts/`. See [CONTRIBUTING.md](../CONTRIBUTING.md).

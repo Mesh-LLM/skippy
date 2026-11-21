@@ -236,8 +236,10 @@ TEST_F(EmbedTest, BatchRejectsAnEmptyRowBeforeTheBackend) {
     expect_dimensions(4);
     const std::vector<Token> empty;
     const std::vector<std::span<const Token>> inputs{tokens_, empty};
+    std::array<float, 8> buffer{};
 
-    const auto result = skippy::embed_batch(runtime_, session_, inputs, output(8));
+    const auto result = skippy::embed_batch(
+        runtime_, session_, inputs, EmbeddingOutput<F32Format>{.values = buffer, .metadata = {}});
 
     ASSERT_FALSE(result.has_value());
     EXPECT_EQ(result.error().code, WorkloadError::EmptyInput);
@@ -246,8 +248,10 @@ TEST_F(EmbedTest, BatchRejectsAnEmptyRowBeforeTheBackend) {
 TEST_F(EmbedTest, BatchRejectsAShortBuffer) {
     expect_dimensions(4);
     const std::vector<std::span<const Token>> inputs{tokens_, tokens_};
+    std::array<float, 7> buffer{};
 
-    const auto result = skippy::embed_batch(runtime_, session_, inputs, output(7));
+    const auto result = skippy::embed_batch(
+        runtime_, session_, inputs, EmbeddingOutput<F32Format>{.values = buffer, .metadata = {}});
 
     ASSERT_FALSE(result.has_value());
     EXPECT_EQ(result.error().code, WorkloadError::OutputTooSmall);

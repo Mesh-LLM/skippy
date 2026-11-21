@@ -31,7 +31,8 @@ pub use l3::{
     GeometryBlock, GeometryKind, HandoffManifest, HandoffSegmentRef, HandoffSegmentStore,
     LEGACY_MANIFEST_VERSION, LEGACY_PAYLOAD_CODEC_MANIFEST_VERSION, MANIFEST_VERSION, ManifestPin,
     PayloadCodec, PayloadGeometry, Reservation, SegmentCodecIdentity, SegmentHold, SegmentPut,
-    StoreLimits, StoreReconciliation, StoreUsage, StoredSegment, WriteRefusal, segment_digest,
+    StoreLimits, StorePressure, StoreReconciliation, StoreUsage, StoredSegment, WriteRefusal,
+    segment_digest,
 };
 pub use l3_remote::{
     FetchStats, KvFetchClient, serve_connection, serve_store, serve_store_with_timeout,

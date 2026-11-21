@@ -6,10 +6,6 @@ use skippy_model_ref::split_gguf_shard_info;
 
 use crate::ModelArtifactFile;
 
-pub fn repo_prefers_gguf_only(repo: &str) -> bool {
-    repo.to_ascii_lowercase().contains("gguf")
-}
-
 pub fn file_preference_score(file: &str) -> usize {
     if file.contains("-00001-of-") {
         return 0;
@@ -89,19 +85,46 @@ fn fit_bucket(size_bytes: u64, available_bytes: u64) -> u8 {
     }
 }
 
+/// A runnable Hub artifact starts with a GGUF model file or its first shard.
+pub fn is_gguf_model_candidate(file: &str, files: &[ModelArtifactFile]) -> bool {
+    let basename = file.rsplit('/').next().unwrap_or(file).to_ascii_lowercase();
+    basename.ends_with(".gguf")
+        && !basename.starts_with("mmproj")
+        && has_complete_gguf_parts(file, files)
+}
+
+pub(crate) fn has_complete_gguf_parts(file: &str, files: &[ModelArtifactFile]) -> bool {
+    let Some(primary) = split_gguf_shard_info(file) else {
+        return true;
+    };
+    if primary.part != "00001" {
+        return false;
+    }
+    let total = primary
+        .total
+        .parse::<usize>()
+        .expect("validated shard total");
+    let mut parts = std::collections::HashSet::new();
+    for candidate in files {
+        if let Some(shard) = split_gguf_shard_info(&candidate.path)
+            && shard.prefix == primary.prefix
+            && shard.total == primary.total
+            && shard.part > "00000"
+            && shard.part <= primary.total
+        {
+            parts.insert(shard.part);
+        }
+    }
+    total > 0 && parts.len() == total
+}
+
 pub fn select_default_gguf_file(
     files: &[ModelArtifactFile],
     available_bytes: u64,
 ) -> Option<ModelArtifactFile> {
     let mut candidates = files
         .iter()
-        .filter(|file| {
-            let basename = file.path.rsplit('/').next().unwrap_or(&file.path);
-            let lower = basename.to_ascii_lowercase();
-            lower.ends_with(".gguf")
-                && !lower.starts_with("mmproj")
-                && split_gguf_shard_info(&file.path).is_none_or(|shard| shard.part == "00001")
-        })
+        .filter(|file| is_gguf_model_candidate(&file.path, files))
         .map(|file| (file.clone(), gguf_variant_size_bytes(&file.path, files)))
         .collect::<Vec<_>>();
     candidates.sort_by(|left, right| {

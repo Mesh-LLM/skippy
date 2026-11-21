@@ -1,14 +1,13 @@
 # Skippy contributor instructions
 
-This private repository owns standalone Skippy. Do not add MeshLLM source,
-dependencies, plugin hosts, SDKs, CI services, or release policies. Product
-crates live under `crates/`; the separate Rust facade workspace lives under
-`skippy-api-rs/`, and the C++ facade lives under `skippy_api/`.
+This private repository owns Skippy. Rust packages live under `crates/`;
+the separate Rust facade workspace lives under `skippy-api-rs/`, and the C++
+facade lives under `skippy_api/`.
 
-Use Just for all builds. Keep automation in focused Rust modules under
-`tools/xtask`; Just recipes and shell/PowerShell adapters stay thin. Do not add
-Python repository automation. Honor supplied native source and dependency
-inputs without downloading replacements.
+Use Just for all builds. Prefer shell for CI orchestration and simple checks;
+use Python for structured manifest parsing, artifact verification, and
+qualification. Keep each command in a focused script under `scripts/`.
+Honor supplied native source and dependency inputs without downloading replacements.
 
 Run Cargo commands serially in each checkout. For changed Rust crates run
 formatting, focused check, warning-denying all-target Clippy, and full tests

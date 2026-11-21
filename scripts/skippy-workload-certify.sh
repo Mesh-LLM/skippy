@@ -4,13 +4,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Frozen automation selection begins.
 workload_automation=(just --justfile "$ROOT/Justfile" automation-run)
-if [[ "${SKIPPY_AUTOMATION_BIN+set}" == set ]]; then
-  if [[ "$SKIPPY_AUTOMATION_BIN" != /* || ! -f "$SKIPPY_AUTOMATION_BIN" || ! -x "$SKIPPY_AUTOMATION_BIN" ]]; then
-    echo 'SKIPPY_AUTOMATION_BIN must be an absolute executable' >&2
-    exit 1
-  fi
-  workload_automation=("$SKIPPY_AUTOMATION_BIN")
-fi
 # Frozen automation selection ends.
 MODEL_CLASS=""
 LANE=""

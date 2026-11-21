@@ -513,7 +513,7 @@ fn validate_reference(report: &Report) -> Result<()> {
     compare(&reference.generation, &cold.generation).context("cold Skippy against pinned llama.cpp")
 }
 
-fn validate_l1(report: &Report) -> Result<()> {
+pub(super) fn validate_l1(report: &Report) -> Result<()> {
     let cold = report.cold.as_ref().context("missing cold Skippy result")?;
     let seed = report.seed.as_ref().context("missing L1 seed")?;
     let replay = report.replay.as_ref().context("missing L1 replay")?;

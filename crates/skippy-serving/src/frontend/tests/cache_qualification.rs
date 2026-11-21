@@ -11,7 +11,6 @@ use crate::{
         request::{chat_sampling_config, chat_template_options},
     },
     kv_integration::KvStageIntegration,
-    runtime_state::{loaded_memory_cache_capabilities, loaded_model_state_kind},
     telemetry::{CapturedEvent, Telemetry, TelemetryLevel},
 };
 use anyhow::{Context, Result, ensure};
@@ -35,6 +34,7 @@ mod evidence;
 mod fixture;
 mod ownership;
 mod reference;
+mod smoke;
 mod structured;
 mod template;
 mod tiers;
@@ -91,6 +91,7 @@ async fn cross_tier() -> Result<()> {
 async fn qualify(directory: &Path, report: &mut Report) -> Result<()> {
     let backend = report.backend;
     backend.require_host()?;
+    skippy_runtime::test_support::require_native_runtime();
     let model = required_path("SKIPPY_CACHE_QUAL_MODEL")?.canonicalize()?;
     let fixture = report.fixture.clone();
     let model_sha256 = fixture.verify_model(&model)?;
@@ -255,17 +256,19 @@ impl CandidateRunner {
 
     fn enable_cache(&mut self, manager: Option<L3CacheManager>) -> Result<Arc<KvStageIntegration>> {
         let cache = Arc::new(
-            KvStageIntegration::from_loaded_model_with_l3_manager(
+            KvStageIntegration::from_runtime_with_l3_manager(
                 &self.backend.config,
-                loaded_model_state_kind(Some(&self.backend.runtime)),
-                loaded_memory_cache_capabilities(Some(&self.backend.runtime)),
+                &self.backend.runtime,
                 manager,
                 None,
             )?
             .context("loaded runtime did not admit cache reuse")?,
         );
         ensure!(
-            cache.payload == self.family.payload()
+            (cache.payload == self.family.payload()
+                || (cache.resident_requires_checkpoint()
+                    && self.family.payload()
+                        == crate::kv_integration::StagePrefixCachePayload::KvRecurrent))
                 && self
                     .backend
                     .config

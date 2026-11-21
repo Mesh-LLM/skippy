@@ -1,91 +1,77 @@
 name: KV cache correctness
-description: Run the four pinned KV architecture fixtures on the selected backend.
+description: Qualify the exact native runtime in a Skippy package on its matching GPU.
 inputs:
-  backend:
-    description: Cache qualification profile
+  runtime-id:
+    description: Packaged runtime from ci/targets.json.
     required: true
-  candidate_artifact:
-    description: Protected candidate source artifact
-    default: ''
-  candidate_sha:
-    description: Immutable candidate source revision
-    default: ''
+  profile:
+    description: Short dense fixture or full four-fixture qualification.
+    required: true
 runs:
   using: composite
   steps:
-    - uses: ./.github/actions/cache
-    - uses: ./.github/actions/sccache
-      with:
-        scope: cache-correctness-${{ inputs.backend }}
-    - uses: ./.github/actions/source
-      with:
-        artifact: ${{ inputs.candidate_artifact }}
-        sha: ${{ inputs.candidate_sha }}
     - uses: ./.github/actions/setup-hf
-    - name: Identify pinned reference build inputs
+    - name: Identify upstream reference build inputs
       id: reference
+      if: inputs.profile == 'full' && env.SKIPPY_CACHE_QUAL_LLAMA_SERVER == ''
       shell: bash
       env:
-        BACKEND: ${{ inputs.backend }}
+        RUNTIME_ID: ${{ inputs.runtime-id }}
       run: |
+        set -euo pipefail
         fingerprint() {
-          set -e
           uname -r
           c++ --version
           cmake --version
-          if [[ "$BACKEND" == cuda-arm64 ]]; then
+          if [[ "$RUNTIME_ID" == linux-aarch64-cuda13 ]]; then
             nvcc --version
-            nvidia-smi --query-gpu=compute_cap --format=csv,noheader
+            nvidia-smi --query-gpu=compute_cap --format=csv,noheader | sort -u
           else
             xcrun --show-sdk-version
           fi
         }
-        set -o pipefail
         digest=$(fingerprint | git hash-object --stdin)
         echo "toolchain=$digest" >> "$GITHUB_OUTPUT"
     - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       id: reference-cache
+      if: steps.reference.outcome == 'success'
       with:
         path: target/cache-qualification-reference/llama-server
-        key: kv-reference-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.backend }}-${{ steps.reference.outputs.toolchain }}-${{ hashFiles('llama_cpp/upstream.txt', 'Justfile', 'tools/xtask/src/cache_qualification/prepare.rs') }}
-    - name: Run the cache correctness matrix
+        key: kv-reference-v2-${{ runner.os }}-${{ runner.arch }}-${{ inputs.runtime-id }}-${{ steps.reference.outputs.toolchain }}-${{ hashFiles('llama_cpp/upstream.txt', 'Justfile', 'tools/xtask/src/cache_qualification/prepare.rs') }}
+    - uses: ./.github/actions/native-source
+      if: inputs.runtime-id == 'linux-aarch64-cuda13' && steps.reference.outcome == 'success' && steps.reference-cache.outputs.cache-hit != 'true'
+    - name: Test KV reuse against the shipped runtime
       shell: bash
       env:
-        BACKEND: ${{ inputs.backend }}
+        RUNTIME_ID: ${{ inputs.runtime-id }}
+        KV_PROFILE: ${{ inputs.profile }}
+        SKIPPY_CACHE_QUAL_REFERENCE_CACHE: ${{ github.workspace }}/target/cache-qualification-reference/llama-server
         CMAKE_BUILD_PARALLEL_LEVEL: '8'
       run: |
-        reference="$GITHUB_WORKSPACE/target/cache-qualification-reference/llama-server"
-        if [[ -x "$reference" ]]; then
-          export SKIPPY_CACHE_QUAL_LLAMA_SERVER="$reference"
-        fi
-        just cache-correctness-matrix "$BACKEND" target/cache-qualification-results --build --hf
-    - name: Stage the built reference for future runs
-      id: stage-reference
-      if: always() && steps.reference-cache.outputs.cache-hit != 'true'
+        just cache-correctness-package "$RUNTIME_ID" "$KV_PROFILE" "dist/products/$RUNTIME_ID" "target/cache-qualification-$RUNTIME_ID"
+    - name: Check for a newly built reference
+      id: reference-built
+      if: always() && steps.reference.outcome == 'success' && steps.reference-cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
-        built=target/cache-qualification-results/reference-build/bin/llama-server
-        if [[ -x "$built" ]]; then
-          mkdir -p target/cache-qualification-reference
-          cp "$built" target/cache-qualification-reference/llama-server
+        if [[ -x target/cache-qualification-reference/llama-server ]]; then
           echo 'available=true' >> "$GITHUB_OUTPUT"
         fi
     - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-      if: always() && steps.stage-reference.outputs.available == 'true'
+      if: always() && steps.reference-built.outputs.available == 'true'
       with:
         path: target/cache-qualification-reference/llama-server
         key: ${{ steps.reference-cache.outputs.cache-primary-key }}
-    - name: Retain cache correctness evidence
+    - name: Retain reports and native logs
       if: always()
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
-        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-cache-correctness-${{ inputs.backend }}
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-cache-correctness-${{ inputs.runtime-id }}
         path: |
-          target/cache-qualification-results/batch-result.json
-          target/cache-qualification-results/*/*.json
-          target/cache-qualification-results/*/*.log
-          target/cache-qualification-results/*/template-identity/*.log
-          target/cache-qualification-results/reference-build/CMakeFiles/CMakeConfigureLog.yaml
-          .deps/llama-build/**/CMakeFiles/CMakeConfigureLog.yaml
-        if-no-files-found: error
+          target/cache-qualification-${{ inputs.runtime-id }}/*.json
+          target/cache-qualification-${{ inputs.runtime-id }}/*/*.json
+          target/cache-qualification-${{ inputs.runtime-id }}/*/*.log
+          target/cache-qualification-${{ inputs.runtime-id }}/*/template-identity/*.log
+        if-no-files-found: ignore
+        overwrite: true
         retention-days: 14

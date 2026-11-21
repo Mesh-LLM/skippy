@@ -15,6 +15,7 @@ mod guardrails;
 pub mod hooks;
 pub mod http_exchange;
 pub mod lifecycle;
+pub mod model_dispatch;
 pub mod models;
 pub mod realtime;
 mod request_lifecycle;
