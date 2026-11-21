@@ -124,7 +124,7 @@ Release jobs publish `native-runtimes.json`:
       "backend": { "kind": "cpu" },
       "rank": 0,
       "libraries": ["lib/libllama.so"],
-      "url": "https://github.com/general-inference/skippy/releases/download/v0.80.0/skippy-v0.80.0-linux-x86_64-cpu.tar.gz",
+      "url": "https://github.com/Mesh-LLM/skippy/releases/download/v0.80.0/skippy-v0.80.0-linux-x86_64-cpu.tar.gz",
       "sha256": "2f1c..."
     }
   ]

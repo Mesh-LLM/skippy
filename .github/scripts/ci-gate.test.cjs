@@ -89,7 +89,7 @@ test('main can reuse only a receipt for the exact release dispatch and candidate
     'return (async () => {\n' + receiptScript + '\n})()');
   const sha = 'a'.repeat(40);
   const base = 'b'.repeat(40);
-  const full_name = 'general-inference/skippy';
+  const full_name = 'Mesh-LLM/skippy';
   const commit = {
     commit: { message: 'release: prepare v0.81.0\n\nSkippy-Release-Run: 123' },
     parents: [{ sha: base }],

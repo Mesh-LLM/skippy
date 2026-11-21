@@ -157,7 +157,7 @@ async fn install(
         }
     }));
     let outcome = skippy_runtime_install::install_native_runtime(install).await.context(
-        "private Skippy releases require `gh release download --repo general-inference/skippy` with an authorized GitHub login; extract the runtime and pass --runtime-bundle to install it, or provide a custom manifest through SKIPPY_NATIVE_RUNTIME_MANIFEST_URL",
+        "private Skippy releases require `gh release download --repo Mesh-LLM/skippy` with an authorized GitHub login; extract the runtime and pass --runtime-bundle to install it, or provide a custom manifest through SKIPPY_NATIVE_RUNTIME_MANIFEST_URL",
     )?;
     crate::console::present(&outcome, |output| {
         writeln!(
