@@ -47,10 +47,10 @@ runs:
         'SKIPPY_PYTHON=python' | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
     # CMake, Ninja, nvcc, and the HIP compilers need the MSVC tools on PATH;
     # rustc locates Visual Studio itself, the native stage does not.
-    - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+    - name: Enable the MSVC developer environment
       if: runner.os == 'Windows'
-      with:
-        arch: x64
+      shell: pwsh
+      run: ./scripts/enable-msvc-dev-env.ps1
     - name: Identify the compiler image
       if: inputs.containerized == 'true'
       shell: bash
