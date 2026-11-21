@@ -9,11 +9,12 @@ const EXACT_STATE_HARD_CAP_MULTIPLE: u64 = 8;
 
 /// Resolves the exact-state byte budget from the stage cache cap.
 ///
-/// `configured_max_bytes` is the attention-derived stage budget, which is used
-/// as the soft cap. The hard limit defaults to a multiple of it so the working
-/// set stays bounded without inheriting an estimate that structurally
-/// undercounts exact-state payloads. One indivisible snapshot may remain above
-/// that limit. `configured_exact_max_bytes` wins over the legacy environment
+/// `configured_max_bytes` is the stage budget, used as the soft cap. Unless an
+/// operator sets it, it covers half a context window of the stage's attention
+/// KV and one recurrent snapshot per lane, so a long conversation's snapshot
+/// can still exceed it. The hard limit defaults to a multiple of it so the
+/// working set stays bounded. One indivisible snapshot may remain above that
+/// limit. `configured_exact_max_bytes` wins over the legacy environment
 /// override when provided; zero means unbounded on either surface.
 pub(super) fn exact_state_byte_limits(
     configured_max_bytes: u64,
