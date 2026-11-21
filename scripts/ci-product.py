@@ -104,8 +104,8 @@ def build_runtime(host, runtime):
         suffix = ".exe" if windows else ""
         environment.update({
             "ROCM_PATH": str(rocm),
-            "HIPCC": str(rocm / f"llvm/bin/clang{suffix}"),
-            "HIPCXX": str(rocm / f"llvm/bin/clang++{suffix}"),
+            "HIPCC": os.environ.get("HIPCC") or str(rocm / f"llvm/bin/clang{suffix}"),
+            "HIPCXX": os.environ.get("HIPCXX") or str(rocm / f"llvm/bin/clang++{suffix}"),
             "SKIPPY_ROCM_VERSION": toolkit,
             "LLAMA_STAGE_AMDGPU_TARGETS": arches,
         })

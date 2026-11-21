@@ -153,12 +153,45 @@ foreach ($kernels in @('rocblas', 'hipblaslt')) {
     }
 }
 
-$hipcc = Join-Path $rocmRoot 'llvm\bin\clang.exe'
-$hipcxx = Join-Path $rocmRoot 'llvm\bin\clang++.exe'
-foreach ($compiler in @($hipcc, $hipcxx)) {
-    if (-not (Test-Path $compiler)) {
-        throw "HIP compiler was not found: $compiler"
+$compilerRoots = @()
+$hipConfigTool = Get-Command hipconfig -ErrorAction SilentlyContinue
+if ($hipConfigTool) {
+    try {
+        $hipConfigRoot = (& $hipConfigTool.Source -l | Select-Object -First 1)
+        if ($hipConfigRoot) { $compilerRoots += $hipConfigRoot }
+    } catch {
     }
+}
+$compilerRoots += @(
+    (Join-Path $rocmRoot 'llvm\bin'),
+    (Join-Path $rocmRoot 'bin')
+)
+$compilerRoots = $compilerRoots | Where-Object { $_ } | Select-Object -Unique
+
+$hipcc = $null
+$hipcxx = $null
+foreach ($root in $compilerRoots) {
+    if (-not $hipcc -and (Test-Path (Join-Path $root 'clang.exe'))) {
+        $hipcc = Join-Path $root 'clang.exe'
+    }
+    if (-not $hipcxx -and (Test-Path (Join-Path $root 'clang++.exe'))) {
+        $hipcxx = Join-Path $root 'clang++.exe'
+    }
+}
+
+if (-not $hipcc -or -not $hipcxx) {
+    Write-Host 'Compiler search found no clang pair in:'
+    foreach ($root in $compilerRoots) {
+        Write-Host "  $root"
+        Get-ChildItem $root -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match 'clang|hipcc|hipconfig' } |
+            ForEach-Object { Write-Host "    $($_.Name)" }
+    }
+    Write-Host 'clang/hipcc-like files anywhere under the SDK root (depth 3):'
+    Get-ChildItem $rocmRoot -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^clang(\+\+)?(\.exe)?$|^hipcc(\.bat|\.exe)?$' } |
+        ForEach-Object { Write-Host "  $($_.FullName)" }
+    throw "HIP compiler was not found under $rocmRoot"
 }
 & $hipcc --version
 
