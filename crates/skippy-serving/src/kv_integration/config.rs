@@ -300,6 +300,21 @@ impl KvStageIntegration {
                         worker_observer.as_ref(),
                         pending,
                         |pending| {
+                            if admitted.resident
+                                && let (Some(l2), Some(digest)) =
+                                    (worker_l2.as_ref(), pending.l2_promotion_digest.as_deref())
+                            {
+                                // The native resident prefix already owns L1.
+                                // Publish only the bounded host-RAM mirror.
+                                let _ = l2.promote(
+                                    &pending.namespace,
+                                    &pending.token_ids,
+                                    digest,
+                                    &pending.payload,
+                                    &pending.extra,
+                                );
+                                return Ok(());
+                            }
                             // The serving worker owns only L1/L2 publication.
                             // Durable I/O runs on its own bounded fail-open
                             // worker so an early page spill cannot head-of-line
