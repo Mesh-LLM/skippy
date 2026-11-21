@@ -67,12 +67,8 @@ RUN --network=none image_probe_dir="$(mktemp -d)" \
     && cmp "$image_probe_dir/key.pub" "$image_probe_dir/loaded.pub" \
     && rm -rf "$image_probe_dir"
 
-USER root
-ARG SKIPPY_CI_IMAGE_ID=local
 ARG SOURCE_REVISION=local
 LABEL org.opencontainers.image.revision="$SOURCE_REVISION"
-RUN test -n "$SKIPPY_CI_IMAGE_ID" \
-    && printf '%s\n' "$SKIPPY_CI_IMAGE_ID" > /etc/skippy-ci-image-id
 USER runner
 WORKDIR /workspace
 CMD ["bash"]
