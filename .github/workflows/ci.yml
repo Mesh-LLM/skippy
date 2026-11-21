@@ -246,10 +246,12 @@ jobs:
           done
           ls -l membench-*.exe 2>/dev/null || true
           test "$failures" -lt 4
-      - name: Provision the pinned CUDA toolkit and compile a kernel
+      - name: Provision the pinned CUDA toolkit
+        shell: bash
+        run: python scripts/ci-windows-cuda.py 12.9.2
+      - name: Compile a CUDA kernel with the provisioned toolkit
         shell: bash
         run: |
-          python scripts/ci-windows-cuda.py 12.9.2
           printf '__global__ void probe() {}\n' > probe.cu
           "$CUDACXX" -arch=sm_80 -c probe.cu -o probe.o
           "$CUDACXX" --version | grep -F 'release 12.9'
@@ -750,7 +752,7 @@ jobs:
     name: Build and verify archive · Windows x64 CPU
     needs: [plan, quality]
     if: needs.plan.outputs.profile == 'full'
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 240
     env:
       SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
@@ -770,7 +772,7 @@ jobs:
     name: Build and verify archive · Windows x64 CUDA 12
     needs: [plan, quality, package_windows_x86_64_cpu]
     if: needs.plan.outputs.profile == 'full'
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 240
     env:
       SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
@@ -790,7 +792,7 @@ jobs:
     name: Build and verify archive · Windows x64 CUDA 13
     needs: [plan, quality, package_windows_x86_64_cpu]
     if: needs.plan.outputs.profile == 'full'
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 240
     env:
       SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
@@ -810,7 +812,7 @@ jobs:
     name: Build and verify archive · Windows x64 ROCm
     needs: [plan, quality, package_windows_x86_64_cpu]
     if: needs.plan.outputs.profile == 'full'
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 240
     env:
       SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}

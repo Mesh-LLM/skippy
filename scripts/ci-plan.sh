@@ -11,7 +11,7 @@ result="$(jq -cer --arg profile "$profile" '
     if $id == "darwin-aarch64" then ["macos-15"]
     elif $id == "linux-x86_64" then ["ubuntu-24.04"]
     elif $id == "linux-aarch64" then ["ubuntu-24.04-arm"]
-    elif $id == "windows-x86_64" then ["windows-2025"]
+    elif $id == "windows-x86_64" then ["windows-2022"]
     else null end;
   def valid_host_identity:
     ([.id, .target, .os, .arch] == ["darwin-aarch64", "aarch64-apple-darwin", "macos", "aarch64"])

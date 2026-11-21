@@ -44,7 +44,7 @@
       "os": "windows",
       "arch": "x86_64",
       "runner": [
-        "windows-2025"
+        "windows-2022"
       ]
     }
   ],
@@ -187,7 +187,7 @@
       "gpu_architectures": "",
       "validation": "artifact",
       "runner": [
-        "windows-2025"
+        "windows-2022"
       ]
     },
     {
@@ -199,7 +199,7 @@
       "gpu_architectures": "61;75;80;86;89;90",
       "validation": "artifact",
       "runner": [
-        "windows-2025"
+        "windows-2022"
       ]
     },
     {
@@ -211,7 +211,7 @@
       "gpu_architectures": "75;80;86;89;90;100;103;120",
       "validation": "artifact",
       "runner": [
-        "windows-2025"
+        "windows-2022"
       ]
     },
     {
@@ -223,7 +223,7 @@
       "gpu_architectures": "gfx1100;gfx1101;gfx1102;gfx1151;gfx1200;gfx1201",
       "validation": "artifact",
       "runner": [
-        "windows-2025"
+        "windows-2022"
       ]
     }
   ]

@@ -79,16 +79,19 @@ builds the shared CLI on Ubuntu 24.04 for compatibility with the GPU toolchain
 images.
 
 Full CI and tagged releases build and verify the Windows x64 CPU, CUDA 12,
-CUDA 13, and ROCm 7.2.0 archives on `windows-2025` and the Linux x64 ROCm
+CUDA 13, and ROCm 7.2.0 archives on `windows-2022` and the Linux x64 ROCm
 archive in the published ROCm compiler image. These five targets have
 `validation: artifact` in `targets.json`. Their checks cover archive integrity,
 native binary imports and CLI startup. Inference qualification is pending for
 these targets. Windows CUDA jobs provision the toolkit from NVIDIA's versioned,
 checksum-verified component archives; the Windows ROCm job silently installs
 the checksum-verified HIP SDK installer
-`AMD-Software-PRO-Edition-26.Q3-Win11-For-HIP.exe` (AMD publishes HIP SDK 7.2
-for Windows 11; the Server 2025 runner shares its kernel lineage) and verifies
-its compilers, import libraries, and rocBLAS/hipBLASLt kernels before building.
+`AMD-Software-PRO-Edition-26.Q3-Win11-For-HIP.exe` and verifies its compilers,
+import libraries, and rocBLAS/hipBLASLt kernels before building. Windows runs
+on the Server 2022 image deliberately: the HIP SDK's clang 21 cannot compile
+HIP sources against the VS 2026 image's MSVC 14.52 `cmath` (device math
+overloads collide), while the Server 2022 image's MSVC 14.44 toolset compiles
+cleanly.
 Windows users need the Microsoft Visual C++ x64 Redistributable and, for CUDA,
 a compatible NVIDIA driver. Linux ROCm users need a matching ROCm runtime with
 its libraries visible to the system loader.
