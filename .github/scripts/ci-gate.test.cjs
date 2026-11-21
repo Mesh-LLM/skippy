@@ -131,6 +131,22 @@ test('host CPU packages install Just on GitHub and Depot runners', () => {
   assert.match(action, /uses: \.\/\.github\/actions\/setup\n      if: inputs.setup-host == 'true'/);
 });
 
+test('the Depot cache canary is restricted to manual runs on protected main', () => {
+  const seed = workflow.split('\n  depot_cache_seed:\n')[1].split('\n  depot_cache_read:\n')[0];
+  const read = workflow.split('\n  depot_cache_read:\n')[1].split('\n  changes:\n')[0];
+  const admission = seed.match(/if: >-\n([\s\S]+?)\n    runs-on:/)[1];
+  const enabled = new Function('github', 'inputs', `return (${admission});`);
+  const main = 'Mesh-LLM/skippy/.github/workflows/ci.yml@refs/heads/main';
+  assert.equal(enabled({ workflow_ref: main, event_name: 'workflow_dispatch' }, { profile: 'depot-cache' }), true);
+  assert.equal(enabled({ workflow_ref: main, event_name: 'push' }, { profile: 'depot-cache' }), false);
+  assert.equal(enabled({ workflow_ref: main.replace('heads/main', 'heads/topic'), event_name: 'workflow_dispatch' },
+    { profile: 'depot-cache' }), false);
+  assert.equal(enabled({ workflow_ref: main, event_name: 'workflow_dispatch' }, { profile: 'full' }), false);
+  assert.match(seed, /^    cache-mode: write$/m);
+  assert.match(read, /^    needs: depot_cache_seed$/m);
+  assert.match(read, /^    cache-mode: read$/m);
+});
+
 test('Depot compiler image canaries build on protected main without publishing', () => {
   const images = readFileSync(join(__dirname, '../workflows/ci-images.yml'), 'utf8');
   const repository = 'Mesh-LLM/skippy';

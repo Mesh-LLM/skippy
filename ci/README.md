@@ -156,6 +156,16 @@ builds. The publisher jobs run on GitHub-hosted Linux and use the tested
 archives from the build jobs. Clearing the variable or setting it to `false`
 restores GitHub-hosted placement unless the manual input is enabled.
 
+To check Depot's Actions cache permissions, dispatch `CI` from protected
+`main` with `profile=depot-cache`. The canary saves a disposable marker in a
+write-enabled job. A separate `cache-mode: read` job must restore that marker
+and receive an explicit cache-service denial when it requests a fresh write
+reservation. The probe uploads no write-test data and fails if Depot supplies
+a separate cache token. The workflow runs only these canary jobs for this
+profile and uses the protected workflow source. A passing result demonstrates
+read-only enforcement for the tested Depot connection and runner label.
+[GitHub cache permissions](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#controlling-cache-access-with-cache-mode)
+
 ### PR admission and quality
 
 Same-repository PRs to `main` use the workflow definition on protected `main`.
