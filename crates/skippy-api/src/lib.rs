@@ -14,6 +14,7 @@ pub mod source_registry;
 pub mod materialization;
 pub mod materialized_cache;
 pub mod split_certification;
+pub mod split_execution;
 pub mod stage_admission;
 pub mod stage_load;
 
