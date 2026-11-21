@@ -169,6 +169,65 @@ fn immutable_hf_source_uses_supplied_snapshot_without_constructing_client() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn shared_hf_source_uses_content_sha256_and_keeps_shard_names() {
+    use std::os::unix::fs::symlink;
+
+    let cache = tempfile::tempdir().unwrap();
+    let repo = cache.path().join("models--owner--model");
+    let revision = "c".repeat(40);
+    let snapshot = repo.join("snapshots").join(&revision).join("weights");
+    let blobs = repo.join("blobs");
+    let shared_blobs = cache.path().join("blobs");
+    std::fs::create_dir_all(&snapshot).unwrap();
+    std::fs::create_dir(&blobs).unwrap();
+    std::fs::create_dir(&shared_blobs).unwrap();
+
+    let mut digests = Vec::new();
+    let mut shared_paths = Vec::new();
+    for (part, xet_hex) in [(1, 'a'), (2, 'b')] {
+        let xet_hash = xet_hex.to_string().repeat(64);
+        let prefix = shared_blobs.join(&xet_hash[..2]);
+        std::fs::create_dir(&prefix).unwrap();
+        let target = prefix.join(xet_hash);
+        write_test_metadata_gguf(&target, 4096 + part);
+        let etag = crate::package::file_sha256(&target).unwrap();
+        let repo_blob = blobs.join(&etag);
+        symlink(&target, &repo_blob).unwrap();
+        symlink(
+            Path::new("../../../blobs").join(&etag),
+            snapshot.join(format!("model-{part:05}-of-00002.gguf")),
+        )
+        .unwrap();
+        digests.push(etag);
+        shared_paths.push(target);
+    }
+
+    let mut identity = hf_identity("owner/model", &revision);
+    identity.file = "weights/model-00001-of-00002.gguf".to_string();
+    let snapshot_root = snapshot.parent().unwrap();
+    let result =
+        super::super::synthetic_huggingface_gguf_package("model", &identity, snapshot_root, || {
+            anyhow::bail!("shared immutable source must not construct an HF client")
+        })
+        .unwrap();
+    let input = snapshot_root.join(&identity.file);
+    validate_source_set(&input).unwrap();
+    let direct_paths = super::super::direct_gguf_source_paths(&input).unwrap();
+    for (index, source) in result.source_files.iter().enumerate() {
+        assert_eq!(source.sha256, digests[index]);
+        assert_eq!(source.path, direct_paths[index]);
+        assert_eq!(
+            source.path.file_name().unwrap().to_str().unwrap(),
+            format!("model-{:05}-of-00002.gguf", index + 1)
+        );
+        assert!(std::fs::symlink_metadata(&source.path).unwrap().is_file());
+        assert!(same_file::is_same_file(&source.path, &shared_paths[index]).unwrap());
+    }
+    assert_eq!(result.source_files.len(), 2);
+}
+
 #[test]
 fn identity_ignores_alias_and_absolute_path() {
     let first_dir = tempfile::tempdir().unwrap();

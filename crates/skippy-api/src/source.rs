@@ -24,7 +24,8 @@ pub fn synthetic_direct_gguf_package(
 /// object digests already recorded by Hugging Face.
 ///
 /// The canonical identity includes the repository, resolved commit, and exact
-/// ordered file set, but avoids reading the model weights at startup.
+/// ordered file set. Repo-local blobs use the recorded SHA-256 and shared
+/// blobs are hashed from their bytes.
 pub fn synthetic_huggingface_gguf_package(
     _model_id: &str,
     identity: &skippy_model_hf::store::local::HuggingFaceModelIdentity,
@@ -33,15 +34,9 @@ pub fn synthetic_huggingface_gguf_package(
 ) -> Result<SkippyPackageIdentity> {
     let source =
         content_addressed::huggingface_source_files(identity, snapshot_root, build_client)?;
-    let source_paths = source
-        .files
-        .iter()
-        .map(|source| source.path.clone())
-        .collect::<Vec<_>>();
-    let verified_fingerprint = crate::source_registry::verified_path_fingerprint(&source_paths);
     synthetic_gguf_package_from_source_files(
         source.files,
-        verified_fingerprint,
+        source.verified_fingerprint,
         Some(source.identity_sha256),
         true,
     )
