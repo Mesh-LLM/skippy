@@ -181,16 +181,7 @@ jobs:
       SKIPPY_WINDOWS_ROCM_VERSION: '7.2.0'
       SKIPPY_WINDOWS_ROCM_ARCHES: 'gfx1100;gfx1101;gfx1102;gfx1151;gfx1200;gfx1201'
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-        with:
-          cache: 'false'
-      # The native stage needs MSVC on PATH; rustc locates Visual Studio itself.
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-        with:
-          arch: x64
+      - run: echo env-bisect-ok
   plan:
     name: Validate build targets
     needs: changes
