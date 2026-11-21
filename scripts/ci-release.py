@@ -34,7 +34,16 @@ def validate(tag):
     source = artifacts.source()
     if capture(["git", "rev-parse", f"refs/tags/{tag}^{{commit}}"]).strip() != source:
         raise ValueError("checkout is not the exact tagged commit")
-    command(["git", "merge-base", "--is-ancestor", source, "refs/remotes/origin/main"], timeout=60)
+    # A release is on main, or is the version commit a release run made on top of main.
+    parents = capture(["git", "show", "-s", "--format=%P", source]).split()
+    subject = capture(["git", "show", "-s", "--format=%s", source]).strip()
+    tip = parents[0] if len(parents) == 1 and subject == f"release: prepare {tag}" else source
+    for commit in dict.fromkeys((source, tip)):
+        if subprocess.run(["git", "merge-base", "--is-ancestor", commit,
+                           "refs/remotes/origin/main"], timeout=60).returncode == 0:
+            break
+    else:
+        raise ValueError("release commit is not on main or a version commit on top of main")
     github_output("prerelease", prerelease)
     github_output("source", source)
     return source

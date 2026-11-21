@@ -130,6 +130,8 @@ jobs:
           cmp release-receipt/release.json dist/release/release.json
       - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
         id: release-app
+        # Without the release App the built-in token publishes the tag only.
+        if: vars.SKIPPY_RELEASE_APP_ID != ''
         with:
           app-id: ${{ vars.SKIPPY_RELEASE_APP_ID }}
           private-key: ${{ secrets.SKIPPY_RELEASE_APP_PRIVATE_KEY }}
@@ -138,7 +140,8 @@ jobs:
           permission-contents: write
       - name: Promote the exact tested commit and tag
         env:
-          GH_TOKEN: ${{ steps.release-app.outputs.token }}
+          GH_TOKEN: ${{ steps.release-app.outputs.token || github.token }}
+          SKIPPY_RELEASE_TAG_ONLY: ${{ vars.SKIPPY_RELEASE_APP_ID == '' && '1' || '' }}
           RELEASE_TAG: ${{ inputs.version }}
           BASE_SHA: ${{ needs.admission.outputs.base }}
           SOURCE_SHA: ${{ needs.admission.outputs.source }}

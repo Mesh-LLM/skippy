@@ -346,7 +346,11 @@ a variable and `SKIPPY_RELEASE_APP_PRIVATE_KEY` as a secret. The temporary
 candidate namespace must be writable by the repository Actions token. Keep
 the release tag deletion and non-fast-forward protections in place.
 
-Once the candidate passes, the publisher advances `main` and creates the new
+Without `SKIPPY_RELEASE_APP_ID` the publisher uses the built-in Actions token,
+which cannot push to protected `main`. It then creates the tag only: the release
+is the version commit one commit ahead of `main`, and `main` keeps its version.
+
+With the App configured and once the candidate passes, the publisher advances `main` and creates the new
 tag in one atomic push, then publishes the verified archives and deploys the
 prebuilt docs. Main CI reuses the protected Release run's validation receipt
 for that exact commit. An ordinary push without a matching receipt runs
