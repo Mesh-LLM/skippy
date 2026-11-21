@@ -12,15 +12,15 @@ use crate::{
     AsrTranscribeParamsV1, BackendDevice, CacheGenRecordV1, ClefInfoV1, ClefModel, Error,
     GenerationSignalWindow, IterationRequest, KvPageDesc, LayaInfoV1, LayaMemoryV1, LayaModel,
     LayaSequence, LlamaLogCallback, LlamaModelQuantizeParams, LlamaPerfContextFn, Model, ModelInfo,
-    ModelTensorSourceV1, MtmdBitmap, MtmdContext, MtmdContextParams, MtmdDecoderPos,
-    MtmdGenAudioInfo, MtmdHelperBitmapWrapper, MtmdHelperDecodeBudget, MtmdHelperGenAudio,
-    MtmdHelperGenAudioInput, MtmdHelperInitOpt, MtmdHelperVideo, MtmdInputChunkType,
-    MtmdInputChunks, MtmdInputText, NativeMtpDraft, NativeRuntimeLoadError, NgramCache, Opaque,
-    RuntimeConfig, SamplingConfig, Session, SkippyDecodeStepSampledMtpFn,
-    SkippyModelAttachMtpDraftModelFn, SkippyRuntimeEventReporterV1, StagePlan, StagePlanDescV1,
-    StagePlanProfileDescV1, StagePlanStateDescV1, StagePlanStringRefV1, StagePlanValueDescV1,
-    StagePlanValueKind, StagePlanner, StagePlannerConfigV1, Status, SystemOneSlot, TensorInfo,
-    TokenLogprobs, TokenSignal, WorkloadInfoV1, runtime_abi_supported,
+    MtmdBitmap, MtmdContext, MtmdContextParams, MtmdDecoderPos, MtmdGenAudioInfo,
+    MtmdHelperBitmapWrapper, MtmdHelperDecodeBudget, MtmdHelperGenAudio, MtmdHelperGenAudioInput,
+    MtmdHelperInitOpt, MtmdHelperVideo, MtmdInputChunkType, MtmdInputChunks, MtmdInputText,
+    NativeMtpDraft, NativeRuntimeLoadError, NgramCache, Opaque, RuntimeConfig, SamplingConfig,
+    Session, SkippyDecodeStepSampledMtpFn, SkippyModelAttachMtpDraftModelFn,
+    SkippyRuntimeEventReporterV1, StagePlan, StagePlanDescV1, StagePlanProfileDescV1,
+    StagePlanStateDescV1, StagePlanStringRefV1, StagePlanValueDescV1, StagePlanValueKind,
+    StagePlanner, StagePlannerConfigV1, Status, SystemOneSlot, TensorInfo, TokenLogprobs,
+    TokenSignal, WorkloadInfoV1, runtime_abi_supported,
 };
 
 static SYMBOLS: OnceLock<Symbols> = OnceLock::new();
@@ -188,7 +188,6 @@ dynamic_symbols! {
     skippy_backend_device_at(index: usize, out_device: *mut BackendDevice, out_error: *mut *mut Error) -> Status;
     skippy_model_open(path: *const c_char, config: *const RuntimeConfig, out_model: *mut *mut Model, out_error: *mut *mut Error) -> Status;
     skippy_model_open_from_parts(paths: *const *const c_char, path_count: usize, config: *const RuntimeConfig, out_model: *mut *mut Model, out_error: *mut *mut Error) -> Status;
-    skippy_model_open_from_source(metadata_gguf: *const c_void, metadata_gguf_size: usize, source: *const ModelTensorSourceV1, quantization_ftype: i32, config: *const RuntimeConfig, out_model: *mut *mut Model, out_error: *mut *mut Error) -> Status;
     skippy_model_free(model: *mut Model, out_error: *mut *mut Error) -> Status;
     skippy_model_llama_model(model: *const Model) -> *const Opaque;
     skippy_model_output_activation_boundary(model: *const Model, out_desc: *mut ActivationBoundaryDesc) -> bool;

@@ -15,6 +15,19 @@ pub fn select_local_native_runtime_plan(
     required_abi: Option<&str>,
     selection: &RuntimeSelection,
 ) -> Result<Option<NativeRuntimeLoadPlan>> {
+    select_local_native_runtime(runtimes, profile, release, required_abi, selection)
+        .map(InstalledNativeRuntime::load_plan)
+        .transpose()
+}
+
+/// Return the verified local install selected by the same policy as startup.
+pub fn select_local_native_runtime<'a>(
+    runtimes: &'a [InstalledNativeRuntime],
+    profile: &HostRuntimeProfile,
+    release: &str,
+    required_abi: Option<&str>,
+    selection: &RuntimeSelection,
+) -> Option<&'a InstalledNativeRuntime> {
     let eligible = runtimes
         .iter()
         .filter(|runtime| has_startup_compatibility_metadata(&runtime.manifest.runtime, profile))
@@ -23,18 +36,17 @@ pub fn select_local_native_runtime_plan(
         .iter()
         .map(|runtime| runtime.manifest.runtime.clone())
         .collect::<Vec<_>>();
-    let Some(candidate) =
-        select_native_runtime_from_artifacts(&artifacts, profile, release, required_abi, selection)
-    else {
-        return Ok(None);
-    };
+    let candidate = select_native_runtime_from_artifacts(
+        &artifacts,
+        profile,
+        release,
+        required_abi,
+        selection,
+    )?;
     let selected_release = candidate.artifact.release_version_or(release);
-    let Some(runtime) = eligible.into_iter().find(|runtime| {
+    eligible.into_iter().find(|runtime| {
         runtime.release_version == selected_release
             && runtime.native_runtime_id == candidate.artifact.native_runtime_id()
             && runtime.manifest.runtime.skippy_abi == candidate.artifact.skippy_abi
-    }) else {
-        return Ok(None);
-    };
-    runtime.load_plan().map(Some)
+    })
 }

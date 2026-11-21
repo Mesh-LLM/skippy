@@ -45,19 +45,84 @@ pub struct LoadedModelBackend {
     /// [`skippy_serving::thinking_probe`] for what they can and cannot claim.
     pub thinking: Option<ThinkingControls>,
     telemetry: Telemetry,
+    _device_reservation: Option<crate::placement::DeviceReservation>,
 }
 
 impl ModelLoadRequest {
+    /// Try a verified default DFlash draft, then retry the original plan only
+    /// when the runtime cannot attach the draft.
+    pub fn load_with_default_draft(
+        mut self,
+        draft: &crate::speculative::PreparedDraft,
+    ) -> Result<LoadedModelBackend> {
+        let mut open_events = std::mem::take(&mut self.open_events);
+        let mut candidate = self.draft_candidate();
+        draft.apply_to(&mut candidate.openai);
+        candidate.runtime.config.native_mtp_enabled = false;
+        candidate.runtime.mtp_source = skippy_runtime::MtpSource::Disabled;
+        match candidate.load_attempt(&mut open_events) {
+            Err(error) if skippy_serving::DFlashDraftAttachFailed::caused(&error) => {
+                tracing::warn!(%error, provenance = ?draft.provenance(), "default DFlash draft could not attach");
+                self.load_attempt(&mut open_events)
+            }
+            result => result,
+        }
+    }
+
+    fn draft_candidate(&self) -> Self {
+        Self {
+            runtime: self.runtime.clone(),
+            openai: self.openai.clone(),
+            open_events: ModelOpenEvents::Disabled,
+            hooks_factory: self.hooks_factory.clone(),
+            generation_observer: self.generation_observer.clone(),
+            kv_observer: self.kv_observer.clone(),
+            hook_policy: self.hook_policy.clone(),
+            guardrails: self.guardrails.clone(),
+            guardrail_telemetry: self.guardrail_telemetry.clone(),
+            downstream_wire_condition: self.downstream_wire_condition,
+            serving_telemetry: self.serving_telemetry.clone(),
+            l3_manager: self.l3_manager.clone(),
+        }
+    }
+
+    /// Bind a model to the chosen accelerator and retain its capacity while
+    /// the loaded model is alive. Dropping an unsuccessful or cancelled load
+    /// releases the reservation.
+    pub fn load_with_placement(
+        mut self,
+        allocator: &crate::placement::DeviceAllocator,
+        placement: &crate::placement::PlacementRequest,
+        required_bytes: u64,
+    ) -> Result<LoadedModelBackend> {
+        ensure!(
+            self.runtime.config.n_gpu_layers != 0,
+            "GPU placement requires GPU layer offload"
+        );
+        let reservation = allocator.reserve(placement, required_bytes)?;
+        self.runtime.config.selected_device = Some(reservation.device().clone());
+        let mut loaded = self.load()?;
+        loaded._device_reservation = Some(reservation);
+        Ok(loaded)
+    }
+
     /// Load and compose the backend. Observations are best-effort and the
     /// returned result settles the load.
     pub fn load(mut self) -> Result<LoadedModelBackend> {
-        match std::mem::take(&mut self.open_events) {
+        let mut open_events = std::mem::take(&mut self.open_events);
+        self.load_attempt(&mut open_events)
+    }
+
+    fn load_attempt(self, open_events: &mut ModelOpenEvents) -> Result<LoadedModelBackend> {
+        match open_events {
             ModelOpenEvents::Disabled => self.load_inner(SkippyRuntimeHandle::load),
-            ModelOpenEvents::Enabled(observer) => model_open::run_observed(observer, |queue| {
-                self.load_inner(|options| {
-                    SkippyRuntimeHandle::load_with_open_events(options, queue)
+            ModelOpenEvents::Enabled(observer) => {
+                model_open::run_observed(observer.as_mut(), |queue| {
+                    self.load_inner(|options| {
+                        SkippyRuntimeHandle::load_with_open_events(options, queue)
+                    })
                 })
-            }),
+            }
         }
     }
 
@@ -146,6 +211,7 @@ impl ModelLoadRequest {
             prediction_return_listener,
             thinking,
             telemetry,
+            _device_reservation: None,
         })
     }
 }

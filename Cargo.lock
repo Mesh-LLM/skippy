@@ -5173,10 +5173,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
 
 [[package]]
+name = "skippy-analytics"
+version = "0.80.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "skippy-hardware-profile",
+ "skippy-native-runtime",
+ "skippy-runtime",
+ "skippy-serving",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "skippy-api"
 version = "0.80.0"
 dependencies = [
  "anyhow",
+ "async-trait",
+ "futures-util",
  "hex",
  "process-supervision",
  "reqwest 0.13.5",
@@ -5186,6 +5208,7 @@ dependencies = [
  "sha2 0.11.1",
  "skippy-cache",
  "skippy-config",
+ "skippy-coordinator",
  "skippy-ffi",
  "skippy-hf-hub",
  "skippy-inference-api",
@@ -5199,6 +5222,7 @@ dependencies = [
  "skippy-runtime",
  "skippy-runtime-install",
  "skippy-serving",
+ "skippy-topology",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -5231,12 +5255,14 @@ dependencies = [
  "reqwest 0.13.5",
  "serde",
  "serde_json",
+ "skippy-analytics",
  "skippy-api",
  "skippy-cache",
  "skippy-commands",
  "skippy-config",
  "skippy-coordinator",
  "skippy-events",
+ "skippy-gpu-bench",
  "skippy-inference-api",
  "skippy-model-artifact",
  "skippy-model-hf",
@@ -5347,8 +5373,11 @@ dependencies = [
 name = "skippy-gpu-bench"
 version = "0.80.0"
 dependencies = [
+ "process-supervision",
  "serde",
  "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
  "tracing",
 ]
 
@@ -5466,6 +5495,7 @@ dependencies = [
  "hex",
  "libc",
  "regex-lite",
+ "reqwest 0.13.5",
  "rustls",
  "serde",
  "serde_json",
@@ -6225,6 +6255,7 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
+ "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2",

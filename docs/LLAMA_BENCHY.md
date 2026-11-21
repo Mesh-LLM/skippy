@@ -216,7 +216,7 @@ Run on the target hardware with a verified bundle to qualify measured
 throughput. A timeout or interrupt cleans up the trial process and scratch
 directory. By default the sweep only reports. For a single model,
 `--apply serving.toml` replaces the measured settings in an existing
-standalone configuration. Existing values outside the selected settings are
+single-model standalone configuration. Existing values outside the selected settings are
 retained. A cancelled sweep or one without a successful recommendation
 cannot apply.
 

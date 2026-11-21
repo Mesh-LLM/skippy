@@ -13,6 +13,14 @@ fn frame(hasher: &mut Sha256, value: &[u8]) {
     hasher.update(value);
 }
 
+fn digest_hex(bytes: &[u8]) -> String {
+    let mut result = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(&mut result, "{byte:02x}").expect("write digest");
+    }
+    result
+}
+
 fn bundled_recipe(crate_dir: &std::path::Path) -> (String, String) {
     let roster_path = crate_dir.join("src/split-certified.json");
     println!("cargo:rerun-if-changed={}", roster_path.display());
@@ -110,6 +118,7 @@ fn main() {
         let (upstream, patch_digest) = bundled_recipe(&crate_dir);
         println!("cargo:rustc-env=SKIPPY_LLAMA_UPSTREAM_SHA={upstream}");
         println!("cargo:rustc-env=SKIPPY_PATCH_QUEUE_SHA256={patch_digest}");
+        println!("cargo:rustc-env=SKIPPY_NATIVE_PATCH_DIGEST=");
         return;
     }
     assert!(
@@ -145,15 +154,21 @@ fn main() {
     let mut hasher = Sha256::new();
     hasher.update(b"mesh-llm-skippy-patch-queue-v2\0");
     hasher.update((patches.len() as u64).to_le_bytes());
+    let mut native_hasher = Sha256::new();
     for (relative_path, path) in patches {
         println!("cargo:rerun-if-changed={}", path.display());
         frame(&mut hasher, relative_path.as_bytes());
-        frame(&mut hasher, &fs::read(&path).expect("read llama.cpp patch"));
+        let contents = fs::read(&path).expect("read llama.cpp patch");
+        frame(&mut hasher, &contents);
+        // The producer's manifest records the prepare-llama.sh digest.
+        let checksum = digest_hex(&Sha256::digest(contents));
+        native_hasher.update(format!("{relative_path}\n{checksum}\n"));
     }
     println!("cargo:rustc-env=SKIPPY_LLAMA_UPSTREAM_SHA={upstream}");
-    let mut patch_digest = String::with_capacity(64);
-    for byte in hasher.finalize() {
-        write!(&mut patch_digest, "{byte:02x}").expect("write patch digest");
-    }
+    let patch_digest = digest_hex(&hasher.finalize());
     println!("cargo:rustc-env=SKIPPY_PATCH_QUEUE_SHA256={patch_digest}");
+    println!(
+        "cargo:rustc-env=SKIPPY_NATIVE_PATCH_DIGEST={}",
+        digest_hex(&native_hasher.finalize())
+    );
 }

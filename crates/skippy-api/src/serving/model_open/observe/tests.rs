@@ -1,4 +1,5 @@
 use super::*;
+use crate::serving::ModelOpenObserver;
 use crate::serving::{ModelOpenContradiction, ModelOpenEvents};
 use skippy_ffi::{
     RUNTIME_EVENT_CATEGORY_MODEL_OPEN, RUNTIME_EVENT_EMITTER_WORKER_THREAD,
@@ -148,6 +149,76 @@ fn handled_failure_delivers_detail_and_releases_the_queue() {
 }
 
 #[test]
+fn event_carries_the_complete_native_record() {
+    let (_, records, _) = observe(|queue| {
+        let raw = SkippyRuntimeEventV1 {
+            abi_version: 1,
+            struct_size: std::mem::size_of::<SkippyRuntimeEventV1>() as u32,
+            category: RUNTIME_EVENT_CATEGORY_MODEL_OPEN,
+            kind: RUNTIME_EVENT_KIND_MODEL_OPEN_FAILED_HANDLED,
+            emitter: RUNTIME_EVENT_EMITTER_WORKER_THREAD,
+            reserved0: 0,
+            sequence: 6,
+            timestamp_mono_ns: 77,
+            model_id: 17,
+            stage_id: 23,
+            session_id: 29,
+            progress_current: 3,
+            progress_total: 4,
+            progress_unit: RUNTIME_EVENT_PROGRESS_UNIT_TENSORS,
+            failure_code: RUNTIME_EVENT_FAILURE_MODEL_ERROR,
+            status: Status::ModelError as i32,
+            reserved1: 0,
+            detail_ptr: b"bad header".as_ptr().cast(),
+            detail_len: 10,
+            numeric_summary_0: 101,
+            numeric_summary_1: 102,
+            numeric_summary_2: 0,
+            numeric_summary_3: 104,
+        };
+        // SAFETY: the queue copies the event and detail during this call.
+        unsafe { queue.deliver_for_test(&raw) };
+        Err("load error")
+    });
+    let [ModelOpenObservation::Event(event)] = records.as_slice() else {
+        panic!("expected one event");
+    };
+    let source = &event.source;
+    assert_eq!(source.status, Status::ModelError);
+    assert_eq!((source.stage_id, source.session_id), (23, 29));
+    assert_eq!(
+        [
+            source.numeric_summary_0,
+            source.numeric_summary_1,
+            source.numeric_summary_2,
+            source.numeric_summary_3,
+        ],
+        [Some(101), Some(102), Some(0), Some(104)]
+    );
+    assert_eq!(source.category.raw(), RUNTIME_EVENT_CATEGORY_MODEL_OPEN);
+    assert_eq!(
+        source.kind.raw(),
+        RUNTIME_EVENT_KIND_MODEL_OPEN_FAILED_HANDLED
+    );
+    assert_eq!(source.emitter.raw(), RUNTIME_EVENT_EMITTER_WORKER_THREAD);
+    assert_eq!(source.failure_code.raw(), RUNTIME_EVENT_FAILURE_MODEL_ERROR);
+    assert_eq!(
+        source.progress_unit.raw(),
+        RUNTIME_EVENT_PROGRESS_UNIT_TENSORS
+    );
+    assert_eq!(
+        (source.sequence, source.timestamp_mono_ns, source.model_id),
+        (
+            event.sequence,
+            event.timestamp_mono_ns,
+            event.native_model_id
+        )
+    );
+    assert_eq!(source.detail_bytes, event.detail);
+    assert_eq!(event.detail, b"bad header");
+}
+
+#[test]
 fn contradictory_terminals_do_not_change_either_load_result() {
     for (returned, expected) in [
         (
@@ -241,7 +312,7 @@ fn stalled_observer_preserves_native_progress_and_reports_queue_loss() {
 
 #[test]
 fn enabled_without_observer_runs_the_load_without_a_queue() {
-    let result = run_observed(None, |queue| {
+    let result = run_observed(None::<ModelOpenObserver>, |queue| {
         assert!(queue.is_none());
         Ok::<_, ()>(42)
     });

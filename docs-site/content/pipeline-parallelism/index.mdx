@@ -65,7 +65,9 @@ skippy plan-split \
   --output-dir split-plan
 ```
 
-`plan-split` admits every native stage before writing files. The generated
+`plan-split` uses Skippy's shared direct-GGUF planner to balance contiguous
+layer ranges across the supplied workers. It admits every native stage
+before writing files. The generated
 `stage-N.json` files are serving inputs; `admissions.json` is diagnostic
 evidence, not a configuration file.
 

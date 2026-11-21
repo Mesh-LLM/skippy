@@ -1,11 +1,14 @@
 name: Release
 on:
+  # Daily patch release of main. A day without new commits publishes nothing.
+  schedule:
+    - cron: '0 17 * * *'
   workflow_dispatch:
     inputs:
       version:
-        description: Release version, including the v prefix.
+        description: Release version, including the v prefix. Empty selects the next patch version.
         type: string
-        required: true
+        default: ''
       canary:
         description: Verify a candidate without promoting or publishing it.
         type: boolean
@@ -28,6 +31,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
+      tag: ${{ steps.admit.outputs.tag }}
       base: ${{ steps.admit.outputs.base }}
       source: ${{ steps.admit.outputs.source }}
       prerelease: ${{ steps.admit.outputs.prerelease }}
@@ -41,13 +45,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.version }}
-        run: just release-candidate stage "$RELEASE_TAG"
+        run: |
+          tag="${RELEASE_TAG:-$(just release-candidate next)}"
+          if [[ -z "$tag" ]]; then
+            echo 'main has no commits since its last release. Nothing to release.'
+            exit 0
+          fi
+          just release-candidate stage "$tag"
   validation:
     needs: admission
+    if: needs.admission.outputs.tag != ''
     permissions:
       contents: read
       packages: read
       actions: read
+      pull-requests: read
     uses: ./.github/workflows/ci.yml
     with:
       artifact_scope: release
@@ -56,15 +68,18 @@ jobs:
       source_ref: ${{ needs.admission.outputs.source }}
   documentation_validation:
     needs: admission
+    if: needs.admission.outputs.tag != ''
     uses: ./.github/workflows/docs.yml
     with:
       artifact_scope: release
       source_ref: ${{ needs.admission.outputs.source }}
   inference:
     needs: admission
+    if: needs.admission.outputs.tag != ''
     permissions:
       contents: read
-      pull-requests: read
+      actions: read
+      pull-requests: write
       statuses: write
     uses: ./.github/workflows/inference.yml
     with:
@@ -87,7 +102,7 @@ jobs:
           path: release-artifacts
       - name: Verify the complete candidate release matrix
         env:
-          RELEASE_TAG: ${{ inputs.version }}
+          RELEASE_TAG: ${{ needs.admission.outputs.tag }}
         run: just release-prepare-candidate "$RELEASE_TAG" release-artifacts
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: ${{ !inputs.canary }}
@@ -122,12 +137,14 @@ jobs:
           path: release-receipt
       - name: Verify the artifacts match the candidate receipt
         env:
-          RELEASE_TAG: ${{ inputs.version }}
+          RELEASE_TAG: ${{ needs.admission.outputs.tag }}
         run: |
           just release-prepare-candidate "$RELEASE_TAG" release-artifacts
           cmp release-receipt/release.json dist/release/release.json
       - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
         id: release-app
+        # Without the release App the built-in token publishes the tag only.
+        if: vars.SKIPPY_RELEASE_APP_ID != ''
         with:
           app-id: ${{ vars.SKIPPY_RELEASE_APP_ID }}
           private-key: ${{ secrets.SKIPPY_RELEASE_APP_PRIVATE_KEY }}
@@ -136,15 +153,16 @@ jobs:
           permission-contents: write
       - name: Promote the exact tested commit and tag
         env:
-          GH_TOKEN: ${{ steps.release-app.outputs.token }}
-          RELEASE_TAG: ${{ inputs.version }}
+          GH_TOKEN: ${{ steps.release-app.outputs.token || github.token }}
+          SKIPPY_RELEASE_TAG_ONLY: ${{ vars.SKIPPY_RELEASE_APP_ID == '' && '1' || '' }}
+          RELEASE_TAG: ${{ needs.admission.outputs.tag }}
           BASE_SHA: ${{ needs.admission.outputs.base }}
           SOURCE_SHA: ${{ needs.admission.outputs.source }}
         run: just release-candidate promote "$RELEASE_TAG" "$BASE_SHA" "$SOURCE_SHA"
       - name: Fetch the promoted main and tag
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.version }}
+          RELEASE_TAG: ${{ needs.admission.outputs.tag }}
         run: |
           git -c credential.helper= -c 'credential.helper=!gh auth git-credential' fetch --no-tags origin \
             refs/heads/main:refs/remotes/origin/main "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
@@ -155,13 +173,13 @@ jobs:
         run: gh release list --limit 1000 --json tagName,isDraft > release-index.json
       - id: existing
         env:
-          RELEASE_TAG: ${{ inputs.version }}
+          RELEASE_TAG: ${{ needs.admission.outputs.tag }}
         run: just release-select "$RELEASE_TAG" release-index.json
       - name: Create source-bound private draft
         if: steps.existing.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.version }}
+          RELEASE_TAG: ${{ needs.admission.outputs.tag }}
           SOURCE_SHA: ${{ needs.admission.outputs.source }}
           PRERELEASE: ${{ needs.admission.outputs.prerelease }}
         run: |
@@ -170,7 +188,7 @@ jobs:
         if: steps.existing.outputs.published != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.version }}
+          RELEASE_TAG: ${{ needs.admission.outputs.tag }}
         run: |
           release_id="$(gh release view "$RELEASE_TAG" --json databaseId --jq .databaseId)"
           gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" > remote-release.json
@@ -181,7 +199,7 @@ jobs:
         if: steps.existing.outputs.published != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.version }}
+          RELEASE_TAG: ${{ needs.admission.outputs.tag }}
         run: |
           while IFS= read -r asset; do
             gh release upload "$RELEASE_TAG" "$asset"
@@ -189,7 +207,7 @@ jobs:
       - name: Download published bytes for independent checksum verification
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.version }}
+          RELEASE_TAG: ${{ needs.admission.outputs.tag }}
         run: gh release download "$RELEASE_TAG" --dir downloaded-release
       - run: |
           just release-verify downloaded-release
@@ -198,7 +216,7 @@ jobs:
         if: steps.existing.outputs.published != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.version }}
+          RELEASE_TAG: ${{ needs.admission.outputs.tag }}
           PRERELEASE: ${{ needs.admission.outputs.prerelease }}
         run: gh release edit "$RELEASE_TAG" --draft=false --prerelease="$PRERELEASE"
   documentation:

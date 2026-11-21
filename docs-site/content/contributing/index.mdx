@@ -28,6 +28,56 @@ pull request flow so the change remains reviewable and attributable.
 - By submitting a contribution, you agree that it will be licensed under the
   Apache License 2.0.
 
+## Why pull requests need approval
+
+Skippy tests inference on real hardware. [General Inference](https://generalinference.xyz)
+donates time on its lab machines, which include Mac Studios, Mac minis, NVIDIA
+DGX Sparks, and AMD Ryzen Halo 395 development systems. The lab also supports
+commercial development of General Inference’s products.
+
+General Inference has an established trust relationship with members of the
+Mesh-LLM GitHub organization. A Mesh-LLM organization member must approve a
+pull request before its inference tests can run in the shared lab.
+
+Test jobs run in isolated environments. The Mesh LLM team is improving that
+isolation so more contributors can test their pull requests. The team is also
+exploring dedicated infrastructure for Skippy, with potential donations from
+General Inference and other contributing organizations.
+
+If you’re interested in sponsoring cloud-based inference hardware for Skippy,
+please reach out to the Mesh LLM team on Discord or Buzz.
+
+## Build from source
+
+Install Rust, Just, CMake, Ninja, and the native toolchain for your chosen
+backend. From the repository root, build and inspect the development bundle:
+
+```console
+just build
+./target/debug/skippy --version
+./target/debug/skippy doctor
+```
+
+On Windows, run `.\target\debug\skippy.exe` in PowerShell. The build puts a
+verified native runtime under `target/debug/native-runtimes/` for the CLI to
+discover. Use `just build cpu` to select the CPU backend explicitly.
+
+A source checkout may require a newer native ABI than the latest release. Use
+`--runtime-bundle PATH` to select a compatible local runtime bundle explicitly.
+
+### Build the quantizer
+
+From the repository root, build the separate `skippy-quantize` binary.
+
+```console
+just with-lld cargo build --locked -p skippy-quantize
+```
+
+The binary is `target/debug/skippy-quantize` or `target/debug/skippy-quantize.exe`
+on Windows. For GGUF quantization, use a native runtime bundle with the same
+Skippy ABI. The `just build cpu` recipe above builds a matching bundle.
+[Quantize a model](/running-models/quantization/)
+
 ## Develop and verify the change
 
 Read the repository `CONTRIBUTING.md` and the closest `AGENTS.md` before making

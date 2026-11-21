@@ -82,6 +82,10 @@ fn patch_table(table: &mut Table, patch: &SettingsPatch) -> Result<()> {
             .is_none_or(|version| version.as_integer() == Some(1)),
         "apply requires a version 1 standalone serving configuration"
     );
+    ensure!(
+        !table.contains_key("models"),
+        "apply requires a single-model serving configuration"
+    );
     if let Some(speculative) = table.get_mut("speculative").and_then(Value::as_table_mut) {
         // Drop previously chosen speculative settings that would override the
         // selected strategy or keep a different draft active.

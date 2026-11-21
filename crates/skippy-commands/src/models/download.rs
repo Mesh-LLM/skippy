@@ -122,6 +122,7 @@ async fn download_primary_model(
     use_catalog: bool,
     progress: bool,
 ) -> Result<DownloadedModel> {
+    super::reject_safetensors_model_ref(model_ref)?;
     validate_digest(sha256)?;
     use std::io::Write;
     if progress {
@@ -172,27 +173,19 @@ async fn download_primary_model(
         enabled: progress,
         last_percent: Mutex::new(None),
     });
-    let paths = if artifact.format == skippy_model_artifact::ModelFormat::Safetensors {
-        repository
-            .download_checkpoint_with_progress(&artifact, Some(progress))
-            .await?
-            .into_iter()
-            .map(|downloaded| (downloaded.file, downloaded.path))
-            .collect::<Vec<_>>()
-    } else {
-        let downloaded_paths = repository
-            .download_artifact_files_with_progress(&artifact, Some(progress))
-            .await?;
-        ensure!(
-            downloaded_paths.len() == artifact.files.len(),
-            "downloaded artifact file count mismatch"
-        );
-        downloaded_paths
-            .into_iter()
-            .zip(artifact.files.iter().cloned())
-            .map(|(path, file)| (file, path))
-            .collect::<Vec<_>>()
-    };
+    let downloaded_paths = repository
+        .download_artifact_files_with_progress(&artifact, Some(progress))
+        .await?;
+    ensure!(
+        downloaded_paths.len() == artifact.files.len(),
+        "downloaded artifact file count mismatch"
+    );
+    let paths = artifact
+        .files
+        .iter()
+        .cloned()
+        .zip(downloaded_paths)
+        .collect::<Vec<_>>();
     ensure!(!paths.is_empty(), "downloaded artifact file list is empty");
     let mut files = Vec::with_capacity(paths.len());
     let mut managed_paths = Vec::with_capacity(paths.len());
@@ -216,14 +209,7 @@ async fn download_primary_model(
         }
     }
     let primary_path = primary_path.context("download did not include the primary model file")?;
-    let load_path = if artifact.format == skippy_model_artifact::ModelFormat::Safetensors {
-        primary_path
-            .parent()
-            .context("SafeTensors checkpoint has no parent directory")?
-            .to_path_buf()
-    } else {
-        primary_path.clone()
-    };
+    let load_path = primary_path.clone();
     if let Err(error) = skippy_model_hf::store::usage::track_managed_model_usage(
         &primary_path,
         &managed_paths,
