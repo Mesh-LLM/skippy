@@ -94,8 +94,12 @@ def nodes(values):
     return values
 
 
-def job_spec(harness, arm_list, keys, rounds, node, label):
+def job_spec(harness, arm_list, keys, rounds, node, label, *, trace=False):
+    """`trace` adds one diagnostic pass of the candidate with debug telemetry, kept out
+    of the measurements: tracing costs time, so a traced arm is not a comparable one."""
     count(rounds, "rounds")
+    if type(trace) is not bool:
+        raise ValueError("trace must be true or false")
     if rounds > MAX_ROUNDS:
         raise ValueError(f"at most {MAX_ROUNDS} rounds fit the job's time budget")
     shape = scenario()
@@ -107,7 +111,7 @@ def job_spec(harness, arm_list, keys, rounds, node, label):
     repos = [{"url": SKIPPY, "rev": harness, "path": "harness"}] + [
         {"url": SKIPPY if arm["kind"] == "skippy" else LLAMA, "rev": arm["sha"], "path": arm["path"]}
         for arm in arm_list]
-    plan = {"harness": harness, "arms": arm_list, "models": keys, "rounds": rounds}
+    plan = {"harness": harness, "arms": arm_list, "models": keys, "rounds": rounds, "trace": trace}
     points = [point for server in shape["servers"] for point in server["points"]]
     return {
         "name": f"skippy-inference-performance-{label}",

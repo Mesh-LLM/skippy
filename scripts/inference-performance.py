@@ -6,12 +6,15 @@ import base64
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tarfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
+from urllib.request import Request
 
 from lib.ci_artifacts import digest, read_json, write_json
 from lib.ci_process import cancel_on_signal, capture, command, start, stop
@@ -20,15 +23,18 @@ from lib import inference_metal
 from lib.inference_checks import ENDPOINT, offload
 from lib.inference_inputs import admit as admit_model
 from lib.inference_inputs import fixture
-from lib.jy_qualification import Pilot
-from lib.performance_arms import build, capabilities, server_args
+from lib.jy_qualification import ORIGIN, Pilot
+from lib.performance_arms import build, capabilities, server_args, supports
 from lib.performance_load import run_point, tokenizer
 from lib.performance_plan import SCENARIO, arms, job_spec, models, nodes, round_order, scenario
-from lib.performance_report import markdown, summarize
+from lib.performance_report import markdown, rows, summarize
 
 REPO = "general-inference/skippy"
+LLAMA_REPO = "ggml-org/llama.cpp"
 WORK = Path("target/inference-performance")
 BUILT = WORK / "built.json"
+# Outside the artifact directory: artifact names are flat, so the traces travel as one archive.
+TRACES = WORK / "traces"
 TERMINAL = {"succeeded", "failed", "cancelled", "expired"}
 RESERVE = 16 * 1024**3
 
@@ -53,19 +59,28 @@ def reference_pin(sha):
     return base64.b64decode(content["content"]).decode("utf-8").strip()
 
 
+def committed_at(arm_list):
+    """When each arm's commit was made, so stored rows can be graphed in commit order."""
+    return {arm["sha"]: github(f'repos/{REPO if arm["kind"] == "skippy" else LLAMA_REPO}/commits/'
+                               f'{arm["sha"]}')["commit"]["committer"]["date"] for arm in arm_list}
+
+
 def admit(evidence):
     harness = capture(["git", "rev-parse", "HEAD"]).strip()
     candidate, baseline = resolve(os.environ["CANDIDATE"]), resolve(os.environ["BASELINE"])
     with_reference = os.environ.get("REFERENCE", "true") == "true"
+    trace = os.environ.get("TRACE", "false") == "true"
     arm_list = arms(candidate, baseline, reference_pin(candidate) if with_reference else None)
     keys = models([key.strip() for key in os.environ["MODELS"].split(",") if key.strip()])
     pins = nodes([node.strip() for node in os.environ.get("NODES", "").split(",") if node.strip()])
     rounds = int(os.environ.get("ROUNDS") or 3)
-    jobs = [{"label": node or "any", "spec": job_spec(harness, arm_list, keys, rounds, node, node or "any")}
+    jobs = [{"label": node or "any",
+             "spec": job_spec(harness, arm_list, keys, rounds, node, node or "any", trace=trace)}
             for node in (pins or [None])]
     evidence.mkdir(parents=True, exist_ok=True)
     write_json(evidence / "plan.json", {"harness": harness, "arms": arm_list, "models": keys,
-                                        "rounds": rounds, "jobs": jobs})
+                                        "rounds": rounds, "trace": trace,
+                                        "committed_at": committed_at(arm_list), "jobs": jobs})
     for arm in arm_list:
         print(f'{arm["label"]}: {arm["kind"]} {arm["sha"]}')
     print(f"{len(jobs)} job(s), {len(keys)} model(s), {rounds} round(s); nothing has run yet")
@@ -94,6 +109,15 @@ def wait(pilot, identifier, evidence, deadline):
     raise RuntimeError(f"{identifier} did not finish before the controller deadline")
 
 
+def download(pilot, run_id, name, path):
+    """An artifact that is not JSON, streamed to `path`."""
+    request = Request(f"{ORIGIN}/v1/artifacts/{run_id}/raw/{quote(name, safe='')}",
+                      headers={"Authorization": "Bearer " + pilot.auth(),
+                               "User-Agent": "skippy-inference-ci/1.0"})
+    with pilot.opener.open(request, timeout=900) as response, path.open("wb") as stream:
+        shutil.copyfileobj(response, stream)
+
+
 def collect(pilot, job, plan, label, evidence):
     run = (job.get("runs") or [{}])[-1]
     run_id = resource_id(run.get("id"))
@@ -103,6 +127,12 @@ def collect(pilot, job, plan, label, evidence):
     ] != [(arm["label"], arm["sha"]) for arm in plan["arms"]]:
         raise ValueError(f"{label}: performance evidence does not match the admitted plan")
     write_json(evidence / f"{label}-performance.json", result)
+    (evidence / f"{label}-rows.jsonl").write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n"
+                for row in rows(result, scenario(), plan["committed_at"], job["id"])),
+        encoding="utf-8")
+    if plan["trace"]:
+        download(pilot, run_id, "traces.tar.gz", evidence / f"{label}-traces.tar.gz")
     host = f'{result["host"]["chip"]} ({result["host"].get("node") or "unknown node"})'
     return markdown(f"Inference performance: {label}", host, summarize(result["samples"]))
 
@@ -146,8 +176,9 @@ def native_plan():
         raise ValueError("harness checkout differs from the admitted harness commit")
     labels = {arm["label"]: arm["sha"] for arm in plan["arms"]}
     expected = arms(labels["candidate"], labels["baseline"], labels.get("reference"))
-    if plan["arms"] != expected or plan["models"] != models(plan["models"]):
-        raise ValueError("performance plan arms or models are malformed")
+    if (plan["arms"] != expected or plan["models"] != models(plan["models"])
+            or type(plan.get("trace")) is not bool):
+        raise ValueError("performance plan arms, models or trace flag are malformed")
     return plan
 
 
@@ -171,22 +202,37 @@ def ready(server, seconds):
     raise RuntimeError("server did not become ready")
 
 
-def measure(built, help_text, model, inputs, key, index, server, shape, output):
+def traced(built, help_text, args, applied, missing, trace):
+    """Debug telemetry for a diagnostic pass, its spans and gauges as OTLP/JSON lines."""
+    if built["kind"] == "skippy" and supports(help_text, "--telemetry-level"):
+        args += ["--telemetry-level", "debug"]
+        applied["telemetry_level"] = "debug"
+    else:
+        missing.append("--telemetry-level")
+    return {"SKIPPY_TELEMETRY_OTLP_FILE": str(trace.parent / f"{trace.name}.otlp.jsonl"),
+            "SKIPPY_TELEMETRY_OTLP_METRICS_FILE": str(trace.parent / f"{trace.name}.metrics.jsonl")}
+
+
+def measure(built, help_text, model, inputs, key, index, server, shape, output, trace=None):
+    """`index` is the round, or None for a diagnostic pass that writes `trace`."""
     coordinate = f'{inputs["repo"]}@{inputs["revision"]}'
     args, applied, missing = server_args(built, help_text, model, coordinate,
                                          shape["context_per_lane"], server)
-    name = f'{key}-r{index + 1}-{built["label"]}-{server["id"]}'
+    overrides = None if trace is None else traced(built, help_text, args, applied, missing, trace)
+    pass_name = "trace" if index is None else f"r{index + 1}"
+    name = f'{key}-{pass_name}-{built["label"]}-{server["id"]}'
     log = output / f"{name}.log"
     samples = []
     with log.open("wb") as stream:
-        process = start(args, stdin=subprocess.DEVNULL, stdout=stream, stderr=stream)
+        process = start(args, overrides, stdin=subprocess.DEVNULL, stdout=stream, stderr=stream)
         try:
             ready(process, 900)
             offload(log)
             for point in server["points"]:
                 metrics = run_point(ENDPOINT, point, coordinate, inputs["tokenizer_path"],
                                     shape["warmup_requests"], WORK / "aiperf" / name / point["id"])
-                samples.append({"model": key, "round": index + 1, "arm": built["label"],
+                samples.append({"model": key, "round": None if index is None else index + 1,
+                                "arm": built["label"],
                                 "server": server["id"], "point": point["id"], "applied": applied,
                                 "unsupported": missing, "metrics": metrics})
         finally:
@@ -211,9 +257,14 @@ def execute():
         (output / log.name).write_bytes(log.read_bytes())
     shape, helps = scenario(), {entry["label"]: capabilities(entry) for entry in built}
     record = {"schema_version": 1, "harness": plan["harness"], "scenario_sha256": digest(SCENARIO),
+              "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
               "host": {"chip": chip, "macos": capture(["sw_vers", "-productVersion"]).strip(),
                        "metal_working_set_bytes": working_set, "node": os.environ.get("JIANYANG_NODE")},
               "arms": built, "rounds": plan["rounds"], "models": {}, "samples": []}
+    if plan["trace"]:
+        # Tracing slows the arm it runs on, so its samples never join the comparison.
+        record["diagnostic"] = {"telemetry": "debug", "arm": "candidate", "samples": []}
+        TRACES.mkdir(parents=True, exist_ok=True)
     try:
         for key in plan["models"]:
             inputs = fixture(key)
@@ -230,11 +281,21 @@ def execute():
                         record["samples"] += measure(entry, helps[entry["label"]], model, inputs, key,
                                                      index, server, shape, output)
                         write_json(output / "performance.json", record)
+            if plan["trace"]:
+                candidate = next(entry for entry in built if entry["label"] == "candidate")
+                for server in shape["servers"]:
+                    record["diagnostic"]["samples"] += measure(
+                        candidate, helps["candidate"], model, inputs, key, None, server, shape, output,
+                        trace=TRACES / f'{key}-{server["id"]}')
+                    write_json(output / "performance.json", record)
     finally:
         write_json(output / "performance.json", record)
         if (WORK / "aiperf").is_dir():
             with tarfile.open(output / "aiperf.tar.gz", "w:gz") as archive:
                 archive.add(WORK / "aiperf", arcname="aiperf")
+        if TRACES.is_dir():
+            with tarfile.open(output / "traces.tar.gz", "w:gz") as archive:
+                archive.add(TRACES, arcname="traces")
 
 
 def main():

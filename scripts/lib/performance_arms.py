@@ -47,6 +47,10 @@ def capabilities(built):
     return command(args, timeout=60, capture_stdout=True)
 
 
+def supports(help_text, flag):
+    return re.search(rf"(?<![\w-]){re.escape(flag)}(?![\w-])", help_text) is not None
+
+
 def server_args(built, help_text, model, coordinate, context, server):
     lanes, pool = server["lanes"], server["pool_tokens"]
     if built["kind"] == "llama-server":
@@ -62,7 +66,7 @@ def server_args(built, help_text, model, coordinate, context, server):
     if pool is not None:
         wanted.append(("--kv-pool-tokens", pool))
     for flag, value in wanted:
-        if re.search(rf"(?<![\w-]){re.escape(flag)}(?![\w-])", help_text):
+        if supports(help_text, flag):
             args += [flag, str(value)]
             applied[flag.removeprefix("--").replace("-", "_")] = value
         else:

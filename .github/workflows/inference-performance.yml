@@ -26,6 +26,10 @@ on:
         description: Rounds per arm; the arm order rotates every round.
         type: number
         default: 3
+      trace:
+        description: After the rounds, one diagnostic pass of the candidate with debug telemetry, kept out of the comparison.
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       candidate:
@@ -46,6 +50,9 @@ on:
       rounds:
         type: number
         default: 3
+      trace:
+        type: boolean
+        default: false
     secrets:
       JIANYANG_INFERENCE_SSH_KEY:
         required: true
@@ -78,6 +85,7 @@ jobs:
           MODELS: ${{ inputs.models }}
           NODES: ${{ inputs.nodes }}
           ROUNDS: ${{ inputs.rounds }}
+          TRACE: ${{ inputs.trace }}
         run: just inference-performance-admit "$EVIDENCE"
       - name: Measure every arm on each Metal host
         env:

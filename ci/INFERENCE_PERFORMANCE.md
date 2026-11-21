@@ -24,6 +24,7 @@ gh workflow run inference-performance.yml -f candidate=main \
 | `models` | `ci/inference-ladder.json` ids; shards are the hash-pinned files in `ci/inference-artifacts.json` |
 | `nodes` | Metal nodes, one job each; empty runs one job on any Metal Mac with room for the largest model plus 16 GiB |
 | `rounds` | rounds per arm, at most 9; default 3 |
+| `trace` | after the rounds, one diagnostic pass of the candidate with debug telemetry; default off |
 
 Both commits must be on protected main. The controller and the harness always
 come from main, so every arm is driven by the same scripts and scenario, and an
@@ -57,6 +58,19 @@ the pool existed, runs without it. Each sample records what was applied and
 what the arm did not support. `llama-server` gets the same lanes and the same
 total context (`-np`, `-c`, `-kvu`).
 
+## Traces
+
+With `trace` on, each job runs the candidate once more per model and server after
+the measured rounds, with `--telemetry-level debug`. It writes the spans and the
+resource gauges as OTLP/JSON lines, one file each per model and server
+(`MODEL-SERVER.otlp.jsonl` and `.metrics.jsonl`), packed as `traces.tar.gz` in the
+job's artifacts; the controller downloads it beside the evidence as
+`LABEL-traces.tar.gz`. Each line is an `ExportTraceServiceRequest` that an
+OTLP/HTTP collector accepts as it is, and DuckDB reads the files directly. Tracing slows the arm it runs on, so these
+samples sit under `diagnostic` in `performance.json` and never join the medians.
+An arm whose `serve` has no `--telemetry-level` records it as unsupported and
+writes nothing.
+
 ## Evidence
 
 The job writes `performance.json` with the harness commit, scenario digest,
@@ -70,6 +84,20 @@ The controller checks that evidence against the admitted plan and writes a table
 of medians, round ranges and the candidate's change against the baseline to the
 run summary. A change whose round ranges overlap the baseline's is reported as
 within spread rather than as a win or a loss.
+
+For graphs over time it also writes `LABEL-rows.jsonl` beside each job's
+`LABEL-performance.json`, LABEL being the job's node or `any`: one row per measured sample,
+with the job, when the run started, the host, the arm's commit and when it was
+committed, the model revision, the server's lanes and pool, the point's
+concurrency, depth and token counts, the round, and each metric as its own column.
+Rows from every run can share one table. With DuckDB, over a folder per run:
+
+```sql
+select committed_at, arm, model, point,
+       median(output_tok_s) as output_tok_s, median(ttft_ms_p50) as ttft_ms_p50
+from read_json_auto('runs/*/*-rows.jsonl', union_by_name = true)
+group by all order by committed_at, model, point, arm;
+```
 
 ## Limits
 

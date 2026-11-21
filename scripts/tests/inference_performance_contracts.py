@@ -7,6 +7,7 @@ from unittest.mock import patch
 from lib import performance_plan
 from lib.performance_arms import server_args
 from lib.performance_load import measurements
+from lib import performance_report
 from lib.performance_report import markdown, summarize
 
 
@@ -61,6 +62,11 @@ class PlanTests(unittest.TestCase):
         self.assertGreaterEqual(target["selector"]["memory"]["system_gib"]["min"], 18)
         plan = json.loads(spec["runtime"]["env"]["SKIPPY_PERFORMANCE_PLAN"])
         self.assertEqual((plan["harness"], plan["rounds"], plan["arms"]), ("d" * 40, 3, arm_list))
+        self.assertIs(plan["trace"], False)
+        traced = performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 3, None, "any", trace=True)
+        self.assertIs(json.loads(traced["runtime"]["env"]["SKIPPY_PERFORMANCE_PLAN"])["trace"], True)
+        with self.assertRaises(ValueError):
+            performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 3, None, "any", trace="true")
         self.assertNotIn("nodes", performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 3, None, "any")["target"])
         with self.assertRaises(ValueError):
             performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], performance_plan.MAX_ROUNDS + 1, None, "x")
@@ -119,6 +125,25 @@ class ReportTests(unittest.TestCase):
         self.assertIn("+20.0% better", markdown("t", "h", rows))
         close = summarize([sample("baseline", v) for v in (100, 110)] + [sample("candidate", v) for v in (105, 108)])
         self.assertIn("within spread", markdown("t", "h", close))
+
+    def test_stored_rows_carry_their_arm_point_and_host_but_not_the_trace_pass(self):
+        shape = performance_plan.scenario()
+        server = shape["servers"][0]
+        point = server["points"][0]
+        measured = {"model": "qwen35-4b", "round": 2, "arm": "baseline", "server": server["id"],
+                    "point": point["id"], "applied": {}, "unsupported": [],
+                    "metrics": {"output_tok_s": 99.5, "ttft_ms_p50": None}}
+        record = {"harness": "d" * 40, "scenario_sha256": "e" * 64, "started_at": "2026-11-21T10:00:00+00:00",
+                  "host": {"chip": "Apple M1 Ultra", "node": "n1"},
+                  "arms": [{"label": "baseline", "kind": "skippy", "sha": "b" * 40, "binary_sha256": "f" * 64}],
+                  "models": {"qwen35-4b": {"revision": "r1"}}, "samples": [measured],
+                  "diagnostic": {"samples": [{**measured, "round": None}]}}
+        [row] = performance_report.rows(record, shape, {"b" * 40: "2026-11-20T10:16:30Z"}, "job_1")
+        self.assertEqual((row["sha"], row["committed_at"], row["round"]), ("b" * 40, "2026-11-20T10:16:30Z", 2))
+        self.assertEqual((row["lanes"], row["concurrency"], row["depth"]),
+                         (server["lanes"], point["concurrency"], point["depth"]))
+        self.assertEqual((row["output_tok_s"], row["ttft_ms_p50"], row["chip"]), (99.5, None, "Apple M1 Ultra"))
+        json.dumps(row)
 
 
 if __name__ == "__main__":
