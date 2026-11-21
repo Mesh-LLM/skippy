@@ -9,12 +9,14 @@ from unittest.mock import Mock, patch
 from lib.ci_artifacts import write_json
 from lib.inference_baselines import apply_baselines, classify
 from lib.inference_ladder import matrix
+from lib.inference_markdown import run_summary
 from lib.inference_nightly_metrics import agentx_metrics, await_artifacts, contract
-from lib.inference_nightly_results import nightly_run
+from lib.inference_nightly_results import nightly_run, qualification_run
 
 
 SOURCE = "a" * 40
 PR_PATH = Path(__file__).resolve().parents[1] / "inference-publish-nightly.py"
+COMPARISON = run_path(str(PR_PATH.with_name("inference-compare.py")))
 
 
 def trial(throughput, latency, requests):
@@ -26,10 +28,12 @@ def trial(throughput, latency, requests):
     }
 
 
-def smoke_receipt(root, sha, run_id, configuration="qwen35-4b-standalone", value=100):
-    entry = next(row for row in matrix("nightly", sha, include_smoke=True)
+def smoke_receipt(root, sha, run_id, configuration="qwen35-4b-standalone", value=100,
+                  *, published=True, attempt="1"):
+    profile = "nightly" if published else "pr"
+    entry = next(row for row in matrix(profile, sha, include_smoke=published)
                  if (row["profile"], row["configuration"]) == ("pr", configuration))
-    directory = root / f'inference-{entry["id"]}-{run_id}-1'
+    directory = root / f'inference-{entry["id"]}-{run_id}-{attempt}'
     directory.mkdir(parents=True)
     job = {"id": "job_fixture", "repo_rev": sha, "status": "succeeded",
            "runs": [{"id": "run_fixture", "status": "succeeded"}]}
@@ -151,6 +155,63 @@ class NightlyTests(unittest.TestCase):
                 admit({**environment, "GITHUB_EVENT_NAME": name})
         with self.assertRaisesRegex(ValueError, "must match"):
             admit({**environment, "SOURCE_SHA": "b" * 40})
+
+
+class ComparisonTests(unittest.TestCase):
+    def test_public_baseline_is_loaded_at_an_immutable_revision(self):
+        data = COMPARISON["DATASET"]
+        revision = "c" * 40
+        files = {"id": data, "private": False, "gated": False, "sha": revision,
+                 "siblings": [{"rfilename": "README.md"}]}
+        preview = Mock(return_value=files)
+        self.assertEqual(COMPARISON["published_baselines"](preview), (None, []))
+        self.assertEqual(preview.call_count, 1)
+        history = "runs/23/1.parquet"
+        files["siblings"].extend([{"rfilename": "baselines.json"}, {"rfilename": history}])
+        manifest = {"schema_version": 1, "last_run_number": 2, "history": [history], "baselines": []}
+        fetch = Mock(side_effect=[files, manifest])
+        self.assertEqual(COMPARISON["published_baselines"](fetch), (revision, []))
+        self.assertEqual(fetch.call_args.args, (f"https://huggingface.co/datasets/{data}/resolve/{revision}/baselines.json",))
+        files["siblings"].pop(1)
+        with self.assertRaisesRegex(ValueError, "without a baseline manifest"):
+            COMPARISON["published_baselines"](lambda _: files)
+
+    def test_pr_comparison_reuses_verified_receipts_and_cannot_publish_a_baseline(self):
+        candidate = "b" * 40
+        repo = "general-inference/skippy"
+        revision = "c" * 40
+        stamp = "2026-11-21T00:00:00Z"
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for index, row in enumerate(matrix("pr", candidate)):
+                value = (94, 107, 99)[index % 3]
+                smoke_receipt(root, candidate, "23", row["id"], value, published=False)
+            smoke_receipt(root, candidate, "23", matrix("pr", candidate)[1]["id"], 108,
+                          published=False, attempt="2")
+            run = qualification_run(root, "pr", candidate, "23", "2", stamp, True)
+        self.assertEqual(run["outcome"], "passed")
+        self.assertEqual(run["configurations"][1]["metrics"][0]["measured"], 108)
+        saved = [
+            {"configuration": c["id"], "workload": row["workload"], "metric": row["metric"],
+             "contract_sha256": row["contract_sha256"], "source_sha": SOURCE, "value": 100}
+            for c in run["configurations"] for row in c["metrics"]
+        ]
+        compared = COMPARISON["compare"](run, repo, load=lambda: (revision, saved), compatible=Mock(return_value=True))
+        self.assertEqual(compared["outcome"], "failed")
+        observations = [row for c in compared["configurations"] for row in c["metrics"]]
+        self.assertEqual({row["verdict"] for row in observations}, {"regressed", "improved", "passed"})
+        self.assertFalse(any("baseline_update" in row for row in observations))
+        self.assertTrue(all(row["value"] == 100 and "latest_passing" not in row for row in saved))
+        report = run_summary({"schema_version": 1, "runs": [compared]}, compared["id"])
+        for expected in ("**Failed**", "```mermaid", "Red = regression", "Green = improvement",
+                         "94 tok/s", "-6.00%", f"/blob/{revision}/baselines.json"):
+            self.assertIn(expected, report)
+        changed = COMPARISON["compare"](run, repo, load=lambda: (revision, saved), compatible=Mock(return_value=False))
+        self.assertEqual(changed["outcome"], "passed")
+        self.assertIn("benchmark inputs changed", changed["note"])
+        first = COMPARISON["compare"](run, repo, load=lambda: (None, []))
+        self.assertIn("first nightly", first["note"])
+        self.assertNotIn("baseline_revision", first)
 
 
 if __name__ == "__main__":

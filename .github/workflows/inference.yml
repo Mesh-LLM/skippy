@@ -95,13 +95,16 @@ jobs:
       source: ${{ steps.admission.outputs.source || github.event.pull_request.head.sha || github.sha }}
       profile: ${{ steps.admission.outputs.profile || 'pr' }}
       matrix: ${{ steps.matrix.outputs.matrix }}
+      controller: ${{ steps.controller.outputs.sha }}
     steps:
       # Credentialed controller source always comes from protected main.
       # Candidate source is never checked out or executed by this workflow.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: ${{ github.event_name == 'schedule' && github.sha || 'main' }}
+          ref: ${{ github.event_name == 'schedule' && !inputs.release_candidate && github.sha || 'main' }}
           persist-credentials: false
+      - id: controller
+        run: printf 'sha=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/setup
       - id: admission
         env:
@@ -113,7 +116,7 @@ jobs:
         env:
           SOURCE_SHA: ${{ steps.admission.outputs.source }}
           PROFILE: ${{ steps.admission.outputs.profile }}
-          NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'general-inference/skippy' }}
+          NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && !inputs.release_candidate && github.ref == 'refs/heads/main' && github.repository == 'general-inference/skippy' }}
         run: |
           flags=()
           if [[ "$NIGHTLY_PUBLICATION" == true ]]; then flags+=(--include-smoke); fi
@@ -132,7 +135,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: ${{ github.event_name == 'schedule' && github.sha || 'main' }}
+          ref: ${{ needs.plan.outputs.controller }}
           persist-credentials: false
       - uses: ./.github/actions/setup
       - name: Dispatch and await native Spark qualification
@@ -140,11 +143,10 @@ jobs:
           SOURCE_SHA: ${{ needs.plan.outputs.source }}
           PROFILE: ${{ matrix.profile }}
           CONFIGURATION: ${{ matrix.configuration }}
-          NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'general-inference/skippy' }}
           JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
         run: |
           flags=()
-          if [[ "$NIGHTLY_PUBLICATION" == true ]]; then flags+=(--collect-public); fi
+          if [[ "$PROFILE" == pr || "$PROFILE" == nightly ]]; then flags+=(--collect-metrics); fi
           just inference-dispatch "$PROFILE" "$SOURCE_SHA" "$EVIDENCE" "$CONFIGURATION" "${flags[@]}"
       - name: Cancel outstanding JY jobs and formations
         if: cancelled() || failure()
@@ -166,7 +168,8 @@ jobs:
     needs: [plan, qualification]
     if: >-
       always() && !cancelled() && github.event_name == 'schedule' &&
-      github.repository == 'general-inference/skippy' && github.ref == 'refs/heads/main' &&
+      !inputs.release_candidate && github.repository == 'general-inference/skippy' &&
+      github.ref == 'refs/heads/main' &&
       needs.plan.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -204,8 +207,44 @@ jobs:
         run: |
           SKIPPY_PYTHON="$RUNNER_TEMP/inference-publication/bin/python" \
             just inference-publish-nightly target/ci-evidence/nightly-inference
+  compare:
+    name: Compare with published inference baseline
+    needs: [plan, qualification]
+    if: >-
+      always() && !cancelled() && needs.plan.result == 'success' &&
+      (github.event_name == 'pull_request_target' || github.event_name == 'workflow_dispatch') &&
+      (needs.plan.outputs.profile == 'pr' || needs.plan.outputs.profile == 'nightly')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ needs.plan.outputs.controller }}
+          persist-credentials: false
+      - name: Collect source-bound measurements
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        continue-on-error: true
+        with:
+          # Failed-jobs-only reruns can retain successful configurations from prior attempts.
+          pattern: inference-*-${{ github.run_id }}-*
+          path: target/ci-evidence/inference-comparison
+      - name: Publish comparison charts and check for regressions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROFILE: ${{ needs.plan.outputs.profile }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source }}
+          MATRIX_RESULT: ${{ needs.qualification.result }}
+        run: |
+          RUN_STARTED_AT=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
+            --jq '.run_started_at')
+          export RUN_STARTED_AT
+          python3 scripts/inference-compare.py target/ci-evidence/inference-comparison
+
   summary:
-    needs: [plan, qualification, nightly_publish]
+    needs: [plan, qualification, nightly_publish, compare]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -218,25 +257,45 @@ jobs:
           PLAN: ${{ needs.plan.result }}
           RESULT: ${{ needs.qualification.result }}
           PUBLICATION: ${{ needs.nightly_publish.result }}
+          COMPARISON: ${{ needs.compare.result }}
+          PROFILE: ${{ needs.plan.outputs.profile }}
+          RELEASE_CANDIDATE: ${{ inputs.release_candidate }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |
-            const { SOURCE_SHA: sha, PLAN: plan, RESULT: result, PUBLICATION: publication, RUN_URL: url } = process.env;
+            const { SOURCE_SHA: sha, PLAN: plan, RESULT: result, PUBLICATION: publication,
+              COMPARISON: comparison, PROFILE: profile, RELEASE_CANDIDATE: candidate, RUN_URL: url } = process.env;
             if (!/^[a-f0-9]{40}$/i.test(sha)) throw new Error('Invalid qualification source SHA');
             // A skipped plan is an intentional opt-out: the PR carries no
             // qualify label, so no Spark pair was reserved. Report it green
             // instead of failing unlabeled PRs.
-            const skipped = plan === 'skipped';
-            const nightly = context.eventName === 'schedule';
+            const pullRequest = context.eventName === 'pull_request_target';
+            const skipped = plan === 'skipped' && pullRequest &&
+              !(context.payload.pull_request.labels ?? []).some(label => label.name === 'qualify');
+            const nightly = context.eventName === 'schedule' && !candidate;
+            const compare = (pullRequest || context.eventName === 'workflow_dispatch') &&
+              (profile === 'pr' || profile === 'nightly');
             const passed = plan === 'success' && result === 'success' &&
-              (!nightly || publication === 'success');
+              (!nightly || publication === 'success') && (!compare || comparison === 'success');
             const description = passed
               ? 'Native Spark lab qualification'
               : skipped
               ? 'Intentionally skipped (no qualify label)'
               : nightly
               ? 'Nightly qualification or publication incomplete or failed'
+              : compare && result === 'success'
+              ? 'Published baseline comparison failed or incomplete'
               : 'Inference admission or qualification incomplete or failed';
+            if (skipped || plan !== 'success' || profile === 'release') {
+              const detail = skipped
+                ? 'Spark qualification was intentionally skipped because the PR does not carry the `qualify` label.'
+                : plan !== 'success'
+                ? 'Qualification did not reach the lab. See the admission job for details.'
+                : 'The release profile runs longer AgentX trials and has no matching published baseline.';
+              const outcome = skipped ? 'Skipped' : passed ? 'Passed' : 'Failed';
+              await core.summary.addHeading('Inference qualification')
+                .addRaw(`**${outcome}** · \`${sha.slice(0, 12)}\`\n\n${detail}\n`, true).write();
+            }
             await github.rest.repos.createCommitStatus({
               ...context.repo, sha, context: 'Inference qualification',
               state: passed || skipped ? 'success' : 'failure', description, target_url: url
@@ -255,7 +314,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: main
+          ref: ${{ needs.plan.outputs.controller }}
           persist-credentials: false
       - name: Collect controller receipts when available
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c

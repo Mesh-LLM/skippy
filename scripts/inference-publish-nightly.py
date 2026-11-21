@@ -9,17 +9,14 @@ import sys
 from tempfile import TemporaryDirectory
 
 from lib.ci_artifacts import read_json, write_json
-from lib.inference_baselines import apply_baselines, SHA
+from lib.inference_baselines import DATASET as REPO, HISTORY_LIMIT, RUN_PATH, SHA, apply_baselines, prior_state
 from lib.inference_markdown import dataset_card, dataset_charts, run_summary, utc
 from lib.inference_nightly_results import nightly_run
 from lib.inference_parquet import read_run, write_run
 from lib.inference_png import export_charts
 
 
-REPO = "meshllm/skippy-inference-qualification"
 SOURCE_REPO = "general-inference/skippy"
-HISTORY_LIMIT = 64
-RUN_PATH = re.compile(r"runs/([1-9][0-9]*)/([1-9][0-9]*)\.parquet")
 CHART_PATH = re.compile(r"charts/qualification-[1-4]\.png")
 
 
@@ -48,22 +45,6 @@ def admit(environment):
     return source, run_id, attempt, int(number), started_at, result == "success"
 
 
-def prior_state(files, fetch):
-    if "baselines.json" not in files:
-        if any(path.startswith("runs/") for path in files):
-            raise ValueError("nightly history exists without a baseline manifest")
-        return {"schema_version": 1, "last_run_number": 0, "history": [], "baselines": []}
-    state = read_json(fetch("baselines.json"))
-    history = state["history"]
-    if (type(state["schema_version"]) is not int or state["schema_version"] != 1
-            or type(state["last_run_number"]) is not int or state["last_run_number"] < 1
-            or not 0 < len(history) <= HISTORY_LIMIT or len(set(history)) != len(history)
-            or any(not RUN_PATH.fullmatch(path) or path not in files for path in history)
-            or type(state["baselines"]) is not list):
-        raise ValueError("invalid nightly baseline manifest")
-    return state
-
-
 def load_history(paths, fetch):
     history = []
     for path in paths:
@@ -82,7 +63,7 @@ def publish(api, fetch_file, add, delete, evidence, identity):
         raise ValueError("expected the public, ungated qualification dataset")
     files = {entry.rfilename for entry in info.siblings}
     fetch = lambda path: Path(fetch_file(REPO, path, repo_type="dataset", revision=info.sha, token=False))
-    state = prior_state(files, fetch)
+    state = prior_state(files, lambda path: read_json(fetch(path)))
     path = f"runs/{run_id}/{attempt}.parquet"
     if path in files:
         if path not in state["history"]:
