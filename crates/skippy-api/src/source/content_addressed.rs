@@ -71,8 +71,7 @@ fn is_huggingface_commit(value: &str) -> bool {
 /// Large Hub artifacts are stored under `blobs/<sha256>` and snapshot entries
 /// point at those immutable blobs. Their names and sizes are authoritative
 /// identity inputs, so startup does not need to scan the weight payload.
-/// Cache-wide shared blobs can instead have Xet hashes as filenames. Hash
-/// those files for their SHA-256 identity without relying on the shared layout.
+/// For shared Xet blobs, the repo-local pointer retains the SHA-256 ETag.
 pub(super) fn huggingface_source_files(
     identity: &skippy_model_hf::store::local::HuggingFaceModelIdentity,
     snapshot_root: &Path,
@@ -136,30 +135,13 @@ pub(super) fn huggingface_source_files(
             );
 
             let (sha256, bytes) = match managed_hf_snapshot_blob_in_root(&snapshot_path, &blobs)? {
-                Some(blob) if blob.starts_with(&blobs.repo) => {
+                Some(blob) => {
                     if blob != local_path {
                         ensure_same_regular_file(&blob, &local_path)?;
                     }
-                    let sha256 = blob
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .filter(|value| is_sha256(value))
-                        .with_context(|| {
-                            format!(
-                                "Hugging Face GGUF blob has no authoritative SHA-256 name: {}",
-                                blob.display()
-                            )
-                        })?
-                        .to_string();
-                    let metadata = blob.metadata().with_context(|| {
-                        format!("stat Hugging Face GGUF blob {}", blob.display())
-                    })?;
-                    (sha256, metadata.len())
+                    let sha256 = managed_hf_blob_etag(&snapshot_path, &blob, &blobs)?;
+                    (sha256, local_metadata.len())
                 }
-                Some(_) => (
-                    crate::package::source_file_sha256(&local_path, &local_metadata, None)?,
-                    local_metadata.len(),
-                ),
                 None => hub_file_identity(&mut api, identity, &relative_file, &mut build_client)?,
             };
             anyhow::ensure!(
@@ -203,6 +185,47 @@ fn huggingface_identity_sha256(
     };
     let bytes = serde_json::to_vec(&canonical).context("serialize Hugging Face GGUF identity")?;
     Ok(hex_lower(&Sha256::digest(bytes)))
+}
+
+fn managed_hf_blob_etag(
+    snapshot: &Path,
+    blob: &Path,
+    blobs: &HuggingFaceBlobRoots,
+) -> Result<String> {
+    let etag_path = if blob.starts_with(&blobs.repo) {
+        blob.to_path_buf()
+    } else {
+        // Hugging Face makes the repo-local ETag entry a symlink to an Xet
+        // object. Its name stays the file's SHA-256 even when the target moves.
+        let link = std::fs::read_link(snapshot)
+            .with_context(|| format!("read Hugging Face snapshot link {}", snapshot.display()))?;
+        let entry = snapshot
+            .parent()
+            .context("Hugging Face snapshot has no parent")?
+            .join(link);
+        let parent = entry
+            .parent()
+            .context("Hugging Face blob entry has no parent")?
+            .canonicalize()
+            .with_context(|| format!("resolve Hugging Face blob entry {}", entry.display()))?;
+        anyhow::ensure!(
+            parent == blobs.repo && entry.canonicalize()? == blob,
+            "shared Hugging Face GGUF snapshot has no repo-local blob entry: {}",
+            snapshot.display()
+        );
+        entry
+    };
+    etag_path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .filter(|value| is_sha256(value))
+        .map(str::to_owned)
+        .with_context(|| {
+            format!(
+                "Hugging Face GGUF blob has no authoritative SHA-256 name: {}",
+                etag_path.display()
+            )
+        })
 }
 
 fn hub_file_identity(

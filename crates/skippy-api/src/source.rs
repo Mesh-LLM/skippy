@@ -24,8 +24,8 @@ pub fn synthetic_direct_gguf_package(
 /// object digests already recorded by Hugging Face.
 ///
 /// The canonical identity includes the repository, resolved commit, and exact
-/// ordered file set. Repo-local blobs use the recorded SHA-256 and shared
-/// blobs are hashed from their bytes.
+/// ordered file set. Repo-local and shared blobs use the repo's SHA-256 ETag
+/// without scanning the model weights.
 pub fn synthetic_huggingface_gguf_package(
     _model_id: &str,
     identity: &skippy_model_hf::store::local::HuggingFaceModelIdentity,

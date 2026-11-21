@@ -171,7 +171,7 @@ fn immutable_hf_source_uses_supplied_snapshot_without_constructing_client() {
 
 #[cfg(unix)]
 #[test]
-fn shared_hf_source_uses_content_sha256_and_keeps_shard_names() {
+fn shared_hf_source_uses_repo_etag_and_keeps_shard_names() {
     use std::os::unix::fs::symlink;
 
     let cache = tempfile::tempdir().unwrap();
@@ -192,7 +192,9 @@ fn shared_hf_source_uses_content_sha256_and_keeps_shard_names() {
         std::fs::create_dir(&prefix).unwrap();
         let target = prefix.join(xet_hash);
         write_test_metadata_gguf(&target, 4096 + part);
-        let etag = crate::package::file_sha256(&target).unwrap();
+        // Use synthetic metadata so this catches both hashing the file and
+        // mistaking the shared Xet filename for the repo-local SHA-256 ETag.
+        let etag = format!("{part:064x}");
         let repo_blob = blobs.join(&etag);
         symlink(&target, &repo_blob).unwrap();
         symlink(
