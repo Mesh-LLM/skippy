@@ -45,6 +45,10 @@ if [[ ${PLAN:-} == success && ${RESULT:-} == success ]]; then
   fi
 fi
 
+# shellcheck source=scripts/lib/inference-report-baseline.sh
+source "$root/scripts/lib/inference-report-baseline.sh"
+prepare_baseline
+
 cat > "$temporary/body.md" <<EOF
 $marker
 <!-- run:$run:$attempt -->
@@ -54,8 +58,10 @@ Commit: \`$SOURCE_SHA\` · PR smoke · [Workflow and timings]($url/attempts/$att
 
 $description.
 
-| Configuration | Outcome | Prefill tok/s | Decode tok/s | Actions | Lab record |
-| --- | --- | ---: | ---: | --- | --- |
+$baseline_note
+
+| Configuration | Outcome | Prefill tok/s | Prefill vs main | Decode tok/s | Decode vs main | Actions | Lab record |
+| --- | --- | ---: | ---: | ---: | ---: | --- | --- |
 EOF
 
 rate() {
@@ -96,32 +102,29 @@ while IFS= read -r row; do
   fi
   prefill=Unavailable
   decode=Unavailable
+  prefill_delta=Unavailable
+  decode_delta=Unavailable
   rates="$directory/$row-throughput.json"
   if [[ $state == Passed && -f $rates ]]; then
-    # Bind rates to this source, configuration and successful native attempt.
-    jq -e --arg sha "$SOURCE_SHA" --arg row "$row" --slurpfile job "$receipt" '
-      def uint: type == "number" and . >= 0 and . == floor and . < 18446744073709551616;
-      (keys == (["source_sha", "configuration", "job_id", "run_id", "requests",
-        "prefill_tokens", "prefill_ms", "decode_tokens", "decode_ms"] | sort)) and
-      .source_sha == $sha and .configuration == $row and .requests == 3 and
-      (.prefill_tokens | uint) and (.decode_tokens | uint) and
-      (.prefill_ms | type == "number") and (.decode_ms | type == "number") and
-      $job[0].repo_rev == $sha and $job[0].status == "succeeded" and
-      .job_id == $job[0].id and .run_id == $job[0].runs[-1].id and
-      $job[0].runs[-1].status == "succeeded" and
-      (.run_id | type == "string" and test("^run_[A-Za-z0-9_]+$"))
-    ' "$rates" > /dev/null || fail 'Comment throughput evidence identity mismatch'
+    # Invalid current evidence remains a reporting failure, not an unavailable baseline.
+    validate_rates "$rates" "$receipt" "$SOURCE_SHA" "$row" || fail 'Comment throughput evidence identity mismatch'
     prefill=$(rate "$rates" prefill)
     decode=$(rate "$rates" decode)
+    if baseline=$(baseline_for_row "$row" 2> /dev/null); then
+      prefill_delta=$(delta "$rates" "$baseline/$row-throughput.json" prefill "$receipt" "$baseline/$row-job.json")
+      decode_delta=$(delta "$rates" "$baseline/$row-throughput.json" decode "$receipt" "$baseline/$row-job.json")
+    fi
   fi
-  printf "| \`%s\` | %s | %s | %s | %s | %s |\n" "$row" "$state" "$prefill" "$decode" "$action" "$lab" >> "$temporary/body.md"
+  printf "| \`%s\` | %s | %s | %s | %s | %s | %s | %s |\n" "$row" "$state" "$prefill" "$prefill_delta" "$decode" "$decode_delta" "$action" "$lab" >> "$temporary/body.md"
 done < "$temporary/rows.txt"
 
 cat >> "$temporary/body.md" <<'EOF'
 
 TPS describes the first response of each of three short scored smoke cases at concurrency 1; deterministic repeats are excluded. Each rate is total tokens / total server-reported phase time, not an average of request rates. Prefill excludes cached prompt tokens. These short samples include startup/warmup effects and are not sustained benchmarks or controlled speedup comparisons. Missing or invalid timings show as Unavailable.
 
-Smoke checks cover GPU startup, deterministic endpoint repeats and bounded streaming. They do not establish an AgentX performance score. The lab retains native results and logs. GitHub evidence copies expire after 30 days.
+Deltas use unrounded rates from matching PR-profile smoke receipts on the latest successful main run, including the nightly smoke evidence. Positive means faster. Changed workload inputs, different serving host classes, unequal phase token counts or missing evidence show Unavailable. Physical Spark placement and runtime conditions can differ; deltas are descriptive, not controlled speedup claims.
+
+Smoke checks cover GPU startup, deterministic endpoint repeats and bounded streaming. They do not establish an AgentX performance score. [Nightly history and saved performance baselines](https://huggingface.co/datasets/meshllm/skippy-inference-qualification) are published separately; a saved baseline can be older than the latest successful main run used here. The lab retains native results and logs. GitHub evidence copies expire after 30 days.
 EOF
 if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then cat "$temporary/body.md" >> "$GITHUB_STEP_SUMMARY"; fi
 
