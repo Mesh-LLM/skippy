@@ -12,7 +12,7 @@ from pathlib import Path
 
 from lib.ci_artifacts import read_json, write_json
 from lib.ci_process import cancel_on_signal
-from lib.inference_ladder import plan
+from lib.inference_ladder import matrix, plan, template_key
 from lib.inference_nightly_metrics import collect_nightly
 from lib.inference_throughput import collect
 from lib.jy_qualification import Pilot, placement
@@ -122,9 +122,10 @@ def record(ledger, identifiers):
 def dispatch(pilot, profile, sha, output, configuration, collect_public=False):
     result = plan(profile, sha)
     if configuration is not None:
-        result["rows"] = [row for row in result["rows"] if row["id"] == configuration]
+        result["rows"] = [row for row in matrix(profile, sha, platform="all") if row["id"] == configuration]
         if len(result["rows"]) != 1:
             raise ValueError("configuration not in qualification plan")
+        result.update(platform=result["rows"][0]["platform"])
     output.mkdir(parents=True, exist_ok=True)
     write_json(output / "plan.json", result)
     ledger = output / "jobs.json"
@@ -137,8 +138,8 @@ def dispatch(pilot, profile, sha, output, configuration, collect_public=False):
     try:
         for row in result["rows"]:
             identity, mode = row["id"], row["mode"]
-            model_key = identity.removesuffix(f"-{mode}")
-            template = "inference-" + ("pr-" if profile == "pr" else "") + mode
+            model_key = row["model_key"]
+            template = template_key(profile, mode, row["platform"])
             run_id = os.environ.get("GITHUB_RUN_ID", "local")
             attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "1")
             body = {

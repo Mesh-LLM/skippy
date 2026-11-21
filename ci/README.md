@@ -45,8 +45,9 @@ failed or unexpectedly skipped results.
 
 The protected inference workflow uses native `pull_request_target` path filters
 for the same inference inputs. PR qualification is manual: it runs only when
-the PR carries the `qualify` label, and the workflow still triggers on path
-matches so the intentionally skipped run satisfies the `PR checks` aggregate.
+the PR carries the `qualify` label (Sparks) or `qualify-metal` label (Apple
+silicon), and the workflow still triggers on path matches so the intentionally
+skipped run satisfies the `PR checks` aggregate.
 Manual qualification may queue behind another PR's atomic Spark pair; the PR
 budget waits for placement instead of failing fast. Relevant PRs retain
 same-repository/collaborator admission, a fresh-head check and all seven GPU

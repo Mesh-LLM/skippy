@@ -24,6 +24,9 @@ def collect(pilot, job, row, sha, output, key):
     samples = pilot.api("GET", prefix + "quality.json")
     identity = {"source_sha": sha, "model": key, "mode": row["mode"],
                 "profile": "pr", "status": "passed"}
+    if row["platform"] != "spark":
+        # Spark receipts from before the platform field still verify; others must say so.
+        identity["platform"] = row["platform"]
     if any(qualification.get(field) != expected for field, expected in identity.items()):
         raise ValueError("throughput evidence identity mismatch")
     cases = read_json(Path("ci/inference-quality.json"))

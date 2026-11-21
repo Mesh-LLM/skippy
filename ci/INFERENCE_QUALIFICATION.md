@@ -1,4 +1,4 @@
-# DGX Spark inference qualification
+# Inference qualification
 
 The agreed inventory lives in `inference-ladder.json`. Generate a source-bound
 plan with `just inference-plan pr FULL_COMMIT_SHA`, or use `nightly` / `release`
@@ -52,6 +52,30 @@ Memory budgets must include actual quantized weights, native allocations,
 context/cache capacity, concurrency and an operating-system reserve. Nominal
 parameter counts are not memory budgets. Admit the measured footprint before
 executing; insufficient capacity must queue or fail. There is no passing skip.
+
+## Metal
+
+Qualification also runs on Apple silicon. The platform is a dimension of the
+plan, beside the profile:
+`just inference-plan pr FULL_COMMIT_SHA target/ci-evidence/inference-plan.json --platform metal`
+plans Metal rows, and `--platform all` plans both. Metal runs every ladder model standalone
+(split formations stay Spark-only), so PR selects four rows and nightly or
+release eight. Metal row ids end in `-metal`; Spark ids are unchanged.
+
+A PR opts in with the `qualify-metal` label, alone or beside `qualify`; a
+manual dispatch takes a `platform` input (`spark`, `metal` or `all`); nightly
+and release stay Spark-only until Metal capacity is reserved for them.
+
+The `inference-metal-standalone` and `inference-pr-metal-standalone` templates
+select any enrolled macOS Metal machine with at least 96 GiB, which keeps the
+48 GiB and smaller Macs out; whether a model fits is still decided by admission
+on the machine (Flash-Next needs about 104 GiB free), and build with
+`just inference-build metal`. They leave `HF_HOME` to the JY agent's managed
+cache. The executor proves macOS on arm64 with an Apple M-series chip, admits
+memory from `vm_stat` (free, inactive, speculative and purgeable pages) rather
+than `/proc/meminfo`, and records the C++ compiler and SDK in place of the CUDA
+compiler. Every check, budget and evidence rule above applies unchanged.
+`inference-metal-host-preflight` lists the tools a Mac must provide.
 
 ## Evidence and checks
 

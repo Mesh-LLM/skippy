@@ -12,7 +12,7 @@ from pathlib import Path
 from lib.ci_artifacts import read_json, write_json
 from lib.ci_process import command
 
-from lib.inference_ladder import matrix, plan
+from lib.inference_ladder import SELECTIONS, matrix, plan
 
 REPO = "general-inference/skippy"
 
@@ -61,6 +61,20 @@ def admit_release_candidate(sha):
         raise ValueError("inference candidate does not belong to this release run")
 
 
+def platforms(event, name):
+    """Which lab platforms a run qualifies on: labels pick them for a PR, the input for a dispatch."""
+    if name == "pull_request_target":
+        labels = {label["name"] for label in event["pull_request"].get("labels", [])}
+        spark, metal = "qualify" in labels, "qualify-metal" in labels
+        return "all" if spark and metal else "metal" if metal else "spark"
+    if name == "workflow_dispatch":
+        selection = os.environ.get("QUALIFICATION_PLATFORM") or "spark"
+        if selection not in SELECTIONS:
+            raise ValueError(f"unknown platform selection: {selection}")
+        return selection
+    return "spark"
+
+
 def admit():
     event = read_json(Path(os.environ["GITHUB_EVENT_PATH"]))
     name = os.environ["GITHUB_EVENT_NAME"]
@@ -69,7 +83,7 @@ def admit():
     if candidate:
         plan("release", candidate)
         admit_release_candidate(candidate)
-        output(source=candidate, profile="release")
+        output(source=candidate, profile="release", platform="spark")
         return
     if name == "workflow_run":
         run = event["workflow_run"]
@@ -82,10 +96,11 @@ def admit():
         sha = os.environ["GITHUB_SHA"]
     profile = ("pr" if is_pr else "nightly" if name == "schedule"
                else os.environ.get("QUALIFICATION_PROFILE", "release"))
-    plan(profile, sha)
+    selection = platforms(event, name)
+    matrix(profile, sha, platform=selection)
     if is_pr:
         admit_pr(sha)
-    output(source=sha, profile=profile)
+    output(source=sha, profile=profile, platform=selection)
 
 
 def main():
@@ -100,15 +115,20 @@ def main():
             action.add_argument("output", type=Path)
         else:
             action.add_argument("--include-smoke", action="store_true")
+        action.add_argument("--platform", default="spark", choices=sorted(SELECTIONS))
     args = parser.parse_args()
     if args.action == "admit":
         admit()
         return
     if args.action == "matrix":
-        rows = matrix(args.profile, args.sha, args.include_smoke)
+        rows = matrix(args.profile, args.sha, args.include_smoke, args.platform)
         output(matrix=json.dumps({"include": rows}, separators=(",", ":")))
     else:
-        result = plan(args.profile, args.sha)
+        plans = [plan(args.profile, args.sha, host) for host in SELECTIONS[args.platform]]
+        result = plans[0] if len(plans) == 1 else {
+            **plans[0], "platform": args.platform, "hardware": [each["hardware"] for each in plans],
+            "rows": [row for each in plans for row in each["rows"]],
+        }
         args.output.parent.mkdir(parents=True, exist_ok=True)
         write_json(args.output, result)
         print(f'Wrote {len(result["rows"])} planned configurations; no inference was executed')

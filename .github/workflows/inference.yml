@@ -61,6 +61,11 @@ on:
         type: choice
         options: [pr, nightly, release]
         default: pr
+      platform:
+        description: Lab platforms to qualify on.
+        type: choice
+        options: [spark, metal, all]
+        default: spark
   workflow_call:
     inputs:
       release_candidate:
@@ -82,18 +87,21 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
 jobs:
   plan:
-    # PR qualification is manual: it runs only when the `qualify` label is
-    # present, so atomic Spark pairs are reserved on request rather than by
-    # every inference-path push. The workflow still triggers on path matches
-    # so an intentionally skipped run satisfies the PR checks aggregate.
+    # PR qualification is manual: it runs only when the `qualify` (Spark) or
+    # `qualify-metal` label is present, so lab machines are reserved on
+    # request rather than by every inference-path push. The workflow still
+    # triggers on path matches so an intentionally skipped run satisfies the
+    # PR checks aggregate.
     if: >-
       github.event_name != 'pull_request_target' ||
-      contains(github.event.pull_request.labels.*.name, 'qualify')
+      contains(github.event.pull_request.labels.*.name, 'qualify') ||
+      contains(github.event.pull_request.labels.*.name, 'qualify-metal')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
       source: ${{ steps.admission.outputs.source || github.event.pull_request.head.sha || github.sha }}
       profile: ${{ steps.admission.outputs.profile || 'pr' }}
+      platform: ${{ steps.admission.outputs.platform || 'spark' }}
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       # Credentialed controller source always comes from protected main.
@@ -107,15 +115,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           QUALIFICATION_PROFILE: ${{ inputs.profile || 'release' }}
+          QUALIFICATION_PLATFORM: ${{ inputs.platform || 'spark' }}
           RELEASE_CANDIDATE: ${{ inputs.release_candidate }}
         run: just inference-admit
       - id: matrix
         env:
           SOURCE_SHA: ${{ steps.admission.outputs.source }}
           PROFILE: ${{ steps.admission.outputs.profile }}
+          PLATFORM: ${{ steps.admission.outputs.platform }}
           NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'general-inference/skippy' }}
         run: |
-          flags=()
+          flags=(--platform "$PLATFORM")
           if [[ "$NIGHTLY_PUBLICATION" == true ]]; then flags+=(--include-smoke); fi
           just inference-matrix "$PROFILE" "$SOURCE_SHA" "${flags[@]}"
   qualification:
@@ -135,7 +145,7 @@ jobs:
           ref: ${{ github.event_name == 'schedule' && github.sha || 'main' }}
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: Dispatch and await native Spark qualification
+      - name: Dispatch and await native lab qualification
         env:
           SOURCE_SHA: ${{ needs.plan.outputs.source }}
           PROFILE: ${{ matrix.profile }}
@@ -224,14 +234,14 @@ jobs:
             const { SOURCE_SHA: sha, PLAN: plan, RESULT: result, PUBLICATION: publication, RUN_URL: url } = process.env;
             if (!/^[a-f0-9]{40}$/i.test(sha)) throw new Error('Invalid qualification source SHA');
             // A skipped plan is an intentional opt-out: the PR carries no
-            // qualify label, so no Spark pair was reserved. Report it green
+            // qualify label, so no lab machine was reserved. Report it green
             // instead of failing unlabeled PRs.
             const skipped = plan === 'skipped';
             const nightly = context.eventName === 'schedule';
             const passed = plan === 'success' && result === 'success' &&
               (!nightly || publication === 'success');
             const description = passed
-              ? 'Native Spark lab qualification'
+              ? 'Native lab qualification'
               : skipped
               ? 'Intentionally skipped (no qualify label)'
               : nightly

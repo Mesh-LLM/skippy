@@ -5,7 +5,6 @@ import argparse
 import ipaddress
 import json
 import os
-import platform
 import shutil
 import socket
 import subprocess
@@ -18,29 +17,16 @@ from lib.ci_artifacts import read_json, write_json
 from lib.ci_process import cancel_on_signal, capture, command, start, stop
 from lib.ci_smoke import curl
 from lib.inference_checks import ENDPOINT, numerical, offload, performance, score, streaming
+from lib.inference_host import PLATFORMS, available_memory, device
 from lib.inference_inputs import admit, fixture, input_hashes, record
-from lib.inference_ladder import plan
+from lib.inference_ladder import plan, row_id
 
 
-def authority():
+def authority(host):
     sha = os.environ["JIANYANG_COMMIT"]
     if capture(["git", "rev-parse", "HEAD"]).strip() != sha:
         raise ValueError("qualification source differs from admitted JY commit")
-    if platform.system() != "Linux" or platform.machine() != "aarch64":
-        raise ValueError("DGX Spark Linux aarch64 required")
-    gpu = capture(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"])
-    if "GB10" not in gpu:
-        raise ValueError("NVIDIA GB10 required")
-    return sha, gpu
-
-
-def available_memory():
-    if os.geteuid() == 0:
-        raise ValueError("native inference must not execute as root")
-    for line in Path("/proc/meminfo").read_text().splitlines():
-        if line.startswith("MemAvailable:"):
-            return int(line.split()[1]) * 1024
-    raise ValueError("MemAvailable missing")
+    return sha, device(host)
 
 
 def prepare_split(model, coordinate, profile, context, output, worker):
@@ -119,10 +105,10 @@ def acknowledge_worker():
             connection.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 22\r\nConnection: close\r\n\r\n" + body)
 
 
-def execute(profile, key, mode):
-    sha, gpu = authority()
-    result = plan(profile, sha)
-    if not any(row["id"] == f"{key}-{mode}" for row in result["rows"]):
+def execute(profile, key, mode, host):
+    sha, gpu = authority(host)
+    result = plan(profile, sha, host)
+    if not any(row["id"] == row_id(key, mode, host) for row in result["rows"]):
         raise ValueError("configuration not admitted by ladder")
     worker = os.environ.get("JIANYANG_ROLE") == "worker"
     if worker and mode != "split":
@@ -169,7 +155,8 @@ def execute(profile, key, mode):
                 scope = ("native chain parity, state handoff, deterministic endpoint repeat; "
                          "not an independent implementation reference")
             write_json(output / "qualification.json", {
-                "source_sha": sha, "model": key, "mode": mode, "profile": profile, "status": "passed",
+                "source_sha": sha, "model": key, "mode": mode, "platform": host,
+                "profile": profile, "status": "passed",
                 "performance_claim": result["performance_claim"], "gpu": gpu, "layers": inputs["layers"],
                 "artifact_manifest_sha256": input_hashes()["model_manifest_sha256"],
                 "correctness_scope": scope, "split_certification": certification,
@@ -185,9 +172,10 @@ if __name__ == "__main__":
     parser.add_argument("profile")
     parser.add_argument("model")
     parser.add_argument("mode")
+    parser.add_argument("platform", nargs="?", default="spark", choices=sorted(PLATFORMS))
     args = parser.parse_args()
     try:
         with cancel_on_signal():
-            execute(args.profile, args.model, args.mode)
+            execute(args.profile, args.model, args.mode, args.platform)
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt) as error:
         sys.exit(str(error))

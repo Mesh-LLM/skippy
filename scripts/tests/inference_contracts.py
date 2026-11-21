@@ -8,7 +8,7 @@ from runpy import run_path
 from urllib.error import HTTPError
 from unittest.mock import patch
 
-from lib import inference_ladder
+from lib import inference_host, inference_ladder
 from lib.jy_qualification import Pilot, placement
 
 
@@ -37,6 +37,38 @@ class LadderTests(unittest.TestCase):
             "qwen36-35b-a3b-split", "qwen38-flash-next-split",
         })
 
+    def test_metal_runs_every_ladder_model_standalone(self):
+        pr = inference_ladder.plan("pr", self.sha, "metal")
+        nightly = inference_ladder.plan("nightly", self.sha, "metal")
+        self.assertEqual(pr["hardware"], "apple-silicon-metal")
+        self.assertEqual(len(pr["rows"]), 4)
+        self.assertEqual(len(nightly["rows"]), 8)
+        for row in pr["rows"] + nightly["rows"]:
+            self.assertEqual((row["mode"], row["machines"], row["platform"]), ("standalone", 1, "metal"))
+            self.assertEqual(row["id"], f'{row["model_key"]}-standalone-metal')
+
+    def test_all_platforms_keep_spark_ids_and_add_distinct_metal_ids(self):
+        rows = inference_ladder.matrix("pr", self.sha, platform="all")
+        spark = inference_ladder.plan("pr", self.sha)["rows"]
+        self.assertEqual([row["id"] for row in rows[:len(spark)]], [row["id"] for row in spark])
+        self.assertEqual(len({row["id"] for row in rows}), len(rows))
+        with self.assertRaises(ValueError):
+            inference_ladder.matrix("pr", self.sha, platform="rocm")
+
+    def test_every_planned_row_has_a_template_for_its_platform(self):
+        root = Path(__file__).resolve().parents[2]
+        templates = {template["key"]: template for template in
+                     inference_ladder.read_json(root / ".gi/templates.yaml")["templates"]}
+        for profile in ("pr", "nightly"):
+            for row in inference_ladder.matrix(profile, self.sha, platform="all"):
+                key = inference_ladder.template_key(profile, row["mode"], row["platform"])
+                self.assertIn(key, templates)
+                command = templates[key].get("command") or ""
+                if row["platform"] == "metal":
+                    self.assertTrue(command.endswith(" standalone metal"), key)
+                    self.assertEqual(templates[key]["target"]["selector"]["accelerator"]["backend"], "metal")
+                    self.assertNotIn("env", templates[key])
+
     def test_invalid_source_and_duplicate_model(self):
         for sha in ("main", "pr:1", "", "a" * 39 + "z"):
             with self.assertRaises(ValueError):
@@ -46,6 +78,44 @@ class LadderTests(unittest.TestCase):
         with patch.object(inference_ladder, "read_json", return_value=ladder):
             with self.assertRaises(ValueError):
                 inference_ladder.plan("pr", self.sha)
+
+
+class HostTests(unittest.TestCase):
+    VM_STAT = """Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                               100.
+Pages active:                             900.
+Pages inactive:                            50.
+Pages speculative:                         10.
+Pages wired down:                         500.
+Pages purgeable:                            5.
+"""
+
+    def test_macos_admission_counts_pages_reclaimable_without_swap(self):
+        self.assertEqual(inference_host.reclaimable_bytes(self.VM_STAT), 165 * 16384)
+        with self.assertRaises(ValueError):
+            inference_host.reclaimable_bytes(self.VM_STAT.replace("Pages purgeable", "Pages gone"))
+
+    def test_unknown_platform_is_rejected(self):
+        with self.assertRaises(ValueError):
+            inference_host.device("rocm")
+
+
+class PlatformAdmissionTests(unittest.TestCase):
+    def test_labels_and_dispatch_input_choose_platforms(self):
+        platforms = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))["platforms"]
+
+        def pr(*labels):
+            return {"pull_request": {"labels": [{"name": label} for label in labels]}}
+
+        self.assertEqual(platforms(pr("qualify"), "pull_request_target"), "spark")
+        self.assertEqual(platforms(pr("qualify-metal"), "pull_request_target"), "metal")
+        self.assertEqual(platforms(pr("qualify", "qualify-metal"), "pull_request_target"), "all")
+        self.assertEqual(platforms({}, "schedule"), "spark")
+        with patch.dict(os.environ, QUALIFICATION_PLATFORM="metal"):
+            self.assertEqual(platforms({}, "workflow_dispatch"), "metal")
+        with patch.dict(os.environ, QUALIFICATION_PLATFORM="tpu"):
+            with self.assertRaises(ValueError):
+                platforms({}, "workflow_dispatch")
 
 
 class PilotRequestTests(unittest.TestCase):

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .ci_artifacts import digest, read_json, write_json
 from .ci_process import capture, command
+from .inference_host import native_compiler
 
 BINARIES = {"skippy": "cli_sha256", "skippy-correctness": "correctness_sha256"}
 INPUT_MANIFESTS = {
@@ -46,7 +47,7 @@ def record(output, sha):
     write_json(output / "provenance.json", identity)
 
 
-def identity(sha):
+def identity(sha, platform):
     source = Path("crates/skippy-ffi/src/lib.rs").read_text(encoding="utf-8")
     abi = []
     for component in ("MAJOR", "MINOR", "PATCH"):
@@ -56,16 +57,13 @@ def identity(sha):
         abi.append(int(match[1]))
     cache = next(Path(".deps/llama-build").glob("*/CMakeCache.txt"), None)
     if cache is None:
-        raise ValueError("native CUDA build cache missing")
-    compiler = next((line.partition("=")[2] for line in cache.read_text(encoding="utf-8").splitlines()
-                     if line.startswith("CMAKE_CUDA_COMPILER:")), None)
-    if not compiler:
-        raise ValueError("native CUDA compiler missing from build cache")
+        raise ValueError("native build cache missing")
     return {
-        "stack_commit": sha, "native_upstream": Path("llama_cpp/upstream.txt").read_text().strip(),
+        "stack_commit": sha, "platform": platform,
+        "native_upstream": Path("llama_cpp/upstream.txt").read_text().strip(),
         "native_tree": capture(["git", "-C", ".deps/llama.cpp", "rev-parse", "HEAD^{tree}"]).strip(),
         "native_abi": abi, "harness": "aiperf-0.13.0-python-3.12",
-        "cuda_compiler": capture([compiler, "--version"]), **input_hashes(),
+        **native_compiler(platform, cache.read_text(encoding="utf-8")), **input_hashes(),
         **{field: digest(DEBUG_DIR / name) for name, field in BINARIES.items()},
     }
 
