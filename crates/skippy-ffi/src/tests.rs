@@ -175,6 +175,32 @@ fn native_mtmd_defaults_cross_the_ffi_boundary() {
 }
 
 #[test]
+#[cfg(not(feature = "dynamic-runtime"))]
+fn native_model_open_rejects_checkpoint_paths() {
+    let mut model = std::ptr::null_mut();
+    for path in [c"model.safetensors", c"model.safetensors.index.json", c"."] {
+        let mut error = std::ptr::null_mut();
+        // SAFETY: the paths are NUL-terminated, both outputs are writable, and
+        // a null config selects native defaults. The call retains no pointers.
+        let status = unsafe {
+            crate::skippy_model_open(path.as_ptr(), std::ptr::null(), &mut model, &mut error)
+        };
+        assert_eq!(status, crate::Status::InvalidArgument);
+        assert!(model.is_null());
+        assert!(!error.is_null());
+        // SAFETY: the native call populated the error and owns its message until free.
+        let message = unsafe {
+            let message = std::ffi::CStr::from_ptr((*error).message)
+                .to_string_lossy()
+                .into_owned();
+            crate::skippy_error_free(error);
+            message
+        };
+        assert!(message.contains("published GGUF"), "{message}");
+    }
+}
+
+#[test]
 fn cache_type_codes_decode_only_to_declared_ggml_variants() {
     use crate::bindings::llama::ggml_type as ty;
 

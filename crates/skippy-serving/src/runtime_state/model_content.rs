@@ -248,24 +248,15 @@ fn verify_alongside_load<T>(
 }
 
 fn source_files(config: &StageConfig) -> Result<Vec<(String, PathBuf)>> {
-    let mut files = if config.model_part_paths.is_empty() {
+    let mut files: Vec<_> = if config.model_part_paths.is_empty() {
         let Some(path) = config.model_path.as_deref().map(Path::new) else {
             return Ok(Vec::new());
         };
-        if skippy_runtime::is_safetensors_checkpoint(path) {
-            let root = if path.is_dir() {
-                path
-            } else {
-                path.parent().context("checkpoint has no parent")?
-            };
-            checkpoint_files(root)?
-        } else {
-            skippy_runtime::gguf_shard_paths(path)?
-                .into_iter()
-                .enumerate()
-                .map(|(index, path)| (format!("part-{index}"), path))
-                .collect()
-        }
+        skippy_runtime::gguf_shard_paths(path)?
+            .into_iter()
+            .enumerate()
+            .map(|(index, path)| (format!("part-{index}"), path))
+            .collect()
     } else {
         config
             .model_part_paths
@@ -274,13 +265,8 @@ fn source_files(config: &StageConfig) -> Result<Vec<(String, PathBuf)>> {
             .map(|(index, path)| (format!("part-{index}"), PathBuf::from(path)))
             .collect()
     };
-    for (role, path) in [
-        ("projector", config.projector_path.as_deref()),
-        ("imatrix", config.checkpoint_imatrix.as_deref()),
-    ] {
-        if let Some(path) = path {
-            files.push((role.into(), PathBuf::from(path)));
-        }
+    if let Some(path) = config.projector_path.as_deref() {
+        files.push(("projector".into(), PathBuf::from(path)));
     }
     files
         .into_iter()
@@ -288,41 +274,38 @@ fn source_files(config: &StageConfig) -> Result<Vec<(String, PathBuf)>> {
         .collect()
 }
 
-fn checkpoint_files(root: &Path) -> Result<Vec<(String, PathBuf)>> {
-    let mut files = Vec::new();
-    let mut pending = vec![(root.to_path_buf(), 0)];
-    while let Some((directory, depth)) = pending.pop() {
-        ensure!(depth < 16, "checkpoint content tree is too deep");
-        for entry in std::fs::read_dir(directory)? {
-            let path = entry?.path();
-            let metadata = path.metadata()?;
-            if metadata.is_dir() {
-                pending.push((path, depth + 1));
-            } else {
-                ensure!(
-                    metadata.is_file(),
-                    "checkpoint content contains a special file"
-                );
-                files.push((
-                    path.strip_prefix(root)?
-                        .to_string_lossy()
-                        .replace('\\', "/"),
-                    path.canonicalize()?,
-                ));
-                ensure!(
-                    files.len() <= 100_000,
-                    "checkpoint content has too many files"
-                );
-            }
-        }
-    }
-    files.sort_by(|a, b| a.0.cmp(&b.0));
-    Ok(files)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// These tests rewrite a file in place with same-length bytes, so on Unix
+    /// only ctime can reveal the change. Filesystems stamp ctime from a coarse
+    /// clock; wait until that clock has moved past `path`'s ctime so the
+    /// rewrite cannot land in the same tick as the observed stamp.
+    fn wait_for_ctime_to_advance_past(path: &Path) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let ctime = |metadata: Metadata| (metadata.ctime(), metadata.ctime_nsec());
+            let observed = ctime(std::fs::metadata(path).unwrap());
+            let probe = path.with_extension("ctime-probe");
+            let deadline = Instant::now() + std::time::Duration::from_secs(60);
+            loop {
+                std::fs::write(&probe, b"").unwrap();
+                if ctime(std::fs::metadata(&probe).unwrap()) > observed {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "filesystem ctime did not advance"
+                );
+                std::thread::yield_now();
+            }
+            std::fs::remove_file(probe).unwrap();
+        }
+        #[cfg(not(unix))]
+        let _ = path;
+    }
 
     #[cfg(unix)]
     #[test]
@@ -431,6 +414,7 @@ mod tests {
         let (_, unchanged) = VerifiedModelContent::verify_during_load(&config, || Ok(())).unwrap();
         assert!(unchanged.is_some());
         let (model, proof) = VerifiedModelContent::verify_during_load(&config, || {
+            wait_for_ctime_to_advance_past(&path);
             std::fs::write(&path, b"new weights")?;
             Ok("loaded")
         })
@@ -452,6 +436,7 @@ mod tests {
         let first = VerifiedModelContent::from_files(source_files(&config).unwrap()).unwrap();
         assert!(first.still_matches(&config));
         let modified = model.metadata().unwrap().modified().unwrap();
+        wait_for_ctime_to_advance_past(&model);
         std::fs::write(&model, b"other weights").unwrap();
         File::options()
             .write(true)

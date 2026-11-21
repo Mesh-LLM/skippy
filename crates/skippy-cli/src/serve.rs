@@ -58,6 +58,7 @@ pub async fn run(mut args: ServeCommandArgs) -> Result<()> {
                 })
             })
             .flatten();
+        let catalog_name = catalog_model.as_ref().map(|entry| entry.name.clone());
         let (path, downloaded_projector) = if let Some(local_path) = existing {
             console::status("📂 Using cached model")?;
             (local_path, None)
@@ -85,6 +86,19 @@ pub async fn run(mut args: ServeCommandArgs) -> Result<()> {
         if !Path::new(&model).exists() {
             args.public.model_id.get_or_insert(model);
         }
+        // Only a catalog entry is named on analytics events, by its catalog
+        // name, whatever the model is served as. Anything else stays
+        // `redacted`.
+        if let (Some(catalog_name), Some(served)) = (catalog_name, args.public.model_id.as_deref())
+        {
+            skippy_analytics::models::register(
+                served,
+                skippy_analytics::models::ModelIdentity {
+                    model: skippy_analytics::Label::sanitize_or_redact(&catalog_name),
+                    ..skippy_analytics::models::ModelIdentity::redacted()
+                },
+            );
+        }
     }
     match args.stage_transport {
         Some(StageTransport::Binary) => serve_binary_stage(args).await,
@@ -109,6 +123,9 @@ fn installed_model_path(model: &str) -> Option<std::path::PathBuf> {
 }
 
 pub(crate) fn validate(args: &ServeCommandArgs) -> Result<()> {
+    if let Some(model) = args.model.as_deref() {
+        skippy_commands::models::reject_safetensors_model_ref(model)?;
+    }
     args.public.settings.validate_mode(args)?;
     if args.local_models.is_empty() {
         validate_public_settings(&args.public)?;
@@ -419,6 +436,7 @@ async fn serve_with_readiness(
     let api_base = format!("http://{}/v1", readiness_addr(bind_addr));
     let shutdown_requested = server.shutdown_requested;
     console::status("🧠 Loading model and starting the API")?;
+    let load_started = std::time::Instant::now();
     let mut server = tokio::spawn(server.future);
     let readiness = wait_for_ready(
         &api_base,
@@ -427,8 +445,11 @@ async fn serve_with_readiness(
         startup_timeout,
         &shutdown_requested,
     )
-    .await?;
-    if readiness == ReadinessOutcome::ShutdownRequested {
+    .await;
+    if !matches!(readiness, Ok(ReadinessOutcome::ShutdownRequested)) {
+        record_model_load(&model_id, load_started.elapsed(), readiness.is_ok());
+    }
+    if readiness? == ReadinessOutcome::ShutdownRequested {
         return Ok(());
     }
     console::event(
@@ -445,6 +466,8 @@ async fn serve_with_readiness(
     // process so server shutdown can terminate and join the prompt reliably.
     let mut prompt_process =
         Command::new(std::env::current_exe().context("locate skippy executable")?)
+            // Part of this serve session, which is already reported.
+            .env(skippy_analytics::ENV_ANALYTICS, "0")
             .args([
                 "--output",
                 "human",
@@ -474,6 +497,18 @@ async fn serve_with_readiness(
             Ok(())
         }
     }
+}
+
+/// Report `model_load` for the public API's model.
+fn record_model_load(model_id: &str, elapsed: Duration, succeeded: bool) {
+    let properties = skippy_analytics::models::lookup(model_id)
+        .apply(skippy_analytics::Properties::new())
+        .with(
+            "load_ms",
+            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
+        )
+        .with("outcome", if succeeded { "loaded" } else { "failed" });
+    skippy_analytics::capture(skippy_analytics::Event::ModelLoad, properties);
 }
 
 fn readiness_addr(bind_addr: SocketAddr) -> SocketAddr {

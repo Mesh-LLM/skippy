@@ -28,6 +28,19 @@ To serve several local models on one listener, put them in a single
 [serving settings file](/configuration/#serve-multiple-local-models) and run
 `skippy serve --settings serving.toml`.
 
+## Migrate a SafeTensors checkpoint
+
+Skippy serves GGUF models only. If you have a SafeTensors checkpoint, choose
+a published GGUF for the same model or convert the checkpoint offline.
+
+```sh
+skippy-quantize convert /models/checkpoint /models/model.gguf
+skippy serve --model /models/model.gguf
+```
+
+For multipart GGUFs, pass the first shard. Choose the weight quantization when
+downloading or producing the GGUF.
+
 ## Discover and manage models
 
 Skippy uses the Mesh LLM catalog for curated names and recommendations by
@@ -58,7 +71,7 @@ Use `search` when you know a family or keyword but not the exact repository:
 skippy models search qwen --limit 10
 ```
 
-Search queries Hugging Face for GGUF repositories by default. Once you have a
+Search queries Hugging Face for GGUF models. Once you have a
 candidate, resolve the exact artifact, quantization, revision, and expected
 files before downloading it:
 

@@ -1,11 +1,11 @@
-use crate::models::capabilities;
-use crate::models::capabilities::ModelCapabilities;
-use crate::models::details::ModelDetails;
-use crate::models::search::{SearchArtifactFilter, SearchHit, SearchSort};
 use crate::models::storage::{DeleteResult as CliDeleteResult, ResolvedModel as CliResolvedModel};
 use crate::models::storage::{huggingface_hub_cache_dir, remote_catalog};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use skippy_model_hf::capabilities;
+use skippy_model_hf::capabilities::ModelCapabilities;
+use skippy_model_hf::details::ModelDetails;
+use skippy_model_hf::search::{SearchArtifactFilter, SearchHit, SearchSort};
 
 use serde_json::{Value, json};
 use std::io::Write;
@@ -128,7 +128,6 @@ pub(crate) fn models_formatter(json_output: bool) -> Box<dyn ModelsFormatter> {
 pub(crate) fn filter_label(filter: SearchArtifactFilter) -> &'static str {
     match filter {
         SearchArtifactFilter::Gguf => "GGUF",
-        SearchArtifactFilter::Mlx => "MLX",
     }
 }
 
@@ -180,16 +179,8 @@ pub(crate) fn format_relative_timestamp(value: &str) -> Option<String> {
     Some(format!("{value} ({age_label})"))
 }
 
-pub(crate) fn installed_model_kind(path: &Path) -> &'static str {
-    let text = path.to_string_lossy().to_ascii_lowercase();
-    if text.ends_with(".safetensors")
-        || text.ends_with(".safetensors.index.json")
-        || text.contains("model.safetensors")
-    {
-        "🍎 MLX"
-    } else {
-        "🦙 GGUF"
-    }
+pub(crate) fn installed_model_kind() -> &'static str {
+    "🦙 GGUF"
 }
 
 pub(crate) fn format_count(value: u64) -> String {
@@ -295,38 +286,12 @@ pub(crate) fn variant_selector_label(exact_ref: &str) -> String {
         .to_string()
 }
 
-pub(crate) fn catalog_model_is_mlx(model: &remote_catalog::RemoteCatalogModel) -> bool {
-    model.source_file().ends_with("model.safetensors")
-        || model
-            .source_file()
-            .ends_with("model.safetensors.index.json")
-}
-
-pub(crate) fn catalog_model_kind(model: &remote_catalog::RemoteCatalogModel) -> &'static str {
-    if catalog_model_is_mlx(model) {
-        "🍎 MLX"
-    } else {
-        "🦙 GGUF"
-    }
-}
-
 pub(crate) fn model_kind_code(kind: &str) -> &'static str {
-    let lowered = kind.to_ascii_lowercase();
-    if lowered.contains("mlx") {
-        "mlx"
-    } else if lowered.contains("layer package") {
+    if kind.to_ascii_lowercase().contains("layer package") {
         "layer_package"
     } else {
         "gguf"
     }
-}
-
-pub(crate) fn installed_model_kind_code(path: &Path) -> &'static str {
-    model_kind_code(installed_model_kind(path))
-}
-
-pub(crate) fn catalog_model_kind_code(model: &remote_catalog::RemoteCatalogModel) -> &'static str {
-    model_kind_code(catalog_model_kind(model))
 }
 
 pub(crate) fn catalog_model_capabilities(

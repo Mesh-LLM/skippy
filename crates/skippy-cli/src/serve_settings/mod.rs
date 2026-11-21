@@ -419,9 +419,7 @@ fn is_path(name: &str) -> bool {
         name,
         "config"
             | "model-path"
-            | "checkpoint-imatrix"
             | "mmproj"
-            | "hash-cache"
             | "topology"
             | "speculative-config"
             | "draft-model-path"

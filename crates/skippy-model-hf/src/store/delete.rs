@@ -148,16 +148,6 @@ pub async fn resolve_huggingface_file_from_sibling_entries(
             sha256: None,
         })
         .collect::<Vec<_>>();
-    let has_mlx_weights = siblings
-        .iter()
-        .any(|entry| entry.path == "model.safetensors" || is_split_mlx_first_shard(&entry.path));
-
-    if file == "model" && has_mlx_weights {
-        bail!(
-            "MLX shorthand '/model' is not supported. Use '{repo}' or a full file ref like '{repo}/model.safetensors'."
-        );
-    }
-
     let selector = (!file.is_empty()).then_some(file);
     let selected = select_primary_artifact_file(selector, &siblings).with_context(|| {
         let revision = revision.unwrap_or("main");
@@ -168,20 +158,6 @@ pub async fn resolve_huggingface_file_from_sibling_entries(
         }
     })?;
     Ok(selected.path)
-}
-
-fn is_split_mlx_first_shard(file: &str) -> bool {
-    let basename = file.rsplit('/').next().unwrap_or(file);
-    let Some(rest) = basename.strip_prefix("model-") else {
-        return false;
-    };
-    let Some(rest) = rest.strip_suffix(".safetensors") else {
-        return false;
-    };
-    let Some((left, right)) = rest.split_once("-of-") else {
-        return false;
-    };
-    left == "00001" && right.len() == 5 && right.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 #[derive(Debug)]

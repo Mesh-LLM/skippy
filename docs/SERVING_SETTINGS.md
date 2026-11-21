@@ -26,7 +26,7 @@ flags, so file settings can be disabled explicitly. Unknown keys, incorrect
 sections and invalid values are rejected. Conflicting model sources are errors;
 override the same source option when changing the model from a settings file.
 With a prepared `--config`, model preparation options (`ctx_size`,
-`n_gpu_layers`, `quant`, `checkpoint_imatrix`, `mmproj`, `hash_cache`) retain
+`n_gpu_layers`, `mmproj`) retain
 their existing conflicts; those values belong in the prepared stage plan.
 
 Use snake_case option names in TOML, under the section shown below. CLI-only
@@ -226,9 +226,6 @@ with their runtime purpose; existing controls follow in the same sections.
 | `--no-host-buffer` | `no_host_buffer` | Bypass the model host buffer |
 | `--model` | `model` | See `skippy serve --help` for values and defaults. |
 | `--model-path` | `model_path` | See `skippy serve --help` for values and defaults. |
-| `--quant` | `quant` | See `skippy serve --help` for values and defaults. |
-| `--checkpoint-imatrix` | `checkpoint_imatrix` | See `skippy serve --help` for values and defaults. |
-| `--hash-cache` | `hash_cache` | See `skippy serve --help` for values and defaults. |
 
 ### [execution]
 

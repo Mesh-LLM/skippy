@@ -133,15 +133,7 @@ impl ServeSettings {
     }
 
     pub fn apply_stage(&self, config: &mut StageConfig) -> Result<()> {
-        let patch = self.stage_patch()?;
-        if patch.get("kv_cache").is_some() && config.kv_cache.is_none() {
-            config.kv_cache = skippy_api::family_policy::family_policy_for_stage_config(config)
-                .stage_kv_cache_config_for_stage(config);
-        }
-        let mut value = serde_json::to_value(&*config)?;
-        merge(&mut value, patch);
-        *config = serde_json::from_value(value).context("invalid runtime settings")?;
-        validate_stage(config)?;
+        *config = skippy_api::serving_profile::apply_stage_overrides(config, self.stage_patch()?)?;
         Ok(())
     }
 
@@ -432,39 +424,6 @@ impl ServeSettings {
         config.compaction = Some(compact);
         Ok(config)
     }
-}
-
-fn validate_stage(config: &StageConfig) -> Result<()> {
-    skippy_runtime::parse_cache_type(&config.cache_type_k)?;
-    skippy_runtime::parse_cache_type(&config.cache_type_v)?;
-    anyhow::ensure!(
-        config.n_batch != Some(0) && config.n_ubatch != Some(0),
-        "batch and microbatch sizes must be positive"
-    );
-    anyhow::ensure!(
-        config.n_gpu_layers >= -1,
-        "n-gpu-layers must be -1 or nonnegative"
-    );
-    anyhow::ensure!(
-        config
-            .image_min_tokens
-            .zip(config.image_max_tokens)
-            .is_none_or(|(min, max)| min <= max),
-        "image-min-tokens must not exceed image-max-tokens"
-    );
-    anyhow::ensure!(
-        config
-            .activation_codec_policy
-            .compatible(config.activation_codec),
-        "auto-lossless-v1 requires raw-f32-v1 as its fallback codec"
-    );
-    if let Some(cache) = &config.kv_cache {
-        anyhow::ensure!(
-            cache.mode == StageKvCacheMode::Disabled || cache.max_entries > 0,
-            "prefix-cache-max-entries must be positive; use --prefix-cache off to disable caching"
-        );
-    }
-    Ok(())
 }
 
 fn fill_sampler_defaults(request: &mut Value) {
