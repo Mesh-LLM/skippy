@@ -105,10 +105,15 @@ same Rust crate.
 
 ## ABI Contract
 
-The staged ABI is versioned as `0.1.88`. The patch header in
+The staged ABI is versioned as `0.1.89`. The patch header in
 `llama_cpp/patches/` and the Rust constants in
 `crates/skippy-ffi/src/lib.rs` are the source of truth, so keep this README
 aligned with those files instead of treating it as canonical prose.
+
+ABI `0.1.89` adds `skippy_model_checkpoint_parts` and `skippy_import_checkpoint`,
+which name and import a stage checkpoint whole, and makes
+`skippy_import_recurrent_state` refuse a recurrent state its attention cells do
+not end with.
 
 ABI `0.1.88` adds `skippy_verify_batch_sampled` and its request descriptor for
 shared target verification.
