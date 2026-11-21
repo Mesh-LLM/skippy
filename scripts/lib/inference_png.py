@@ -3,6 +3,7 @@
 from datetime import timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from textwrap import fill
 
 from .inference_charts import BAR_STYLES, HistoryChart, image_path
 
@@ -88,11 +89,12 @@ def draw(chart, output, figure_class, mdates):
     horizontal = not history and chart.horizontal
     height = max(3.8, 2.5 + len(chart.labels) / 4) if horizontal else 3.8
     figure = figure_class(figsize=(8.5, height), dpi=170, facecolor="white")
-    left = 0.32 if horizontal else 0.12
-    figure.subplots_adjust(left=left, right=0.96, bottom=0.19, top=0.68)
+    caption = fill(chart.caption, width=96, break_long_words=False, break_on_hyphens=False)
+    top = 0.64 if "\n" in caption else 0.68
+    figure.subplots_adjust(left=0.12, right=0.96, bottom=0.19, top=top)
     ax = figure.add_subplot()
     figure.text(0.07, 0.93, chart.title, va="top", fontsize=19, fontweight="bold", color=INK)
-    figure.text(0.07, 0.83, chart.caption, va="top", fontsize=11, color=MUTED)
+    figure.text(0.07, 0.83, caption, va="top", fontsize=11, color=MUTED)
 
     ax.set_axisbelow(True)
     ax.tick_params(colors=MUTED, labelsize=10, length=0, pad=5)
@@ -102,6 +104,10 @@ def draw(chart, output, figure_class, mdates):
         history_axes(ax, chart, mdates)
     else:
         snapshot_axes(ax, chart)
+    if horizontal:
+        renderer = figure.canvas.get_renderer()
+        label_width = max(label.get_window_extent(renderer).width for label in ax.get_yticklabels())
+        figure.subplots_adjust(left=max(0.32, label_width / figure.bbox.width + 0.03))
     if history or not chart.horizontal:
         ax.grid(axis="y", color=GRID, linewidth=0.75)
     handles, labels = ax.get_legend_handles_labels()

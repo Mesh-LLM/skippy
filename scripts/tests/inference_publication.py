@@ -9,8 +9,10 @@ from unittest.mock import patch
 
 from inference_nightly import PR_PATH, SOURCE, smoke_receipt
 from lib.ci_artifacts import read_json
+from lib.inference_charts import Chart
 from lib.inference_markdown import dataset_charts
 from lib.inference_parquet import read_run
+from lib.inference_png import draw
 
 
 class Dataset:
@@ -60,6 +62,35 @@ class Dataset:
 
 
 class PublicationTests(unittest.TestCase):
+    def test_mixed_platform_png_has_room_for_long_labels_and_caption(self):
+        from matplotlib import dates
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        from matplotlib.figure import Figure
+
+        chart = Chart(
+            "Decode throughput", "tok/s",
+            ("CUDA - Qwen3-Coder-30B-A3B (1 Spark)", "Metal - Qwen3-Coder-30B-A3B (M3 Ultra)"),
+            (100, 80), "Smoke test (v1). Blue = equivalent (within tolerance) · Red = regression. "
+            "The gray line shows the saved baseline for each configuration.", ("passed", "regressed"),
+            (100, 90), horizontal=True,
+        )
+        figures = []
+
+        def factory(**options):
+            figure = Figure(**options)
+            FigureCanvasAgg(figure)
+            figures.append(figure)
+            return figure
+
+        with TemporaryDirectory() as directory:
+            draw(chart, Path(directory) / "test.png", factory, dates)
+        figure = figures[0]
+        renderer = figure.canvas.get_renderer()
+        for label in [*figure.texts, *figure.axes[0].get_yticklabels()]:
+            extent = label.get_window_extent(renderer)
+            self.assertGreater(extent.x0, 0)
+            self.assertLess(extent.x1, figure.bbox.width)
+
     def test_failed_run_is_published_and_does_not_replace_saved_baseline(self):
         publish = run_path(str(PR_PATH))["publish"]
         with TemporaryDirectory() as directory, patch("lib.inference_nightly_results.print", create=True):
