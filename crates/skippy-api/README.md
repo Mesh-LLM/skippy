@@ -145,6 +145,21 @@ pins, request inference from both, and check the runtime's memory on each
 GPU. Drop one backend and confirm the corresponding budget can be reserved
 again. Use two model fixtures that fit the intended device budgets.
 
+### Split execution
+
+`split_execution::plan_direct_gguf` builds the same admitted stage
+configurations as `skippy plan-split`. Embedders can supply worker IDs and
+listen endpoints, an expected manifest digest, measured worker capacity,
+and optional locked contiguous ranges. Capacity planning and native
+admission must both succeed before a plan can start.
+
+Implement `StageOperations` to bind the admitted worker identity to your
+transport and artifact policy. `AdmittedSplit::start` checks the current
+manifest and endpoints before starting downstream stages first.
+`SplitExecution::observe` reports stage state. For binary endpoints an
+adapter can use `start_binary_stage_ready_probe` for the existing readiness
+handshake. Cancel the execution to release stages in reverse startup order.
+
 ## Resolving a package for stage planning
 
 Use `PackageAcquisition::resolve_and_inspect_package` with the original local or Hugging Face reference. Mesh and other embedding hosts can replace their schema checks, cache fallback, and metadata inspection calls with this operation. Keep passing the existing explicit cache root, lazy Hub client factory, and progress observer to `PackageAcquisition`.

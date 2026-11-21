@@ -63,6 +63,15 @@ runs:
         } | xargs -0 git hash-object | shasum -a 256 | awk '{print $1}')"
         export SCCACHE_BASEDIRS="$GITHUB_WORKSPACE"
         export SCCACHE_GHA_VERSION="skippy-v1-$SCCACHE_SCOPE-$recipe_digest"
+        export SCCACHE_GHA_RW_MODE=READ_ONLY
+        case "${GITHUB_REF:-}:$GITHUB_EVENT_NAME" in
+          refs/heads/main:push|refs/heads/main:schedule|refs/heads/main:workflow_dispatch)
+            if [[ "${GITHUB_REF_PROTECTED:-false}" == true && "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]; then
+              export SCCACHE_GHA_RW_MODE=READ_WRITE
+            fi
+            ;;
+        esac
+        echo "sccache GitHub cache mode: $SCCACHE_GHA_RW_MODE"
         "$sccache_path" --stop-server >/dev/null 2>&1 || true
         "$sccache_path" --start-server
         "$sccache_path" --zero-stats
@@ -73,4 +82,5 @@ runs:
           echo "CMAKE_CXX_COMPILER_LAUNCHER=$sccache_path"
           echo "SCCACHE_BASEDIRS=$SCCACHE_BASEDIRS"
           echo "SCCACHE_GHA_VERSION=$SCCACHE_GHA_VERSION"
+          echo "SCCACHE_GHA_RW_MODE=$SCCACHE_GHA_RW_MODE"
         } >> "$GITHUB_ENV"
