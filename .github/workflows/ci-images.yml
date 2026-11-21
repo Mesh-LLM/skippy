@@ -6,6 +6,11 @@ on:
     branches: [main]
     paths: ['.github/workflows/ci-images.yml', 'ci/Dockerfile*', 'ci/targets.json', 'rust-toolchain.toml', 'Justfile']
   workflow_dispatch:
+    inputs:
+      use_depot:
+        description: Build and test on Depot without publishing images
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -14,7 +19,11 @@ concurrency:
 jobs:
   cpu-build:
     name: Build and test CPU image
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ github.workflow_ref == 'Mesh-LLM/skippy/.github/workflows/ci-images.yml@refs/heads/main' &&
+          ((github.event_name == 'push' && vars.SKIPPY_DEPOT_IMAGE_RUNNERS_ENABLED == 'true') ||
+           (github.event_name == 'workflow_dispatch' && (vars.SKIPPY_DEPOT_IMAGE_RUNNERS_ENABLED == 'true' || inputs.use_depot))) &&
+          'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 45
     outputs:
       artifact_id: ${{ steps.image.outputs.artifact-id }}
@@ -49,7 +58,7 @@ jobs:
     if: >-
       github.repository == 'Mesh-LLM/skippy' &&
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.use_depot))
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -84,7 +93,11 @@ jobs:
           docker image push "$image:latest"
   gpu-build:
     name: Build and test ${{ matrix.backend }} image (${{ matrix.arch }})
-    runs-on: ${{ matrix.runner }}
+    runs-on: >-
+      ${{ github.workflow_ref == 'Mesh-LLM/skippy/.github/workflows/ci-images.yml@refs/heads/main' &&
+          ((github.event_name == 'push' && vars.SKIPPY_DEPOT_IMAGE_RUNNERS_ENABLED == 'true') ||
+           (github.event_name == 'workflow_dispatch' && (vars.SKIPPY_DEPOT_IMAGE_RUNNERS_ENABLED == 'true' || inputs.use_depot))) &&
+          format('depot-{0}-4', matrix.runner) || matrix.runner }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -162,7 +175,7 @@ jobs:
     if: >-
       github.repository == 'Mesh-LLM/skippy' &&
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.use_depot))
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:

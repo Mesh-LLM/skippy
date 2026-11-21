@@ -86,6 +86,83 @@ test('hosted CI cannot satisfy a native inference requirement', () => {
   assert.throws(() => gate(results({ hostedRequiresNative: true })), /require native hardware qualification on an isolated runner/);
 });
 
+test('Depot placement requires opt-in from protected CI or release validation', () => {
+  const expression = workflow.match(/^      linux-runner-provider: >-\n\s+\$\{\{([\s\S]+?)\}\}/m)[1];
+  const evaluateProvider = new Function('github', 'vars', 'inputs', `return (${expression});`);
+  const main = 'Mesh-LLM/skippy/.github/workflows/ci.yml@refs/heads/main';
+  const release = main.replace('ci.yml', 'release.yml');
+  function provider(event_name, { workflow_ref = main, enabled = '', use_depot = false, artifact_scope = '' } = {}) {
+    return evaluateProvider({ workflow_ref, event_name }, { SKIPPY_DEPOT_RUNNERS_ENABLED: enabled }, { use_depot, artifact_scope });
+  }
+
+  for (const event of ['push', 'schedule', 'workflow_dispatch']) {
+    assert.equal(provider(event), 'github', event);
+    assert.equal(provider(event, { enabled: 'true' }), 'depot', event);
+  }
+  assert.equal(provider('workflow_dispatch', { enabled: 'false', use_depot: true }), 'depot');
+  for (const event of ['pull_request', 'pull_request_target', 'workflow_call']) {
+    assert.equal(provider(event, { enabled: 'true', use_depot: true }), 'github', event);
+  }
+  for (const workflow_ref of [
+    main.replace('heads/main', 'heads/topic'),
+    main.replace('heads/main', 'tags/v1.0.0'),
+    main.replace('ci.yml', 'llama-upgrade.yml'),
+    main.replace('Mesh-LLM', 'fork-owner'),
+  ]) {
+    assert.equal(provider('workflow_dispatch', { workflow_ref, enabled: 'true', use_depot: true }), 'github', workflow_ref);
+  }
+
+  const releaseOptions = { workflow_ref: release, enabled: 'true', artifact_scope: 'release' };
+  for (const event of ['schedule', 'workflow_dispatch']) {
+    assert.equal(provider(event, releaseOptions), 'depot', event);
+    assert.equal(provider(event, { ...releaseOptions, enabled: '', use_depot: true }), 'github', event);
+    assert.equal(provider(event, { ...releaseOptions, artifact_scope: 'ci' }), 'github', event);
+  }
+  assert.equal(provider('pull_request_target', releaseOptions), 'github');
+});
+
+test('host CPU packages install Just on GitHub and Depot runners', () => {
+  for (const row of rows) {
+    const job = `package_${row.id.replaceAll('-', '_')}`;
+    const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
+    assert.equal(body.includes("setup-host: 'true'"), row.backend === 'cpu', job);
+  }
+  const action = readFileSync(join(__dirname, '../actions/ci-package/action.yml'), 'utf8');
+  assert.match(action, /uses: \.\/\.github\/actions\/setup\n      if: inputs.setup-host == 'true'/);
+});
+
+test('Depot compiler image canaries build on protected main without publishing', () => {
+  const images = readFileSync(join(__dirname, '../workflows/ci-images.yml'), 'utf8');
+  const repository = 'Mesh-LLM/skippy';
+  const ref = 'refs/heads/main';
+  const main = `${repository}/.github/workflows/ci-images.yml@${ref}`;
+  for (const [kind, runners] of [['cpu', ['ubuntu-24.04']], ['gpu', ['ubuntu-24.04', 'ubuntu-24.04-arm']]]) {
+    const build = images.split(`\n  ${kind}-build:\n`)[1].split(`\n  ${kind}-publish:\n`)[0];
+    const publish = images.split(`\n  ${kind}-publish:\n`)[1];
+    const buildPolicy = build.match(/runs-on: >-\n\s+\$\{\{([\s\S]+?)\}\}/)[1];
+    const publishPolicy = publish.match(/if: >-\n([\s\S]+?)\n    runs-on:/)[1];
+    const placement = new Function('github', 'vars', 'inputs', 'matrix', 'format', `return (${buildPolicy});`);
+    const publishImage = new Function('github', 'inputs', `return (${publishPolicy});`);
+
+    for (const runner of runners) {
+      function choose(event_name, { enabled = '', use_depot = false, workflow_ref = main } = {}) {
+        return placement({ event_name, workflow_ref }, { SKIPPY_DEPOT_IMAGE_RUNNERS_ENABLED: enabled },
+          { use_depot }, { runner }, (pattern, label) => pattern.replace('{0}', label));
+      }
+      assert.equal(choose('push'), runner);
+      assert.equal(choose('push', { enabled: 'true' }), `depot-${runner}-4`);
+      assert.equal(choose('workflow_dispatch', { use_depot: true }), `depot-${runner}-4`);
+      assert.equal(choose('workflow_dispatch', { workflow_ref: main.replace('heads/main', 'heads/topic'), use_depot: true }), runner);
+      assert.equal(choose('pull_request', { enabled: 'true', use_depot: true }), runner);
+    }
+    assert.equal(publishImage({ repository, ref, event_name: 'workflow_dispatch' }, { use_depot: true }), false);
+    assert.equal(publishImage({ repository, ref, event_name: 'workflow_dispatch' }, { use_depot: false }), true);
+    assert.equal(publishImage({ repository, ref, event_name: 'push' }, {}), true);
+    assert.equal(publishImage({ repository, ref, event_name: 'pull_request' }, {}), false);
+    assert.doesNotMatch(publish.split(/\n  [\w-]+:\n/)[0], /runs-on: .*depot-/);
+  }
+});
+
 test('native CI trusts only an immutable same-repository PR from a writer', async () => {
   const admission = workflow.split('      - name: Verify the same-repository PR author\n')[1].split('\n  plan:\n')[0];
   const script = admission.split('          script: |\n')[1];

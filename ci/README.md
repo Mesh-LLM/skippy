@@ -110,16 +110,53 @@ produced by the protected-main llama upgrade workflow.
 `targets.json` defines four hosts and eleven runtimes. Three hosts and eight
 runtimes are active. Windows qualification and publication are deferred. After
 the quality and automation canary, each CPU job builds, packages and tests its
-runtime on GitHub-hosted `ubuntu-24.04`, `ubuntu-24.04-arm` or `macos-15`. Each
+runtime on `ubuntu-24.04`, `ubuntu-24.04-arm` or `macos-15` by default. Each
 also produces the shared CLI for its platform. Linux x64 builds the shared CLI
 on Ubuntu 24.04 for compatibility with the CUDA toolchain images. Each backend
 job waits for its matching CPU job only. Linux x64 CUDA 12 and Linux ARM64
-CUDA 12 and 13 run on GitHub-hosted Ubuntu in the corresponding compiler images
+CUDA 12 and 13 run on Ubuntu in the corresponding compiler images
 and check the packaged CLI and runtime artifact without a device. Linux x64
 CUDA 13 and macOS Metal run device smoke on ephemeral JY runners. Tagged
 releases add device smoke for the other three CUDA packages using their exact
 archives. JY hardware jobs declare literal runner groups and labels. The full
 CI gate matches all package jobs to the plan and checks required device results.
+
+### Depot runners
+
+Direct `ci.yml` runs on protected `main` and release validation can use Depot
+for the quality canary, Linux CPU packages, and compiler-only CUDA packages.
+The jobs use four-core Ubuntu 24.04 runners matching their existing
+architectures. PRs and llama upgrades use their default runners. Depot's
+Actions cache is shared across branches within a repository.
+[Depot cache behavior](https://depot.dev/docs/cache/integrations/github-actions)
+
+Before opting in, verify that the Depot GitHub App covers `Mesh-LLM/skippy`
+and that Depot's GitHub runner group admits this public repository. Restrict
+the group's workflow access to exact protected refs and include
+`Mesh-LLM/skippy/.github/workflows/ci.yml@refs/heads/main` alongside the
+existing approved workflows. This restriction keeps PR-defined jobs out of
+Skippy's Depot cache namespace.
+[Depot runner setup](https://depot.dev/docs/github-actions/quickstart)
+
+From `main`, dispatch `CI` with `profile=full` and `use_depot=true` to verify
+runner assignment, compiler image pulls, and package smoke. After that run
+passes, set the repository Actions variable `SKIPPY_DEPOT_RUNNERS_ENABLED` to
+`true` to opt in for pushes, scheduled runs, manual runs, and the `Release`
+workflow's reusable build validation on `main`. Release verification and
+publication use GitHub-hosted runners. Clear the variable or set it to `false`
+to restore GitHub-hosted placement unless the manual input is enabled.
+
+`CI images` can use Depot for CPU, CUDA, and ROCm compiler image builds and
+smoke tests. Its runner group entry is
+`Mesh-LLM/skippy/.github/workflows/ci-images.yml@refs/heads/main`. With that
+entry in place, dispatch `CI images` on `main` with `use_depot=true` to build
+and test every image while skipping publication. After that run passes, set
+`SKIPPY_DEPOT_IMAGE_RUNNERS_ENABLED` to `true` for regular main-branch image
+builds. The publisher jobs run on GitHub-hosted Linux and use the tested
+archives from the build jobs. Clearing the variable or setting it to `false`
+restores GitHub-hosted placement unless the manual input is enabled.
+
+### PR admission and quality
 
 Same-repository PRs to `main` use the workflow definition on protected `main`.
 The workflow verifies repository identity, the PR author's write access and the
@@ -137,7 +174,7 @@ Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main
 Mesh-LLM/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main
 ```
 
-The CPU-only `quality` job runs on GitHub-hosted `ubuntu-24.04` inside
+The CPU-only `quality` job runs on Ubuntu 24.04 inside
 `ghcr.io/mesh-llm/skippy-ci-cpu:latest` for lint, tests and FFI binding
 freshness. The image supplies the pinned Rust toolchain, Just, sccache,
 build-essential, mold and LLVM/Clang 22 development inputs. The job verifies

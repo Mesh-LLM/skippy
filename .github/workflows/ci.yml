@@ -48,6 +48,7 @@ on:
       - '.github/path-filters.yml'
       - '.github/workflows/ci.yml'
       - '.github/workflows/inference.yml'
+      - '.github/workflows/llama-upgrade.yml'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'rust-toolchain.toml'
@@ -106,6 +107,10 @@ on:
         type: choice
         options: [native, release]
         default: native
+      use_depot:
+        description: Use Depot for eligible Linux jobs in this main-branch run
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       profile:
@@ -236,6 +241,16 @@ jobs:
       profile: ${{ steps.plan.outputs.profile }}
       runtimes: ${{ steps.plan.outputs.runtimes }}
       registry-owner: ${{ steps.registry.outputs.owner }}
+      # github.workflow_ref identifies the caller during reusable workflow runs.
+      linux-runner-provider: >-
+        ${{ ((github.workflow_ref == 'Mesh-LLM/skippy/.github/workflows/ci.yml@refs/heads/main' &&
+               ((vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' &&
+                 (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')) ||
+                (github.event_name == 'workflow_dispatch' && inputs.use_depot))) ||
+              (github.workflow_ref == 'Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main' &&
+               inputs.artifact_scope == 'release' && vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' &&
+               (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'))) &&
+            'depot' || 'github' }}
     steps:
       - name: Resolve CI image namespace
         id: registry
@@ -281,7 +296,7 @@ jobs:
       LIBCLANG_PATH: /usr/lib/llvm-22/lib
       SKIPPY_REQUIRE_SCCACHE: '1'
       SCCACHE_GHA_ENABLED: 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ needs.plan.outputs.linux-runner-provider == 'depot' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     permissions:
       contents: read
       packages: read
@@ -437,6 +452,7 @@ jobs:
           runtime-id: darwin-aarch64-cpu
           host-id: darwin-aarch64
           build-cli: 'true'
+          setup-host: 'true'
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
   package_darwin_aarch64_metal:
@@ -471,7 +487,7 @@ jobs:
     needs: [plan, quality]
     if: needs.plan.outputs.profile == 'full'
     # The shared CLI must also run in the Ubuntu 24.04 CUDA toolchain images.
-    runs-on: ubuntu-24.04
+    runs-on: ${{ needs.plan.outputs.linux-runner-provider == 'depot' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 240
     env:
       SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
@@ -485,13 +501,14 @@ jobs:
           runtime-id: linux-x86_64-cpu
           host-id: linux-x86_64
           build-cli: 'true'
+          setup-host: 'true'
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
   package_linux_x86_64_cuda12:
     name: Build, package, and smoke · Linux x64 CUDA 12
     needs: [plan, quality, package_linux_x86_64_cpu]
     if: needs.plan.outputs.profile == 'full'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ needs.plan.outputs.linux-runner-provider == 'depot' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     permissions:
       contents: read
       packages: read
@@ -566,7 +583,7 @@ jobs:
     name: Build, package, and smoke · Linux ARM64 CPU
     needs: [plan, quality]
     if: needs.plan.outputs.profile == 'full'
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ needs.plan.outputs.linux-runner-provider == 'depot' && 'depot-ubuntu-24.04-arm-4' || 'ubuntu-24.04-arm' }}
     timeout-minutes: 240
     env:
       SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
@@ -580,13 +597,14 @@ jobs:
           runtime-id: linux-aarch64-cpu
           host-id: linux-aarch64
           build-cli: 'true'
+          setup-host: 'true'
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
   package_linux_aarch64_cuda12:
     name: Build, package, and smoke · Linux ARM64 CUDA 12
     needs: [plan, quality, package_linux_aarch64_cpu]
     if: needs.plan.outputs.profile == 'full'
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ needs.plan.outputs.linux-runner-provider == 'depot' && 'depot-ubuntu-24.04-arm-4' || 'ubuntu-24.04-arm' }}
     permissions:
       contents: read
       packages: read
@@ -634,7 +652,7 @@ jobs:
     name: Build, package, and smoke · Linux ARM64 CUDA 13
     needs: [plan, quality, package_linux_aarch64_cpu]
     if: needs.plan.outputs.profile == 'full'
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ needs.plan.outputs.linux-runner-provider == 'depot' && 'depot-ubuntu-24.04-arm-4' || 'ubuntu-24.04-arm' }}
     permissions:
       contents: read
       packages: read
