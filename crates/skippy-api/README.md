@@ -1,12 +1,16 @@
 # skippy-api
 
+Use `execution` with the `dynamic-native-runtime` feature for ordinary
+in-process production serving. See the [contract and specialist extension
+points](../../docs/PRODUCTION_EMBEDDING.md).
+
 Shared Skippy model preparation. `SingleStageOptions` and a resolved `StageSourceIdentity` produce the same single-stage configuration for standalone and embedded callers. Model-family cache policy and checkpoint quantization/importance-matrix preparation live here. Product hooks, diagnostics and model discovery remain caller concerns.
 
 `package::identity_from_package_v2` verifies a local package and returns its model identity. It checks the package generation, content-derived package ID, confined artifact paths, sizes and digests. The producer native ABI is provenance; runtime loading checks host/library ABI compatibility separately. Callers pass an optional `SidecarDigestCache` opened at an explicit directory; `None` disables the advisory digest cache. The API does not read environment variables or choose a home/cache directory. Existing v2 cache records keep their format and keys.
 
 `package::metadata` verifies metadata-only package identity without fetching layer artifacts. It preserves source provenance separately from the generated metadata digest and pins resolved Hugging Face snapshot references. Callers supply the local directory and optional digest cache; remote acquisition is available through `package::acquisition`.
 
-`source` prepares local GGUF/sharded GGUF, safetensors checkpoints and immutable Hugging Face source identities. Strict local GGUF verification always hashes source bytes and preserves the strong-fingerprint checks; the source registry is a locator, never proof of content. Hugging Face snapshot roots and the metadata client factory are caller-supplied. Existing identity hash domains remain unchanged. Managed multipart views now live under `.skippy/multipart-gguf` within the HF repository cache; these are hard links to verified blobs, and existing `.mesh-llm` views are not deleted.
+`source` prepares local GGUF, multipart GGUF, and immutable Hugging Face GGUF source identities. Strict local GGUF verification always hashes source bytes and preserves the strong-fingerprint checks; the source registry is a locator, never proof of content. Hugging Face snapshot roots and the metadata client factory are caller-supplied. Existing identity hash domains remain unchanged. Managed multipart views now live under `.skippy/multipart-gguf` within the HF repository cache; these are hard links to verified blobs, and existing `.mesh-llm` views are not deleted.
 
 `source::planning` constructs the source-complete graph-planning manifest from verified GGUF identity. Embedding applications retain its profile-scoped source policy and serving hooks; callers supply transport and cache policy to package acquisition.
 
@@ -70,7 +74,9 @@ Mesh can replace `model_open_drain` and its native queue setup by assigning an
 observer directly to the request. Translate the typed progress and diagnostic
 events to the existing operational-event schema, and use `dropped`, `rejected`,
 and `contradiction()` for the existing health and diagnostic reporting. Use the
-request result to settle the existing success/failure lifecycle. The observer
+request result to settle the existing success/failure lifecycle. `event.source`
+is the complete native record, for the status, stage and session identities,
+numeric summaries and raw codes that Mesh stores with each fact. The observer
 can capture Mesh's operation identity and ingress, so storage and presentation
 stay in Mesh. Match unknown or future observations with a wildcard. These types
 are defined by `skippy-api` and can evolve independently of generated bindings.
@@ -93,6 +99,67 @@ owns publisher-declared live-KV dtype selection and model compatibility fallback
 conservative automatic pairing. Standalone Skippy and embedding applications consume these same
 policies. Explicit caller settings take precedence.
 
+### Serving profiles
+
+Use `serving_profile::resolve` with an existing stage and frontend baseline,
+shared defaults and model-specific overrides. `Setting::Inherit` leaves the
+previous layer in effect, `Setting::Set` carries an explicit value, and
+`Setting::Reset` restores the baseline. The result includes per-setting
+provenance. Request defaults and speculative policy are typed replacements.
+Mesh can translate its own configuration into these inputs.
+
+Standalone `serve --print-effective-config` and the pre-load path use the
+same stage validation. Single-model TOML, environment variables, CLI
+precedence and the report fields remain compatible.
+
+### Hardware inventory
+
+Embedders can collect OS facts with `hardware::physical_hardware`, enumerate
+a runtime they have already loaded with `hardware::runtime_devices`, and pass
+both to `hardware::inventory`. The inventory accepts per-device limits,
+reservations and measurements keyed by the reported physical stable ID. It
+reports absent facts as optional values and exposes runtime-only devices
+separately. A device name or enumeration order cannot establish identity.
+
+`skippy --output json doctor --device-inventory` adds a `device_inventory`
+object to the existing doctor report. A runtime probe failure is reported as
+`device_inventory_issue`; OS discovery remains available. The probe uses an
+installed runtime and does not download one.
+
+### GPU placement
+
+Use one `placement::DeviceAllocator` per shared serving process and bind each
+`ModelLoadRequest` through `load_with_placement`. Supply an inventory that
+maps stable IDs to selectors exposed by the selected runtime. A pinned request
+fails if its device is missing, ambiguous, incompatible or out of capacity.
+The load owns its reservation until the loaded backend is released.
+
+For standalone serving, use the physical `stable_id` shown for a selectable
+GPU by `skippy --output json doctor --device-inventory` with
+`skippy serve --model-path MODEL --gpu-id ID`. A runtime-only accelerator uses
+its reported runtime `identifier`. Skippy checks fit before loading.
+
+To qualify on a two-GPU host, select a native runtime that sees both devices.
+Use the same allocator for two concurrent local load requests with distinct
+pins, request inference from both, and check the runtime's memory on each
+GPU. Drop one backend and confirm the corresponding budget can be reserved
+again. Use two model fixtures that fit the intended device budgets.
+
+### Split execution
+
+`split_execution::plan_direct_gguf` builds the same admitted stage
+configurations as `skippy plan-split`. Embedders can supply worker IDs and
+listen endpoints, an expected manifest digest, measured worker capacity,
+and optional locked contiguous ranges. Capacity planning and native
+admission must both succeed before a plan can start.
+
+Implement `StageOperations` to bind the admitted worker identity to your
+transport and artifact policy. `AdmittedSplit::start` checks the current
+manifest and endpoints before starting downstream stages first.
+`SplitExecution::observe` reports stage state. For binary endpoints an
+adapter can use `start_binary_stage_ready_probe` for the existing readiness
+handshake. Cancel the execution to release stages in reverse startup order.
+
 ### Running server lifecycle
 
 `serving::managed::ManagedModels` can start with zero models or apply a
@@ -111,6 +178,7 @@ Use `skippy manage --management-socket /absolute/private/control.sock status`
 to list all states. The same command accepts `load ID /absolute/model.gguf`,
 `drain ID --timeout-secs 30`, and `unload ID`. Startup can use repeated
 `--eager-model ID=/absolute/model.gguf` flags and `--best-effort`.
+
 ## Resolving a package for stage planning
 
 Use `PackageAcquisition::resolve_and_inspect_package` with the original local or Hugging Face reference. Mesh and other embedding hosts can replace their schema checks, cache fallback, and metadata inspection calls with this operation. Keep passing the existing explicit cache root, lazy Hub client factory, and progress observer to `PackageAcquisition`.

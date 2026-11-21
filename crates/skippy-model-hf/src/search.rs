@@ -1,5 +1,12 @@
 //! Hugging Face repository discovery shared by the two model CLIs.
 
+mod models;
+pub mod projection;
+pub use self::{ArtifactFilter as SearchArtifactFilter, Sort as SearchSort};
+pub use models::{
+    SearchHit, SearchObserver, SearchProgress, search_catalog_models, search_huggingface,
+};
+
 use anyhow::{Context, Result};
 use hf_hub::repository::ModelInfo;
 use regex_lite::Regex;
@@ -11,14 +18,12 @@ use crate::HfModelRepository;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArtifactFilter {
     Gguf,
-    Mlx,
 }
 
 impl ArtifactFilter {
     fn hub_filter(self) -> &'static str {
         match self {
             Self::Gguf => "gguf",
-            Self::Mlx => "mlx",
         }
     }
 }

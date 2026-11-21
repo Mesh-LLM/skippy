@@ -1,6 +1,8 @@
+mod analytics;
 mod cli;
 mod conversion;
 mod disk_cache;
+mod gpu_benchmark;
 mod local_model;
 mod local_resource_planning;
 #[cfg(unix)]
@@ -111,6 +113,17 @@ async fn run_main(
     for warning in startup_warnings {
         skippy_commands::console::status(&warning)?;
     }
+    analytics::init(&cli.command);
+    let family = analytics::family(&cli.command);
+    let result = run_command(cli, native_logs).await;
+    if family != "serve" && family != "analytics" {
+        analytics::record_command(family, result.is_ok());
+    }
+    skippy_analytics::shutdown().await;
+    result
+}
+
+async fn run_command(cli: Cli, native_logs: Arc<native_logging::NativeDiagnostics>) -> Result<()> {
     if matches!(&cli.command, Command::Prompt(_))
         && skippy_commands::console::mode() != skippy_commands::console::OutputMode::Human
     {
@@ -132,7 +145,10 @@ async fn run_main(
     }
     skippy_runtime::logging::set_native_log_sink(native_logs);
     match cli.command {
-        Command::Doctor => runtime::doctor(&native_options),
+        Command::Doctor { device_inventory } => runtime::doctor(&native_options, device_inventory),
+        Command::GpuBenchmark { timeout_secs } => {
+            gpu_benchmark::run(&native_options, timeout_secs).await
+        }
         Command::Prompt(args) => {
             tokio::task::spawn_blocking(move || {
                 skippy_commands::prompt::run(skippy_commands::prompt::PromptCommand {
@@ -147,7 +163,9 @@ async fn run_main(
             .await?
         }
         Command::Serve(args) => {
+            let session = analytics::ServeSession::start(args.stage_transport.is_some());
             let served = serve::run(*args).await;
+            session.finish(served.is_ok());
             skippy_serving::telemetry::finish_process_telemetry();
             served
         }
@@ -167,6 +185,7 @@ async fn run_main(
         Command::ExampleConfig => {
             skippy_commands::console::write_json(&skippy_config::example_config())
         }
+        Command::Analytics { command } => analytics::run(command),
     }
 }
 

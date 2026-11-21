@@ -1,4 +1,19 @@
-# Retained compatibility identifiers
+# Compatibility
+
+## Served weights
+
+GGUF is the only served weight format across the CLI, Rust API, and native
+runtime. Skippy accepts a local GGUF file, the first shard of a multipart GGUF,
+or the selected GGUF parts of an admitted immutable package. Hugging Face model
+references resolve to GGUF weights.
+
+For a SafeTensors checkpoint, select a published GGUF or convert the checkpoint
+offline with `skippy-quantize convert /models/checkpoint /models/model.gguf`.
+Then serve the GGUF path or build a package from it. Select weight quantization
+and supply any importance matrix during offline quantization. Checkpoint
+shards and model sidecars can still be used to produce a GGUF.
+
+## Retained compatibility identifiers
 
 The standalone repository contains no MeshLLM product packages, path
 dependencies, build entrypoints, or release URLs. A small set of historical
