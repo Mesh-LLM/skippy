@@ -20,20 +20,11 @@ local inference to multi-machine serving.
 
 ## Serve your first model
 
-Build the development product and start a recommended model:
+Download and unpack the [latest Skippy release](https://github.com/general-inference/skippy/releases/latest).
+Then run this command from the extracted directory.
 
 ```console
-just build
-./target/debug/skippy models recommended
-./target/debug/skippy serve --model Qwen3-0.6B-Q4_K_M --prompt
-```
-
-The prompt and HTTP API are available together. From another terminal:
-
-```console
-curl http://127.0.0.1:9337/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"Qwen3-0.6B-Q4_K_M","messages":[{"role":"user","content":"Hello"}]}'
+./skippy serve --model Qwen3-0.6B-Q4_K_M --prompt
 ```
 
 ## How Skippy serves a request

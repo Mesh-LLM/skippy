@@ -32,6 +32,10 @@ pub fn family(command: &Command) -> &'static str {
         Command::GpuBenchmark { .. } => "gpu_benchmark",
         Command::Prompt(_) => "prompt",
         Command::Serve(_) => "serve",
+        #[cfg(unix)]
+        Command::ServeManaged(_) => "serve_managed",
+        #[cfg(unix)]
+        Command::Manage(_) => "manage",
         Command::ExampleConfig => "example_config",
         Command::Models { .. } => "models",
         Command::PlanSplit(_) => "plan_split",

@@ -242,4 +242,6 @@ pub use local::{
 /// Startup handshakes and cancellation shared by embedded stage hosts.
 pub use skippy_serving::readiness;
 
+pub mod managed;
 pub mod multi_model;
+pub mod residency;

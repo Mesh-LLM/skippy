@@ -66,6 +66,12 @@ pub enum Command {
     Prompt(PromptArgs),
     /// Serve OpenAI and Anthropic APIs, or an explicitly selected stage transport.
     Serve(Box<ServeCommandArgs>),
+    /// Run an inference listener with local model lifecycle controls.
+    #[cfg(unix)]
+    ServeManaged(crate::managed::ServerArgs),
+    /// Operate a running server over its private Unix control socket.
+    #[cfg(unix)]
+    Manage(crate::managed::ClientArgs),
     ExampleConfig,
     /// Download models or inspect the shared Hugging Face cache.
     Models {
@@ -259,6 +265,15 @@ pub struct ServeOpenAiArgs {
     /// Local GGUF file to prepare and serve (first shard for multipart models).
     #[arg(long, conflicts_with = "config")]
     pub model_path: Option<PathBuf>,
+    /// Defer native loading until a request arrives.
+    #[arg(long)]
+    pub on_demand: bool,
+    /// Evict the unsplit model after this much idle time.
+    #[arg(long)]
+    pub idle_evict_secs: Option<u64>,
+    /// Capacity budget for the model residency controller.
+    #[arg(long)]
+    pub residency_budget_bytes: Option<u64>,
     /// Context size for a local model. Defaults to the VRAM-aware model plan (up to 128k).
     #[arg(long, conflicts_with = "config")]
     pub ctx_size: Option<u32>,
