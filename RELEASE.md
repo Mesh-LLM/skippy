@@ -39,8 +39,14 @@ native runtime under `native-runtimes/`, licenses and provenance. SHA-256 sideca
 and `release.json` bind the complete roster and source. Native manifests include
 ABI and llama recipe identities. CUDA release products compile and advertise the
 complete architecture lists from `ci/targets.json`; release preparation rejects
-native-only CUDA products. Only Skippy-owned `skippy-*` assets are published. No
-public registry or package-manager publication happens as a side effect.
+native-only CUDA products.
+
+The release also publishes `native-runtimes.json`, the catalog a host reads to
+download a runtime (`skippy runtime install`, and products that embed Skippy).
+Each entry names one of the release archives and its SHA-256, and `release.json`
+binds the catalog. Only the `skippy-*` archives, the catalog, `release.json` and
+their checksums are published. No public registry or package-manager publication
+happens as a side effect.
 
 The publisher uploads to a source-bound draft, downloads every asset, checks all
 hashes and the exact roster, then publishes. A partial draft may be resumed only

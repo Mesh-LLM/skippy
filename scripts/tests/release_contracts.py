@@ -1,5 +1,6 @@
 """Offline checks for release versioning and Git ref promotion."""
 
+import importlib.util
 import os
 import subprocess
 import sys
@@ -13,6 +14,68 @@ from lib.release_version import bump, parse_tag
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 TAG = "v0.81.0-rc.1"
+
+
+def release_script():
+    spec = importlib.util.spec_from_file_location("ci_release", SCRIPTS / "ci-release.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class RuntimeCatalogContract(unittest.TestCase):
+    """The catalog a host downloads names each release archive exactly once."""
+
+    def setUp(self):
+        self.release = release_script()
+        self.archives = {f"skippy-{TAG}-{variant}.tar.gz": digit * 64
+                         for variant, digit in (("linux-x86_64-cpu", "a"), ("darwin-aarch64-metal", "b"))}
+        self.value = self.release.catalog(TAG, [
+            self.release.catalog_entry(
+                {"id": f"skippy-native-runtime-{name}", "release_version": TAG[1:],
+                 "skippy_abi": "0.1.86", "url": None, "sha256": None},
+                TAG, name, sha256)
+            for name, sha256 in self.archives.items()
+        ])
+
+    def test_catalog_points_each_runtime_at_its_release_archive(self):
+        self.release.verify_catalog(self.value, TAG, self.archives)
+        self.assertEqual(self.value["release_version"], TAG[1:])
+        first = self.value["artifacts"][0]
+        self.assertEqual(first["url"], "https://github.com/general-inference/skippy/releases/"
+                         f"download/{TAG}/skippy-{TAG}-linux-x86_64-cpu.tar.gz")
+        self.assertEqual(first["sha256"], "a" * 64)
+
+    def test_installer_and_release_agree_on_the_catalog_location(self):
+        installer = (SCRIPTS.parent / "crates/skippy-runtime-install/src/types.rs").read_text()
+        self.assertIn(f'releases_url: "{self.release.RELEASES_URL}"', installer)
+        self.assertIn(f"/download/{{tag}}/{self.release.CATALOG}", installer)
+
+    def test_catalog_rejects_a_runtime_from_another_release_or_abi(self):
+        stale = {"id": "old", "release_version": "0.76.1", "skippy_abi": "0.1.86"}
+        with self.assertRaisesRegex(ValueError, "not built for release"):
+            self.release.catalog_entry(stale, TAG, "skippy.tar.gz", "a" * 64)
+        mixed = [dict(entry) for entry in self.value["artifacts"]]
+        mixed[1]["skippy_abi"] = "0.1.87"
+        with self.assertRaisesRegex(ValueError, "disagree on the Skippy ABI"):
+            self.release.catalog(TAG, mixed)
+
+    def test_verification_rejects_a_catalog_that_differs_from_the_archives(self):
+        def changed(edit):
+            value = {**self.value, "artifacts": [dict(entry) for entry in self.value["artifacts"]]}
+            edit(value)
+            return value
+
+        cases = (
+            lambda value: value["artifacts"][0].update(sha256="c" * 64),
+            lambda value: value["artifacts"].pop(),
+            lambda value: value["artifacts"][1].update(url=value["artifacts"][0]["url"]),
+            lambda value: value["artifacts"][0].update(url="https://example.invalid/runtime.tar.gz"),
+            lambda value: value.update(release_version="0.80.0"),
+        )
+        for edit in cases:
+            with self.assertRaises(ValueError):
+                self.release.verify_catalog(changed(edit), TAG, self.archives)
 
 
 class ReleaseContract(unittest.TestCase):
