@@ -151,10 +151,11 @@ Mesh-LLM/skippy/.github/workflows/depot-cache.yml@refs/heads/main
 
 With Depot enabled, `ci-pr.yml`, `ci-images-pr.yml`, and `docs-pr.yml` retain
 GitHub's ordinary PR triggers and call their runner-owning workflows from
-protected `main` without forwarding secrets. The read-only image-build
-workflow supplies the exact artifacts for the separate image publishers. The
-dispatcher jobs request
-`cache-mode: none`. This keeps GitHub's fork-run approval policy in effect.
+protected `main` without forwarding secrets. The image dispatcher enters
+through `ci.yml`, which calls the read-only image builders at its protected
+revision. The same builders supply exact artifacts for the image publishers.
+The dispatcher jobs request `cache-mode: none`. This keeps GitHub's fork-run
+approval policy in effect.
 Same-repository PRs to main continue to use the protected `ci.yml` path for
 code and native admission. The PR controller expects the producer for the
 active route. Refresh affected open PRs with a new PR event after cutover so

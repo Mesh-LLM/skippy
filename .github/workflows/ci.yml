@@ -159,6 +159,14 @@ env:
   # reports nothing. The key is a public ingestion token, not a secret.
   SKIPPY_POSTHOG_KEY: ${{ inputs.artifact_scope == 'release' && vars.SKIPPY_POSTHOG_KEY || '' }}
 jobs:
+  pr_image_builds:
+    # Enter through a reusable already on main. GitHub resolves the outer
+    # caller's ref even when its job is skipped during the cutover PR.
+    if: >-
+      github.repository == 'Mesh-LLM/skippy' && github.event_name == 'pull_request' &&
+      vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' &&
+      startsWith(github.workflow_ref, 'Mesh-LLM/skippy/.github/workflows/ci-images-pr.yml@')
+    uses: ./.github/workflows/ci-image-builds.yml
   changes:
     name: Select checks by path
     if: >-

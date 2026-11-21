@@ -101,7 +101,7 @@ test('the repository switch moves every hosted job to Depot', () => {
 });
 
 test('ordinary PRs call protected workflows with no cache access or publisher permissions', () => {
-  const workflows = { 'ci-pr': 'ci', 'ci-images-pr': 'ci-image-builds', 'docs-pr': 'docs' };
+  const workflows = { 'ci-pr': 'ci', 'ci-images-pr': 'ci', 'docs-pr': 'docs' };
   for (const [caller, callee] of Object.entries(workflows)) {
     const yaml = readFileSync(join(__dirname, '../workflows', caller + '.yml'), 'utf8');
     assert.ok(yaml.includes(`uses: Mesh-LLM/skippy/.github/workflows/${callee}.yml@main`));
@@ -110,6 +110,22 @@ test('ordinary PRs call protected workflows with no cache access or publisher pe
     const reusable = readFileSync(join(__dirname, '../workflows', callee + '.yml'), 'utf8');
     assert.doesNotMatch(reusable, /^(?:    )+\w+: write$/m);
   }
+});
+
+test('the protected image PR bridge routes only the image workflow', () => {
+  const bridge = workflow.split('\n  pr_image_builds:\n')[1].split('\n  changes:\n')[0];
+  const admission = bridge.match(/if: >-\n([\s\S]+?)\n    uses:/)[1];
+  const eligible = new Function('github', 'vars', 'startsWith', `return (${admission});`);
+  const event = {
+    repository: 'Mesh-LLM/skippy', event_name: 'pull_request',
+    workflow_ref: 'Mesh-LLM/skippy/.github/workflows/ci-images-pr.yml@refs/pull/136/merge',
+  };
+  const vars = { SKIPPY_DEPOT_RUNNERS_ENABLED: 'true' };
+  const startsWith = (value, prefix) => value.startsWith(prefix);
+  assert.equal(eligible(event, vars, startsWith), true);
+  assert.equal(eligible(event, {}, startsWith), false);
+  assert.equal(eligible({ ...event, workflow_ref: event.workflow_ref.replace('ci-images-pr', 'ci-pr') }, vars, startsWith), false);
+  assert.match(bridge, /uses: \.\/\.github\/workflows\/ci-image-builds\.yml/);
 });
 
 test('host CPU packages install Just on GitHub and Depot runners', () => {

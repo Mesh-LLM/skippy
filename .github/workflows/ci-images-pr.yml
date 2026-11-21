@@ -8,5 +8,8 @@ jobs:
       github.repository == 'Mesh-LLM/skippy' && vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true'
     permissions:
       contents: read
+      actions: read
+      packages: read
+      pull-requests: read
     cache-mode: none
-    uses: Mesh-LLM/skippy/.github/workflows/ci-image-builds.yml@main
+    uses: Mesh-LLM/skippy/.github/workflows/ci.yml@main
