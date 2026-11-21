@@ -372,6 +372,24 @@ CI passes and both family passes restore the same candidate. The CPU, Metal and
 CUDA family jobs consume immutable offline model caches and retain per-pass
 evidence. They receive no GitHub write credential.
 
+Candidate preparation can be rehearsed before merge from a clean local PR
+checkout, with the native build prerequisites above and
+`SKIPPY_REWRITER_LLVM_PREFIX` set:
+
+```sh
+just automation-run upgrade resolve --upstream FULL_UPSTREAM_SHA --force-certify false
+just automation-run upgrade prepare FULL_UPSTREAM_SHA
+```
+
+These commands do not push, merge, tag or publish. Preparation writes a candidate
+bundle only after regeneration and full patch replay succeed. It does not run
+family qualification. Core/model-support conflicts require a reviewed repair,
+not a wider automatic-update allowlist. Failed native preparation retains Git
+status, the source diff and the active failed patch (when available) under
+`target/llama-upgrade/diagnostics` before removing its temporary checkout; the
+workflow uploads that directory on failure. Local preparation does not bypass
+the protected-main admission checks for the full Actions pipeline.
+
 Only the publisher uses `SKIPPY_UPGRADE_APP_ID` and
 `SKIPPY_UPGRADE_APP_PRIVATE_KEY`, with repository-scoped Contents and Pull
 requests write permissions. It pushes only the verified candidate and opens a

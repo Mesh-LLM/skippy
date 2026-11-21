@@ -25,6 +25,25 @@ def resolve(upstream, force):
     output("certify", str(existing is None and (current != sha or force == "true")).lower())
 
 
+def save_preparation_diagnostics(checkout, destination):
+    """Keep patch failures inspectable after the disposable checkout is removed."""
+    source = checkout / ".deps/llama.cpp"
+    if not (source / ".git").is_dir():
+        return
+    destination.mkdir(parents=True, exist_ok=True)
+    for name, args in {
+        "source-status.txt": ("status", "--short"),
+        "source.diff": ("diff", "HEAD", "--"),
+        "failed.patch": ("am", "--show-current-patch=diff"),
+    }.items():
+        try:
+            text = git(source, *args)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+            # There is no active mail patch when failure occurs during compilation.
+            continue
+        (destination / name).write_text(text + "\n", encoding="utf-8")
+
+
 def prepare(upstream):
     validate_sha(upstream)
     root = clean_root()
@@ -36,11 +55,18 @@ def prepare(upstream):
         command(["git", "clone", "--no-hardlinks", "--no-checkout", str(root), str(checkout)], timeout=600)
         git(checkout, "checkout", "--detach", base)
         (checkout / PIN).write_text(upstream + "\n", encoding="utf-8")
-        regenerate(checkout)
-        env = {"LLAMA_WORKDIR": str(checkout / ".deps/llama.cpp"),
-               "LLAMA_PIN_FILE": str(checkout / PIN), "LLAMA_PATCH_DIR": str(checkout / "llama_cpp/patches")}
-        command(["just", "--justfile", str(checkout / "Justfile"), "llama-prepare"],
-                overrides=env, timeout=3600)
+        try:
+            regenerate(checkout)
+            env = {"LLAMA_WORKDIR": str(checkout / ".deps/llama.cpp"),
+                   "LLAMA_PIN_FILE": str(checkout / PIN), "LLAMA_PATCH_DIR": str(checkout / "llama_cpp/patches")}
+            command(["just", "--justfile", str(checkout / "Justfile"), "llama-prepare"],
+                    overrides=env, timeout=3600)
+        except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt):
+            try:
+                save_preparation_diagnostics(checkout, directory / "diagnostics")
+            except OSError as diagnostic_error:
+                print(f"could not retain preparation diagnostics: {diagnostic_error}", file=sys.stderr)
+            raise
         check_changes(checkout)
         git(checkout, "add", "--", *ALLOWED)
         timestamp = int(git(checkout, "show", "-s", "--format=%ct", base)) + 1
