@@ -95,7 +95,13 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: skippy-ci-${{ github.workflow }}-${{ inputs.artifact_scope || 'ci' }}-${{ github.event.pull_request.number || github.run_id }}
+  # Main pushes share one slot. GitHub's default queue replaces a pending run
+  # when another push arrives, and the running build finishes.
+  group: >-
+    skippy-ci-${{ github.workflow }}-${{ inputs.artifact_scope || 'ci' }}-${{
+      github.event.pull_request.number ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'main-push') ||
+      github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   CARGO_INCREMENTAL: '0'

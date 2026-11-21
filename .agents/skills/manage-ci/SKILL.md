@@ -104,8 +104,10 @@ contract; no downstream product's workflow topology applies here.
   Caches are accelerators, not artifact correctness or qualification evidence.
   Restore Cargo and compiler caches on native runners as well as hosted runners;
   image-provided tooling does not make fresh containers retain compiler outputs.
-- Cancel superseded PR validation only. Release and upgrade concurrency must
-  retain evidence and never cancel another release or an independent CI run.
+- Cancel in-progress validation only for superseded PRs. Main-push runs of
+  `ci.yml` share one running slot and one pending slot. Newer pushes replace
+  the pending run while the active run finishes. Release and upgrade concurrency
+  must retain evidence and never cancel another release or an independent CI run.
 - The code workflow's `CI` summary rejects failed, cancelled, or missing selected jobs;
   `PR checks` additionally covers the separate inference and image workflows.
   Upload diagnostic evidence on failure before cleanup.
