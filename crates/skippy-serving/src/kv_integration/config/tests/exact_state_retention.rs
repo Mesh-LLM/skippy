@@ -1,49 +1,6 @@
 use super::*;
 use crate::kv_integration::RadixResidentEntry;
 
-#[test]
-fn exact_state_retention_floor_survives_a_hard_cap_blind_to_recurrent_state() {
-    // Regression: the byte limits are derived from attention KV metadata,
-    // so hybrid snapshots (recurrent state the estimate cannot see) can
-    // push the retained working set past the hard cap. The retention floor
-    // must keep every concurrent session's entry; collapsing to a single
-    // entry made sessions evict each other on every request.
-    let radix = Mutex::new(UnifiedRadixCache::new());
-    let blobs = Mutex::new(CacheBlobStore::new(4));
-    let budget = StorageBudget::new();
-    // Each snapshot is 32 bytes; four of them (128) exceed the hard cap
-    // of 80 even though each individually fits the 8x headroom.
-    let oversized_for_attention_estimate = limits(10, 80);
-    for index in 0..4 {
-        store_exact_radix_record(
-            &radix,
-            &blobs,
-            512,
-            oversized_for_attention_estimate,
-            None,
-            None,
-            pending(
-                &format!("session-{index}"),
-                &[1, index + 2],
-                &distinct_payload(index as u8, 32),
-                &budget,
-            ),
-        )
-        .unwrap();
-    }
-    // Distinct blocks, so the retained set really is past the hard cap and
-    // the pre-floor policy would have evicted down to one entry.
-    assert!(blobs.lock().unwrap().physical_bytes() > 80);
-    let mut radix = radix.lock().unwrap();
-    assert_eq!(radix.stats().recurrent_entries, 4);
-    for index in 0..4 {
-        assert!(
-            radix.lookup_recurrent("model", &[1, index + 2]).is_some(),
-            "session {index} must retain its exact-state entry"
-        );
-    }
-}
-
 /// Payload bytes that dedupe into distinct 4-byte blocks per `seed`.
 fn distinct_payload(seed: u8, len: usize) -> Vec<u8> {
     (0..len)
@@ -174,12 +131,12 @@ fn retention_floor_keeps_each_sessions_latest_continuation() {
     let radix = Mutex::new(UnifiedRadixCache::new());
     let blobs = Mutex::new(CacheBlobStore::new(4));
     // Session A stores a prefill and a post-decode checkpoint between the
-    // other sessions' prefills. Five snapshots exceed the derived hard
-    // cap; the superseded prefill must go, not another session's only one.
+    // other sessions' prefills. Five snapshots exceed the soft cap; the
+    // superseded prefill must go, not another session's only one.
     store_sessions(
         &radix,
         &blobs,
-        limits(10, 80),
+        limits(10, 1_024),
         &[
             ("a-prefill", &[1, 2], 0),
             ("b", &[1, 3], 1),

@@ -148,21 +148,19 @@ pub enum StageKvMode {
 
 /// Byte budget for the exact-state catalog.
 ///
-/// `soft_bytes` is the stage cache budget, which is derived from attention KV
-/// metadata and therefore cannot account for the recurrent and convolution
-/// buffers an exact-state snapshot also carries. A single snapshot can
-/// legitimately exceed it, so the soft budget only bounds the catalog once it
-/// already holds a working set of `working_set_entries` conversations, one per
-/// lane, so concurrent sessions do not evict each other's latest turn.
-/// `hard_bytes` bounds that allowance except that the last indivisible
-/// snapshot is retained even when it exceeds the limit. Zero means unbounded
-/// for either byte field.
+/// `soft_bytes` is the stage cache budget. A single long conversation's
+/// snapshot can legitimately exceed it, so the soft budget only bounds the
+/// catalog once it already holds a working set of `working_set_entries`
+/// conversations, one per lane, so concurrent sessions do not evict each
+/// other's latest turn. `hard_bytes` bounds that allowance except that the
+/// last indivisible snapshot is retained even when it exceeds the limit. Zero
+/// means unbounded for either byte field.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ExactStateByteLimits {
     pub(crate) soft_bytes: u64,
     pub(crate) hard_bytes: u64,
-    /// The hard limit came from an operator budget rather than the
-    /// attention-derived estimate, so it is a strict ceiling.
+    /// The hard limit came from an operator budget rather than a multiple of
+    /// the stage budget; the over-limit warning reports which.
     pub(crate) hard_is_explicit: bool,
     pub(crate) working_set_entries: usize,
 }

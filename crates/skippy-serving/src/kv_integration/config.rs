@@ -812,7 +812,7 @@ fn store_exact_radix_record_with_codec(
             payload.release_from(&mut blobs)?;
         }
     }
-    enforce_exact_state_limits(radix, blobs, limits, max_entries, logical_bytes)?;
+    enforce_exact_state_limits(radix, blobs, limits, max_entries)?;
     #[cfg(test)]
     crate::frontend::capture_trace::log_stored_identity(&namespace, &token_ids);
 
@@ -1499,14 +1499,11 @@ mod tests {
     }
 
     #[test]
-    fn exact_working_set_is_bounded_by_the_retention_floor_not_the_ceiling() {
+    fn the_ceiling_bounds_the_working_set_below_the_retention_floor() {
         let radix = Mutex::new(UnifiedRadixCache::new());
         let blobs = Mutex::new(CacheBlobStore::new(4));
         let budget = StorageBudget::new();
 
-        // Six sessions' snapshots against byte limits smaller than one
-        // snapshot, as happens when the attention-derived estimate cannot see
-        // hybrid recurrent state.
         for (page_id, tokens, bytes) in [
             ("s1", [1, 2], b"aaaabbbb"),
             ("s2", [1, 3], b"ccccdddd"),
@@ -1519,7 +1516,7 @@ mod tests {
                 &radix,
                 &blobs,
                 8,
-                limits(4, 8),
+                limits(4, 24),
                 None,
                 None,
                 pending(page_id, &tokens, bytes, &budget),
@@ -1527,21 +1524,13 @@ mod tests {
             .unwrap();
         }
 
-        // The ceiling still bounds the working set above the retention floor:
-        // the two least-recently-used snapshots go. At the floor the ceiling
-        // yields, because collapsing to a single entry made concurrent
-        // sessions evict each other on every request.
+        // The soft cap would keep four sessions; three fit the ceiling.
         let mut radix = radix.lock().unwrap();
-        assert_eq!(radix.stats().recurrent_entries, 4);
-        assert!(radix.lookup_recurrent("model", &[1, 2]).is_none());
-        assert!(radix.lookup_recurrent("model", &[1, 3]).is_none());
-        for tokens in [[1, 4], [1, 5], [1, 6], [1, 7]] {
-            assert!(
-                radix.lookup_recurrent("model", &tokens).is_some(),
-                "the retention floor must keep the newest four sessions"
-            );
+        assert_eq!(radix.stats().recurrent_entries, 3);
+        for tokens in [[1, 5], [1, 6], [1, 7]] {
+            assert!(radix.lookup_recurrent("model", &tokens).is_some());
         }
-        assert_eq!(blobs.lock().unwrap().physical_bytes(), 32);
+        assert_eq!(blobs.lock().unwrap().physical_bytes(), 24);
     }
 
     #[test]

@@ -12,7 +12,6 @@ pub(super) fn enforce_exact_state_limits(
     blobs: &Mutex<CacheBlobStore>,
     limits: ExactStateByteLimits,
     max_entries: usize,
-    logical_bytes: u64,
 ) -> Result<()> {
     // Exact snapshots are indivisible, so one long conversation's snapshot can
     // legitimately exceed the soft cap. Hold one conversation per lane past
@@ -25,28 +24,25 @@ pub(super) fn enforce_exact_state_limits(
     evict_exact_entries_over(radix, blobs, limits.soft_bytes, conversations)?;
     // Zero means unbounded: no hard pass at all.
     if limits.hard_bytes > 0 {
-        // An explicit operator budget is a strict ceiling: only one
-        // indivisible snapshot may exceed it. The attention-derived default
-        // stretches to hold the working set, since it cannot see hybrid
-        // recurrent state and would otherwise collapse the catalog.
-        let (hard_limit, hard_floor) = if limits.hard_is_explicit {
-            (limits.hard_bytes, RetentionFloor::SingleSnapshot)
-        } else {
-            let floor_bytes = logical_bytes
-                .max(1)
-                .saturating_mul(u64::try_from(retention_floor).unwrap_or(u64::MAX));
-            (limits.hard_bytes.max(floor_bytes), conversations)
-        };
-        evict_exact_entries_over(radix, blobs, hard_limit, hard_floor)?;
+        // The hard limit is a strict ceiling, derived or explicit: only one
+        // indivisible snapshot may exceed it. Now that the stage budget counts
+        // recurrent state, the derived ceiling of eight budgets holds a
+        // snapshot per lane until their attention KV together passes four
+        // context windows.
+        evict_exact_entries_over(
+            radix,
+            blobs,
+            limits.hard_bytes,
+            RetentionFloor::SingleSnapshot,
+        )?;
         let retained = blobs
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .physical_bytes();
         if retained > limits.hard_bytes && exact_state_over_limit_warning_due() {
-            // Observable signal that the retained working set sits above the
-            // hard limit, e.g. the attention-derived estimate undercounts this
-            // stage's snapshots. Set an explicit exact-state budget when this
-            // repeats and memory must stay bounded.
+            // Observable signal that the catalog stays above the hard limit,
+            // because one snapshot alone exceeds it or in-flight restores
+            // hold the others. Raise the exact-state budget when this repeats.
             let _ = skippy_events::diagnostics::emit(
                 skippy_events::diagnostics::ServingDiagnostic::Warning {
                     message: "exact-state catalog retained more than its hard byte limit"
