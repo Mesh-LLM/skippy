@@ -8,5 +8,5 @@ case "$canary" in
   *) echo 'Canary must be true or false.' >&2; exit 2 ;;
 esac
 
-gh workflow run release.yml --repo general-inference/skippy --ref main \
+gh workflow run release.yml --repo Mesh-LLM/skippy --ref main \
   -f "version=$version" -f "canary=$canary"

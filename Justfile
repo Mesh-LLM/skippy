@@ -190,10 +190,19 @@ process-supervision-test:
 
 inference-contracts:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_contracts.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_markdown.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_nightly.py
+
+inference-publication-test:
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_publication.py
 
 automation-contracts: inference-contracts
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/automation_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/release_contracts.py
+
+[positional-arguments]
+inference-render-report format input *options:
+    @"{{ automation_python }}" scripts/inference-render-report.py "$@"
 
 [positional-arguments]
 inference-dispatch profile source output="target/ci-evidence/inference" *configuration:
@@ -352,5 +361,9 @@ inference-admit:
     @"{{ automation_python }}" scripts/inference-plan.py admit
 
 [positional-arguments]
-inference-matrix profile source:
+inference-matrix profile source *options:
     @"{{ automation_python }}" scripts/inference-plan.py matrix "$@"
+
+[positional-arguments]
+inference-publish-nightly evidence:
+    @"{{ automation_python }}" scripts/inference-publish-nightly.py "$@"

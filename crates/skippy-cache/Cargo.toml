@@ -5,8 +5,8 @@ license.workspace = true
 publish = false
 version.workspace = true
 description = "Cache primitives for Skippy staged runtime serving"
-repository = "https://github.com/general-inference/skippy"
-homepage = "https://github.com/general-inference/skippy"
+repository = "https://github.com/Mesh-LLM/skippy"
+homepage = "https://github.com/Mesh-LLM/skippy"
 
 [lib]
 name = "skippy_cache"

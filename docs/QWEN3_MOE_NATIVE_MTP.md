@@ -7,7 +7,7 @@ verifies every draft.
 
 ## The head
 
-The head is defined by `splitcoder.mtp.MTPHead` in `general-inference/models`:
+The separately trained head uses this layout:
 
 ```text
 h_t      trunk hidden state at position t, after the trunk's final RMSNorm

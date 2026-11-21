@@ -154,7 +154,7 @@ class ReleaseAdmissionTests(unittest.TestCase):
         env = {
             "GITHUB_EVENT_NAME": "workflow_dispatch",
             "GITHUB_REF": "refs/heads/main",
-            "GITHUB_WORKFLOW_REF": "general-inference/skippy/.github/workflows/release.yml@refs/heads/main",
+            "GITHUB_WORKFLOW_REF": "Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main",
             "GITHUB_RUN_ID": "123",
             "GITHUB_SHA": base,
         }

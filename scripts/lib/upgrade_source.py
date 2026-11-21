@@ -7,7 +7,7 @@ from pathlib import Path
 from .ci_process import command
 
 PIN = "llama_cpp/upstream.txt"
-WORKFLOW = "general-inference/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main"
+WORKFLOW = "Mesh-LLM/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main"
 ALLOWED = (PIN, "llama_cpp/patches/generated", "crates/skippy-ffi/src/bindings", "docs/native-api.md")
 
 

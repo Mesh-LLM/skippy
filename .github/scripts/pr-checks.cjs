@@ -34,7 +34,9 @@ module.exports = async function aggregate({ github, context, core }) {
       if (files.length < pr.changed_files) {
         throw new Error('GitHub returned an incomplete PR file list');
       }
-      const expected = expectedWorkflows(files);
+      const sameRepositoryPR = pr.base?.ref === 'main' && pr.head.repo?.id != null &&
+        pr.head.repo.id === pr.base.repo?.id;
+      const expected = expectedWorkflows(files, sameRepositoryPR);
       const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo,
         { ...repo, head_sha: source, per_page: 100 });
       const latest = new Map();
