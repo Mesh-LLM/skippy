@@ -69,6 +69,21 @@ function Resolve-RocmInstallRoot {
     return $null
 }
 
+function Test-RocmVersion([string]$Found, [string]$Expected) {
+    if (-not $Found) { return $false }
+    $found = $Found.Trim().Split('-')[0]
+    $expected = $Expected.Trim()
+    if ($found -eq $expected) { return $true }
+    # The Windows HIP SDK installs into a two-segment versioned root (7.2)
+    # for a three-segment pin (7.2.0): a zero patch is implied. A pin with a
+    # nonzero patch never matches the short form.
+    $expectedParts = $expected.Split('.')
+    $foundParts = $found.Split('.')
+    return ($foundParts.Count -eq 2 -and $expectedParts.Count -eq 3 -and
+        $expectedParts[2] -eq '0' -and
+        $foundParts[0] -eq $expectedParts[0] -and $foundParts[1] -eq $expectedParts[1])
+}
+
 function Resolve-RocmVersion([string]$Root) {
     $info = Join-Path $Root '.info\version'
     if (Test-Path $info) {
@@ -102,7 +117,7 @@ if ($actualSha256 -ne $ExpectedSha256.ToLowerInvariant()) {
 }
 
 $existing = Resolve-RocmInstallRoot
-if ($existing -and (Resolve-RocmVersion $existing) -eq $ExpectedVersion) {
+if ($existing -and (Test-RocmVersion (Resolve-RocmVersion $existing) $ExpectedVersion)) {
     Write-Host "HIP SDK $ExpectedVersion is already installed at $existing"
 } else {
     $installLog = Join-Path $env:RUNNER_TEMP 'hip-sdk-install.log'
@@ -118,7 +133,7 @@ if (-not $rocmRoot) {
 }
 
 $version = Resolve-RocmVersion $rocmRoot
-if ($version -ne $ExpectedVersion) {
+if (-not (Test-RocmVersion $version $ExpectedVersion)) {
     throw "HIP SDK at $rocmRoot reports version '$version', expected $ExpectedVersion"
 }
 

@@ -149,6 +149,15 @@ class Artifacts(unittest.TestCase):
         self.assertEqual(product.rocm_toolkit_version(Path(r"C:\Program Files\AMD\ROCm\7.2.0")), "7.2.0")
         self.assertIsNone(product.rocm_toolkit_version(Path("/opt/rocm")))
 
+    def test_rocm_versions_match_accepts_the_windows_short_root(self):
+        product = module("ci-product")
+        self.assertTrue(product.rocm_versions_match("7.2", "7.2.0"))
+        self.assertTrue(product.rocm_versions_match("7.2.0", "7.2.0"))
+        self.assertTrue(product.rocm_versions_match("7.2.4-93~24.04", "7.2.4"))
+        self.assertFalse(product.rocm_versions_match("7.2", "7.2.4"))
+        self.assertFalse(product.rocm_versions_match("7.1", "7.2.0"))
+        self.assertFalse(product.rocm_versions_match(None, "7.2.0"))
+
     def test_archive_preserves_executable_hardlink_and_internal_library_link(self):
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)

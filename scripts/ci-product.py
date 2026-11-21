@@ -58,6 +58,21 @@ def rocm_toolkit_version(root):
     return match.group(1) if match else None
 
 
+def rocm_versions_match(found, expected):
+    if found is None:
+        return False
+    found = found.split("-", 1)[0]
+    if found == expected:
+        return True
+    # The Windows HIP SDK installs into a two-segment root (7.2) for a
+    # three-segment pin (7.2.0): a zero patch is implied. A pin with a
+    # nonzero patch never matches the short form.
+    parts = expected.split(".")
+    short = found.split(".")
+    return (len(short) == 2 and len(parts) == 3 and parts[2] == "0"
+            and short[0] == parts[0] and short[1] == parts[1])
+
+
 def build_runtime(host, runtime):
     require_host(host)
     backend = runtime["backend"]
@@ -82,7 +97,7 @@ def build_runtime(host, runtime):
         rocm = Path(os.environ.get("ROCM_PATH", default_root))
         toolkit = runtime["toolkit"]
         version = rocm_toolkit_version(rocm)
-        if version is None or version.split("-", 1)[0] != toolkit:
+        if not rocm_versions_match(version, toolkit):
             found = "an unreadable version" if version is None else version
             raise ValueError(f"expected ROCm {toolkit}, found {found} at {rocm}")
         arches = runtime["gpu_architectures"]
