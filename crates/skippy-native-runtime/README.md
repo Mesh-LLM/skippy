@@ -273,6 +273,14 @@ Installed runtimes are stored under:
 Skippy can install the newly selected runtime, switch to it, and remove older
 runtime caches after success.
 
+`release_version` is always the Skippy workspace version: the host reads it from
+its own crate version and the packaging script stamps it from `Cargo.toml`.
+Every Skippy release is a new runtime identity, so a runtime cached by an
+earlier release is never reused, even when its native contents are unchanged.
+An upgraded host with no network needs the matching runtime supplied first
+(`--runtime-bundle` or a pre-populated cache); it does not fall back to an
+older release's cache.
+
 ## Load Plan Boundary
 
 This crate does not load dynamic libraries. `InstalledNativeRuntime::load_plan`

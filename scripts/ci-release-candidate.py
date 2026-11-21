@@ -86,8 +86,26 @@ def stage(tag):
         print(f"base={base}\nsource={candidate}\nprerelease={str(prerelease).lower()}", file=output)
 
 
+def promote_tag(tag, base, candidate):
+    """Publish the version commit as a tag one commit ahead of main.
+
+    The built-in Actions token cannot push to protected main, so main keeps its
+    version and the release is the tagged commit whose only parent is on main.
+    """
+    tag_ref = f"refs/tags/{tag}"
+    existing = remote_refs(tag_ref).get(tag_ref)
+    if existing not in (None, candidate):
+        raise ValueError(f"release tag already exists: {tag}")
+    git("fetch", "--no-tags", "origin", f"{MAIN}:refs/remotes/origin/main", remote=True)
+    git("merge-base", "--is-ancestor", base, "refs/remotes/origin/main")
+    if existing is None:
+        git("push", "origin", f"{candidate}:{tag_ref}", remote=True)
+
+
 def promote(tag, base, candidate):
     verify_commit(tag, base, candidate)
+    if os.environ.get("SKIPPY_RELEASE_TAG_ONLY"):
+        return promote_tag(tag, base, candidate)
     tag_ref = f"refs/tags/{tag}"
     refs = remote_refs(MAIN, tag_ref)
     if refs.get(tag_ref) == candidate:

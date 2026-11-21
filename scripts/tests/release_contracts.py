@@ -97,6 +97,27 @@ class ReleaseContract(unittest.TestCase):
         self.assertEqual(self.refs("refs/heads/main", tag_ref, candidate_ref),
                          {"refs/heads/main": candidate, tag_ref: candidate})
 
+    def test_tag_only_promotion_leaves_main_and_survives_a_moved_main(self):
+        candidate = self.stage()
+        tag_ref = f"refs/tags/{TAG}"
+        self.git("checkout", "--detach", self.base)
+        self.git("commit", "--allow-empty", "-m", "concurrent change")
+        advanced = self.git("rev-parse", "HEAD")
+        self.git("push", "origin", "HEAD:refs/heads/main")
+        self.git("checkout", "--detach", candidate)
+        self.env["SKIPPY_RELEASE_TAG_ONLY"] = "1"
+        self.release("promote", TAG, self.base, candidate)
+        self.release("promote", TAG, self.base, candidate)
+        self.assertEqual(self.refs("refs/heads/main", tag_ref),
+                         {"refs/heads/main": advanced, tag_ref: candidate})
+        self.git("fetch", "origin", "refs/heads/main:refs/remotes/origin/main", f"{tag_ref}:{tag_ref}")
+        check = [sys.executable, str(SCRIPTS / "ci-release.py"), "validate", TAG]
+        self.run_command(*check)
+        self.git("checkout", "--detach", advanced)
+        self.git("commit", "--allow-empty", "-m", "not a release")
+        self.git("tag", "-f", TAG)
+        self.assertNotEqual(self.run_command(*check, check=False).returncode, 0)
+
     def test_promotion_rejects_moved_main_and_occupied_tag(self):
         candidate = self.stage()
         tag_ref = f"refs/tags/{TAG}"

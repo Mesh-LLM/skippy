@@ -392,9 +392,7 @@ fn is_path(name: &str) -> bool {
         name,
         "config"
             | "model-path"
-            | "checkpoint-imatrix"
             | "mmproj"
-            | "hash-cache"
             | "topology"
             | "speculative-config"
             | "draft-model-path"
@@ -446,7 +444,7 @@ pub fn section(name: &str) -> &'static str {
     }
     match name {
         "ctx-size" => "kv",
-        "n-gpu-layers" => "execution",
+        "n-gpu-layers" | "gpu-id" => "execution",
         "mmproj" => "media",
         "bind-addr" | "model-id" | "default-max-tokens" | "guardrails" | "prompt" => "api",
         "config"
