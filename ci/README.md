@@ -175,9 +175,10 @@ The repository Actions variable `SKIPPY_DEPOT_RUNNERS_ENABLED=true` selects
 Depot for every job that otherwise uses a GitHub-hosted runner. This includes
 PR validation and its aggregate, code and package CI, compiler images and
 publishing, documentation and deployment, release validation and publication,
-the inference controllers, and llama upgrade preparation and publication. Most
+the inference controllers, and llama upgrade publication. Most
 Linux jobs use four-core Ubuntu 24.04 runners of the existing architecture.
-Graph Contracts and llama upgrade preparation use eight-core x64 runners. The
+Graph Contracts uses eight-core x64 runners. Llama upgrade preparation and repair
+use the JY native-contracts pool on Linux x64 or ARM64. The
 macOS CPU package uses Depot's macOS 15 ARM64 runner. Device jobs use their
 specified JY groups. Clearing the variable or setting it to `false` restores
 GitHub-hosted placement and direct PR workflow routing for subsequent runs.
@@ -534,7 +535,10 @@ The successful path has one full CI pass. A failed candidate may receive one
 agent repair followed by full CI on a fresh candidate. Preparation and repair
 run directly on the native JY Linux runner in group
 `jy-rnr_vfnz8k5p4yrh334` with labels `self-hosted`, `jy-linux-docker`, `Linux`
-and `X64`. Goose and its provider authentication come from that runner. These
+and `native-contracts`. Both Linux x64 and ARM64 machines can prepare CPU
+candidates; compiler caches remain architecture-scoped. An x64-only selector
+can leave preparation queued while the pool's ARM64 machines are idle.
+Goose and its provider authentication come from that runner. These
 jobs do not use the hosted CPU container, which would hide the runner
 installation. Just and GitHub CLI remain pinned; native prerequisites include
 LLVM/Clang 22 under `/usr/lib/llvm-22`. A preflight checks the repair executable

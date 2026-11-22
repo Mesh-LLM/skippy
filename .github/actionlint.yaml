@@ -1,6 +1,7 @@
 self-hosted-runner:
   labels:
     - jy-linux-docker
+    - native-contracts
     - skippy-ephemeral
     - family-256g
     - cpu

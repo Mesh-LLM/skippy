@@ -31,7 +31,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on:
       group: jy-rnr_vfnz8k5p4yrh334
-      labels: [self-hosted, jy-linux-docker, Linux, X64]
+      labels: [self-hosted, jy-linux-docker, Linux, native-contracts]
     timeout-minutes: 180
     permissions:
       contents: read
@@ -138,7 +138,7 @@ jobs:
       needs.candidate.outputs.validate == 'true' && needs.qualify.result == 'failure'
     runs-on:
       group: jy-rnr_vfnz8k5p4yrh334
-      labels: [self-hosted, jy-linux-docker, Linux, X64]
+      labels: [self-hosted, jy-linux-docker, Linux, native-contracts]
     defaults:
       run:
         shell: bash
