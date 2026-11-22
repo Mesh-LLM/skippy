@@ -1,6 +1,6 @@
 # Skippy continuous integration
 
-`ci.yml` reports `CI` for code checks and inference PR package smoke, and
+`ci.yml` reports `CI` for code checks and targeted package smoke on PRs/main, and
 `Full CI gate` for the complete package roster and Graph Contracts. Release callers
 require the full workflow result independently
 of the check name. The single required status is `PR checks`, the
@@ -44,6 +44,28 @@ macOS ARM64 Metal packages to build and serve a short inference request on real
 hardware. Both jobs wait for Quality canary when code checks apply. Docs-only
 and metadata-only PRs do not start CI. The CI result gate rejects missing,
 failed or unexpectedly skipped results.
+
+On code pushes to `main`, Quality canary still runs with the short CI profile.
+Inference-related changes additionally require the same Linux x64 CUDA 13 and
+macOS ARM64 Metal package/device smokes on the exact merged commit. Each device
+job builds its platform CLI locally in this profile. Native sources, patches,
+FFI, rewriter/build inputs and native CI wiring also select Graph Contracts.
+Packaging and native path lists live in `.github/path-filters.yml`; they extend
+only main selection and leave PR hardware requirements unchanged. Other
+code-only changes retain the canary without those additional jobs.
+
+Main runs classify changes since the most recent successful ancestor main-push
+CI run, rather than just the latest push's `before` SHA. This includes changes
+from pending runs replaced by concurrency coalescing and from failed runs. If
+previous coverage cannot be verified, CI conservatively requires both device
+smokes and Graph Contracts. Path selection and all selected jobs use the pushed
+SHA. The final gate requires the selected work and rejects missing, skipped,
+failed or cancelled required results. Exact promoted-release receipt reuse
+continues to avoid repeating already validated work.
+
+The full eight-runtime matrix remains on nightly/full/release runs. Spark
+qualification retains its existing labeled-PR, nightly, manual and release
+triggers; a main merge does not start the Spark ladder.
 
 The protected inference workflow uses native `pull_request_target` path filters
 for the same inference inputs. PR qualification is manual: it runs only when
@@ -287,6 +309,10 @@ each hosted runner only needs space for one toolkit. Both CUDA toolkits build
 on native x86_64 and ARM64 Ubuntu runners.
 Use `skippy-ci-cuda12:latest-arm64` and `skippy-ci-cuda13:latest-arm64` for
 Linux ARM64. The `latest` tags serve Linux x86_64. ROCm builds for Linux x86_64.
+Before pruning documentation, CUDA images retain the supplied toolkit's EULA
+or matching `cuda-cudart` package copyright at `/usr/local/cuda/EULA.txt`.
+Image builds and smoke checks require this file so runtime packaging can copy
+the original redistribution terms into `licenses/NVIDIA-CUDA-LICENSE.txt`.
 The images include Rust and native build tools and compile a small
 backend-specific kernel during the image build. PRs build,
 smoke, and stream each exact image into a gzip-compressed archive without
@@ -409,7 +435,9 @@ artifact smoke is recorded separately from inference evidence.
 
 `just ci-plan` validates the target matrix with `jq`. The package and
 smoke commands use Python 3.9 or later. Release inventory uses Python
-3.11 or later for TOML parsing. Set `SKIPPY_PYTHON` to select the interpreter.
+3.11 or later for TOML parsing. With uv installed, Justfile recipes run Python
+on the interpreter `.python-version` names. Set `SKIPPY_PYTHON` to select
+another; the shell scripts read it too.
 
 1. Each platform's CPU job builds and verifies its CLI once using
    `just ci-host`. Inference PR jobs build their two CLIs locally because they

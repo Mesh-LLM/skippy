@@ -22,13 +22,20 @@ contract; no downstream product's workflow topology applies here.
   native paths trigger CI on code or inference PRs and on code pushes to main.
   Inside CI, declarative PR filters select code checks and require Linux x64
   CUDA 13 and macOS ARM64 Metal package and device smoke on inference PRs.
+  Main pushes retain the short profile: inference-related, packaging or native
+  changes select those same two device smokes, and native paths additionally
+  select Graph Contracts after canary. The declarative packaging/native filters
+  extend main only; do not change PR admission or hardware requirements.
+  Classify main changes since a verified successful ancestor main-push CI run
+  so coalesced and failed pushes cannot hide untested inputs. When previous
+  coverage is unavailable, require both device smokes and Graph Contracts.
   The protected inference workflow uses the same inference paths in its native
   trigger for the seven Spark configurations. PR qualification is manual: the
   jobs run only when the PR carries the `qualify` label, while the workflow
   still triggers on path matches so an intentionally skipped run satisfies
-  the `PR checks` aggregate; nightly and releases stay
-  automatic. `PR checks` reads protected workflow trigger paths to determine
-  which runs it expects. Quality canary
+  the `PR checks` aggregate; nightly and releases stay automatic. Main pushes
+  do not start the Spark ladder. `PR checks` reads protected workflow trigger
+  paths to determine which runs it expects. Quality canary
   runs CI automation tests before build checks and gates package jobs. Full CI
   runs Graph Contracts in parallel with eight build, package and smoke jobs.
   Each CPU job supplies a shared platform CLI to its backend jobs. Routine CI

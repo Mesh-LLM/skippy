@@ -1045,7 +1045,10 @@ fn batch_settings_reach_the_stage_config() {
     );
     assert_eq!(stage.batch.decode_window_us, Some(500));
     assert_eq!(stage.batch.prefill_window_per_token_us, Some(40));
-    assert_eq!(stage.sample_threads, Some(6));
+    assert_eq!(
+        stage.sample_threads,
+        skippy_protocol::SampleThreads::from(Some(6))
+    );
 }
 
 #[test]

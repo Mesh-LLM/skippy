@@ -65,14 +65,14 @@ test('combined image workflow cannot be missed before it is scheduled', async ()
   const triggers = [...workflow.matchAll(/paths: \[([^\]]+)\]/g)];
   const expectedPaths = ['.github/workflows/ci-images.yml', '.github/workflows/ci-images-pr.yml',
     '.github/workflows/ci-image-builds.yml', 'ci/image-targets.json', 'ci/Dockerfile*',
-    'ci/targets.json', 'rust-toolchain.toml', 'Justfile'];
+    'ci/targets.json', 'scripts/ci-preserve-cuda-license.sh', 'rust-toolchain.toml', 'Justfile'];
   assert.equal(triggers.length, 2);
   for (const trigger of triggers) assert.deepEqual(JSON.parse('[' + trigger[1].replaceAll("'", '"') + ']'), expectedPaths);
   const pr = readFileSync(join(__dirname, '../workflows/ci-images-pr.yml'), 'utf8');
   assert.equal(pr.match(/paths: \[([^\]]+)\]/)[1], triggers[0][1]);
   for (const filename of [
     'ci/Dockerfile', 'ci/Dockerfile.cuda', 'ci/Dockerfile.gpu', 'ci/Dockerfile.gpu.dockerignore',
-    'ci/targets.json', 'rust-toolchain.toml', 'Justfile', '.github/workflows/ci-images.yml'
+    'ci/targets.json', 'scripts/ci-preserve-cuda-license.sh', 'rust-toolchain.toml', 'Justfile', '.github/workflows/ci-images.yml'
   ]) {
     assert.equal((await evaluate({ files: [{ filename }] })).state, 'pending');
     assert.equal((await evaluate({ files: [{ filename }], runs: [run('ci.yml'), run('inference.yml', 2), run('ci-images.yml', 3)] })).state, 'success');
@@ -129,11 +129,11 @@ test('native trigger patterns distinguish metadata, code-only, inference and mix
 test('native CI and inference triggers match the internal route lists', () => {
   const lists = text => [...text.matchAll(/^ {2,6}- '([^']+)'$/gm)].map(match => match[1]);
   const config = readFileSync(join(__dirname, '../path-filters.yml'), 'utf8');
-  const [code, inference] = config.split(/^inference:\n/m).map(lists);
+  const filter = name => lists(config.match(new RegExp(`^${name}:\\n((?:  .*\\n|\\n)*)`, 'm'))[1]);
+  const code = filter('code'), inference = filter('inference');
   const ci = readFileSync(join(__dirname, '../workflows/ci.yml'), 'utf8');
   const [prPaths, targetPaths, pushPaths] = ci.split(/^  (?:pull_request_target|push):\n/m);
   const spark = readFileSync(join(__dirname, '../workflows/inference.yml'), 'utf8');
-  assert.deepEqual(lists(pushPaths.split(/^  schedule:\n/m)[0]), code);
   assert.deepEqual(lists(spark.split(/^  schedule:\n/m)[0]), inference);
   const ciOnly = ['.gi/templates.yaml', 'ci/inference-ladder.json',
     'ci/inference-artifacts.json', 'ci/inference-quality.json'];
@@ -141,12 +141,20 @@ test('native CI and inference triggers match the internal route lists', () => {
   const exclusion = code.findIndex(path => path.startsWith('!'));
   assert.deepEqual(lists(prPaths), [...code.slice(0, exclusion), ...ciOnly, ...code.slice(exclusion)]);
   assert.deepEqual(lists(targetPaths), lists(prPaths));
+  assert.deepEqual(lists(pushPaths.split(/^  schedule:\n/m)[0]), lists(prPaths));
   const depotPr = readFileSync(join(__dirname, '../workflows/ci-pr.yml'), 'utf8');
   assert.deepEqual(lists(depotPr), lists(prPaths));
   const includes = lists(prPaths).filter(path => !path.startsWith('!'));
   for (const path of inference.filter(path => !path.startsWith('!'))) {
     assert.ok(includes.some(trigger => trigger === path ||
       (trigger.endsWith('/**') && path.startsWith(trigger.slice(0, -2)))), `CI never triggers for ${path}`);
+  }
+  const mainIncludes = lists(pushPaths.split(/^  schedule:\n/m)[0]).filter(path => !path.startsWith('!'));
+  for (const name of ['packaging', 'native']) {
+    for (const path of filter(name).filter(path => !path.startsWith('!'))) {
+      assert.ok(mainIncludes.some(trigger => trigger === path ||
+        (trigger.endsWith('/**') && path.startsWith(trigger.slice(0, -2)))), `Main CI never triggers for ${name}: ${path}`);
+    }
   }
 });
 

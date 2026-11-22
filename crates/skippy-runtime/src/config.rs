@@ -140,11 +140,11 @@ pub struct RuntimeConfig {
     /// `Some(true)` use them wherever the backend supports it; `Some(false)`
     /// keeps ordinary attention over the whole pool.
     pub kv_row_attention: Option<bool>,
-    /// Threads that sample the requests of one decode wave. `None` and
-    /// `Some(0)` use the calling thread plus as many pooled helpers as the
-    /// wave and the hardware allow; `Some(1)` samples on the calling thread
-    /// alone; any other value caps the calling thread plus helpers.
-    pub sample_threads: Option<u32>,
+    /// Threads that sample the requests of one decode wave. `None` uses the
+    /// calling thread plus as many pooled helpers as the wave and the
+    /// hardware allow; one samples on the calling thread alone; any other
+    /// value caps the calling thread plus helpers.
+    pub sample_threads: Option<NonZeroU32>,
     /// Whether the backend offloads host tensor operations to device. `None`
     /// preserves llama.cpp's derived default (enabled).
     pub op_offload: Option<bool>,
@@ -411,7 +411,7 @@ impl RuntimeConfig {
                 kv_lazy_clear: tristate(self.kv_lazy_clear),
                 kv_release_pages: tristate(self.kv_release_pages),
                 kv_row_attention: tristate(self.kv_row_attention),
-                sample_threads: self.sample_threads.unwrap_or(0),
+                sample_threads: self.sample_threads.map_or(0, NonZeroU32::get),
                 op_offload: tristate(self.op_offload),
                 no_host_buffer: self.no_host_buffer,
                 check_tensors: self.check_tensors,
@@ -1182,7 +1182,7 @@ mod tests {
             kv_lazy_clear: Some(false),
             kv_release_pages: Some(false),
             kv_row_attention: Some(true),
-            sample_threads: Some(6),
+            sample_threads: NonZeroU32::new(6),
             ..RuntimeConfig::default()
         }
         .as_raw()?

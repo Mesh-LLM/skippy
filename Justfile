@@ -1,4 +1,6 @@
-automation_python := env("SKIPPY_PYTHON", "python3")
+# macOS's python3 is 3.9, older than the 3.12 the report tooling and the AIPerf
+# lock target; with uv installed, use the interpreter .python-version names.
+automation_python := env("SKIPPY_PYTHON", `command -v uv >/dev/null 2>&1 && test -f .python-version && uv python find 2>/dev/null || command -v python3`)
 llama_dir := env("SKIPPY_LLAMA_DIR", ".deps/llama.cpp")
 macos_target := env("MACOSX_DEPLOYMENT_TARGET", "")
 export MACOSX_DEPLOYMENT_TARGET := if macos_target == "" { trim(read(justfile_directory() / "scripts/lib/macos-deployment-target.txt")) } else { macos_target }
@@ -197,6 +199,7 @@ inference-publication-test:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_publication.py
 
 automation-contracts: inference-contracts
+    @"{{ automation_python }}" scripts/tests/ci_cuda_license.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/automation_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/graph_contracts.py
@@ -275,10 +278,12 @@ ci-gpu-image-smoke backend arch="amd64":
       test "$SKIPPY_CI_BACKEND" = "{{ backend }}"
       case "$SKIPPY_CI_BACKEND" in
         cuda13)
+          test -s /usr/local/cuda/EULA.txt
           /usr/local/cuda-13.1/bin/nvcc --version | grep -F "release 13.1,"
           test -e /usr/local/cuda-13.1/lib64/libcudart.so
           ;;
         cuda12)
+          test -s /usr/local/cuda/EULA.txt
           /usr/local/cuda-12.9/bin/nvcc --version | grep -F "release 12.9,"
           test -e /usr/local/cuda-12.9/lib64/libcudart.so
           ;;
