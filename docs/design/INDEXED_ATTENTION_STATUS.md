@@ -11,7 +11,7 @@ actual assigned backend and stored KV representation; unsupported row layouts
 retain ordinary attention on that backend. Model names do not select a path.
 Radix ownership, recurrent checkpoints and persistent L3 remain separate.
 
-The [layout-matched full-model control](https://mlflow.internal.generalinference.xyz/mlflow/#/experiments/6/runs/9562cd5443cd4bd78573dcf0eb61ca38)
+The layout-matched full-model control (MLflow run `9562cd5443cd4bd78573dcf0eb61ca38`)
 passes all 23 mandatory comparisons byte-for-byte at the unchanged `1e-6`
 bound for the fixed Qwen3.5-35B/F16 fixture. Vanilla kernels independently
 reproduce the full PR's logits, saved states and restored continuations when
@@ -50,10 +50,10 @@ generated-content parity or results for the final two-pool candidate.
 
 | Backend / model at c4 | Skippy output tok/s | Standard llama output tok/s | Difference |
 |---|---:|---:|---:|
-| [CUDA / hybrid dense 4B](https://mlflow.internal.generalinference.xyz/mlflow/#/experiments/6/runs/da26189089e5493f9dbb5a59e8ce3c57) | 26.476 | 26.654 | -0.67% |
-| [CUDA / hybrid MoE 35B](https://mlflow.internal.generalinference.xyz/mlflow/#/experiments/6/runs/30aa91d8233f4a599d8436f4673fa446) | 24.971 | 25.056 | -0.34% |
-| [CUDA / attention MoE 30B](https://mlflow.internal.generalinference.xyz/mlflow/#/experiments/6/runs/7ae025fc9ac741758d0b0c9e604e2796) | 15.782 | 13.705 | +15.16% |
-| [M3 Metal / hybrid dense 4B](https://mlflow.internal.generalinference.xyz/mlflow/#/experiments/6/runs/33bc478fecf44f3bbe8e5861610b4f99) | 26.613 | 26.228 | +1.47% |
+| CUDA / hybrid dense 4B (MLflow run `da26189089e5493f9dbb5a59e8ce3c57`) | 26.476 | 26.654 | -0.67% |
+| CUDA / hybrid MoE 35B (MLflow run `30aa91d8233f4a599d8436f4673fa446`) | 24.971 | 25.056 | -0.34% |
+| CUDA / attention MoE 30B (MLflow run `7ae025fc9ac741758d0b0c9e604e2796`) | 15.782 | 13.705 | +15.16% |
+| M3 Metal / hybrid dense 4B (MLflow run `33bc478fecf44f3bbe8e5861610b4f99`) | 26.613 | 26.228 | +1.47% |
 
 Metal TTFT p95 remains worse in that pair (74.58 versus 29.81 seconds). The
 dense CUDA pair failed in the benchmark client after its exact HTTP cache
@@ -62,22 +62,22 @@ retained. The original Gemma ordinary-attention resident failure reproduces
 with the old `00983cf4` runtime at the same observed deltas; neither failure is
 waived. The final candidate's actual two-pool GPU tests are separate evidence.
 
-The [owning Metal runtime's targeted M1 gates](https://mlflow.internal.generalinference.xyz/mlflow/#/experiments/6/runs/fe742c2cf8944ef69e0fdce624475938)
+The owning Metal runtime's targeted M1 gates (MLflow run `fe742c2cf8944ef69e0fdce624475938`)
 pass all five native/admission tests with clean postchecks. Gemma F16 and Q8
 each execute 13 full-attention and 13 sliding-window row nodes on MTL0;
 resident fork logits have zero differences and both page comparisons are exact.
 Dense F16/Q8 execute 36 row nodes, while stored F32 preserves the selected Metal
 ordinary-attention conversion. These tests retain the original `1e-6` limit.
 
-The [final CUDA runtime gates](https://mlflow.internal.generalinference.xyz/mlflow/#/experiments/6/runs/accb9ce48b87441888fc1f4fb100a99f)
+The final CUDA runtime gates (MLflow run `accb9ce48b87441888fc1f4fb100a99f`)
 pass the operator catalog, six resident storage pairs, exact four-lane/32-step
 checkpoint continuation and fresh-process L3 restore. The producer reused
 unchanged CUDA kernel objects and rebuilt the changed graph consumers; all 19
 numeric exits and 59 artifact hashes pass audit.
 
-The [final CUDA Gemma F16/Q8 gates](https://mlflow.internal.generalinference.xyz/mlflow/#/experiments/6/runs/a459675abb7240088b65f2892d0c663c)
+The final CUDA Gemma F16/Q8 gates (MLflow run `a459675abb7240088b65f2892d0c663c`)
 execute all 26 attention layers through row nodes, with zero fork-logit
-differences and exact restored pages. The [final dense CUDA gates](https://mlflow.internal.generalinference.xyz/mlflow/#/experiments/6/runs/602d580a52b443c79acd38c920766a80)
+differences and exact restored pages. The final dense CUDA gates (MLflow run `602d580a52b443c79acd38c920766a80`)
 also pass F16, Q8 and mixed Q8/F16 with all 36 row nodes and the same unchanged
 resident bound. These actual-model checks are distinct from the CPU two-pool
 graph fixture and do not relabel the older ordinary-attention failures.
@@ -198,7 +198,7 @@ gates; actual F16 attention uses the vector kernel. Its complete same-host c4
 pair measures 26.805 Skippy versus 26.577 standard llama output tokens/s,
 69 requests and 18,713 outputs per arm with zero errors. This single pair is
 interim evidence, not a complete ABBAAB group. Its verified metrics and artifacts
-are in [the existing MLflow experiment](https://mlflow.internal.generalinference.xyz/mlflow/#/experiments/6/runs/90be7573cb6c49fcb3cdc7032861f656).
+are in the existing MLflow experiment (MLflow run `90be7573cb6c49fcb3cdc7032861f656`).
 The older measurements below remain attributed to their original source;
 they do not qualify the new dispatch. The full four-model c1/c2/c4 ABBAAB sweep
 will record a new campaign within the existing MLflow experiment

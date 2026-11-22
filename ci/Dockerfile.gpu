@@ -66,17 +66,10 @@ ARG BACKEND
 ARG TOOLKIT_VERSION
 ARG TARGETARCH
 
-LABEL org.opencontainers.image.source="https://github.com/general-inference/skippy" \
+LABEL org.opencontainers.image.source="https://github.com/Mesh-LLM/skippy" \
       org.opencontainers.image.description="Skippy ${BACKEND} CI toolchain" \
       org.opencontainers.image.version="${TOOLKIT_VERSION}" \
       io.skippy.ci.backend="${BACKEND}"
-ARG DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential ca-certificates clang clang-format clang-tidy cmake curl \
-      git libclang-dev libclang-rt-dev libcurl4-openssl-dev libedit-dev \
-      libssl-dev libzstd-dev lld llvm-dev mold ninja-build patchelf pkg-config jq python3 \
-      rustup xz-utils zlib1g-dev zstd \
-    && rm -rf /var/lib/apt/lists/*
 
 ENV CARGO_HOME=/opt/rust/cargo \
     RUSTUP_HOME=/opt/rust/rustup \

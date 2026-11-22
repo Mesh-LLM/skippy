@@ -25,10 +25,10 @@ env:
   CARGO_PROFILE_BENCH_DEBUG: '0'
 jobs:
   admission:
-    if: github.repository == 'general-inference/skippy' && github.ref == 'refs/heads/main'
+    if: github.repository == 'Mesh-LLM/skippy' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 20
     outputs:
       tag: ${{ steps.admit.outputs.tag }}
@@ -88,7 +88,7 @@ jobs:
       JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
   verify:
     needs: [admission, validation, inference, documentation_validation]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -120,7 +120,7 @@ jobs:
     needs: [admission, verify]
     if: ${{ !inputs.canary }}
     environment: release
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 60
     permissions:
       contents: write
@@ -229,7 +229,7 @@ jobs:
         run: gh release edit "$RELEASE_TAG" --draft=false --prerelease="$PRERELEASE"
   documentation:
     needs: [admission, publish]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -240,7 +240,8 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22.23.0'
-          cache: npm
+          cache: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED != 'true' && 'npm' || '' }}
+          package-manager-cache: false
           cache-dependency-path: docs-site/package-lock.json
       - name: Install pinned documentation tooling
         run: just docs-install
@@ -257,7 +258,7 @@ jobs:
     if: ${{ !cancelled() && needs.verify.result == 'success' && (inputs.canary || needs.documentation.result == 'success') }}
     permissions:
       contents: write
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0

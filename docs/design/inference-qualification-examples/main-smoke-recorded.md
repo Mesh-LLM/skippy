@@ -1,6 +1,6 @@
 # Inference qualification
 
-**Passed** · pr profile · `3f34c26a1811` · 2026-11-21 03:57 UTC · Run [main-smoke-recorded](https://github.com/general-inference/skippy/actions/runs/44863668933)
+**Passed** · pr profile · `3f34c26a1811` · 2026-11-21 03:57 UTC · Run [main-smoke-recorded](https://github.com/Mesh-LLM/skippy/actions/runs/44863668933)
 
 Recorded main workflow dispatch. All seven configurations passed. Six timing receipts were available. No comparison baseline was published for this run.
 

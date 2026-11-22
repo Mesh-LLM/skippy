@@ -68,7 +68,7 @@ class RuntimeCatalogContract(unittest.TestCase):
         self.release.verify_catalog(self.value, TAG, self.archives)
         self.assertEqual(self.value["release_version"], TAG[1:])
         first = self.value["artifacts"][0]
-        self.assertEqual(first["url"], "https://github.com/general-inference/skippy/releases/"
+        self.assertEqual(first["url"], "https://github.com/Mesh-LLM/skippy/releases/"
                          f"download/{TAG}/skippy-{TAG}-linux-x86_64-cpu.tar.gz")
         self.assertEqual(first["sha256"], "a" * 64)
 

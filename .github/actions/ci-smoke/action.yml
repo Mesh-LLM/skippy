@@ -33,7 +33,7 @@ runs:
         name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-product-${{ inputs.runtime_id }}
         path: dist/products/${{ inputs.runtime_id }}
     - name: Restore immutable Qwen3 smoke fixture
-      if: env.SKIPPY_CI_MODEL == ''
+      if: ${{ !startsWith(runner.name, 'depot-') && env.SKIPPY_CI_MODEL == '' }}
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: target/ci-models/Qwen3-0.6B-Q8_0.gguf

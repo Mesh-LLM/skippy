@@ -1,66 +1,43 @@
 name: CI images
-
 on:
   pull_request:
-    paths: ['.github/workflows/ci-images.yml', 'ci/Dockerfile*', 'ci/targets.json', 'rust-toolchain.toml', 'ci/images.just']
+    paths: ['.github/workflows/ci-images.yml', '.github/workflows/ci-images-pr.yml', '.github/workflows/ci-image-builds.yml', 'ci/image-targets.json', 'ci/Dockerfile*', 'ci/targets.json', 'rust-toolchain.toml', 'ci/images.just']
   push:
     branches: [main]
-    paths: ['.github/workflows/ci-images.yml', 'ci/Dockerfile*', 'ci/targets.json', 'rust-toolchain.toml', 'ci/images.just']
+    paths: ['.github/workflows/ci-images.yml', '.github/workflows/ci-images-pr.yml', '.github/workflows/ci-image-builds.yml', 'ci/image-targets.json', 'ci/Dockerfile*', 'ci/targets.json', 'rust-toolchain.toml', 'ci/images.just']
   workflow_dispatch:
-
+    inputs:
+      build_only:
+        description: Build and test images without publishing
+        type: boolean
+        default: false
 permissions:
   contents: read
   packages: read
-
 concurrency:
-  group: skippy-ci-images-${{ github.event.pull_request.number || 'main' }}
+  group: skippy-ci-images-${{ github.workflow }}-${{ github.event.pull_request.number || 'main' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
   cpu-build:
-    name: Build and test CPU image
     if: >-
-      ${{ !(github.repository == 'general-inference/skippy' &&
-      github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    env:
-      SOURCE_REVISION: ${{ github.sha }}
-      SKIPPY_CI_CACHE_REF: ghcr.io/mesh-llm/skippy-ci-cpu:latest
-    steps:
-      - &cpu_checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-
-      - &cpu_setup
-        uses: ./.github/actions/setup
-        with:
-          cache: 'false'
-
-      - &cpu_login
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - &cpu_build
-        name: Build CPU image
-        run: just ci-image-build
-
-      - &cpu_smoke
-        name: Smoke test CPU image
-        run: time just ci-image-smoke
-
+      (github.event_name != 'pull_request' || vars.SKIPPY_DEPOT_RUNNERS_ENABLED != 'true') &&
+      !(github.repository == 'Mesh-LLM/skippy' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.build_only)))
+    uses: ./.github/workflows/ci-image-builds.yml
+    with:
+      image-set: cpu
+  gpu-build:
+    if: github.event_name != 'pull_request' || vars.SKIPPY_DEPOT_RUNNERS_ENABLED != 'true'
+    uses: ./.github/workflows/ci-image-builds.yml
+    with:
+      image-set: gpu
+      build-images: ${{ !(github.repository == 'Mesh-LLM/skippy' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.build_only))) }}
   cpu-publish:
     name: Build, test and publish CPU image
     if: >-
-      github.repository == 'general-inference/skippy' &&
+      github.repository == 'Mesh-LLM/skippy' &&
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-24.04
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.build_only))
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 65
     permissions:
       contents: read
@@ -69,11 +46,22 @@ jobs:
       SOURCE_REVISION: ${{ github.sha }}
       SKIPPY_CI_CACHE_REF: ghcr.io/mesh-llm/skippy-ci-cpu:latest
     steps:
-      - *cpu_checkout
-      - *cpu_setup
-      - *cpu_login
-      - *cpu_build
-      - *cpu_smoke
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build CPU image
+        run: just ci-image-build
+      - name: Smoke test CPU image
+        run: time just ci-image-smoke
       - name: Verify and publish smoke-tested image
         run: |
           set -euo pipefail
@@ -87,107 +75,52 @@ jobs:
           docker image tag "$local_image" "$SKIPPY_CI_CACHE_REF"
           docker image push "$SKIPPY_CI_CACHE_REF"
 
-  gpu-build:
-    name: Build and test ${{ matrix.backend }} image (${{ matrix.arch }})
+  gpu-publish:
+    name: Build, test and publish ${{ matrix.backend }} image (${{ matrix.arch }})
+    needs: gpu-build
     if: >-
-      ${{ !(github.repository == 'general-inference/skippy' &&
+      github.repository == 'Mesh-LLM/skippy' &&
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.build_only))
+    runs-on: >-
+      ${{ matrix.arch == 'arm64' && (vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-arm-4' || 'ubuntu-24.04-arm') ||
+          (vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04') }}
+    timeout-minutes: 150
     strategy:
       fail-fast: false
-      matrix: &gpu-image-matrix
-        include:
-          - backend: cuda12
-            arch: amd64
-            runner: ubuntu-24.04
-            toolkit_version: '12.9.2'
-            toolkit_base: 'nvidia/cuda:12.9.2-devel-ubuntu24.04@sha256:420850a3fd665171b3f1fd08946c51d50468d732a46d6c42345ea04444755048'
-          - backend: cuda12
-            arch: arm64
-            runner: ubuntu-24.04-arm
-            toolkit_version: '12.9.2'
-            toolkit_base: 'nvidia/cuda:12.9.2-devel-ubuntu24.04@sha256:fd13aa4b2b769b9ffece066fbf6ca7cf733509f85fef4b5e432fe7c0b5782f70'
-          - backend: cuda13
-            arch: amd64
-            runner: ubuntu-24.04
-            toolkit_version: '13.1.2'
-            toolkit_base: 'nvidia/cuda:13.1.2-devel-ubuntu24.04@sha256:952e42d23230610a2714c8484f38e9c934ed68e6f9c9c7fac62dcd5f98858a6e'
-          - backend: cuda13
-            arch: arm64
-            runner: ubuntu-24.04-arm
-            toolkit_version: '13.1.2'
-            toolkit_base: 'nvidia/cuda:13.1.2-devel-ubuntu24.04@sha256:369b61cfc40a36830d246f0a14004a716aee72f4c520ee719b73d2b47e8bd9ce'
-          - backend: rocm
-            arch: amd64
-            runner: ubuntu-24.04
-            toolkit_version: '7.2.4'
-            toolkit_base: 'rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054'
+      matrix: ${{ fromJSON(needs.gpu-build.outputs.gpu-matrix) }}
+    permissions:
+      contents: read
+      packages: write
     env:
       SOURCE_REVISION: ${{ github.sha }}
       SKIPPY_CI_CACHE_REF: ghcr.io/mesh-llm/skippy-ci-${{ matrix.backend }}:${{ matrix.arch == 'arm64' && 'latest-arm64' || 'latest' }}
     steps:
-      - &gpu_checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
-
-      - &gpu_setup
-        uses: ./.github/actions/setup
+      - uses: ./.github/actions/setup
         with:
           cache: 'false'
-
-      - &gpu_cleanup
-        name: Free unused runner disk space
+      - name: Free unused runner disk space
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
           df -h /
-
-      - &gpu_login
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - &gpu_build
-        name: Build image
+      - name: Build image
         env:
           BACKEND: ${{ matrix.backend }}
           ARCH: ${{ matrix.arch }}
           TOOLKIT_BASE: ${{ matrix.toolkit_base }}
           TOOLKIT_VERSION: ${{ matrix.toolkit_version }}
         run: just ci-gpu-image-build "$BACKEND" "$TOOLKIT_BASE" "$TOOLKIT_VERSION" "$ARCH"
-
-      - &gpu_smoke
-        name: Smoke test image
+      - name: Smoke test image
         run: time just ci-gpu-image-smoke '${{ matrix.backend }}' '${{ matrix.arch }}'
-
-  gpu-publish:
-    name: Build, test and publish ${{ matrix.backend }} image (${{ matrix.arch }})
-    if: >-
-      github.repository == 'general-inference/skippy' &&
-      github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 150
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      fail-fast: false
-      matrix: *gpu-image-matrix
-    env:
-      SOURCE_REVISION: ${{ github.sha }}
-      SKIPPY_CI_CACHE_REF: ghcr.io/mesh-llm/skippy-ci-${{ matrix.backend }}:${{ matrix.arch == 'arm64' && 'latest-arm64' || 'latest' }}
-    steps:
-      - *gpu_checkout
-      - *gpu_setup
-      - *gpu_cleanup
-      - *gpu_login
-      - *gpu_build
-      - *gpu_smoke
       - name: Verify and publish smoke-tested image
         env:
           BACKEND: ${{ matrix.backend }}

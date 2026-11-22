@@ -222,7 +222,7 @@
       "outcome": "passed",
       "source_sha": "3f34c26a18118bd139452a8376ffe28c5d23d26a",
       "started_at": "2026-11-21T03:57:11Z",
-      "url": "https://github.com/general-inference/skippy/actions/runs/44863668933",
+      "url": "https://github.com/Mesh-LLM/skippy/actions/runs/44863668933",
       "note": "Recorded main workflow dispatch. All seven configurations passed. Six timing receipts were available. No comparison baseline was published for this run.",
       "configurations": [
         {

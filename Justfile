@@ -1,3 +1,5 @@
+import 'ci/images.just'
+
 automation_python := env("SKIPPY_PYTHON", "python3")
 llama_dir := env("SKIPPY_LLAMA_DIR", ".deps/llama.cpp")
 macos_target := env("MACOSX_DEPLOYMENT_TARGET", "")
