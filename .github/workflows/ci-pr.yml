@@ -43,5 +43,5 @@ jobs:
       actions: read
       packages: read
       pull-requests: read
-    cache-mode: none
+    cache-mode: read
     uses: Mesh-LLM/skippy/.github/workflows/ci.yml@main

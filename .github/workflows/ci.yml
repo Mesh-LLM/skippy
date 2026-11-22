@@ -101,9 +101,9 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: Short checks or complete native/package qualification
+        description: Short checks, complete native/package qualification, or Depot sccache smoke
         type: choice
-        options: [pr, full]
+        options: [pr, full, sccache]
         default: full
       cuda_architecture_mode:
         description: CUDA architectures for the assigned GPU or the release architecture set
@@ -156,6 +156,48 @@ env:
   # reports nothing. The key is a public ingestion token, not a secret.
   SKIPPY_POSTHOG_KEY: ${{ inputs.artifact_scope == 'release' && vars.SKIPPY_POSTHOG_KEY || '' }}
 jobs:
+  sccache_seed:
+    name: Populate the Depot compiler cache
+    if: >-
+      github.workflow_ref == 'Mesh-LLM/skippy/.github/workflows/ci.yml@refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' && inputs.profile == 'sccache'
+    runs-on: depot-ubuntu-24.04-4
+    cache-mode: write
+    timeout-minutes: 10
+    outputs:
+      scope: ${{ steps.scope.outputs.value }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - id: scope
+        run: echo "value=smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/sccache
+        with:
+          scope: ${{ steps.scope.outputs.value }}
+      - run: just --justfile ci/sccache-smoke.just run seed
+  sccache_read:
+    name: Verify Depot compiler cache hits and read-only misses
+    needs: sccache_seed
+    runs-on: depot-ubuntu-24.04-4
+    cache-mode: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - uses: ./.github/actions/sccache
+        with:
+          scope: ${{ needs.sccache_seed.outputs.scope }}
+      - run: just --justfile ci/sccache-smoke.just run read
   pr_image_builds:
     # Enter through a reusable already on main. GitHub resolves the outer
     # caller's ref even when its job is skipped during the cutover PR.
@@ -168,6 +210,7 @@ jobs:
     name: Select checks by path
     if: >-
       github.repository == 'Mesh-LLM/skippy' &&
+      (github.event_name != 'workflow_dispatch' || inputs.profile != 'sccache') &&
       (github.event_name != 'pull_request' ||
         vars.SKIPPY_DEPOT_RUNNERS_ENABLED != 'true' ||
         startsWith(github.workflow_ref, 'Mesh-LLM/skippy/.github/workflows/ci-pr.yml@')) &&

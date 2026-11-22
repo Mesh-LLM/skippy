@@ -93,23 +93,39 @@ test('the repository switch moves every hosted job to Depot', () => {
     const labels = [...yaml.matchAll(/^    runs-on: (.+)\n((?:      .+\n)*)/gm)]
       .map(([, label, continuation]) => `${label} ${continuation.trim().replaceAll(/\s+/g, ' ')}`.trim());
     assert.ok(labels.some(label => label.includes('SKIPPY_DEPOT_RUNNERS_ENABLED')), name);
-    for (const label of labels) {
+    const smokeJobs = name === 'ci' ? workflow.split('\n  pr_image_builds:')[0] : '';
+    const smokeLabels = [...smokeJobs.matchAll(/^    runs-on: (.+)$/gm)].map(([, label]) => label);
+    assert.deepEqual(smokeLabels, name === 'ci' ? ['depot-ubuntu-24.04-4', 'depot-ubuntu-24.04-4'] : []);
+    for (const label of labels.slice(smokeLabels.length)) {
       if (name === 'llama-upgrade' && label === '${{ matrix.runner }}') continue;
       assert.match(label, /vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true'.*depot-/, name);
     }
   }
 });
 
-test('ordinary PRs call protected workflows with no cache access or publisher permissions', () => {
+test('ordinary PRs call protected workflows with scoped cache access and read-only permissions', () => {
   const workflows = { 'ci-pr': 'ci', 'ci-images-pr': 'ci', 'docs-pr': 'docs' };
   for (const [caller, callee] of Object.entries(workflows)) {
     const yaml = readFileSync(join(__dirname, '../workflows', caller + '.yml'), 'utf8');
     assert.ok(yaml.includes(`uses: Mesh-LLM/skippy/.github/workflows/${callee}.yml@main`));
-    assert.match(yaml, /^    cache-mode: none$/m);
+    assert.match(yaml, caller === 'ci-pr' ? /^    cache-mode: read$/m : /^    cache-mode: none$/m);
     assert.doesNotMatch(yaml, /runs-on:|secrets:|: write$/m);
     const reusable = readFileSync(join(__dirname, '../workflows', callee + '.yml'), 'utf8');
     assert.doesNotMatch(reusable, /^(?:    )+\w+: write$/m);
   }
+});
+
+test('Depot compiler cache smoke runs only on manual protected main and uses two cache modes', () => {
+  const [seed, read] = workflow.split('\n  sccache_seed:\n')[1]
+    .split('\n  pr_image_builds:\n')[0].split('\n  sccache_read:\n');
+  assert.match(seed, /github\.workflow_ref == 'Mesh-LLM\/skippy\/\.github\/workflows\/ci\.yml@refs\/heads\/main'/);
+  assert.match(seed, /github\.event_name == 'workflow_dispatch' && inputs\.profile == 'sccache'/);
+  assert.match(seed, /^    cache-mode: write$/m);
+  assert.match(read, /^    needs: sccache_seed$/m);
+  assert.match(read, /^    cache-mode: read$/m);
+  assert.match(read, /needs\.sccache_seed\.outputs\.scope/);
+  const changes = workflow.split('\n  changes:\n')[1].split('\n  plan:\n')[0];
+  assert.match(changes, /github\.event_name != 'workflow_dispatch' \|\| inputs\.profile != 'sccache'/);
 });
 
 test('the protected image PR bridge routes only the image workflow', () => {

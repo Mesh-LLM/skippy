@@ -153,29 +153,27 @@ GitHub's ordinary PR triggers and call their runner-owning workflows from
 protected `main` without forwarding secrets. The image dispatcher enters
 through `ci.yml`, which calls the read-only image builders at its protected
 revision. The same builders supply exact artifacts for the image publishers.
-The dispatcher jobs request `cache-mode: none` and retain GitHub's fork-run
-approval policy.
+The CI dispatcher requests `cache-mode: read` for sccache. The image and docs
+dispatchers request `cache-mode: none`. All retain GitHub's fork-run approval
+policy.
 Same-repository PRs to main continue to use the protected `ci.yml` path for
 code and native admission. The PR controller expects the producer for the
 active route. Refresh affected open PRs with a new PR event after cutover so
 their selected workflows run against the current head.
 
-Depot Actions cache entries are shared across branches in a repository.
-Ordinary Depot jobs skip shared Cargo, compiler, model, native source, and
-npm caches. sccache uses the local runner disk. Keep automatic Depot Cache
-connections off so PR jobs cannot receive a second cache credential. Depot
-WebDAV sccache can be evaluated separately with a credential restricted to
-trusted jobs. GitHub-hosted fallback and JY actions retain their cache paths.
+Depot routes sccache's GitHub Actions backend to its repository-wide cache.
+sccache writes only when building the exact protected `main` commit on push,
+schedule, or manual dispatch with a write-capable job cache mode. PR and other
+branch builds use `SCCACHE_GHA_RW_MODE=READ_ONLY`. Ordinary Depot jobs skip
+shared Cargo, model, native source, and npm caches.
 [Actions cache behavior](https://depot.dev/docs/cache/integrations/github-actions)
-· [Depot sccache integration](https://depot.dev/docs/cache/integrations/sccache)
+· [sccache Actions backend](https://github.com/mozilla/sccache/blob/main/docs/GHA.md)
 
 Leave `SKIPPY_DEPOT_RUNNERS_ENABLED` unset while merging the workflows and
-configuring their runner-group refs. The protected canary restored its marker
-with `cache-mode: read`, and the Depot cache service also accepted a disposable
-write reservation in that mode. The canary uploaded no data for the reservation.
-The dispatcher mode `none` still needs verification. Verify that PR jobs
-cannot write to the shared cache before enabling the full cutover.
-[Protected cache canary](https://github.com/Mesh-LLM/skippy/actions/runs/44963991220)
+configuring their runner-group refs. Add `ci-image-builds.yml` once it exists
+on `main`. Dispatch `CI` on `main` with `profile=sccache` while the switch is
+off. Check that the first Depot job writes a compiler cache entry and the
+second job records one cache hit, one deliberate miss, and zero writes.
 
 After enabling the switch, verify full CI and `CI images` with
 `build_only=true`, then check one ordinary PR and one same-repository PR
