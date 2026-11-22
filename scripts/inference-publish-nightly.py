@@ -122,10 +122,7 @@ def publish(api, fetch_file, add, delete, evidence, identity, report_output=None
         shutil.copyfile(AUDITS, output / "comparability.json")
         charts = dataset_charts(report)
         export_charts(charts, output)
-        for index in range(1, len(charts) + 1):
-            copy = output / f"reports/{run_id}-{attempt}" / image_path(index)
-            copy.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(output / image_path(index), copy)
+        export_charts(health_charts(health_view(report, run["id"])), output / f"reports/{run_id}-{attempt}")
         (output / "README.md").write_text(dataset_card(report, charts), encoding="utf-8")
         staged = {file.relative_to(output).as_posix(): file for file in output.rglob("*") if file.is_file()}
         operations = [add(path_in_repo=name, path_or_fileobj=file) for name, file in sorted(staged.items())]

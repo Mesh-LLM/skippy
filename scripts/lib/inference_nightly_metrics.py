@@ -78,7 +78,8 @@ def benchmark_definition(profile, mode, backend="cuda"):
         functions["scripts/inference-execute.py"].append("prepare_split")
     files = ("ci/inference-quality.json",)
     if profile == "pr":
-        functions["scripts/lib/inference_checks.py"].append("streaming")
+        functions["scripts/lib/inference_checks.py"].extend(["streaming", "request"])
+        functions["scripts/lib/inference_nightly_metrics.py"] = ["smoke_metrics"]
         functions["scripts/lib/inference_throughput.py"] = ["collect", "totals"]
     else:
         functions["scripts/lib/inference_checks.py"].append("performance")
