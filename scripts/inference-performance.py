@@ -219,7 +219,16 @@ def build_arms():
     plan = native_plan()
     inference_metal.chip()
     WORK.mkdir(parents=True, exist_ok=True)
-    write_json(BUILT, [build(arm, WORK / f'build-{arm["label"]}.log') for arm in plan["arms"]])
+    try:
+        write_json(BUILT, [build(arm, WORK / f'build-{arm["label"]}.log') for arm in plan["arms"]])
+    finally:
+        # execute() is the only other place build logs reach the artifact
+        # directory, and it never runs after a build failure.
+        output = os.environ.get("JIANYANG_ARTIFACT_DIR")
+        if output:
+            Path(output).mkdir(parents=True, exist_ok=True)
+            for log in WORK.glob("build-*.log"):
+                (Path(output) / log.name).write_bytes(log.read_bytes())
 
 
 def ready(server, seconds):
