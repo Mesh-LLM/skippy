@@ -22,21 +22,17 @@ fn digest_hex(bytes: &[u8]) -> String {
 }
 
 fn bundled_recipe(crate_dir: &std::path::Path) -> (String, String) {
-    let roster_path = crate_dir.join("src/split-certified.json");
-    println!("cargo:rerun-if-changed={}", roster_path.display());
-    let roster: serde_json::Value = serde_json::from_slice(
-        &fs::read(&roster_path).expect("read bundled split certification roster"),
-    )
-    .expect("parse bundled split certification roster");
-    let recipe = roster
-        .get("native_recipe")
-        .and_then(serde_json::Value::as_object)
-        .expect("split certification roster native_recipe");
+    let recipe_path = crate_dir.join("src/native-recipe.json");
+    println!("cargo:rerun-if-changed={}", recipe_path.display());
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&fs::read(&recipe_path).expect("read bundled native recipe"))
+            .expect("parse bundled native recipe");
+    let recipe = metadata.as_object().expect("native recipe object");
     let field = |name: &str| {
         recipe
             .get(name)
             .and_then(serde_json::Value::as_str)
-            .unwrap_or_else(|| panic!("split certification roster native_recipe.{name}"))
+            .unwrap_or_else(|| panic!("native recipe {name}"))
             .to_string()
     };
     (field("llama_upstream_sha"), field("patch_queue_sha256"))
@@ -44,7 +40,7 @@ fn bundled_recipe(crate_dir: &std::path::Path) -> (String, String) {
 
 fn series_patches(patch_dir: &Path, subdir: &str) -> Vec<(String, PathBuf)> {
     // Keep this series validation and ordering contract in lockstep with
-    // tools/xtask source::ordered_patch_members and split_roster::queue. Together they
+    // scripts/lib/upgrade_selection.py::write_native_recipe. Together they
     // define the v2 patch_queue_sha256 consumed below.
     let directory = patch_dir.join(subdir);
     if !directory.exists() {
@@ -114,7 +110,7 @@ fn main() {
     if !upstream_path.is_file() && !patch_dir.is_dir() {
         // crates.io packages cannot contain files outside this crate. The
         // repository CI validates the source recipe before packaging; a
-        // packaged crate retains the exact recipe embedded in its roster.
+        // packaged crate retains the exact recipe embedded in its native recipe.
         let (upstream, patch_digest) = bundled_recipe(&crate_dir);
         println!("cargo:rustc-env=SKIPPY_LLAMA_UPSTREAM_SHA={upstream}");
         println!("cargo:rustc-env=SKIPPY_PATCH_QUEUE_SHA256={patch_digest}");

@@ -121,7 +121,7 @@ recomputes its decision. Dirty worktree results can still be used for
 diagnostics.
 
 For KV-affecting PRs and pushes to `main`, CI runs one dense fixture inside
-the Metal and Linux x64 CUDA 13 package jobs after device smoke. It compares
+the Metal and Linux ARM64 CUDA 13 package jobs after device smoke. It compares
 cold, warm L1, and L3 restart outputs and checks that the selected cache tier
 actually restored the expected tokens. Full CI, including nightly, release and
 llama upgrade validation, runs all four cases on Metal and Linux ARM64 CUDA 13

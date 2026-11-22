@@ -473,9 +473,6 @@ pub struct PlanSplitArgs {
     pub lanes: u32,
     #[arg(long, default_value_t = 0, allow_hyphen_values = true)]
     pub n_gpu_layers: i32,
-    /// Experiment with a native recipe absent from the release certification roster.
-    #[arg(long)]
-    pub allow_uncertified_split: bool,
     /// New directory for stage configs and their admission descriptors; never overwritten.
     #[arg(long)]
     pub output_dir: PathBuf,
@@ -520,7 +517,6 @@ impl From<PlanSplitArgs> for skippy_commands::split::PlanSplitCommand {
             ctx_size: args.ctx_size,
             lanes: args.lanes,
             n_gpu_layers: args.n_gpu_layers,
-            allow_uncertified_split: args.allow_uncertified_split,
             output_dir: args.output_dir,
         }
     }
@@ -531,30 +527,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn split_planning_requires_explicit_experimental_admission() {
-        for experimental in [false, true] {
-            let mut argv = vec![
-                "skippy",
-                "plan-split",
-                "--model-path",
-                "model.gguf",
-                "--worker",
-                "127.0.0.1:9400",
-                "--worker",
-                "127.0.0.1:9401",
-                "--output-dir",
-                "plan",
-            ];
-            if experimental {
-                argv.push("--allow-uncertified-split");
-            }
-            let cli = Cli::try_parse_from(argv).unwrap();
-            let Command::PlanSplit(args) = cli.command else {
-                panic!("expected split planner");
-            };
-            let command: skippy_commands::split::PlanSplitCommand = args.into();
-            assert_eq!(command.allow_uncertified_split, experimental);
-        }
+    fn split_planning_uses_native_admission_without_a_family_flag() {
+        let argv = [
+            "skippy",
+            "plan-split",
+            "--model-path",
+            "model.gguf",
+            "--worker",
+            "127.0.0.1:9400",
+            "--worker",
+            "127.0.0.1:9401",
+            "--output-dir",
+            "plan",
+        ];
+        assert!(Cli::try_parse_from(argv).is_ok());
+        let mut removed_flag = argv.to_vec();
+        removed_flag.push("--allow-uncertified-split");
+        assert!(Cli::try_parse_from(removed_flag).is_err());
     }
 
     #[test]

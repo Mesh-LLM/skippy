@@ -1,7 +1,6 @@
 name: CI PR
 on:
   pull_request:
-    # Include the inference-only inputs as well as the code filter.
     paths:
       - 'crates/**'
       - 'skippy-api-rs/**'
@@ -13,20 +12,15 @@ on:
       - '.github/actions/**'
       - '.github/scripts/**'
       - '.github/path-filters.yml'
-      - '.github/workflows/ci.yml'
-      - '.github/workflows/ci-pr.yml'
-      - '.github/workflows/inference.yml'
-      - '.github/workflows/llama-upgrade.yml'
+      - '.github/actionlint.yaml'
+      - '.github/workflows/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'rust-toolchain.toml'
       - 'Justfile'
-      - 'ci/targets.json'
-      - 'ci/llama-canary/**'
+      - '.python-version'
+      - 'ci/**'
       - '.gi/templates.yaml'
-      - 'ci/inference-ladder.json'
-      - 'ci/inference-artifacts.json'
-      - 'ci/inference-quality.json'
       - '!**/*.md'
       - '!**/*.mdx'
       - '!**/*.rst'

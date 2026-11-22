@@ -1,9 +1,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } = require('node:fs');
-const { join } = require('node:path');
 const { tmpdir } = require('node:os');
 const { spawnSync } = require('node:child_process');
+const { join } = require('node:path');
 
 const workflow = readFileSync(join(__dirname, '../workflows/ci.yml'), 'utf8');
 const section = workflow.split('\n  gate:\n')[1];
@@ -13,20 +13,22 @@ const declared = section.match(/    needs: \[([\s\S]+?)\]/)[1].split(',').map(s 
 const targets = JSON.parse(readFileSync(join(__dirname, '../../ci/targets.json'), 'utf8'));
 const rows = targets.runtimes.filter(row => row.enabled !== false && targets.enabled_hosts.includes(row.host));
 const packageJobs = rows.map(row => `package_${row.id.replaceAll('-', '_')}`);
-const prPackages = ['package_darwin_aarch64_metal', 'package_linux_x86_64_cuda13'];
-const spark = 'smoke_linux_aarch64_cuda13';
-const releaseSmokes = ['release_smoke_linux_x86_64_cuda12', 'release_smoke_linux_aarch64_cuda12'];
+const prPackages = ['package_darwin_aarch64_metal', 'package_linux_aarch64_cuda13'];
+const releaseSmokes = ['release_smoke_linux_x86_64_cuda12', 'release_smoke_linux_aarch64_cuda12', 'release_smoke_linux_x86_64_cuda13'];
 
-function results({ code = true, inference = false, kv = false, full = false, release = false, hostedRequiresNative = false } = {}) {
-  const selected = code || inference || kv;
+function results({ automation = true, code = true, packages = false, native = false, kv = false, full = false, release = false, hostedRequiresNative = false } = {}) {
+  packages ||= kv;
+  const selected = code || packages;
   const required = ['changes'];
+  if (automation) required.push('automation');
   if (selected) required.push('plan');
   if (code) required.push('quality');
-  if (full) required.push('native_contracts', ...packageJobs, spark);
-  else if (inference || kv) required.push(...prPackages);
+  if (full) required.push('native_contracts', ...packageJobs);
+  else if (packages) required.push(...prPackages);
+  if (native) required.push('native_contracts');
   if (release) required.push(...releaseSmokes);
   const needs = Object.fromEntries(declared.map(job => [job, { result: required.includes(job) ? 'success' : 'skipped' }]));
-  needs.changes.outputs = { code: String(code), inference: String(inference), kv: String(kv), hosted_requires_native: String(hostedRequiresNative) };
+  needs.changes.outputs = { automation: String(automation), code: String(code), packages: String(packages), native: String(native), kv: String(kv), hosted_requires_native: String(hostedRequiresNative) };
   if (selected) needs.plan.outputs = { profile: full ? 'full' : 'pr', runtimes: JSON.stringify({ include: rows }) };
   return needs;
 }
@@ -51,33 +53,108 @@ test('all eight runtime packages match the planned matrix and depend on the cana
     assert.match(body, /^    needs: \[plan, quality[\],]/m);
     assert.ok(body.includes(`runtime-id: ${row.id}\n`));
     if (row.backend !== 'cpu') assert.ok(body.includes(`package_${row.host.replaceAll('-', '_')}_cpu`));
-    assert.equal(body.includes("needs.changes.outputs.inference == 'true'"), prPackages.includes(job));
+    assert.equal(body.includes("needs.changes.outputs.packages == 'true'"), prPackages.includes(job));
     assert.equal(body.includes("kv-profile:"), prPackages.includes(job));
   }
   assert.doesNotThrow(() => gate(results({ full: true })));
 });
 
-test('inference and KV changes require the two short package and smoke jobs', () => {
-  for (const options of [{}, { code: false }, { inference: true }, { code: false, inference: true }, { code: false, kv: true }, { kv: true }]) {
+test('only package-affecting pull requests require the two package and smoke jobs', () => {
+  for (const options of [{}, { code: false }, { packages: true }, { code: false, packages: true }]) {
     assert.doesNotThrow(() => gate(results(options)));
   }
-  for (const options of [{ inference: true }, { kv: true }]) {
-    for (const job of prPackages) {
-      const missingSmoke = results(options);
-      missingSmoke[job].result = 'skipped';
-      assert.throws(() => gate(missingSmoke), new RegExp(job));
-    }
+  const needs = results({ packages: true });
+  for (const job of prPackages) {
+    const missingSmoke = structuredClone(needs);
+    missingSmoke[job].result = 'skipped';
+    assert.throws(() => gate(missingSmoke), new RegExp(job));
   }
   const unexpectedSmoke = results();
   unexpectedSmoke[prPackages[0]].result = 'success';
   assert.throws(() => gate(unexpectedSmoke), /must be skipped/);
-  const missingSelection = results();
-  delete missingSelection.changes.outputs.kv;
+});
+
+test('automation-only PRs require successful offline checks and skip all builds', () => {
+  assert.doesNotThrow(() => gate(results({ code: false })));
+  assert.doesNotThrow(() => gate(results({ automation: false, code: false })));
+  for (const result of ['failure', 'cancelled', 'skipped', undefined]) {
+    const needs = results({ code: false });
+    if (result === undefined) delete needs.automation;
+    else needs.automation.result = result;
+    assert.throws(() => gate(needs), /automation/);
+  }
+  for (const decision of ['automation', 'code', 'packages', 'native', 'kv', 'hosted_requires_native']) {
+    const needs = results({ code: false });
+    delete needs.changes.outputs[decision];
+    assert.throws(() => gate(needs), /Path selection/);
+  }
+});
+
+test('package smoke waits for automation and every applicable source check', () => {
+  for (const job of prPackages) {
+    const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
+    const condition = body.match(/    if: >-\n([\s\S]+?)\n    runs-on:/)[1]
+      .replace('${{', '').replace('}}', '');
+    const selected = new Function('needs', 'cancelled', `return (${condition})`);
+    for (const code of [false, true]) {
+      assert.equal(selected(results({ code, packages: true }), () => false), true);
+      for (const result of ['failure', 'cancelled', 'skipped']) {
+        const needs = results({ code, packages: true });
+        needs.automation.result = result;
+        assert.equal(selected(needs, () => false), false);
+      }
+      const needs = results({ code, packages: true });
+      needs.quality.result = code ? 'skipped' : 'failure';
+      assert.equal(selected(needs, () => false), false);
+    }
+    assert.equal(selected(results(), () => false), false);
+    assert.equal(selected(results({ full: true }), () => false), true);
+    assert.equal(selected(results({ packages: true }), () => true), false);
+  }
+});
+
+test('ARM64 owns routine CUDA device smoke and x64 retains exact release device smoke', () => {
+  const arm = workflow.split('\n  package_linux_aarch64_cuda13:\n')[1].split(/\n  \w+:\n/)[0];
+  const row = rows.find(row => row.id === 'linux-aarch64-cuda13');
+  assert.ok(arm.includes(`group: ${row.runner_group}`));
+  assert.ok(arm.includes(`labels: ${JSON.stringify(row.runner).replaceAll(',', ', ')}`));
+  assert.match(arm, /host-id: linux-aarch64\n/);
+  assert.match(arm, /build-cli:.*profile == 'pr'/);
+  assert.doesNotMatch(arm, /smoke: artifact/);
+  const x64 = workflow.split('\n  package_linux_x86_64_cuda13:\n')[1].split(/\n  \w+:\n/)[0];
+  assert.match(x64, /skippy-ci-cuda13:latest\n/);
+  assert.match(x64, /smoke: artifact\n/);
+  const release = workflow.split('\n  release_smoke_linux_x86_64_cuda13:\n')[1].split(/\n  \w+:\n/)[0];
+  assert.match(release, /needs: \[package_linux_x86_64_cuda13\]/);
+  assert.match(release, /runtime_id: linux-x86_64-cuda13\n/);
+  assert.match(release, /download-package: 'true'/);
+});
+
+test('targeted main validation requires device smokes and selected Graph Contracts', () => {
+  const needs = results({ packages: true, native: true });
+  assert.doesNotThrow(() => gate(needs));
+  for (const job of ['quality', 'native_contracts', ...prPackages]) {
+    for (const result of ['skipped', 'failure', 'cancelled', undefined]) {
+      const failed = structuredClone(needs);
+      if (result === undefined) delete failed[job];
+      else failed[job].result = result;
+      assert.throws(() => gate(failed), undefined, `${job}: ${result}`);
+    }
+  }
+  const missingSelection = structuredClone(needs);
+  delete missingSelection.changes.outputs.native;
   assert.throws(() => gate(missingSelection), /Path selection failed/);
+  const nativeJob = workflow.split('\n  native_contracts:\n')[1].split('\n  package_')[0];
+  assert.match(nativeJob, /needs: \[plan, quality, changes\]/);
+  const expression = nativeJob.match(/^    if: (.+)$/m)[1];
+  const selected = new Function('needs', `return (${expression});`);
+  assert.equal(selected(needs), true);
+  assert.equal(selected(results()), false);
+  assert.equal(selected(results({ full: true })), true);
 });
 
 test('missing, skipped, failed and cancelled required work cannot pass full CI', () => {
-  for (const job of ['changes', 'plan', 'quality', 'native_contracts', ...packageJobs, spark]) {
+  for (const job of ['changes', 'automation', 'plan', 'quality', 'native_contracts', ...packageJobs]) {
     for (const result of ['skipped', 'failure', 'cancelled', undefined]) {
       const needs = results({ full: true });
       if (result === undefined) delete needs[job];
@@ -90,66 +167,15 @@ test('missing, skipped, failed and cancelled required work cannot pass full CI',
   assert.throws(() => gate(invalid), /active runtime matrix/);
 });
 
-test('releases require the two CUDA 12 device smokes in addition to the full suite', () => {
+test('release validation requires the three other GPU smokes', () => {
   assert.doesNotThrow(() => gate(results({ full: true, release: true }), true));
   assert.throws(() => gate(results({ full: true }), true), /release_smoke_/);
   assert.throws(() => gate(results({ full: true, release: true })), /release_smoke_/);
   assert.throws(() => gate(results(), true), /requires full CI/);
 });
 
-test('hosted CI cannot satisfy a native inference requirement', () => {
+test('hosted CI cannot satisfy a native package requirement', () => {
   assert.throws(() => gate(results({ hostedRequiresNative: true })), /require native hardware qualification on an isolated runner/);
-});
-
-test('KV selection preserves protected native admission and exact-release reuse', () => {
-  const changes = workflow.split('\n  changes:\n')[1].split('\n  plan:\n')[0];
-  const output = name => new Function('github', 'steps', 'return (' +
-    changes.match(new RegExp(`^      ${name}: \\$\\{\\{ (.+) \\}\\}$`, 'm'))[1] + ')');
-  for (const event_name of ['pull_request', 'pull_request_target', 'push']) {
-    for (const selected of ['true', 'false']) {
-      const github = { event_name, event: { pull_request: event_name.startsWith('pull_request') ? {} : null } };
-      const steps = { release: { outputs: {} }, paths: { outputs: { code: 'true', inference: 'false' } },
-        kv: { outputs: { selected } } };
-      const native = output('kv')(github, steps);
-      const hosted = output('hosted_requires_native')(github, steps);
-      assert.equal(native, event_name !== 'pull_request' && selected === 'true');
-      assert.equal(hosted, event_name === 'pull_request' && selected === 'true');
-      const needs = results({ kv: native, hostedRequiresNative: hosted });
-      if (hosted) assert.throws(() => gate(needs), /require native hardware qualification/);
-      else assert.doesNotThrow(() => gate(needs));
-      if (event_name === 'push') {
-        steps.release.outputs.verified = 'true';
-        assert.equal(output('code')(github, steps), false);
-        assert.equal(output('kv')(github, steps), false);
-      }
-    }
-  }
-});
-
-test('both PR event types select KV conservatively before the filter lands', () => {
-  const step = workflow.split('      - name: Read KV path selection\n')[1].split('\n      - name:')[0];
-  const script = step.split('        run: |\n')[1].replace(/^ {10}/gm, '');
-  const root = mkdtempSync(join(tmpdir(), 'skippy-kv-routing-'));
-  try {
-    mkdirSync(join(root, '.github'));
-    for (const event of ['pull_request', 'pull_request_target']) {
-      for (const [filter, kv, code, expected] of [
-        ['code:\n', '', 'true', 'true'], ['code:\n', '', 'false', 'false'],
-        ['kv:\n', 'false', 'true', 'false'], ['kv:\n', 'true', 'false', 'true'],
-        ['kv:\n', '', 'true', null], ['kv:\n', 'invalid', 'true', null],
-      ]) {
-        writeFileSync(join(root, '.github/path-filters.yml'), filter);
-        const output = join(root, 'output');
-        writeFileSync(output, '');
-        const result = spawnSync('bash', ['-euc', script], { cwd: root, encoding: 'utf8',
-          env: { ...process.env, GITHUB_EVENT_NAME: event, GITHUB_OUTPUT: output, KV: kv, CODE: code } });
-        assert.equal(result.status, expected === null ? 1 : 0, result.stderr);
-        assert.equal(readFileSync(output, 'utf8'), expected === null ? '' : `selected=${expected}\n`);
-      }
-    }
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
 });
 
 test('the repository switch moves every hosted job to Depot', () => {
@@ -160,7 +186,7 @@ test('the repository switch moves every hosted job to Depot', () => {
       .map(([, label, continuation]) => `${label} ${continuation.trim().replaceAll(/\s+/g, ' ')}`.trim());
     assert.ok(labels.some(label => label.includes('SKIPPY_DEPOT_RUNNERS_ENABLED')), name);
     for (const label of labels) {
-      if (name === 'llama-upgrade' && label === '${{ matrix.runner }}') continue;
+      if (name.startsWith('llama-upgrade') && label === '${{ matrix.runner }}') continue;
       assert.match(label, /vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true'.*depot-/, name);
     }
   }
@@ -220,7 +246,7 @@ test('manual compiler image smoke can skip publication on either runner provider
 });
 
 test('native CI trusts only an immutable same-repository PR from a writer', async () => {
-  const admission = workflow.split('      - name: Verify the same-repository PR author\n')[1].split('\n  plan:\n')[0];
+  const admission = workflow.split('      - name: Verify the same-repository PR author\n')[1].split('\n  automation:\n')[0];
   const script = admission.split('          script: |\n')[1];
   const evaluate = new Function('github', 'context', 'return (async () => {\n' + script + '\n})()');
   const candidate = {
@@ -290,4 +316,70 @@ test('main can reuse only a receipt for the exact release dispatch and candidate
   assert.equal(await checked(commit, { ...run, head_branch: 'other' }, receipt), undefined);
   assert.equal(await checked(commit, run, { ...receipt, name: 'other-receipt' }), undefined);
   assert.equal(await checked(commit, run, { ...receipt, expired: true }), undefined);
+});
+
+test('KV selection preserves protected native admission and exact-release reuse', () => {
+  const changes = workflow.split('\n  changes:\n')[1].split('\n  plan:\n')[0];
+  const output = name => new Function('github', 'steps', 'return (' +
+    changes.match(new RegExp(`^      ${name}: \\$\\{\\{ (.+) \\}\\}$`, 'm'))[1] + ')');
+  for (const event_name of ['pull_request', 'pull_request_target', 'push']) {
+    for (const selected of ['true', 'false']) {
+      const github = { event_name, ref: 'refs/heads/main', event: { pull_request: event_name.startsWith('pull_request') ? {} : null } };
+      const steps = { main_base: { outputs: {} }, release: { outputs: {} }, paths: { outputs: { code: 'true', inference: 'false' } },
+        kv: { outputs: { selected } } };
+      const native = output('kv')(github, steps);
+      const hosted = output('hosted_requires_native')(github, steps);
+      assert.equal(native, event_name !== 'pull_request' && selected === 'true');
+      assert.equal(hosted, event_name === 'pull_request' && selected === 'true');
+      const needs = results({ kv: native, hostedRequiresNative: hosted });
+      if (hosted) assert.throws(() => gate(needs), /require native hardware qualification/);
+      else assert.doesNotThrow(() => gate(needs));
+      if (event_name === 'push') {
+        steps.release.outputs.verified = 'true';
+        assert.equal(output('code')(github, steps), false);
+        assert.equal(output('kv')(github, steps), false);
+      }
+    }
+  }
+});
+
+test('both PR event types select KV conservatively before the filter lands', () => {
+  const step = workflow.split('      - name: Read KV path selection\n')[1].split('\n      - name:')[0];
+  const script = step.split('        run: |\n')[1].replace(/^ {10}/gm, '');
+  const root = mkdtempSync(join(tmpdir(), 'skippy-kv-routing-'));
+  try {
+    mkdirSync(join(root, '.github'));
+    for (const event of ['pull_request', 'pull_request_target']) {
+      for (const [filter, kv, code, expected] of [
+        ['code:\n', '', 'true', 'true'], ['code:\n', '', 'false', 'false'],
+        ['kv:\n', 'false', 'true', 'false'], ['kv:\n', 'true', 'false', 'true'],
+        ['kv:\n', '', 'true', null], ['kv:\n', 'invalid', 'true', null],
+      ]) {
+        writeFileSync(join(root, '.github/path-filters.yml'), filter);
+        const output = join(root, 'output');
+        writeFileSync(output, '');
+        const result = spawnSync('bash', ['-euc', script], { cwd: root, encoding: 'utf8',
+          env: { ...process.env, GITHUB_EVENT_NAME: event, GITHUB_OUTPUT: output, KV: kv, CODE: code } });
+        assert.equal(result.status, expected === null ? 1 : 0, result.stderr);
+        assert.equal(readFileSync(output, 'utf8'), expected === null ? '' : `selected=${expected}\n`);
+      }
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+
+test('short KV selection requires both device jobs and full profiles run four fixtures in each', () => {
+  assert.doesNotThrow(() => gate(results({ code: false, kv: true })));
+  for (const job of prPackages) {
+    const missing = results({ code: false, kv: true });
+    missing[job].result = 'skipped';
+    assert.throws(() => gate(missing), new RegExp(job));
+    const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
+    assert.match(body, /kv-profile:.*profile == 'full' && 'full'.*outputs.kv == 'true' && 'short'/);
+  }
+  const inconsistent = results();
+  inconsistent.changes.outputs.kv = 'true';
+  assert.throws(() => gate(inconsistent), /KV selection requires/);
 });

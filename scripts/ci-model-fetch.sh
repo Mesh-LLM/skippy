@@ -8,7 +8,7 @@ entry="$(jq -cer '
   | {repo: $artifact.repo, revision: $artifact.revision, file: $file,
      size: $artifact.file_integrity[$file].size_bytes,
      sha256: $artifact.file_integrity[$file].blob_id}
-' "$root/ci/llama-canary/family-certified.json")"
+' "$root/ci/llama-canary/model-fixtures.json")"
 expected_size="$(jq -er '.size' <<<"$entry")"
 expected_sha="$(jq -er '.sha256' <<<"$entry")"
 

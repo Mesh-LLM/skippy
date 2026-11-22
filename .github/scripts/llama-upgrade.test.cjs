@@ -9,7 +9,7 @@ const permissions = text => [...text.matchAll(/^    permissions:\n((?:      [\w-
   .flatMap(match => [...match[1].matchAll(/^      ([\w-]+): (\w+)$/gm)]
     .map(([, name, access]) => [name, access]));
 
-test('both llama upgrade CI calls grant the read permissions requested by reusable CI', () => {
+test('both reusable upgrade CI calls grant the read permissions requested by reusable CI', () => {
   // GitHub rejects the entire workflow before any job starts if a callee
   // requests a permission omitted from its caller's explicit permission map.
   const required = permissions(workflow('ci.yml'));
@@ -25,4 +25,19 @@ test('both llama upgrade CI calls grant the read permissions requested by reusab
     }
     assert.ok(Object.values(granted).every(access => access === 'read'));
   }
+});
+
+
+test('normal upgrades run once and repaired candidates get fresh qualification', () => {
+  const controller = workflow('llama-upgrade.yml');
+  assert.doesNotMatch(controller, /independent_ci:|independent_families:/);
+  assert.match(controller, /needs\.qualify\.result == 'failure'/);
+  assert.match(controller, /candidate_artifact: llama-repaired-candidate/);
+  assert.match(controller, /--repair-bundle target\/llama-repair\/candidate\/candidate.bundle/);
+  assert.match(controller, /needs\.requalify\.result == 'success'/);
+  assert.doesNotMatch(controller, /family-256g|upgrade certify|upgrade dgx|JIANYANG_INFERENCE_SSH_KEY|suite:/);
+  const callers = jobs(controller).filter(job => job.includes('uses: ./.github/workflows/ci.yml'));
+  assert.equal(callers.length, 2);
+  for (const job of callers) assert.match(job, /profile: full/);
+  assert.match(controller, /--validated-sha "\$VALIDATED_SHA"/);
 });

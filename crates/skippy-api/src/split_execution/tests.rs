@@ -61,7 +61,6 @@ fn fixture(workers: Vec<SplitWorker>) -> AdmittedSplit {
         topology,
         configs,
         admissions: vec![],
-        certification: SplitCertificationAdmission::Certified,
     }
 }
 

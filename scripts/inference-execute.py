@@ -19,7 +19,8 @@ from lib.ci_process import cancel_on_signal, capture, command, start, stop
 from lib.ci_smoke import curl
 from lib.inference_checks import ENDPOINT, numerical, offload, performance, score, streaming
 from lib.inference_inputs import admit, fixture, input_hashes, record
-from lib.inference_ladder import allowed_split_admissions, plan
+from lib.inference_ladder import plan
+from lib.inference_admission import split_admissions_digest
 
 
 def authority():
@@ -60,15 +61,10 @@ def prepare_split(model, coordinate, profile, context, output, worker):
             coordinate, "--worker", address(leader, 9400), "--worker", address(follower, 9401),
             "--ctx-size", str(context), "--n-gpu-layers", "999", "--output-dir", str(directory),
         ]
-        allowed = allowed_split_admissions(profile, "split")
-        if "uncertified_override" in allowed:
-            args.append("--allow-uncertified-split")
         command(args, timeout=900)
         admissions = output / "split-admissions.json"
         shutil.copyfile(directory / "admissions.json", admissions)
-        certification = read_json(admissions).get("certification")
-        if certification not in allowed:
-            raise ValueError("split plan lacks the profile's required certification admission")
+        split_admissions_digest(read_json(admissions))
         local = output / "stage.json"
         shutil.copyfile(directory / ("stage-1.json" if worker else "stage-0.json"), local)
     args = ["--config", str(local), "--stage-transport", "binary"]
@@ -84,7 +80,7 @@ def prepare_split(model, coordinate, profile, context, output, worker):
                 if time.monotonic() >= deadline:
                     raise RuntimeError("split worker listener did not become ready")
                 time.sleep(1)
-    return args, "http://" + address(leader, 9912), certification
+    return args, "http://" + address(leader, 9912)
 
 
 def wait_for(server, url, seconds, poll, check):
@@ -142,9 +138,9 @@ def execute(profile, key, mode):
     args = ["target/debug/skippy", "--debug", "serve", "--startup-timeout-secs", "300"]
     if not worker:
         args += ["--speculative-strategy", "disabled", "--generation-concurrency", "1"]
-    control, certification = None, None
+    control = None
     if mode == "split":
-        split_args, control, certification = prepare_split(model, coordinate, profile, context, output, worker)
+        split_args, control = prepare_split(model, coordinate, profile, context, output, worker)
         args += split_args
     else:
         args += [
@@ -173,7 +169,9 @@ def execute(profile, key, mode):
                 "source_sha": sha, "model": key, "mode": mode, "profile": profile, "status": "passed",
                 "performance_claim": result["performance_claim"], "gpu": gpu, "layers": inputs["layers"],
                 "artifact_manifest_sha256": input_hashes()["model_manifest_sha256"],
-                "correctness_scope": scope, "split_certification": certification,
+                "correctness_scope": scope,
+                "split_admissions_sha256": (split_admissions_digest(read_json(output / "split-admissions.json"))
+                                             if mode == "split" else None),
             })
             if mode == "split":
                 acknowledge_worker()

@@ -204,11 +204,10 @@ the topology rather than editing stage files by hand. The direct-GGUF planner
 defaults to one lane, a 512-token context, and CPU execution
 (`--n-gpu-layers 0`).
 
-To test a native recipe that has not been release-certified, add
-`--allow-uncertified-split` explicitly. The planner still validates every stage
-and frontier, and reports `uncertified_override` in `admissions.json` and its
-console output when the release roster does not match. Default planning keeps
-requiring the exact certified recipe. This option does not renew certificates.
+Split planning validates the loaded model's native stage graphs, resident tensor
+closures and activation frontiers. The planner writes these descriptors in
+`admissions.json` with schema version 2. Every model uses the same admission path.
+Qualification reports identify the exact configurations that passed inference.
 
 ## Run stages on different machines
 
