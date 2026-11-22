@@ -127,7 +127,7 @@ The repository Actions variable `SKIPPY_DEPOT_RUNNERS_ENABLED=true` selects
 Depot for every job that otherwise uses a GitHub-hosted runner. This includes
 PR validation and its aggregate, code and package CI, compiler images and
 publishing, documentation and deployment, release validation and publication,
-the inference controllers, and the llama upgrade publisher. The Linux jobs
+the inference controllers, and the llama upgrade resolver and publisher. The Linux jobs
 use four-core Ubuntu 24.04 runners of the existing architecture, and the
 macOS CPU package uses Depot's macOS 15 ARM64 runner. Device jobs use their
 specified JY groups. Clearing the variable or setting it to `false` restores
@@ -478,8 +478,9 @@ theirs for retry and diagnosis.
 ## Llama upgrades
 
 `llama-upgrade.yml` runs from protected main. The controller resolves a release
-or explicit immutable upstream SHA on a standard hosted Ubuntu runner, which
-supplies `gh` for read-only GitHub queries. Only a resolution requiring
+or explicit immutable upstream SHA on the selected hosted Ubuntu runner (GitHub
+or Depot via the repository switch), which must supply `gh` for read-only GitHub
+queries. Only a resolution requiring
 certification starts the existing native JY candidate builder; it receives the
 resolved SHA and exports a digest-bound Git bundle without requiring `gh`. Both
 CI passes and both family passes restore the same candidate. The CPU, Metal and

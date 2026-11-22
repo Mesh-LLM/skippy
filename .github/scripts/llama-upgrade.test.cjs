@@ -27,13 +27,13 @@ test('both llama upgrade CI calls grant the read permissions requested by reusab
   }
 });
 
-test('resolve runs read-only on hosted Ubuntu before allocating the native candidate builder', () => {
+test('resolve runs read-only on the selected hosted Ubuntu before allocating the native candidate builder', () => {
   const all = jobs(workflow('llama-upgrade.yml'));
   const resolve = all.find(job => job.startsWith('  resolve:\n'));
   const candidate = all.find(job => job.startsWith('  candidate:\n'));
   assert.ok(resolve);
   assert.match(resolve, /^    if: github.ref == 'refs\/heads\/main'$/m);
-  assert.match(resolve, /^    runs-on: ubuntu-24.04$/m);
+  assert.ok(resolve.includes("    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}\n"));
   assert.deepEqual(Object.fromEntries(permissions(resolve)), { contents: 'read', 'pull-requests': 'read' });
   assert.match(resolve, /uses: \.\/\.github\/actions\/setup\n        with:\n          cache: 'false'/);
   assert.match(resolve, /persist-credentials: false/);
