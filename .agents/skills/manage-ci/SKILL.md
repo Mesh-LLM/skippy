@@ -20,14 +20,19 @@ contract; no downstream product's workflow topology applies here.
 
 - `.github/workflows/ci.yml` owns code checks and package builds. Declarative
   native paths trigger CI on code or inference PRs and on code pushes to main.
-  Inside CI, declarative PR filters select code checks and require Linux x64
-  CUDA 13 and macOS ARM64 Metal package and device smoke on inference PRs.
+  Inside CI, declarative PR filters select Quality canary for code or inference
+  changes. Inference PRs opt into Linux x64 CUDA 13 and macOS ARM64 Metal package
+  and device smoke with the `qualify` label. Main code pushes use full CI and
+  automatically run Graph Contracts and all eight package/smoke jobs after canary.
   The protected inference workflow uses the same inference paths in its native
   trigger for the seven Spark configurations. PR qualification is manual: the
   jobs run only when the PR carries the `qualify` label, while the workflow
   still triggers on path matches so an intentionally skipped run satisfies
-  the `PR checks` aggregate; nightly, main pushes, and releases stay
-  automatic. `PR checks` reads protected workflow trigger paths to determine
+  the `PR checks` aggregate. Main code pushes use the same native paths as CI
+  and automatically run the seven smoke configurations on the exact pushed SHA;
+  nightly and releases retain extended automatic qualification. The two main
+  workflows run independently, with package jobs gated by their own canary.
+  `PR checks` reads protected workflow trigger paths to determine
   which runs it expects. Quality canary
   runs CI automation tests before build checks and gates package jobs. Full CI
   runs Graph Contracts in parallel with eight build, package and smoke jobs.
@@ -106,8 +111,8 @@ contract; no downstream product's workflow topology applies here.
   Restore Cargo and compiler caches on native runners as well as hosted runners;
   image-provided tooling does not make fresh containers retain compiler outputs.
 - Cancel in-progress validation only for superseded PRs. Main-push runs of
-  `ci.yml` share one running slot and one pending slot. Newer pushes replace
-  the pending run while the active run finishes. Release and upgrade concurrency
+  `ci.yml` and `inference.yml` each share one running slot and one pending slot.
+  Newer pushes replace the pending run while the active run finishes. Release and upgrade concurrency
   must retain evidence and never cancel another release or an independent CI run.
 - The code workflow's `CI` summary rejects failed, cancelled, or missing selected jobs;
   `PR checks` additionally covers the separate inference and image workflows.

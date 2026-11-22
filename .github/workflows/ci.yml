@@ -35,6 +35,7 @@ on:
       - '!docs-site/**'
   pull_request_target:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
     # Include the inference-only inputs as well as the code filter.
     paths:
       - 'crates/**'
@@ -90,6 +91,10 @@ on:
       - 'Justfile'
       - 'ci/targets.json'
       - 'ci/llama-canary/**'
+      - '.gi/templates.yaml'
+      - 'ci/inference-ladder.json'
+      - 'ci/inference-artifacts.json'
+      - 'ci/inference-quality.json'
       - '!**/*.md'
       - '!**/*.mdx'
       - '!**/*.rst'
@@ -180,9 +185,9 @@ jobs:
       pull-requests: read
       actions: read
     outputs:
-      code: ${{ steps.release.outputs.verified != 'true' && (!github.event.pull_request || steps.paths.outputs.code == 'true' || (github.event_name == 'pull_request' && steps.paths.outputs.inference == 'true')) }}
-      inference: ${{ github.event_name == 'pull_request_target' && steps.paths.outputs.inference == 'true' }}
-      hosted_requires_native: ${{ github.event_name == 'pull_request' && steps.paths.outputs.inference == 'true' }}
+      code: ${{ steps.release.outputs.verified != 'true' && (!github.event.pull_request || steps.paths.outputs.code == 'true' || steps.paths.outputs.inference == 'true') }}
+      inference: ${{ github.event_name == 'pull_request_target' && steps.paths.outputs.inference == 'true' && contains(github.event.pull_request.labels.*.name, 'qualify') }}
+      hosted_requires_native: ${{ github.event_name == 'pull_request' && steps.paths.outputs.inference == 'true' && contains(github.event.pull_request.labels.*.name, 'qualify') }}
     steps:
       - name: Reject custom candidate inputs on pull requests
         if: >-
@@ -254,7 +259,7 @@ jobs:
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 20
     env:
-      SKIPPY_CI_PROFILE: ${{ github.event.pull_request && 'pr' || inputs.profile || (github.event_name == 'schedule' && 'full' || 'pr') }}
+      SKIPPY_CI_PROFILE: ${{ github.event.pull_request && 'pr' || inputs.profile || 'full' }}
     outputs:
       profile: ${{ steps.plan.outputs.profile }}
       runtimes: ${{ steps.plan.outputs.runtimes }}

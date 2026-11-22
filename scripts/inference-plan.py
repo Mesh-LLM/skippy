@@ -78,9 +78,16 @@ def admit():
         sha = run["head_sha"]
     elif name == "pull_request_target":
         sha = event["pull_request"]["head"]["sha"]
+    elif name == "push":
+        sha = os.environ["GITHUB_SHA"]
+        if (os.environ["GITHUB_REPOSITORY"] != REPO
+                or os.environ["GITHUB_REF"] != "refs/heads/main"
+                or event.get("ref") != "refs/heads/main"
+                or event.get("after") != sha or event.get("deleted", False)):
+            raise ValueError("push qualification requires the exact protected main commit")
     else:
         sha = os.environ["GITHUB_SHA"]
-    profile = ("pr" if is_pr else "nightly" if name == "schedule"
+    profile = ("pr" if is_pr or name == "push" else "nightly" if name == "schedule"
                else os.environ.get("QUALIFICATION_PROFILE", "release"))
     plan(profile, sha)
     if is_pr:
