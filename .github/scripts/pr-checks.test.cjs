@@ -5,6 +5,7 @@ const { join } = require('node:path');
 const aggregate = require('./pr-checks.cjs');
 const expectedWorkflows = require('./pr-trigger-paths.cjs');
 const sha = '1'.repeat(40);
+const body = readFileSync(join(__dirname, '../PULL_REQUEST_TEMPLATE.md'), 'utf8').replaceAll('- [ ]', '- [x]');
 const inferenceChange = { filename: 'crates/skippy-cli/src/main.rs' };
 const run = (path, id = 1, extra = {}) => ({
   id, workflow_id: path, path: `.github/workflows/${path}`, name: path,
@@ -15,7 +16,7 @@ const run = (path, id = 1, extra = {}) => ({
 
 async function evaluate(options = {}) {
   const calls = [], failures = [];
-  const pr = { number: 52, state: 'open', head: { sha } };
+  const pr = { number: 52, state: 'open', head: { sha }, body };
   let reads = 0;
   const rest = {
     pulls: { get: async () => ({ data: ++reads > 1 && options.current ? options.current : { ...pr, ...options.pr } }), listFiles: 'files' },
@@ -232,4 +233,29 @@ test('workflow completion, external-check and status events re-evaluate the exac
     { check_run: { head_sha: sha, pull_requests: [{ number: 52 }] } },
     { sha }
   ]) assert.equal((await evaluate({ payload })).state, 'success');
+});
+
+test('acceptance criteria block otherwise successful checks and pending workflows', async () => {
+  for (const invalid of [null, '', '## Acceptance criteria\n', body.replace('- [x]', '- [ ]')]) {
+    for (const runs of [[], [run('ci.yml'), run('inference.yml')]]) {
+      const result = await evaluate({ pr: { body: invalid }, runs });
+      assert.equal(result.state, 'failure');
+      assert.match(result.failures[0], /Acceptance criteria/);
+    }
+  }
+});
+
+test('live description governs edits, including an edit while workflows are inspected', async () => {
+  const payload = { action: 'edited', pull_request: { number: 52, head: { sha }, body: '' } };
+  assert.equal((await evaluate({ payload })).state, 'success');
+  const current = { state: 'open', head: { sha }, body: body.replace('- [x]', '- [ ]') };
+  const result = await evaluate({ current });
+  assert.equal(result.state, 'failure');
+  assert.match(result.failures[0], /Acceptance criteria incomplete/);
+});
+
+test('description edits trigger the protected metadata-only controller', () => {
+  const workflow = readFileSync(join(__dirname, '../workflows/pr-checks.yml'), 'utf8');
+  assert.match(workflow, /pull_request_target:\n\s+types: \[[^\]]*\bedited\b/);
+  assert.match(workflow, /ref: main/);
 });
