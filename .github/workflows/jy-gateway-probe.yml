@@ -1,0 +1,25 @@
+name: JY gateway token probe
+on:
+  push:
+    branches:
+      - 'codex/jy-gateway-probe-*'
+permissions: {}
+jobs:
+  probe:
+    name: Check token on a JY Linux Docker runner
+    runs-on:
+      group: jy-rnr_vfnz8k5p4yrh334
+      labels: [self-hosted, jy-linux-docker, Linux]
+    timeout-minutes: 5
+    steps:
+      - name: Check gateway environment
+        shell: bash
+        run: |
+          set +x
+          printf 'Runner architecture %s\n' "$RUNNER_ARCH"
+          if [[ -n "${JIANYANG_GATEWAY_TOKEN:-}" ]]; then
+            printf '%s\n' 'JIANYANG_GATEWAY_TOKEN is set and nonempty'
+          else
+            printf '%s\n' 'JIANYANG_GATEWAY_TOKEN is missing or empty'
+            exit 1
+          fi
