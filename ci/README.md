@@ -478,7 +478,7 @@ existing full CI once. That includes the native graph contracts, small synthetic
 execution tests and existing package/device smoke. No additional real-model
 inference, CPU family sweep, CUDA split battery or Spark dispatch runs inside
 the upgrade workflow. The four established inference models retain their
-separate PR/main/nightly/release policy in `inference.yml`.
+separate PR/manual/nightly/release policy in `inference.yml`.
 
 The successful path has one full CI pass. A failed candidate may receive one
 agent repair followed by full CI on a fresh candidate. Preparation uses the

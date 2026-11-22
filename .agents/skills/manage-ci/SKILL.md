@@ -26,7 +26,7 @@ contract; no downstream product's workflow topology applies here.
   trigger for the seven Spark configurations. PR qualification is manual: the
   jobs run only when the PR carries the `qualify` label, while the workflow
   still triggers on path matches so an intentionally skipped run satisfies
-  the `PR checks` aggregate; nightly, main pushes, and releases stay
+  the `PR checks` aggregate; nightly and releases stay
   automatic. `PR checks` reads protected workflow trigger paths to determine
   which runs it expects. Quality canary
   runs CI automation tests before build checks and gates package jobs. Full CI
@@ -61,7 +61,7 @@ contract; no downstream product's workflow topology applies here.
   A bounded agent repair produces a fresh candidate and fresh full CI. Only the
   publisher receives scoped publication credentials. It can publish only the
   exact candidate selected by successful full CI. The four established inference
-  models retain their separate PR/main/nightly/release workflow.
+  models retain their separate PR/manual/nightly/release workflow.
 - `ci/targets.json` owns four host definitions and eleven runtime definitions.
   `enabled_hosts` selects the active CI and release roster. Windows is temporarily
   deferred; the active roster has three hosts and eight runtimes. Do not publish
