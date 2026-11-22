@@ -1,6 +1,6 @@
 # Skippy continuous integration
 
-`ci.yml` reports `CI` for code checks and targeted package smoke on PRs/main, and
+`ci.yml` reports `CI` for automation, code checks and selected PR/main package smoke, and
 `Full CI gate` for the complete package roster and Graph Contracts. Release callers
 require the full workflow result independently
 of the check name. The single required status is `PR checks`, the
@@ -21,56 +21,76 @@ matching producers keep it pending even before GitHub schedules their runs.
 New PR producers must also be added to the `workflow_run` trigger list so their
 reruns re-evaluate the aggregate.
 
+The same required status validates the live PR description's
+`## Acceptance criteria` section. It requires exactly one nonempty checklist,
+all standard criteria from the protected-main PR template, and every task in
+that section to be checked (`[x]` or `[X]`). Removing a standard criterion does
+not satisfy it. Comments, fenced examples, blockquotes, and indented code do not
+supply criteria. Additional tasks, including nested tasks, must be complete.
+Failures identify the missing or incomplete criterion in the status and log.
+PR description edits trigger a new evaluation, and the controller re-reads the
+live description before publishing success. These are contributor declarations;
+passing checkboxes do not establish test results or replace CI and review.
+This gate takes effect once the controller reaches `main`, and then applies
+to existing open PRs at their next evaluation as well as new PRs.
+
 The controller reports pending and exits while producers work; it does not
 hold a hosted runner open waiting for native hardware. Repository `GITHUB_TOKEN`
 status updates cannot recursively trigger the controller.
 
-`ci.yml` uses native paths to start on code or inference PRs and on code pushes
-to `main`. Its protected `pull_request_target` path admits same-repository PRs
-from repository collaborators against any base branch; fork PRs stay on the
-isolated `pull_request` path. Once a PR run starts, a pinned `dorny/paths-filter`
-action reads `.github/path-filters.yml` to choose code and package jobs independently. It uses
-`some-with-excludes`, so a changed file must match an inclusion and no exclusion.
-Mixed PRs run every applicable check group.
-These are file-level rules. Inline tests in production files, shared Cargo
-manifests/lockfiles, and any `Justfile` edit still count as changes to those files.
-Separate test files/directories and standalone tools are excluded from GPU
-qualification; `.gi/templates.yaml` is exact and `.gi/agents/**` is excluded.
+`ci.yml` uses native paths to start on automation, code, package or qualification
+inputs on PRs and pushes to `main`. Its protected `pull_request_target` path
+admits same-repository PRs from repository collaborators against any base
+branch; fork PRs stay on the isolated `pull_request` path. A pinned
+`dorny/paths-filter` action reads `.github/path-filters.yml` from the PR base
+commit using `some-with-excludes`: each changed file must match an inclusion
+and no exclusion. The routes are independent; mixed PRs run all applicable work.
 
-Code paths select Quality canary, which runs CI automation tests before
-formatting, Clippy, FFI, and Rust and C++ tests. CI reads PR path rules from the
-base commit. PRs matching the inference filter also require Linux x64 CUDA 13 and
-macOS ARM64 Metal packages to build and serve a short inference request on real
-hardware. Both jobs wait for Quality canary when code checks apply. Docs-only
-and metadata-only PRs do not start CI. The CI result gate rejects missing,
-failed or unexpectedly skipped results.
+| Route | Selected work |
+| --- | --- |
+| `automation` | Hosted offline Python, Node and shell contracts, including report/publication tests. No Rust setup, native source, compiler image or model inputs. |
+| `code` | Quality canary: formatting, Clippy, FFI, Rust and C++ tests, after automation passes. |
+| `packages` | Linux ARM64 CUDA 13 and macOS ARM64 Metal builds and packaged inference on real devices, after automation and any applicable source checks pass. |
+| `inference` | The separate qualification workflow, using its native trigger list and the existing manual PR policy. |
 
-On code pushes to `main`, Quality canary still runs with the short CI profile.
-Inference-related changes additionally require the same Linux x64 CUDA 13 and
-macOS ARM64 Metal package/device smokes on the exact merged commit. Each device
-job builds its platform CLI locally in this profile. Native sources, patches,
-FFI, rewriter/build inputs and native CI wiring also select Graph Contracts.
-Packaging and native path lists live in `.github/path-filters.yml`; they extend
-only main selection and leave PR hardware requirements unchanged. Other
-code-only changes retain the canary without those additional jobs.
+On PRs, runtime source and package/build/smoke inputs select device package smoke.
+Qualification planning, dispatch, scoring, baselines and publication select
+qualification and offline automation without rebuilding packages. Renderers,
+charts, workflow controllers and standalone automation tests select only offline
+automation. Unknown scripts retain conservative code checks. Separate Rust
+source test files select code checks without device smoke. Docs-only and
+metadata-only PRs do not start CI. The gate requires successful selected jobs
+and rejects missing, failed, cancelled or unexpectedly skipped results.
 
-Main runs classify changes since the most recent successful ancestor main-push
-CI run, rather than just the latest push's `before` SHA. This includes changes
-from pending runs replaced by concurrency coalescing and from failed runs. If
-previous coverage cannot be verified, CI conservatively requires both device
-smokes and Graph Contracts. Path selection and all selected jobs use the pushed
-SHA. The final gate requires the selected work and rejects missing, skipped,
-failed or cancelled required results. Exact promoted-release receipt reuse
-continues to avoid repeating already validated work.
+These are file-level rules: inline tests in production files, shared Cargo
+manifests/lockfiles, and any root `Justfile` edit remain build inputs. Reporting
+and offline automation recipes live in the imported `ci/automation.just`;
+editing those recipes selects only automation. Public Just command names are
+unchanged. Keep new automation recipes there instead of editing the root file.
+`.gi/templates.yaml` selects qualification, while `.gi/agents/**` is excluded.
 
-The full eight-runtime matrix remains on nightly/full/release runs. Spark
-qualification retains its existing labeled-PR, nightly, manual and release
-triggers; a main merge does not start the Spark ladder.
+PR routing changes take effect after the filters reach the PR's base commit.
+Main pushes keep conservative source checks with the short CI profile, including
+when the latest push changes only automation. Inference, packaging or native
+changes select the same ARM64 CUDA 13 and Metal device smokes on the exact
+merged SHA; native changes additionally select Graph Contracts. Main-only
+`packaging` and `native` filters extend the PR package route without changing PR
+admission. Main still treats qualification execution/configuration as smoke
+inputs; the narrower package route applies to PRs.
 
-The protected inference workflow uses native `pull_request_target` path filters
-for the same inference inputs. PR qualification is manual: it runs only when
-the PR carries the `qualify` label, and the workflow still triggers on path
-matches so the intentionally skipped run satisfies the `PR checks` aggregate.
+Main compares against the most recent verified successful ancestor main-push
+CI run, including changes from failed runs and pending runs replaced by
+concurrency coalescing. If prior coverage cannot be verified, require both
+device smokes and Graph Contracts. The gate rejects missing, skipped, failed
+or cancelled selected jobs. Exact promoted-release receipt reuse avoids
+repeating validated work. Scheduled, manual and reusable full validation
+retain all eight packages and Graph Contracts. Main merges do not start the
+separate Spark qualification ladder.
+
+The protected inference workflow has its own qualification paths, separate from
+package smoke. PR qualification is manual: it runs only when the PR carries the
+`qualify` label. The workflow still triggers on matching paths so its intentional
+skip satisfies the `PR checks` aggregate. The label does not control package smoke.
 Manual qualification may queue behind another PR's atomic Spark pair; the PR
 budget waits for placement instead of failing fast. Relevant PRs retain
 same-repository/collaborator admission, a fresh-head check and all seven GPU
@@ -128,7 +148,7 @@ Nightly, reusable candidate validation and tagged releases use the full profile.
 Manual dispatch from protected main defaults to full. Both nightly workflows run
 at 14:00 UTC. Release validation uses the complete CUDA architecture lists from
 `targets.json`. Full runs may instead use the assigned GPU's native architecture
-for the Linux x64 CUDA 13 device job. Compiler-only CUDA builds always use the
+for the Linux ARM64 CUDA 13 device job. Compiler-only CUDA builds always use the
 manifest architecture lists. The only source override is the immutable bundle
 produced by the protected-main llama upgrade workflow.
 
@@ -138,12 +158,14 @@ the quality and automation canary, each CPU job builds, packages and tests its
 runtime on the selected Ubuntu x64, Ubuntu ARM64, or macOS ARM64 runner. Each
 also produces the shared CLI for its platform. Linux x64 builds the shared CLI
 on Ubuntu 24.04 for compatibility with the CUDA toolchain images. Each backend
-job waits for its matching CPU job only. Linux x64 CUDA 12 and Linux ARM64
-CUDA 12 and 13 run on Ubuntu in the corresponding compiler images
-and check the packaged CLI and runtime artifact without a device. Linux x64
-CUDA 13 and macOS Metal run device smoke on ephemeral JY runners. Tagged
+job waits for its matching CPU job only. Linux x64 CUDA 12 and 13 and Linux ARM64
+CUDA 12 run on Ubuntu in the corresponding compiler images and check the
+packaged CLI and runtime artifact without a device. Linux ARM64 CUDA 13 and
+macOS Metal run device smoke on ephemeral JY runners. Tagged
 releases add device smoke for the other three CUDA packages using their exact
-archives. JY hardware jobs declare literal runner groups and labels. The full
+archives. JY hardware jobs declare literal runner groups and labels. The routine
+CUDA device job uses the existing ARM64 CUDA 13 runner group to use the larger
+Spark pool; x64 CUDA 13 device coverage remains required for releases. The full
 CI gate matches all package jobs to the plan and checks required device results.
 
 ### Depot runners
