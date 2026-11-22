@@ -159,6 +159,10 @@ just --justfile "$ROOT/Justfile" automation-run automation native-generator cont
   --family-map "$FAMILY_SOURCE_MAP" \
   --report "$FIRST_REPORT"
 
+just --justfile "$ROOT/Justfile" automation-run automation native-generator contracts graph \
+  --source-root "$SOURCE_ROOT" --report "$FIRST_REPORT" \
+  --output "$ARTIFACT_ROOT/graph-coverage.json"
+
 if legacy_generated_matches="$(
     model_grep -n -E "$stage_filter_pattern|build_inputs\.filter|g_skippy_graph_filter" || true
     LC_ALL=C.UTF-8 grep -R -n -E "$stage_filter_pattern|build_inputs\.filter|g_skippy_graph_filter" \

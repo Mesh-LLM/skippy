@@ -57,12 +57,16 @@ contract; no downstream product's workflow topology applies here.
   its tag together. It cannot move an existing tag or publish an incomplete
   artifact matrix. Canary runs leave main, tags, and publication untouched.
 - `.github/workflows/llama-upgrade.yml` keeps control on protected main, prepares
-  an immutable candidate, runs normal CI once and qualifies broad CPU standalone
-  compatibility, selected CPU/CUDA splits and seven exact-source Spark rows.
-  The full graph registry remains authoritative. Routine Metal coverage is the
-  normal package/device smoke. A bounded agent repair produces a fresh candidate
-  and fresh qualification. The staging and publisher controllers alone receive
-  scoped publication credentials. Failed or incomplete qualification cannot publish.
+  an immutable candidate and runs existing full CI once. Graph contracts and
+  small synthetic execution tests remain the architectural regression gate.
+  There is no additional live-model CPU, CUDA or Spark upgrade battery.
+  Registered synthetic cases must match their metadata and test modes; new
+  architectures/builders and changed uncovered decoder builders need executable
+  synthetic cases. The graph coverage report preserves existing gaps explicitly.
+  A bounded agent repair produces a fresh candidate and fresh full CI. Only the
+  publisher receives scoped publication credentials. It can publish only the
+  exact candidate selected by successful full CI. The four established inference
+  models retain their separate PR/main/nightly/release workflow.
 - `ci/targets.json` owns four host definitions and eleven runtime definitions.
   `enabled_hosts` selects the active CI and release roster. Windows is temporarily
   deferred; the active roster has three hosts and eight runtimes. Do not publish

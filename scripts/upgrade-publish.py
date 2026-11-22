@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Admit the selected CPU/CUDA and Spark evidence and publish its exact candidate."""
+"""Publish the immutable candidate selected by the successful full CI job."""
 
 import argparse
 import base64
@@ -10,13 +10,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-from lib.ci_artifacts import digest, extract_archive, read_json, source
+from lib.ci_artifacts import digest, read_json, source
 from lib.ci_process import cancel_on_signal, command
-from lib.upgrade_evidence import MANIFEST, RECIPE, family, inventory, recipe_digest
 from lib.upgrade_resolution import REPO, open_upgrade
 from lib.upgrade_source import PIN, WORKFLOW, check_changes, git, validate_sha
-from lib.upgrade_suite import SELECTION, selected_models
-from lib.upgrade_dgx import admit_dgx
 
 
 def require_publisher():
@@ -44,52 +41,6 @@ def import_candidate(root, bundle):
     if git(root, "show", f"{sha}:{PIN}") != upstream:
         raise ValueError("candidate pin differs from qualified upstream")
     return candidate
-
-
-def expected_families(manifest, checkout, backend, suite):
-    selected = {model["family"]: model for model in selected_models(checkout, manifest["models"], backend, suite)}
-    models = ([selected.get(model["family"], model) for model in manifest["models"]]
-              if backend == "cpu" else list(selected.values()))
-    expected = {}
-    for model in models:
-        item = family(model)
-        lanes = (["standalone-oracle"] if backend == "cpu" and model["class"] == "causal_generation" else [])
-        if model["family"] in selected:
-            lanes += item["lanes"]
-        expected[item["family"]] = dict(item, lanes=sorted(lanes))
-    return expected
-
-
-def admit_receipts(root, candidate, manifest, manifest_hash, recipe, checkout, suite="routine"):
-    for backend in ("cpu", "cuda"):
-        expected = expected_families(manifest, checkout, backend, suite)
-        directory = root / f"llama-candidate-{backend}-evidence"
-        roster = set(inventory(directory, [directory]))
-        receipt = read_json(directory / "receipt.json")
-        identity = {"schema_version": 1, "candidate_sha": candidate["candidate_sha"],
-                    "upstream_sha": candidate["upstream_sha"], "manifest_sha256": manifest_hash,
-                    "selection_sha256": digest(checkout / SELECTION), "suite": suite,
-                    "native_recipe_sha256": recipe, "backend": backend, "pass": "candidate", "result": "pass"}
-        if (set(receipt) != {*identity, "families", "artifacts"} or any(
-            type(receipt[key]) is not type(value) or receipt[key] != value
-            for key, value in identity.items()
-        )):
-            raise ValueError(f"invalid source, recipe or result in {backend} receipt")
-        artifacts = receipt["artifacts"]
-        if not artifacts or "receipt.json" in artifacts or roster != {*artifacts, "receipt.json"}:
-            raise ValueError("family evidence contains missing or unaccounted files")
-        actual = {}
-        for item in receipt["families"]:
-            name = item["family"]
-            if name in actual:
-                raise ValueError("duplicate family evidence")
-            actual[name] = dict(item, lanes=sorted(item["lanes"]))
-        if actual != expected:
-            raise ValueError(f"incomplete family/model/lane coverage in {backend}")
-        for path, checksum in artifacts.items():
-            if digest(directory / path) != checksum:
-                raise ValueError("changed family evidence artifact")
-    admit_dgx(root / "llama-dgx-evidence", candidate["candidate_sha"], candidate["upstream_sha"])
 
 
 def authenticated(*args):
@@ -126,46 +77,34 @@ def publish(candidate):
         body = Path(tmp) / "body.md"
         body.write_text(
             f"Upgrade Skippy's native inference engine to llama.cpp `{upstream}`.\n\n"
-            "This candidate passed normal CI, CPU standalone and workload qualification, "
-            "selected CPU/CUDA split qualification and all seven DGX configurations. "
-            "The evidence binds to this exact source and native recipe. Tracks #12.\n\n"
+            "This candidate passed the existing full CI, including synthetic graph and execution "
+            "contracts. No additional live-model inference battery was run. Tracks #12.\n\n"
             f"Candidate: `{sha}`\n", encoding="utf-8",
         )
         print(authenticated("gh", "pr", "create", "--repo", REPO, "--base", "main", "--head", branch,
                             "--title", f"Upgrade llama.cpp to {upstream[:12]}", "--body-file", str(body)))
 
 
-def main(bundle, evidence, suite="routine", stage=False):
+def validated_candidate(root, bundle, expected):
+    validate_sha(expected)
+    candidate = import_candidate(root, bundle.resolve(strict=True))
+    if candidate["candidate_sha"] != expected:
+        raise ValueError("candidate differs from the source selected by successful full CI")
+    return candidate
+
+
+def main(bundle, expected):
     require_publisher()
-    candidate = import_candidate(Path.cwd(), bundle.resolve(strict=True))
-    sha = candidate["candidate_sha"]
-    if stage:
-        run = os.environ["GITHUB_RUN_ID"]
-        if not run.isdecimal():
-            raise ValueError("invalid workflow run identity")
-        ref = f"refs/heads/upgrade-candidates/{run}/{sha[:12]}"
-        authenticated("git", "push", f"https://github.com/{REPO}.git", f"{sha}:{ref}")
-        return
-    with tempfile.TemporaryDirectory() as tmp:
-        checkout = Path(tmp) / "source"
-        archive = Path(tmp) / "recipe.tar"
-        command(["git", "archive", "--format=tar", "--output", str(archive), sha, "--", *RECIPE])
-        extract_archive(archive, checkout, allow_symlinks=False)
-        manifest_path = checkout / MANIFEST
-        admit_receipts(evidence, candidate, read_json(manifest_path), digest(manifest_path),
-                       recipe_digest(checkout), checkout, suite)
-    publish(candidate)
+    publish(validated_candidate(Path.cwd(), bundle, expected))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidate", required=True, type=Path)
-    parser.add_argument("--evidence", type=Path)
-    parser.add_argument("--suite", choices=("routine", "full"), default="routine")
-    parser.add_argument("--stage", action="store_true")
+    parser.add_argument("--validated-sha", required=True)
     args = parser.parse_args()
     try:
         with cancel_on_signal():
-            main(args.candidate, args.evidence, args.suite, args.stage)
+            main(args.candidate, args.validated_sha)
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt) as error:
         sys.exit(str(error))

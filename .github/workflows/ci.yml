@@ -449,6 +449,7 @@ jobs:
             target/ci-evidence/sccache-build.json
             target/skippy-stage-rewriter-check/*.log
             target/skippy-stage-rewriter-check/report*
+            target/skippy-stage-rewriter-check/graph-coverage.json
             target/skippy-stage-rewriter-check/patch-drift.diff
             target/skippy-stage-rewriter-check/changed-family-selection.json
             target/skippy-stage-rewriter-check/generated-family-shards/**

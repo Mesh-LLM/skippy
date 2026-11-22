@@ -557,10 +557,6 @@
             {
               "value": "pr",
               "label": "pr"
-            },
-            {
-              "value": "upgrade",
-              "label": "upgrade"
             }
           ],
           "default": "pr"
@@ -704,10 +700,6 @@
             {
               "value": "pr",
               "label": "pr"
-            },
-            {
-              "value": "upgrade",
-              "label": "upgrade"
             }
           ],
           "default": "pr"

@@ -9,7 +9,7 @@ LADDER = Path(__file__).resolve().parents[2] / "ci/inference-ladder.json"
 
 
 def plan(profile, sha):
-    if profile not in {"pr", "nightly", "release", "upgrade"}:
+    if profile not in {"pr", "nightly", "release"}:
         raise ValueError("unknown inference profile")
     if not re.fullmatch(r"[0-9a-fA-F]{40}", sha):
         raise ValueError("source must be an immutable 40-digit commit SHA")
@@ -19,7 +19,7 @@ def plan(profile, sha):
     models = ladder["models"]
     if ladder["schema_version"] != 1 or not isinstance(models, list) or not models:
         raise ValueError("unsupported or empty inference ladder")
-    checks = (["gpu-startup", "scored-quality", "streaming-smoke"] if profile in {"pr", "upgrade"}
+    checks = (["gpu-startup", "scored-quality", "streaming-smoke"] if profile == "pr"
               else ["correctness", "scored-quality", "agentx-performance"])
     rows, ids, names = [], set(), set()
     for model in models:
@@ -35,7 +35,7 @@ def plan(profile, sha):
             raise ValueError(f"invalid or duplicate inference model: {key}")
         ids.add(key)
         names.add(name)
-        if profile not in {"pr", "upgrade"} or model["pr"]:
+        if profile != "pr" or model["pr"]:
             for mode, machines in (("standalone", 1), ("split", 2)):
                 if mode == "standalone" or model["split"]:
                     rows.append({"id": f"{key}-{mode}", "model": name, "architecture": architecture,
@@ -46,7 +46,7 @@ def plan(profile, sha):
         "schema_version": 1, "status": "planned-not-executed", "profile": profile,
         "source_sha": sha, "hardware": "nvidia-gb10-dgx-spark",
         "execution": "jy-native-job-or-atomic-formation-outside-actions-container",
-        "performance_claim": ("smoke-only" if profile in {"pr", "upgrade"}
+        "performance_claim": ("smoke-only" if profile == "pr"
                               else "extended-qualification-requires-pinned-harness-and-repeats"),
         "rows": rows,
     }

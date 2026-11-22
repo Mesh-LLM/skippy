@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,7 +14,8 @@ from lib.ci_artifacts import digest, write_json
 from lib.ci_process import cancel_on_signal, command
 from lib.upgrade_regeneration import regenerate
 from lib.upgrade_repair import repair
-from lib.upgrade_selection import prepare_selection, write_native_recipe
+from lib.native_recipe import write_native_recipe
+from lib.graph_contracts import check_upgrade_coverage
 from lib.upgrade_resolution import latest, open_upgrade
 from lib.upgrade_source import ALLOWED, PIN, check_changes, clean_root, git, output, prepared_head, restore, restore_at, validate_sha
 
@@ -26,12 +28,16 @@ def resolve(upstream, force):
         output("existing_pr", existing)
     output("upstream_sha", sha)
     output("changed", str(current != sha).lower())
-    output("certify", str(existing is None and (current != sha or force == "true")).lower())
+    output("validate", str(existing is None and (current != sha or force == "true")).lower())
 
 
 def save_preparation_diagnostics(checkout, destination):
     """Keep patch failures inspectable after the disposable checkout is removed."""
     source = checkout / ".deps/llama.cpp"
+    coverage = checkout / "target/llama-regeneration/graph-coverage.json"
+    if coverage.is_file():
+        destination.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(coverage, destination / coverage.name)
     if not (source / ".git").is_dir():
         return
     destination.mkdir(parents=True, exist_ok=True)
@@ -75,17 +81,18 @@ def prepare(upstream, repair_bundle=None, diagnostics=None):
         try:
             try:
                 regenerate(checkout)
+                check_upgrade_coverage(checkout, base_pin)
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
                 save_preparation_diagnostics(checkout, directory / "diagnostics")
                 if not os.environ.get("SKIPPY_UPGRADE_REPAIR_COMMAND"):
                     raise
                 repair(checkout, directory / "diagnostics")
                 regenerate(checkout)
+                check_upgrade_coverage(checkout, base_pin)
             env = {"LLAMA_WORKDIR": str(checkout / ".deps/llama.cpp"),
                    "LLAMA_PIN_FILE": str(checkout / PIN), "LLAMA_PATCH_DIR": str(checkout / "llama_cpp/patches")}
             command(["just", "--justfile", str(checkout / "Justfile"), "llama-prepare"],
                     overrides=env, timeout=3600)
-            prepare_selection(checkout, base_pin)
             write_native_recipe(checkout)
         except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt):
             try:
@@ -117,7 +124,7 @@ def main():
     actions = parser.add_subparsers(dest="action", required=True)
     action = actions.add_parser("resolve")
     action.add_argument("--upstream")
-    action.add_argument("--force-certify", choices=("true", "false"), default="false")
+    action.add_argument("--force-check", choices=("true", "false"), default="false")
     action = actions.add_parser("prepare")
     action.add_argument("upstream")
     action.add_argument("--repair-bundle", type=Path)
@@ -128,7 +135,7 @@ def main():
     actions.add_parser("prepared-source").add_argument("--root", required=True, type=Path)
     args = parser.parse_args()
     if args.action == "resolve":
-        resolve(args.upstream, args.force_certify)
+        resolve(args.upstream, args.force_check)
     elif args.action == "prepare":
         prepare(args.upstream, args.repair_bundle, args.diagnostics)
     elif args.action == "restore":

@@ -132,8 +132,8 @@ def execute(profile, key, mode):
         raise ValueError("insufficient free unified memory for weights and runtime reserve")
     model = admit(key, inputs)
     coordinate = f'{inputs["repo"]}@{inputs["revision"]}'
-    context = 4096 if profile in {"pr", "upgrade"} else 65536
-    if not worker and profile not in {"pr", "upgrade"}:
+    context = 4096 if profile == "pr" else 65536
+    if not worker and profile != "pr":
         numerical(model, coordinate, inputs, output)
     args = ["target/debug/skippy", "--debug", "serve", "--startup-timeout-secs", "300"]
     if not worker:
@@ -158,7 +158,7 @@ def execute(profile, key, mode):
             wait_for(server, ENDPOINT + "/v1/models", 900, 2, lambda _body: True)
             offload(log)
             score(coordinate, output, profile)
-            if profile in {"pr", "upgrade"}:
+            if profile == "pr":
                 streaming(coordinate, output)
                 scope = "GPU startup, deterministic endpoint repeats and bounded streaming smoke"
             else:

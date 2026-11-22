@@ -486,89 +486,87 @@ theirs for retry and diagnosis.
 
 ## Llama upgrades
 
-Issue [#12](https://github.com/Mesh-LLM/skippy/issues/12) tracks the reduced
-qualification pipeline. `llama-upgrade.yml` runs from protected main. It resolves
-an immutable upstream SHA and prepares a digest-bound candidate bundle. Each
-candidate runs normal CI once, followed by parallel CPU, CUDA and Spark checks.
-Candidate preparation uses the selected Ubuntu runner and the pinned CPU
-toolchain image, with checksum-verified GitHub CLI installation.
-The successful path has one qualification pass. A failed candidate may receive
-one agent repair and fresh qualification.
+Issue [#12](https://github.com/Mesh-LLM/skippy/issues/12) tracks the simplified
+upgrade pipeline. `llama-upgrade.yml` runs from protected main. It resolves an
+immutable upstream SHA, prepares a digest-bound candidate bundle and calls
+existing full CI once. That includes the native graph contracts, small synthetic
+execution tests and existing package/device smoke. No additional real-model
+inference, CPU family sweep, CUDA split battery or Spark dispatch runs inside
+the upgrade workflow. The four established inference models retain their
+separate PR/main/nightly/release policy in `inference.yml`.
 
-`ci/llama-canary/upgrade-suite.json` selects real split tests independently of the
-complete `model-fixtures.json` registry. CPU runs short public standalone
-completion comparisons for all 89 causal fixtures, the selected 12 split
-families, and six specialist workload oracles. CUDA runs the eight additional
-split families. The four fixed Spark models reuse the exact pinned artifacts in
-`inference-artifacts.json` and the seven PR configurations in
-`inference-ladder.json`, with the source-bound `upgrade` evidence profile.
-The CPU and CUDA split lanes retain two-stage parity, three-stage parity and
-state handoff, plus applicable multimodal and every-head MTP checks. CPU closes
-the native reference before loading Skippy to bound large-model residency.
+The successful path has one full CI pass. A failed candidate may receive one
+agent repair followed by full CI on a fresh candidate. Preparation uses the
+selected Ubuntu runner and CPU toolchain image, with checksum-verified GitHub
+CLI installation. The schedule stays disabled until unchanged-pin and changed-pin
+acceptance pilots demonstrate preparation, repair, full CI and exact-source PR
+publication. Use `force_check=true` to check the unchanged pin without opening
+an upgrade PR; the previous `force_certify` and `suite` inputs are removed.
 
-The four fixed models are Qwen3.5-4B, Qwen3-Coder-30B-A3B-Instruct,
-Qwen3.6-35B-A3B and Qwen3.8-Flash-Next. The eight additional split families are
-DeepSeek-Coder-V2-Lite, gpt-oss-20B, Qwen3-VL-8B, Gemma 4 E4B,
-Nemotron 3.5 Lightning 30B-A3B, RWKV7 World3 2.9B, Kimi-K3 0.40B and MiMo V2.5.
-The six CPU workload fixtures cover embeddings, reranking, encoder-decoder,
-OCR, speech synthesis and speech recognition. Normal CI supplies Metal package
-and device smoke. There is no dedicated Metal real-weight family job.
+### Graph coverage
 
-Preparation derives `upgrade-selection.json` from the exact upstream factory
-and model-source diff. Changed mapped builders add real split fixtures.
-`compatibility-inventory.json` records every upstream factory architecture and
-those without a real fixture. Newly added architectures without a fixture block
-qualification. Existing coverage gaps stay explicit. A green representative
-suite supplies no universal model, quantization or context-window guarantee.
-Broad synthetic graph contracts continue to cover the complete family registry.
+`model-fixtures.json` remains an input to existing synthetic graph contracts and
+the normal small-model smoke. It grants no family support designation and no
+longer drives a real-model upgrade battery. The graph checker validates every
+registered architecture, trunk depth, activation width, MTP count and test mode
+against the executable native CTest definitions. Missing, duplicate and stale
+cases fail. Supplemental GLM cases must include both fixture generation and an
+executable graph check.
 
-The `suite=full` dispatch mode selects the complete real-weight split roster for
-periodic comparison. Both modes retain immutable local fixture admission and
-fail on missing models or device evidence. The daily schedule remains disabled
-until unchanged-pin and changed-pin acceptance runs finish. Periodic full-roster
-runs can be dispatched with `suite=full` and `force_certify=true`; retained
-results are needed to assess the 90% split-success target.
+`graph-coverage.json` records the pinned baseline's existing structural coverage
+gaps, special test modes and supplemental source mappings. This is a test
+coverage policy, not a runtime model allowlist. The checker reads the current
+upstream model factory and rewriter report, rejects newly uncovered architectures
+and decoder builders, and writes a report listing all remaining gaps. Upgrade
+preparation also compares model sources with the previous upstream pin; changed
+decoder builders without a synthetic case block preparation. New cases require
+no real model download. Changes that introduce additional metadata-dependent
+graph structures must extend the synthetic fixture variants during review;
+a passing default shape does not establish coverage of every variant.
+
+The graph check runs during preparation and `just llama-check`. Its report is
+retained in CI artifacts, and preparation failures retain their graph report
+alongside patch diagnostics. Ordinary offline automation tests reconstruct the
+actual CTest table from the ordered core/model-support patches and validate the
+registry without building llama.cpp or loading weights. Small synthetic numerical
+tests remain in the native suite; they exercise execution and state behavior
+that structural graph checks cannot prove.
+
+These checks do not establish a measured 90% split success rate or universal
+numerical correctness across upstream models, quantizations and backends.
+
+### Preparation, repair and publication
 
 Candidate preparation can be rehearsed from a clean checkout with the native
 prerequisites and `SKIPPY_REWRITER_LLVM_PREFIX` set.
 
 ```sh
-just automation-run upgrade resolve --upstream FULL_UPSTREAM_SHA --force-certify false
+just automation-run upgrade resolve --upstream FULL_UPSTREAM_SHA --force-check false
 just automation-run upgrade prepare FULL_UPSTREAM_SHA
 ```
 
 Preparation regenerates bindings and documentation and updates the portable
-native source-recipe identity used by embedding consumers. Split planning
-admits the actual stage graphs, tensor closures and activation frontiers. The
-seven Spark configurations retain each native admission descriptor together
-with strict source, fixture, quality and executable provenance receipts.
-Qualification results apply to the configurations executed by that run.
-
-A protected staging job admits the bundle before creating
-`upgrade-candidates/RUN_ID/SHA_PREFIX` for JY's fresh native checkout. Its scoped
-App credential stays on the staging controller. Build, inference and repair
-jobs receive no publication credential. Failed candidate refs retain the exact
-source for diagnosis. The publisher admits both backend receipts and every
-Spark row before pushing the verified commit and opening an ordinary PR.
+native source-recipe identity used by embedding consumers. Split planning uses
+actual stage graphs, required tensors, activation boundaries and backend
+compatibility. There is no family certification or experimental bypass.
 
 Configure `SKIPPY_UPGRADE_REPAIR_COMMAND` as a repository variable containing a
-JSON argv array for the installed repair agent. The protected controller appends
-a diagnostic prompt as its final argument. The runner must already provide that
-agent and its authentication. Preparation can make one repair attempt when
-native regeneration fails. After qualification failure, the controller collects
-failed job logs and evidence, runs one repair in a fresh disposable checkout,
-and repeats the complete gate on a fresh direct-child candidate. Native patch
-queues and generated binding/documentation repairs are admitted. Policy,
-workflow and fixture edits are rejected. Repair cannot alter its selected pin,
-commit history or generated source identity inputs. An unavailable agent, exhausted
-repair attempt or incomplete evidence fails the upgrade.
+JSON argv array for an installed repair agent. The runner must already provide
+the agent and its authentication. Preparation can make one repair attempt when
+native regeneration fails. After a full CI failure, the controller collects
+failed job logs and CI artifacts, repairs the disposable candidate, and reruns
+the complete gate. Native patch queues, bindings and generated API documentation
+may change. Policy, workflow, fixture selection, upstream pin and commit-history
+changes by the agent are rejected. An unavailable agent or exhausted attempt
+fails the upgrade. An initial failed CI attempt remains visible as a failure in
+Actions even when the repaired candidate later passes and opens a PR.
 
-Only the staging and final publisher jobs use `SKIPPY_UPGRADE_APP_ID` and
-`SKIPPY_UPGRADE_APP_PRIVATE_KEY`. Keep their Contents permission scoped to this
-repository and Pull requests write permission on the final publisher. Sync the
-JY short-smoke template profile choices from `.gi/templates.yaml` before the
-first `upgrade` dispatch. A real Spark and changed-pin pilot is still required
-to validate native provisioning, agent availability and the external settings.
+Only the publisher uses `SKIPPY_UPGRADE_APP_ID` and
+`SKIPPY_UPGRADE_APP_PRIVATE_KEY`. Its Contents and Pull requests write permissions
+are scoped to this repository. It verifies the immutable bundle's source and
+requires its candidate SHA to match the one selected by the successful initial
+or repaired full CI job before pushing and opening the PR. No staging refs,
+upgrade-specific JY profiles or live-model receipts are needed.
 
 ## Bring-up evidence
 
@@ -577,7 +575,7 @@ rejects a failed row. Then exercise a canary and a dispatched prerelease. Verify
 all enabled bundles, private authenticated downloads, clean installation and
 CPU/Metal/CUDA serving.
 Exercise partial draft upload recovery and published-release overwrite refusal.
-Only after source regeneration, both full candidate passes and exact-commit PR
-publication work should the llama schedule be enabled.
+Enable the llama schedule only after source regeneration, full candidate CI,
+bounded repair and exact-commit PR publication work in acceptance pilots.
 
 No hosted/hardware capacity or secret configuration is implied by these files.

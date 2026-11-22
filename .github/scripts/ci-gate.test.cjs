@@ -164,7 +164,7 @@ test('hosted CI cannot satisfy a native inference requirement', () => {
 });
 
 test('the repository switch moves every hosted job to Depot', () => {
-  const workflows = ['ci', 'ci-images', 'ci-image-builds', 'docs', 'inference', 'llama-upgrade', 'llama-upgrade-checks', 'pr-checks', 'release'];
+  const workflows = ['ci', 'ci-images', 'ci-image-builds', 'docs', 'inference', 'llama-upgrade', 'pr-checks', 'release'];
   for (const name of workflows) {
     const yaml = readFileSync(join(__dirname, '../workflows', name + '.yml'), 'utf8');
     const labels = [...yaml.matchAll(/^    runs-on: (.+)\n((?:      .+\n)*)/gm)]

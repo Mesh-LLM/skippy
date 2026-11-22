@@ -61,6 +61,9 @@ def regenerate(checkout):
     command(argv, timeout=1500)
     command([sys.executable, str(SCRIPTS / "verify-skippy-family-generator-coverage.py"),
              "--manifest", str(manifest), "--family-map", str(family_map), "--report", str(report)])
+    command([sys.executable, str(SCRIPTS / "graph-contract-coverage.py"),
+             "--root", str(checkout), "--source-root", str(source), "--report", str(report),
+             "--output", str(scratch / "graph-coverage.json")])
     destination = checkout / "llama_cpp/patches/generated"
     shutil.rmtree(destination)
     patches_only(generated, destination)

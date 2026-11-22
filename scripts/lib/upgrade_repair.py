@@ -21,13 +21,13 @@ def repair(checkout, diagnostics):
     )
     before = git(checkout, "rev-parse", "HEAD")
     generated = {path: (checkout / path).read_bytes() if (checkout / path).exists() else None
-                 for path in ("ci/llama-canary/upgrade-selection.json", "crates/skippy-api/src/native-recipe.json")}
+                 for path in ("crates/skippy-api/src/native-recipe.json",)}
     pin = (checkout / "llama_cpp/upstream.txt").read_bytes()
     command([*argv, prompt], cwd=checkout, timeout=1800)
     if git(checkout, "rev-parse", "HEAD") != before or (checkout / "llama_cpp/upstream.txt").read_bytes() != pin:
         raise ValueError("repair changed the candidate history or selected upstream pin")
     check_changes(checkout, "HEAD")
-    restricted = {"ci/llama-canary/upgrade-selection.json", "crates/skippy-api/src/native-recipe.json"}
+    restricted = {"crates/skippy-api/src/native-recipe.json"}
     if any(((checkout / path).read_bytes() if (checkout / path).exists() else None) != generated[path]
            for path in restricted):
         raise ValueError("repair changed generated qualification admission inputs")

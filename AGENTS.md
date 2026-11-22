@@ -18,7 +18,7 @@ Clippy limits. Extract separable responsibilities from oversized files.
 
 Keep `llama_cpp/upstream.txt` and the ordered core, model-support, and generated
 patch queues authoritative. ABI declarations, Rust bindings/version constants,
-generated documentation, and recipe-bound certification must remain consistent.
+generated documentation, and native source-recipe identities must remain consistent.
 Model-specific behavior belongs in model builders, not family-name branches in
 shared stage machinery. Keep stage parity, state handoff, and graph contracts.
 

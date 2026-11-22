@@ -6,15 +6,10 @@ on:
         description: Optional full upstream commit; otherwise select latest published release.
         type: string
         default: ''
-      force_certify:
-        description: Certify the unchanged pin without opening an upgrade PR.
+      force_check:
+        description: Check the unchanged pin without opening an upgrade PR.
         type: boolean
         default: false
-      suite:
-        description: Routine representative splits or the complete periodic real-weight roster
-        type: choice
-        options: [routine, full]
-        default: routine
   # Enable after the unchanged-pin and changed-pin acceptance runs in ci/README.md.
   # schedule:
   #   - cron: '17 3 * * *'
@@ -53,7 +48,7 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && '4' || '2' }}
     outputs:
       changed: ${{ steps.resolve.outputs.changed }}
-      certify: ${{ steps.resolve.outputs.certify }}
+      validate: ${{ steps.resolve.outputs.validate }}
       candidate_sha: ${{ steps.prepare.outputs.candidate_sha }}
       upstream_sha: ${{ steps.resolve.outputs.upstream_sha }}
     steps:
@@ -69,28 +64,28 @@ jobs:
         id: resolve
         env:
           UPSTREAM_SHA: ${{ inputs.upstream_sha }}
-          FORCE_CERTIFY: ${{ inputs.force_certify || false }}
+          FORCE_CHECK: ${{ inputs.force_check || false }}
           GH_TOKEN: ${{ github.token }}
-        run: just automation-run upgrade resolve --upstream "$UPSTREAM_SHA" --force-certify "$FORCE_CERTIFY"
+        run: just automation-run upgrade resolve --upstream "$UPSTREAM_SHA" --force-check "$FORCE_CHECK"
       - name: Identify the CPU toolchain image
-        if: steps.resolve.outputs.certify == 'true'
+        if: steps.resolve.outputs.validate == 'true'
         run: |
           image_id="$(cat /etc/skippy-ci-image-id)"
           test -n "$image_id"
           echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
       - uses: ./.github/actions/cache
-        if: steps.resolve.outputs.certify == 'true'
+        if: steps.resolve.outputs.validate == 'true'
         with:
           scope: upgrade-candidate-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
           download-scope: upgrade-candidate
       - uses: ./.github/actions/sccache
         id: compiler_cache
-        if: steps.resolve.outputs.certify == 'true'
+        if: steps.resolve.outputs.validate == 'true'
         with:
           scope: upgrade-candidate-${{ runner.os }}-${{ runner.arch }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
       - name: Prepare and freeze candidate
         id: prepare
-        if: steps.resolve.outputs.certify == 'true'
+        if: steps.resolve.outputs.validate == 'true'
         env:
           UPSTREAM_SHA: ${{ steps.resolve.outputs.upstream_sha }}
           SKIPPY_UPGRADE_REPAIR_COMMAND: ${{ vars.SKIPPY_UPGRADE_REPAIR_COMMAND }}
@@ -121,21 +116,18 @@ jobs:
           retention-days: 14
   qualify:
     needs: candidate
-    if: needs.candidate.outputs.certify == 'true'
+    if: needs.candidate.outputs.validate == 'true'
     permissions:
       contents: read
       packages: read
       actions: read
       pull-requests: read
-    uses: ./.github/workflows/llama-upgrade-checks.yml
+    uses: ./.github/workflows/ci.yml
     with:
       candidate_sha: ${{ needs.candidate.outputs.candidate_sha }}
       candidate_artifact: llama-initial-candidate
-      attempt: initial
-      suite: ${{ inputs.suite || 'routine' }}
-    secrets:
-      SKIPPY_UPGRADE_APP_PRIVATE_KEY: ${{ secrets.SKIPPY_UPGRADE_APP_PRIVATE_KEY }}
-      JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
+      artifact_scope: upgrade-initial
+      profile: full
   repair:
     permissions:
       contents: read
@@ -144,7 +136,7 @@ jobs:
     needs: [candidate, qualify]
     if: >-
       !cancelled() && needs.candidate.result == 'success' &&
-      needs.candidate.outputs.certify == 'true' && needs.qualify.result == 'failure'
+      needs.candidate.outputs.validate == 'true' && needs.qualify.result == 'failure'
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-8' || 'ubuntu-24.04' }}
     container:
       image: ghcr.io/mesh-llm/skippy-ci-cpu:latest
@@ -215,15 +207,12 @@ jobs:
       packages: read
       actions: read
       pull-requests: read
-    uses: ./.github/workflows/llama-upgrade-checks.yml
+    uses: ./.github/workflows/ci.yml
     with:
       candidate_sha: ${{ needs.repair.outputs.candidate_sha }}
       candidate_artifact: llama-repaired-candidate
-      attempt: repaired
-      suite: ${{ inputs.suite || 'routine' }}
-    secrets:
-      SKIPPY_UPGRADE_APP_PRIVATE_KEY: ${{ secrets.SKIPPY_UPGRADE_APP_PRIVATE_KEY }}
-      JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
+      artifact_scope: upgrade-repaired
+      profile: full
   publish:
     needs: [candidate, qualify, repair, requalify]
     if: >-
@@ -232,9 +221,8 @@ jobs:
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 30
     env:
-      ATTEMPT: ${{ needs.qualify.result == 'success' && 'initial' || 'repaired' }}
       CANDIDATE_ARTIFACT: ${{ needs.qualify.result == 'success' && 'llama-initial-candidate' || 'llama-repaired-candidate' }}
-      SUITE: ${{ inputs.suite || 'routine' }}
+      VALIDATED_SHA: ${{ needs.qualify.result == 'success' && needs.candidate.outputs.candidate_sha || needs.repair.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
@@ -245,19 +233,6 @@ jobs:
         with:
           name: ${{ env.CANDIDATE_ARTIFACT }}
           path: candidate
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: llama-${{ env.ATTEMPT }}-cpu-evidence
-          path: evidence/llama-candidate-cpu-evidence
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: llama-${{ env.ATTEMPT }}-cuda-evidence
-          path: evidence/llama-candidate-cuda-evidence
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          pattern: llama-${{ env.ATTEMPT }}-dgx-*-evidence
-          path: evidence/llama-dgx-evidence
-          merge-multiple: true
       - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
         id: app
         with:
@@ -270,4 +245,4 @@ jobs:
       - name: Publish exact verified candidate as a PR
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
-        run: just automation-run upgrade publish --candidate candidate/candidate.bundle --evidence evidence --suite "$SUITE"
+        run: just automation-run upgrade publish --candidate candidate/candidate.bundle --validated-sha "$VALIDATED_SHA"

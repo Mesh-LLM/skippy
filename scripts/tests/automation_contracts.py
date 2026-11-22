@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 from lib import ci_artifacts, ci_smoke
 from lib.ci_process import command
-from lib.upgrade_evidence import MANIFEST, load
+from lib.graph_contracts import MANIFEST
 from lib.upgrade_source import git, restore_at
 
 SCRIPTS = Path(__file__).resolve().parents[1]
@@ -152,7 +152,7 @@ class Generator(unittest.TestCase):
                 self.assertEqual((out / shard["file"]).read_bytes(), mail[name])
 
     def test_pinned_workload_roster(self):
-        roster = load(ROOT)
+        roster = ci_artifacts.read_json(ROOT / MANIFEST)["models"]
         self.assertTrue(any(row["family"] == "qwen3-dense" for row in roster))
         self.assertTrue(any(row["family"] == "qwen3tts" for row in roster))
 
@@ -208,7 +208,7 @@ class Upgrade(unittest.TestCase):
         cwd = os.getcwd()
         os.chdir(root)
         try:
-            with patch.object(source, "regenerate", regenerate), patch.object(source, "prepare_selection"), \
+            with patch.object(source, "regenerate", regenerate), patch.object(source, "check_upgrade_coverage"), \
                     patch.object(source, "write_native_recipe"), patch.object(source, "command", native), \
                     patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("GITHUB_OUTPUT", None)
@@ -311,7 +311,7 @@ class Upgrade(unittest.TestCase):
             try:
                 os.chdir(root)
                 with patch.object(source, "regenerate", regenerate), \
-                     patch.object(source, "prepare_selection"), patch.object(source, "write_native_recipe"), \
+                     patch.object(source, "check_upgrade_coverage"), patch.object(source, "write_native_recipe"), \
                      patch.object(source, "repair", side_effect=agent) as repair_agent, \
                      patch.object(source, "command", side_effect=native), \
                      patch("sys.stdout", io.StringIO()):
@@ -325,31 +325,54 @@ class Upgrade(unittest.TestCase):
             finally:
                 os.chdir(cwd)
 
-    def test_publisher_accepts_complete_exact_passes_only(self):
+    def test_preparation_graph_failure_gets_one_bounded_repair(self):
+        source = module("upgrade-source")
+        with tempfile.TemporaryDirectory() as tmp:
+            root, _ = self.prepare_fixture(Path(tmp))
+            def regenerate(checkout):
+                (checkout / "target/llama-regeneration").mkdir(parents=True, exist_ok=True)
+            def coverage(checkout, _base):
+                output = checkout / "target/llama-regeneration/graph-coverage.json"
+                output.write_text('{"errors":["new graph variant"]}')
+                if checked.call_count == 1:
+                    raise ValueError("new graph variant")
+            def agent(checkout, diagnostics):
+                self.assertTrue((diagnostics / "graph-coverage.json").is_file())
+                (checkout / "llama_cpp/patches").mkdir(exist_ok=True)
+                (checkout / "llama_cpp/patches/repair.patch").write_text("synthetic variant fix\n")
+            real = source.command
+            def native(args, **kwargs):
+                return None if args[:1] == ["just"] else real(args, **kwargs)
+            cwd = Path.cwd()
+            try:
+                os.chdir(root)
+                with patch.object(source, "regenerate", side_effect=regenerate), \
+                     patch.object(source, "check_upgrade_coverage", side_effect=coverage) as checked, \
+                     patch.object(source, "write_native_recipe"), \
+                     patch.object(source, "repair", side_effect=agent) as repaired, \
+                     patch.object(source, "command", side_effect=native), \
+                     patch.dict(os.environ, SKIPPY_UPGRADE_REPAIR_COMMAND='["agent"]'), \
+                     patch("sys.stdout", io.StringIO()):
+                    source.prepare("b" * 40)
+                self.assertEqual(checked.call_count, 2)
+                repaired.assert_called_once()
+                self.assertTrue((root / "target/llama-upgrade/candidate.bundle").is_file())
+            finally:
+                os.chdir(cwd)
+
+    def test_publisher_rejects_a_different_candidate_than_successful_ci(self):
         publisher = module("upgrade-publish")
-        manifest = ci_artifacts.read_json(ROOT / MANIFEST)
-        candidate = {"candidate_sha": "a" * 40, "upstream_sha": "b" * 40}
-        manifest_hash, recipe_hash = "c" * 64, "d" * 64
-        with tempfile.TemporaryDirectory() as tmp, patch.object(publisher, "admit_dgx") as dgx:
+        with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for backend in ("cpu", "cuda"):
-                directory = root / f"llama-candidate-{backend}-evidence"
-                directory.mkdir()
-                evidence = directory / "native-result.json"
-                evidence.write_bytes(b'{"success":true}')
-                ci_artifacts.write_json(directory / "receipt.json", {
-                    "schema_version": 1, **candidate, "manifest_sha256": manifest_hash,
-                    "selection_sha256": ci_artifacts.digest(ROOT / "ci/llama-canary/upgrade-selection.json"),
-                    "suite": "routine", "native_recipe_sha256": recipe_hash, "backend": backend,
-                    "pass": "candidate", "result": "pass",
-                    "families": list(publisher.expected_families(manifest, ROOT, backend, "routine").values()),
-                    "artifacts": {evidence.name: ci_artifacts.digest(evidence)},
-                })
-            publisher.admit_receipts(root, candidate, manifest, manifest_hash, recipe_hash, ROOT)
-            dgx.assert_called_once_with(root / "llama-dgx-evidence", candidate["candidate_sha"], candidate["upstream_sha"])
-            (root / "llama-candidate-cuda-evidence/native-result.json").write_bytes(b"changed")
-            with self.assertRaisesRegex(ValueError, "changed family evidence"):
-                publisher.admit_receipts(root, candidate, manifest, manifest_hash, recipe_hash, ROOT)
+            bundle = root / "candidate.bundle"
+            bundle.write_bytes(b"fixture")
+            candidate = {"candidate_sha": "a" * 40}
+            with patch.object(publisher, "import_candidate", return_value=candidate):
+                self.assertEqual(publisher.validated_candidate(root, bundle, "a" * 40), candidate)
+                with self.assertRaisesRegex(ValueError, "successful full CI"):
+                    publisher.validated_candidate(root, bundle, "b" * 40)
+                with self.assertRaisesRegex(ValueError, "complete lowercase Git"):
+                    publisher.validated_candidate(root, bundle, "main")
 
 
 class RewriterReport(unittest.TestCase):

@@ -2,15 +2,29 @@
 
 `just skippy-native-tests cpu` (or `metal`) includes sparse synthetic GGUFs for
 all 95 canary registry families (89 distinct architecture identifiers). Generation
-and graph planning require no downloaded weights. These tests do not run numerical
-inference or replace real-model, projector, audio, OCR or encoder-decoder certification.
+and graph planning require no downloaded weights. These structural tests do not run numerical
+inference or establish real-model, projector, audio, OCR or encoder-decoder correctness.
 
 The native CTest table in `src/skippy/tests/graph_contract_cases.cmake` is carried
 by core patch `0006-test-skippy-cover-live-graph-and-state-contracts.patch`.
-`tools/xtask/src/repo_consistency/synthetic_graph_contracts.rs`, run by `just ci-validate`,
-compares every family, architecture, trunk depth, activation width, MTP count and
-test mode against `model-fixtures.json`. Missing, duplicate or stale rows fail.
-Adding an architecture requires an executable fixture; rejection modes are explicit.
+`scripts/graph-contract-coverage.py`, run during preparation and `just llama-check`,
+compares every registered family, architecture, trunk depth, activation width,
+MTP count and test mode against `model-fixtures.json`. Missing, duplicate or
+stale rows fail. Offline automation tests reconstruct the same CTest table from
+the ordered patch queues and run this consistency check without native sources.
+
+The checker also inventories the current upstream model factory and transformed
+decoder builders. `graph-coverage.json` records existing uncovered architectures
+and builders explicitly. A new uncovered architecture or builder fails. During
+an upgrade, a changed uncovered decoder builder also requires an executable
+synthetic case. The report lists all gaps; passing the registered roster does
+not establish complete upstream coverage. Existing extra synthetic cases cover
+GLM-5.3 and GLM5-Next without adding real-weight fixtures.
+
+Metadata-dependent graph changes require corresponding synthetic variants.
+Existing cases exercise selected shapes, rather than every configuration of an
+architecture. The baseline records coverage gaps and is not a runtime model
+allowlist or a support designation.
 
 Each metadata profile is built again into independent graph storage, and every
 cut must have identical slice, node, and parameter identities. The native model
@@ -19,7 +33,7 @@ recipe remains. The separate live execution fixtures compare ordinary graph
 reuse against independently loaded contexts with graph reuse disabled, including
 logits and serialized sequence state. They cover split prefill/decode, recurrent
 state, and MTP. These numerical fixtures supplement the structural roster checks;
-they do not substitute for real-model family certification.
+they do not establish correctness for all real-model variants.
 
 ## Contracts checked
 

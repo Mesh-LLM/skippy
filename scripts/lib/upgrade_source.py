@@ -9,7 +9,7 @@ from .ci_process import command
 PIN = "llama_cpp/upstream.txt"
 WORKFLOW = "Mesh-LLM/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main"
 ALLOWED = (PIN, "llama_cpp/patches", "crates/skippy-ffi/src/bindings", "docs/native-api.md",
-           "crates/skippy-api/src/native-recipe.json", "ci/llama-canary/upgrade-selection.json")
+           "crates/skippy-api/src/native-recipe.json")
 
 
 def validate_sha(sha):

@@ -69,7 +69,7 @@ class NightlyTests(unittest.TestCase):
         prepare_split = run_path(str(PR_PATH.with_name("inference-execute.py")))["prepare_split"]
         peers = json.dumps([{"role": "leader", "host": "192.0.2.1", "node": "leader"},
                             {"role": "worker", "host": "192.0.2.2", "node": "worker"}])
-        for profile in ("pr", "nightly", "release", "upgrade"):
+        for profile in ("pr", "nightly", "release"):
             for valid in (True, False):
                 with self.subTest(profile=profile, valid=valid), TemporaryDirectory() as temporary:
                     def plan_split(args, *, timeout):

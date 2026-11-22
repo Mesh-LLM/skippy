@@ -9,14 +9,14 @@ const permissions = text => [...text.matchAll(/^    permissions:\n((?:      [\w-
   .flatMap(match => [...match[1].matchAll(/^      ([\w-]+): (\w+)$/gm)]
     .map(([, name, access]) => [name, access]));
 
-test('the single reusable upgrade CI call grant the read permissions requested by reusable CI', () => {
+test('both reusable upgrade CI calls grant the read permissions requested by reusable CI', () => {
   // GitHub rejects the entire workflow before any job starts if a callee
   // requests a permission omitted from its caller's explicit permission map.
   const required = permissions(workflow('ci.yml'));
   assert.ok(required.length > 0);
-  const callers = jobs(workflow('llama-upgrade-checks.yml'))
+  const callers = jobs(workflow('llama-upgrade.yml'))
     .filter(job => job.includes('uses: ./.github/workflows/ci.yml'));
-  assert.equal(callers.length, 1);
+  assert.equal(callers.length, 2);
   for (const job of callers) {
     const granted = Object.fromEntries(permissions(job));
     for (const [name, access] of required) {
@@ -35,11 +35,9 @@ test('normal upgrades run once and repaired candidates get fresh qualification',
   assert.match(controller, /candidate_artifact: llama-repaired-candidate/);
   assert.match(controller, /--repair-bundle target\/llama-repair\/candidate\/candidate.bundle/);
   assert.match(controller, /needs\.requalify\.result == 'success'/);
-  const checks = workflow('llama-upgrade-checks.yml');
-  assert.doesNotMatch(checks, /backend: metal/);
-  assert.match(checks, /backend: cpu/);
-  assert.match(checks, /backend: cuda/);
-  assert.match(checks, /max-parallel: 3/);
-  const dgx = checks.split('  dgx:')[1].split('  gate:')[0];
-  assert.equal([...dgx.matchAll(/^          - qwen/gm)].length, 7);
+  assert.doesNotMatch(controller, /family-256g|upgrade certify|upgrade dgx|JIANYANG_INFERENCE_SSH_KEY|suite:/);
+  const callers = jobs(controller).filter(job => job.includes('uses: ./.github/workflows/ci.yml'));
+  assert.equal(callers.length, 2);
+  for (const job of callers) assert.match(job, /profile: full/);
+  assert.match(controller, /--validated-sha "\$VALIDATED_SHA"/);
 });
