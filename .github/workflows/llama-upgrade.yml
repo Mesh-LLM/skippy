@@ -243,7 +243,7 @@ jobs:
   publish:
     needs: [candidate, candidate_ci, candidate_families, independent_ci, independent_families]
     if: needs.candidate.outputs.changed == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0

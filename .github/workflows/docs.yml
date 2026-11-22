@@ -21,23 +21,29 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: skippy-docs-${{ github.event.pull_request.number || github.ref }}
+  group: skippy-docs-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   documentation:
     name: Documentation
-    runs-on: ubuntu-24.04
+    if: >-
+      github.repository == 'Mesh-LLM/skippy' &&
+      (github.event_name != 'pull_request' ||
+        vars.SKIPPY_DEPOT_RUNNERS_ENABLED != 'true' ||
+        startsWith(github.workflow_ref, 'Mesh-LLM/skippy/.github/workflows/docs-pr.yml@'))
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          ref: ${{ inputs.source_ref || github.sha }}
+          ref: ${{ (github.event_name != 'pull_request' && inputs.source_ref) || github.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22.23.0'
-          cache: npm
+          cache: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED != 'true' && 'npm' || '' }}
+          package-manager-cache: false
           cache-dependency-path: docs-site/package-lock.json
       - name: Build searchable documentation site
         run: |
@@ -45,7 +51,7 @@ jobs:
           just docs-build
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: ${{ inputs.artifact_scope || 'ci' }}-docs-site
+          name: ${{ (github.event_name != 'pull_request' && inputs.artifact_scope) || 'ci' }}-docs-site
           path: docs-site/out
           if-no-files-found: error
           overwrite: true

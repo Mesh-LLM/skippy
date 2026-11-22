@@ -32,7 +32,7 @@ async function evaluate(options = {}) {
   } };
   const context = { repo: { owner: 'Mesh-LLM', repo: 'skippy' }, runId: 42,
     payload: options.payload || { pull_request: pr } };
-  await aggregate({ github, context, core: { info() {}, setFailed: message => failures.push(message) } });
+  await aggregate({ github, context, depot: options.depot, core: { info() {}, setFailed: message => failures.push(message) } });
   assert.ok(calls.every(c => c.sha === sha && c.context === 'PR checks'));
   return { state: calls.at(-1)?.state, calls, failures };
 }
@@ -63,9 +63,13 @@ test('every failed or cancelled workflow blocks, including additional workflows'
 test('combined image workflow cannot be missed before it is scheduled', async () => {
   const workflow = readFileSync(join(__dirname, '../workflows/ci-images.yml'), 'utf8');
   const triggers = [...workflow.matchAll(/paths: \[([^\]]+)\]/g)];
-  const expectedPaths = ['.github/workflows/ci-images.yml', 'ci/Dockerfile*', 'ci/targets.json', 'rust-toolchain.toml', 'Justfile'];
+  const expectedPaths = ['.github/workflows/ci-images.yml', '.github/workflows/ci-images-pr.yml',
+    '.github/workflows/ci-image-builds.yml', 'ci/image-targets.json', 'ci/Dockerfile*',
+    'ci/targets.json', 'rust-toolchain.toml', 'Justfile'];
   assert.equal(triggers.length, 2);
   for (const trigger of triggers) assert.deepEqual(JSON.parse('[' + trigger[1].replaceAll("'", '"') + ']'), expectedPaths);
+  const pr = readFileSync(join(__dirname, '../workflows/ci-images-pr.yml'), 'utf8');
+  assert.equal(pr.match(/paths: \[([^\]]+)\]/)[1], triggers[0][1]);
   for (const filename of [
     'ci/Dockerfile', 'ci/Dockerfile.cuda', 'ci/Dockerfile.gpu', 'ci/Dockerfile.gpu.dockerignore',
     'ci/targets.json', 'rust-toolchain.toml', 'Justfile', '.github/workflows/ci-images.yml'
@@ -137,6 +141,8 @@ test('native CI and inference triggers match the internal route lists', () => {
   const exclusion = code.findIndex(path => path.startsWith('!'));
   assert.deepEqual(lists(prPaths), [...code.slice(0, exclusion), ...ciOnly, ...code.slice(exclusion)]);
   assert.deepEqual(lists(targetPaths), lists(prPaths));
+  const depotPr = readFileSync(join(__dirname, '../workflows/ci-pr.yml'), 'utf8');
+  assert.deepEqual(lists(depotPr), lists(prPaths));
   const includes = lists(prPaths).filter(path => !path.startsWith('!'));
   for (const path of inference.filter(path => !path.startsWith('!'))) {
     assert.ok(includes.some(trigger => trigger === path ||
@@ -154,6 +160,20 @@ test('same-repository PRs to main wait for the protected CI producer', async () 
   const fork = { ...pr, head: { ...pr.head, repo: { id: 43 } } };
   assert.equal((await evaluate({ pr: fork, runs: [protectedCI, inference] })).state, 'pending');
   assert.equal((await evaluate({ pr: fork, runs: [ordinary, inference] })).state, 'success');
+});
+
+test('Depot PR checks require each protected producer rather than its legacy run', async () => {
+  const files = [inferenceChange, { filename: 'ci/Dockerfile' }, { filename: 'docs-site/index.mdx' }];
+  const legacy = [run('ci.yml'), run('inference.yml'), run('ci-images.yml'), run('docs.yml')];
+  const protectedRuns = [run('ci-pr.yml'), run('inference.yml'), run('ci-images-pr.yml'), run('docs-pr.yml')];
+  assert.equal((await evaluate({ files, depot: true, runs: legacy })).state, 'pending');
+  assert.equal((await evaluate({ files, depot: true, runs: protectedRuns })).state, 'success');
+  assert.equal((await evaluate({ files, depot: true, runs: protectedRuns.slice(0, -1) })).state, 'pending');
+  assert.equal((await evaluate({ files, runs: legacy })).state, 'success');
+
+  const pr = { head: { sha, repo: { id: 42 } }, base: { ref: 'main', repo: { id: 42 } } };
+  const sameRepository = [run('ci.yml', 3, { event: 'pull_request_target' }), ...protectedRuns.slice(1)];
+  assert.equal((await evaluate({ files, pr, depot: true, runs: sameRepository })).state, 'success');
 });
 
 test('latest run and attempt govern reruns; old cancellations do not poison new results', async () => {

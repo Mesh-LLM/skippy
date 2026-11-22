@@ -6,8 +6,8 @@ require the full workflow result independently
 of the check name. The single required status is `PR checks`, the
 aggregate of all applicable PR workflows, checks and statuses.
 
-`pr-checks.yml` evaluates that aggregate on a standard GitHub-hosted
-`ubuntu-24.04` runner, using protected-main code and no Rust setup, candidate
+`pr-checks.yml` evaluates that aggregate on the selected Ubuntu runner, using
+protected-main code and no Rust setup, candidate
 execution, model inputs or lab credentials. It re-evaluates on PR events and
 producer workflow starts/completions, including reruns. Failed, cancelled,
 timed-out and startup-failed runs fail the gate; queued/running or missing
@@ -110,21 +110,81 @@ produced by the protected-main llama upgrade workflow.
 `targets.json` defines four hosts and eleven runtimes. Three hosts and eight
 runtimes are active. Windows qualification and publication are deferred. After
 the quality and automation canary, each CPU job builds, packages and tests its
-runtime on GitHub-hosted `ubuntu-24.04`, `ubuntu-24.04-arm` or `macos-15`. Each
+runtime on the selected Ubuntu x64, Ubuntu ARM64, or macOS ARM64 runner. Each
 also produces the shared CLI for its platform. Linux x64 builds the shared CLI
 on Ubuntu 24.04 for compatibility with the CUDA toolchain images. Each backend
 job waits for its matching CPU job only. Linux x64 CUDA 12 and Linux ARM64
-CUDA 12 and 13 run on GitHub-hosted Ubuntu in the corresponding compiler images
+CUDA 12 and 13 run on Ubuntu in the corresponding compiler images
 and check the packaged CLI and runtime artifact without a device. Linux x64
 CUDA 13 and macOS Metal run device smoke on ephemeral JY runners. Tagged
 releases add device smoke for the other three CUDA packages using their exact
 archives. JY hardware jobs declare literal runner groups and labels. The full
 CI gate matches all package jobs to the plan and checks required device results.
 
+### Depot runners
+
+The repository Actions variable `SKIPPY_DEPOT_RUNNERS_ENABLED=true` selects
+Depot for every job that otherwise uses a GitHub-hosted runner. This includes
+PR validation and its aggregate, code and package CI, compiler images and
+publishing, documentation and deployment, release validation and publication,
+the inference controllers, and the llama upgrade publisher. The Linux jobs
+use four-core Ubuntu 24.04 runners of the existing architecture, and the
+macOS CPU package uses Depot's macOS 15 ARM64 runner. Device jobs use their
+specified JY groups. Clearing the variable or setting it to `false` restores
+GitHub-hosted placement and direct PR workflow routing for subsequent runs.
+[Depot runner labels](https://depot.dev/docs/github-actions/runner-types)
+
+The Depot runner group admits Skippy and uses exact protected workflow refs.
+Allow these entries alongside the existing approved workflows:
+
+```text
+Mesh-LLM/skippy/.github/workflows/ci.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/ci-images.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/ci-image-builds.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/docs.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/inference.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/pr-checks.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main
+```
+
+With Depot enabled, `ci-pr.yml`, `ci-images-pr.yml`, and `docs-pr.yml` retain
+GitHub's ordinary PR triggers and call their runner-owning workflows from
+protected `main` without forwarding secrets. The image dispatcher enters
+through `ci.yml`, which calls the read-only image builders at its protected
+revision. The same builders supply exact artifacts for the image publishers.
+The CI dispatcher requests `cache-mode: read` for sccache. The image and docs
+dispatchers request `cache-mode: none`. All retain GitHub's fork-run approval
+policy.
+Same-repository PRs to main continue to use the protected `ci.yml` path for
+code and native admission. The PR controller expects the producer for the
+active route. Refresh affected open PRs with a new PR event after cutover so
+their selected workflows run against the current head.
+
+Depot routes sccache's GitHub Actions backend to its repository-wide cache.
+sccache writes only when building the exact protected `main` commit on push,
+schedule, or manual dispatch with a write-capable job cache mode. PR and other
+branch builds use `SCCACHE_GHA_RW_MODE=READ_ONLY`. Ordinary Depot jobs skip
+shared Cargo, model, native source, and npm caches.
+[Actions cache behavior](https://depot.dev/docs/cache/integrations/github-actions)
+· [sccache Actions backend](https://github.com/mozilla/sccache/blob/main/docs/GHA.md)
+
+Leave `SKIPPY_DEPOT_RUNNERS_ENABLED` unset while merging the workflows and
+configuring their runner-group refs. Add `ci-image-builds.yml` once it exists
+on `main`. Dispatch `CI` on `main` with `profile=sccache` while the switch is
+off. Check that the first Depot job writes a compiler cache entry and the
+second job records one cache hit, one deliberate miss, and zero writes.
+
+After enabling the switch, verify full CI and `CI images` with
+`build_only=true`, then check one ordinary PR and one same-repository PR
+through the aggregate.
+
+### PR admission and quality
+
 Same-repository PRs to `main` use the workflow definition on protected `main`.
 The workflow verifies repository identity, the PR author's write access and the
 exact candidate SHA before running candidate code. The ordinary PR workflow
-runs approved forks on GitHub-hosted runners. Changes requiring native hardware
+runs approved forks on the selected ephemeral runner. Changes requiring native hardware
 stay blocked until an isolated native runner path is available.
 
 Restrict each Skippy lab runner group to the protected workflow references
@@ -137,7 +197,7 @@ Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main
 Mesh-LLM/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main
 ```
 
-The CPU-only `quality` job runs on GitHub-hosted `ubuntu-24.04` inside
+The CPU-only `quality` job runs on Ubuntu 24.04 inside
 `ghcr.io/mesh-llm/skippy-ci-cpu:latest` for lint, tests and FFI binding
 freshness. The image supplies the pinned Rust toolchain, Just, sccache,
 build-essential, mold and LLVM/Clang 22 development inputs. The job verifies

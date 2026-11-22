@@ -9,7 +9,7 @@ Read this file before inspecting or changing CI. This is the standalone Skippy
 contract; no downstream product's workflow topology applies here.
 
 - `.github/workflows/pr-checks.yml` owns the single intended required `PR checks`
-  aggregate on a standard GitHub-hosted Ubuntu runner. Protected-main code reads
+  aggregate on the repository's selected Ubuntu runner. Protected-main code reads
   workflow/check/status results without executing candidate code or using lab
   credentials. Failures/cancellations fail it; pending or missing applicable work
   stays pending; success/neutral/intentional skips pass. Producer starts and
