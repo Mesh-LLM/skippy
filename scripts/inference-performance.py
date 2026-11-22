@@ -30,7 +30,7 @@ from lib.performance_plan import (SCENARIO, arms, job_spec, models, nodes, pull_
                                   pull_request_number, round_order, scenario)
 from lib.performance_report import markdown, rows, summarize
 
-REPO = "general-inference/skippy"
+REPO = "Mesh-LLM/skippy"
 LLAMA_REPO = "ggml-org/llama.cpp"
 WORK = Path("target/inference-performance")
 BUILT = WORK / "built.json"
@@ -60,7 +60,13 @@ def resolve(ref):
     number = pull_request_number(ref)
     if number is None:
         return resolve_main(ref), None
-    return pull_request_head(github(f"repos/{REPO}/pulls/{number}"), REPO), number
+    pull = github(f"repos/{REPO}/pulls/{number}")
+    sha = pull_request_head(pull, REPO)
+    login = pull["user"]["login"]
+    permission = github(f"repos/{REPO}/collaborators/{quote(login, safe='')}/permission")["permission"]
+    if permission not in {"admin", "maintain", "write"}:
+        raise ValueError("native performance PR author must be a repository collaborator with write access")
+    return sha, number
 
 
 def off_main(pull_requests):
@@ -152,7 +158,7 @@ def collect(pilot, job, plan, label, evidence):
     if plan["trace"]:
         download(pilot, run_id, "traces.tar.gz", evidence / f"{label}-traces.tar.gz")
     host = f'{result["host"]["chip"]} ({result["host"].get("node") or "unknown node"})'
-    return markdown(f"Inference performance: {label}", host, summarize(result["samples"]))
+    return markdown(f"Inference performance: {label}", host, summarize(result["samples"]), result)
 
 
 def dispatch(evidence):

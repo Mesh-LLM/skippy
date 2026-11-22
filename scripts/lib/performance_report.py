@@ -3,6 +3,12 @@
 import json
 import statistics
 
+from .inference_baselines import classify
+from .inference_health import health_view
+from .inference_charts import health_charts
+from .inference_markdown import HEALTH_LABELS, health_sections, plain, table
+from .inference_nightly_metrics import metric_value
+
 # Higher is better for rates; lower is better for latencies.
 HEADLINE = {"output_tok_s": "higher", "ttft_ms_p50": "lower", "itl_ms_p50": "lower"}
 
@@ -15,7 +21,7 @@ def summarize(samples):
             if value is None:
                 continue
             key = (sample["model"], sample["server"], sample["point"], metric)
-            groups.setdefault(key, {}).setdefault(sample["arm"], []).append(value)
+            groups.setdefault(key, {}).setdefault(sample["arm"], []).append(metric_value(value, positive=True))
     rows = []
     for (model, server, point, metric), by_arm in sorted(groups.items()):
         arms = {arm: {"median": statistics.median(values), "min": min(values), "max": max(values),
@@ -42,23 +48,53 @@ def cell(stats):
 def verdict(row):
     delta = row["candidate_vs_baseline"]
     if delta is None:
-        return "—"
-    better = (delta["percent"] > 0) == (HEADLINE[row["metric"]] == "higher")
-    word = "within spread" if delta["ranges_overlap"] else ("better" if better else "worse")
-    return f'{delta["percent"]:+.1f}% {word}'
+        return "New series"
+    arms = row["arms"]
+    result = classify(row["metric"], arms["candidate"]["median"], arms["baseline"]["median"])
+    overlap = "; round ranges overlap" if delta["ranges_overlap"] else "; round ranges do not overlap"
+    return f'{delta["percent"]:+.2f}% · {HEALTH_LABELS[result]}{overlap}'
 
 
-def markdown(title, host, rows):
-    lines = [f"### {title}", "", f"Host: {host}", "",
-             "Median over rounds (min–max, n). Δ is candidate against baseline; "
-             "\"within spread\" means their round ranges overlap.", "",
-             "| model | point | metric | baseline | candidate | reference | Δ |",
-             "|---|---|---|---|---|---|---|"]
+def report_view(host, rows, record):
+    """Adapt real controlled measurements to the common inference health report."""
+    candidate = next(arm for arm in record["arms"] if arm["label"] == "candidate")
+    configurations = {}
+    for row in rows:
+        if row["metric"] not in HEADLINE or "candidate" not in row["arms"]:
+            continue
+        key = row["model"], row["server"], row["point"]
+        configuration = configurations.setdefault(key, {
+            "id": "/".join(key), "label": " · ".join(key), "group": host,
+            "workload": f'Controlled Metal · {host} · {row["server"]} · {row["point"]}',
+            "outcome": "passed", "metrics": [],
+        })
+        arms = row["arms"]
+        metric = {"metric": row["metric"], "workload": configuration["workload"],
+                  "measured": arms["candidate"]["median"],
+                  "comparison_arms": [(label.title(), arms[label]["median"])
+                                      for label in ("baseline", "candidate", "reference") if label in arms]}
+        if "baseline" in arms:
+            metric["reference"] = {"value": arms["baseline"]["median"]}
+        configuration["metrics"].append(metric)
+    run = {"id": "controlled", "source_sha": candidate["sha"], "started_at": record["started_at"],
+           "profile": "controlled performance", "measurement_kind": "controlled", "outcome": "passed",
+           "configurations": list(configurations.values())}
+    return health_view({"schema_version": 1, "runs": [run]}, run["id"])
+
+
+def markdown(title, host, rows, record):
+    view = report_view(host, rows, record)
+    lines = ["# " + plain(title), "", "Host: " + plain(host), "",
+             *health_sections(view, health_charts(view), chart_format="mermaid"), "",
+             "## Round ranges", "", "Median (min–max, n). Reference is the optional llama.cpp arm. "
+             "Its measurements are shown separately from the candidate/baseline verdict.", ""]
+    detail = []
     for row in rows:
         if row["metric"] in HEADLINE:
             arms = row["arms"]
-            lines.append(f'| {row["model"]} | {row["point"]} | {row["metric"]} | {cell(arms.get("baseline"))} '
-                         f'| {cell(arms.get("candidate"))} | {cell(arms.get("reference"))} | {verdict(row)} |')
+            detail.append([plain(row[field]) for field in ("model", "server", "point", "metric")] +
+                          [cell(arms.get(arm)) for arm in ("baseline", "candidate", "reference")] + [verdict(row)])
+    lines.extend(table(["Model", "Server", "Point", "Metric", "Baseline", "Candidate", "Reference", "Change"], detail))
     return "\n".join(lines) + "\n"
 
 

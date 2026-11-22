@@ -1,8 +1,8 @@
 //! Build transport-neutral stage configurations from admitted planning facts.
 use anyhow::{Context, Result, anyhow};
 use skippy_protocol::{
-    FlashAttentionType, HostExpertLayers, HostExpertPolicy, LoadMode, PeerConfig, SplitMode,
-    StageConfig, StageDevice,
+    FlashAttentionType, HostExpertLayers, HostExpertPolicy, LoadMode, PeerConfig, SampleThreads,
+    SplitMode, StageConfig, StageDevice,
 };
 use std::path::{Path, PathBuf};
 
@@ -181,7 +181,7 @@ pub fn admitted_stage_config(
         kv_lazy_clear: None,
         kv_release_pages: None,
         kv_row_attention: None,
-        sample_threads: None,
+        sample_threads: SampleThreads::Auto,
         prefill_coalesce_max_ms: None,
         batch: Default::default(),
         cache_idle_slots: load.runtime_settings.cache_idle_slots,

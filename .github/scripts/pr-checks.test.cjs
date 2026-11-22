@@ -30,9 +30,9 @@ async function evaluate(options = {}) {
     if (options.apiError === method) throw new Error('GitHub API unavailable');
     return structuredClone(data[method]);
   } };
-  const context = { repo: { owner: 'general-inference', repo: 'skippy' }, runId: 42,
+  const context = { repo: { owner: 'Mesh-LLM', repo: 'skippy' }, runId: 42,
     payload: options.payload || { pull_request: pr } };
-  await aggregate({ github, context, core: { info() {}, setFailed: message => failures.push(message) } });
+  await aggregate({ github, context, depot: options.depot, core: { info() {}, setFailed: message => failures.push(message) } });
   assert.ok(calls.every(c => c.sha === sha && c.context === 'PR checks'));
   return { state: calls.at(-1)?.state, calls, failures };
 }
@@ -63,9 +63,13 @@ test('every failed or cancelled workflow blocks, including additional workflows'
 test('combined image workflow cannot be missed before it is scheduled', async () => {
   const workflow = readFileSync(join(__dirname, '../workflows/ci-images.yml'), 'utf8');
   const triggers = [...workflow.matchAll(/paths: \[([^\]]+)\]/g)];
-  const expectedPaths = ['.github/workflows/ci-images.yml', 'ci/Dockerfile*', 'ci/targets.json', 'rust-toolchain.toml', 'Justfile'];
+  const expectedPaths = ['.github/workflows/ci-images.yml', '.github/workflows/ci-images-pr.yml',
+    '.github/workflows/ci-image-builds.yml', 'ci/image-targets.json', 'ci/Dockerfile*',
+    'ci/targets.json', 'rust-toolchain.toml', 'Justfile'];
   assert.equal(triggers.length, 2);
   for (const trigger of triggers) assert.deepEqual(JSON.parse('[' + trigger[1].replaceAll("'", '"') + ']'), expectedPaths);
+  const pr = readFileSync(join(__dirname, '../workflows/ci-images-pr.yml'), 'utf8');
+  assert.equal(pr.match(/paths: \[([^\]]+)\]/)[1], triggers[0][1]);
   for (const filename of [
     'ci/Dockerfile', 'ci/Dockerfile.cuda', 'ci/Dockerfile.gpu', 'ci/Dockerfile.gpu.dockerignore',
     'ci/targets.json', 'rust-toolchain.toml', 'Justfile', '.github/workflows/ci-images.yml'
@@ -109,6 +113,7 @@ test('native trigger patterns distinguish metadata, code-only, inference and mix
     ['.github/scripts/pr-checks.cjs', ['ci.yml']],
     ['.github/path-filters.yml', ['ci.yml']],
     ['.github/workflows/inference.yml', ['ci.yml']],
+    ['.github/workflows/llama-upgrade.yml', ['ci.yml']],
     ['.cargo/config.toml', ['ci.yml', 'inference.yml']],
     ['Justfile', ['ci.yml', 'inference.yml', 'ci-images.yml']],
   ];
@@ -126,7 +131,7 @@ test('native CI and inference triggers match the internal route lists', () => {
   const config = readFileSync(join(__dirname, '../path-filters.yml'), 'utf8');
   const [code, inference] = config.split(/^inference:\n/m).map(lists);
   const ci = readFileSync(join(__dirname, '../workflows/ci.yml'), 'utf8');
-  const [prPaths, pushPaths] = ci.split(/^  push:\n/m);
+  const [prPaths, targetPaths, pushPaths] = ci.split(/^  (?:pull_request_target|push):\n/m);
   const spark = readFileSync(join(__dirname, '../workflows/inference.yml'), 'utf8');
   assert.deepEqual(lists(pushPaths.split(/^  schedule:\n/m)[0]), code);
   assert.deepEqual(lists(spark.split(/^  schedule:\n/m)[0]), inference);
@@ -135,11 +140,41 @@ test('native CI and inference triggers match the internal route lists', () => {
   assert.ok(ciOnly.every(path => inference.includes(path)));
   const exclusion = code.findIndex(path => path.startsWith('!'));
   assert.deepEqual(lists(prPaths), [...code.slice(0, exclusion), ...ciOnly, ...code.slice(exclusion)]);
+  assert.deepEqual(lists(targetPaths), lists(prPaths));
+  const depotPr = readFileSync(join(__dirname, '../workflows/ci-pr.yml'), 'utf8');
+  assert.deepEqual(lists(depotPr), lists(prPaths));
   const includes = lists(prPaths).filter(path => !path.startsWith('!'));
   for (const path of inference.filter(path => !path.startsWith('!'))) {
     assert.ok(includes.some(trigger => trigger === path ||
       (trigger.endsWith('/**') && path.startsWith(trigger.slice(0, -2)))), `CI never triggers for ${path}`);
   }
+});
+
+test('same-repository PRs to any base wait for the protected CI producer', async () => {
+  const pr = { head: { sha, repo: { id: 42 } }, base: { ref: 'codex/native-decode-port', repo: { id: 42 } } };
+  const ordinary = run('ci.yml');
+  const protectedCI = run('ci.yml', 3, { event: 'pull_request_target' });
+  const inference = run('inference.yml', 2);
+  assert.equal((await evaluate({ pr, depot: true, runs: [ordinary, inference] })).state, 'pending');
+  assert.equal((await evaluate({ pr, depot: true, runs: [ordinary, inference, protectedCI] })).state, 'success');
+  const fork = { ...pr, head: { ...pr.head, repo: { id: 43 } } };
+  const forkCI = run('ci-pr.yml', 4);
+  assert.equal((await evaluate({ pr: fork, depot: true, runs: [protectedCI, inference] })).state, 'pending');
+  assert.equal((await evaluate({ pr: fork, depot: true, runs: [forkCI, inference] })).state, 'success');
+});
+
+test('Depot PR checks require each protected producer rather than its legacy run', async () => {
+  const files = [inferenceChange, { filename: 'ci/Dockerfile' }, { filename: 'docs-site/index.mdx' }];
+  const legacy = [run('ci.yml'), run('inference.yml'), run('ci-images.yml'), run('docs.yml')];
+  const protectedRuns = [run('ci-pr.yml'), run('inference.yml'), run('ci-images-pr.yml'), run('docs-pr.yml')];
+  assert.equal((await evaluate({ files, depot: true, runs: legacy })).state, 'pending');
+  assert.equal((await evaluate({ files, depot: true, runs: protectedRuns })).state, 'success');
+  assert.equal((await evaluate({ files, depot: true, runs: protectedRuns.slice(0, -1) })).state, 'pending');
+  assert.equal((await evaluate({ files, runs: legacy })).state, 'success');
+
+  const pr = { head: { sha, repo: { id: 42 } }, base: { ref: 'main', repo: { id: 42 } } };
+  const sameRepository = [run('ci.yml', 3, { event: 'pull_request_target' }), ...protectedRuns.slice(1)];
+  assert.equal((await evaluate({ files, pr, depot: true, runs: sameRepository })).state, 'success');
 });
 
 test('latest run and attempt govern reruns; old cancellations do not poison new results', async () => {

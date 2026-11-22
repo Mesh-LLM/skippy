@@ -1509,23 +1509,23 @@ mod tests {
     #[test]
     fn parses_hf_package_refs() {
         assert_eq!(
-            parse_hf_package_ref("hf://general-inference/Qwen3.6-package").unwrap(),
+            parse_hf_package_ref("hf://skippy-fixtures/Qwen3.6-package").unwrap(),
             HfPackageRef {
-                repo_id: "general-inference/Qwen3.6-package".to_string(),
+                repo_id: "skippy-fixtures/Qwen3.6-package".to_string(),
                 revision: None,
             }
         );
         assert_eq!(
-            parse_hf_package_ref("hf://general-inference/Qwen3.6-package:abc123").unwrap(),
+            parse_hf_package_ref("hf://skippy-fixtures/Qwen3.6-package:abc123").unwrap(),
             HfPackageRef {
-                repo_id: "general-inference/Qwen3.6-package".to_string(),
+                repo_id: "skippy-fixtures/Qwen3.6-package".to_string(),
                 revision: Some("abc123".to_string()),
             }
         );
         assert_eq!(
-            parse_hf_package_ref("hf://general-inference/Qwen3.6-package@branch-name").unwrap(),
+            parse_hf_package_ref("hf://skippy-fixtures/Qwen3.6-package@branch-name").unwrap(),
             HfPackageRef {
-                repo_id: "general-inference/Qwen3.6-package".to_string(),
+                repo_id: "skippy-fixtures/Qwen3.6-package".to_string(),
                 revision: Some("branch-name".to_string()),
             }
         );

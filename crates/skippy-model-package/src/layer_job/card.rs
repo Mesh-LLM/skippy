@@ -84,7 +84,7 @@ pub(super) fn render(
             artifact.sha256
         ));
     }
-    card.push_str("\n## Validation\n\nThe native job validates the package root, canonical package identity and catalog/source bindings. Listed hashes are declared artifact identities. Upload confirmation, immutable remote verification, independently verified source tensors, ABI/runtime behavior and catalog promotion require their own receipts.\n\n## Links\n\n- https://github.com/general-inference/skippy\n");
+    card.push_str("\n## Validation\n\nThe native job validates the package root, canonical package identity and catalog/source bindings. Listed hashes are declared artifact identities. Upload confirmation, immutable remote verification, independently verified source tensors, ABI/runtime behavior and catalog promotion require their own receipts.\n\n## Links\n\n- https://github.com/Mesh-LLM/skippy\n");
     if card.len() > 2 * 1024 * 1024 {
         bail!("model card size refused");
     }

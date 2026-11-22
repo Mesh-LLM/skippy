@@ -5,12 +5,13 @@ A reference value comes from the pinned Hugging Face snapshot. Qualification
 supplies the verdict after applying the configured tolerance.
 """
 
-from datetime import datetime, timezone
 from html import escape
 from math import isfinite
 import re
 
-from .inference_charts import HISTORY_DAYS, HistoryChart, history_charts, image_path, run_charts
+from .inference_charts import METRICS as CHART_METRICS, dataset_charts, health_charts, image_path
+from .inference_baselines import TOLERANCE, DIRECTION
+from .inference_health import health_view, ordered_runs, utc
 from .inference_labels import configuration_label, workload_label
 
 
@@ -60,13 +61,6 @@ def sha(value):
     if not SHA.fullmatch(value):
         raise ValueError(f"expected a full commit SHA, got {value!r}")
     return f"\x60{value[:12]}\x60"
-
-
-def utc(value):
-    stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    if stamp.tzinfo is None:
-        raise ValueError(f"run timestamp needs a time zone: {value!r}")
-    return stamp.astimezone(timezone.utc)
 
 
 def table(headers, rows):
@@ -134,230 +128,180 @@ def comparison(row):
     return [METRICS[metric][0], current, expected, reference_label, change, outcome]
 
 
-def run_label(run):
-    return link(plain(run["id"]), run.get("url"))
+
+HEALTH_LABELS = {None: "New series", "passed": "Within tolerance", "improved": "Improved", "regressed": "Regressed"}
 
 
-def outcome_table(run):
-    with_workload = any(config.get("workload") for config in run["configurations"])
-    headers = ["Configuration"]
-    if with_workload:
-        headers.append("Workload")
-    results = []
-    for config in run["configurations"]:
-        labels = [plain(configuration_label(config["id"]))]
-        if with_workload:
-            labels.append(plain(workload_label(config["workload"])))
-        results.append([
-            *labels, OUTCOMES[config["outcome"]],
-            link("Lab record", config.get("url")) if config.get("url") else UNAVAILABLE,
-        ])
-    return table([*headers, "Qualification", "Evidence"], results)
-
-
-def run_sections(run, heading, charts=(), *, show_baseline_link=True):
-    sections = [
-        f'**{OUTCOMES[run["outcome"]]}** · {plain(run["profile"])} profile · '
-        f'{sha(run["source_sha"])} · {utc(run["started_at"]):%Y-%m-%d %H:%M UTC} · Run {run_label(run)}',
-    ]
-    if show_baseline_link and run.get("baseline_revision"):
-        revision = run["baseline_revision"]
-        sections.extend([
-            "", "Published baseline snapshot " + link(
-                sha(revision), f"{HF_DATASET}/blob/{revision}/baselines.json",
-            ),
-        ])
-    if run.get("note"):
-        sections.extend(["", plain(run["note"])])
-    if not run["configurations"]:
-        if run["outcome"] != "skipped" and not run.get("note"):
-            sections.extend(["", "Configuration evidence unavailable."])
-        return sections
-
-    if charts:
-        sections.extend(["", f"{heading} Performance charts"])
-        for chart in charts:
-            sections.extend(["", plain(chart.caption), "", "\x60\x60\x60mermaid",
-                             chart.mermaid().rstrip(), "\x60\x60\x60"])
-
-    sections.extend(["", f"{heading} Lab outcomes", "", *outcome_table(run)])
-    workloads = {}
-    updates = []
-    seen = set()
-    for config in run["configurations"]:
-        for row in config["metrics"]:
-            workload, config_id, metric = row["workload"], config["id"], row["metric"]
-            key = (workload, config_id, metric)
-            if key in seen:
-                raise ValueError(f"duplicate qualification measurement: {key!r}")
-            seen.add(key)
-            display_config = plain(configuration_label(config_id))
-            workloads.setdefault(workload, []).append([display_config, *comparison(row)])
-            if row.get("baseline_update"):
-                if run.get("published") is not True or config["outcome"] != "passed":
-                    raise ValueError("baseline updates require a published run and passing configuration")
-                action = {"seeded": "Seeded", "promoted": "Promoted"}[row["baseline_update"]]
-                updates.append([
-                    display_config, plain(workload_label(workload)), METRICS[metric][0], action,
-                    measurement(metric, row["measured"]),
-                ])
-    for workload, rows in workloads.items():
-        sections.extend([
-            "", f"{heading} {plain(workload_label(workload))}", "",
-            *table(["Configuration", "Metric", "This run", "Saved baseline", "Baseline commit",
-                    "Change vs saved", "Comparison"], rows),
-        ])
-    if updates:
-        sections.extend([
-            "", f"{heading} Baseline updates", "",
-            *table(["Configuration", "Workload", "Metric", "Action", "New baseline"], updates),
-        ])
-    return sections
-
-
-def ordered_runs(report):
-    if type(report["schema_version"]) is not int or report["schema_version"] != 1:
-        raise ValueError("unsupported qualification report schema version")
-    runs = report["runs"]
-    if len({run["id"] for run in runs}) != len(runs):
-        raise ValueError("duplicate qualification run ID")
-    return sorted(runs, key=lambda run: utc(run["started_at"]), reverse=True)
-
-
-def run_summary(report, run_id):
-    for run in ordered_runs(report):
-        if run["id"] == run_id:
-            charts = run_charts(run, METRICS)
-            lines = ["# Inference qualification", "", *run_sections(run, "##", charts)]
-            return "\n".join([*lines, ""])
-    raise ValueError(f"unknown qualification run ID: {run_id!r}")
-
-
-def baseline_table(baselines):
-    rows = [
-        [plain(configuration_label(item["configuration"])), plain(workload_label(item["workload"])),
-         METRICS[item["metric"]][0],
-         measurement(item["metric"], number(item["value"])), sha(item["source_sha"])]
-        for item in baselines
-    ]
-    return table(["Configuration", "Workload", "Metric", "Baseline", "Reference SHA"], rows)
-
-
-def coverage(run):
-    configs = run["configurations"]
-    if not configs:
+def health_measurement(metric, value):
+    if value is None:
         return UNAVAILABLE
-    passed = sum(config["outcome"] == "passed" for config in configs)
-    return f"{passed}/{len(configs)} configurations passed"
+    _, unit, scale = CHART_METRICS[metric]
+    return f"{number(value) * scale:,.2f} {unit}"
 
 
-def metric_history(runs):
-    series = {}
-    for column, run in enumerate(runs):
-        for config in run["configurations"]:
-            for row in config["metrics"]:
-                key = (row["workload"], config["id"], row["metric"])
-                values = series.setdefault(key, [UNAVAILABLE] * len(runs))
-                values[column] = measurement(row["metric"], row["measured"])
-    return [
-        [plain(workload_label(workload)), plain(configuration_label(config)), METRICS[metric][0], *values]
-        for (workload, config, metric), values in sorted(series.items())
-    ]
-
-
-def published_runs(report):
-    return [run for run in ordered_runs(report) if run.get("published") is True]
-
-
-def dataset_charts(report):
-    runs = published_runs(report)
-    if not runs:
+def regression_table(view):
+    rows = []
+    for config in view["configurations"]:
+        for metric, row in config["metrics"].items():
+            if row["health_verdict"] == "regressed":
+                rows.append((abs(row["change_pct"]), [
+                    plain(config.get("label", configuration_label(config["id"]))), CHART_METRICS[metric][0],
+                    health_measurement(metric, row["measured"]),
+                    health_measurement(metric, row["reference_value"]), f'{row["change_pct"]:+.2f}%',
+                ]))
+    if not rows:
         return []
-    timeline = [(utc(run["started_at"]), run) for run in reversed(runs)]
-    return history_charts(timeline, METRICS) or run_charts(runs[0], METRICS)
+    rows.sort(key=lambda entry: entry[0], reverse=True)
+    return ["", "## What regressed", "", *table(
+        ["Configuration", "Metric", "Latest", "Reference", "Change"], [row for _, row in rows],
+    )]
+
+
+def latest_tables(view):
+    lines = ["", "## Latest numbers", "",
+             "Current values and signed changes against the saved reference, "
+             "or the previous comparable measurement when no saved reference exists. "
+             "Higher throughput and lower latency are better.", ""]
+    if view["run"].get("measurement_kind") == "controlled":
+        lines[3] = "Candidate medians and signed changes against the supplied baseline from the same experiment. Higher throughput and lower latency are better."
+    grouped = {}
+    for config in view["configurations"]:
+        group = config.get("group") or ("Metal · Apple M3 Ultra" if config["id"].startswith("metal-") else
+                                        "Two Sparks" if config["id"].endswith("-split") else "One Spark")
+        grouped.setdefault(group, []).append(config)
+    for heading, configs in grouped.items():
+        if not configs:
+            continue
+        if any("experimental" in config["workload"] for config in configs):
+            heading += " · experimental split"
+        headers = ["Model"] + [f"{CHART_METRICS[metric][0]} ({CHART_METRICS[metric][1]})"
+                                for metric in view["metrics"]]
+        rows = []
+        for config in configs:
+            cells = [plain(config.get("label", configuration_label(config["id"])))]
+            for metric in view["metrics"]:
+                row = config["metrics"].get(metric)
+                if row is None:
+                    cells.append(UNAVAILABLE)
+                    continue
+                value = health_measurement(metric, row["measured"]).rsplit(" ", 1)[0]
+                verdict = row["health_verdict"]
+                annotation = HEALTH_LABELS[verdict]
+                if row["change_pct"] is not None:
+                    annotation = f'{row["change_pct"]:+.2f}% · {annotation}'
+                cells.append(f"{value} ({annotation})")
+            rows.append(cells)
+        lines.extend(["### " + heading, "", *table(headers, rows), ""])
+    return lines
+
+
+def health_sections(view, charts, image_base_url=None, chart_format="png"):
+    run, counts = view["run"], view["counts"]
+    tolerance = f"{TOLERANCE * 100:.0f}%"
+    lines = [
+        f'**{counts.get("regressed", 0)} regressions · {counts.get("improved", 0)} improvements · '
+        f'{counts.get("passed", 0)} within tolerance · {counts.get("new", 0)} first measurements**', "",
+        f'{utc(run["started_at"]):%d %b %Y %H:%M UTC} · Engine {sha(run["source_sha"])} · '
+        f'{plain(run["profile"])} · **Tolerance: ±{tolerance}**', "",
+        f'{len(view["configurations"])} measured configurations. Counts refer to performance metrics. '
+        'First measurements establish new series and have no trend verdict.',
+    ]
+    if view["configurations"] and all(config["workload"].startswith("DGX Spark")
+                                      for config in view["configurations"]):
+        lines[2] += " · NVIDIA GB10 DGX Spark"
+    if not view["configurations"]:
+        lines.extend(["", "No performance measurements available."])
+        if run["outcome"] == "skipped":
+            lines.extend(["", "Qualification intentionally skipped."])
+    if view["issues"]:
+        lines.extend(["", "## Execution failures", "", *table(["Configuration", "Outcome"], [
+            [plain(configuration_label(item["id"])), OUTCOMES[item["outcome"]]] for item in view["issues"]
+        ])])
+    if view["errors"]:
+        lines.extend(["", "**Request errors were measured.** " + ", ".join(f"{value:g}%" for value in view["errors"]) + "."])
+    if run.get("comparison_error"):
+        lines.extend(["", "**Comparison unavailable.** " + plain(run["comparison_error"])])
+    elif run.get("comparison_notice"):
+        lines.extend(["", plain(run["comparison_notice"])])
+    lines.extend(regression_table(view))
+    if charts:
+        explanation = ("Each panel compares the measured value with its comparison reference. "
+                       "The comparison colour indicates its 1% verdict: green improved, blue within tolerance, "
+                       "red regressed, and grey a new series. No unmeasured samples are filled in."
+                       if chart_format == "mermaid" else
+                      f'Each panel shows one measured model and hardware configuration. The dashed line is '
+                      f'the current comparison reference; the shaded band is ±{tolerance}. '
+                      'Blue circles are within tolerance, green triangles indicate improvements, '
+                      'red triangles indicate regressions, and grey squares mark first measurements. '
+                      'Missing measurements leave gaps. Dates are UTC.')
+        lines.extend(["", "## Measured comparisons" if chart_format == "mermaid" else "## Performance over time", "", explanation])
+        for index, chart in enumerate(charts, start=1):
+            if chart_format == "mermaid":
+                from .inference_mermaid import measured_panels
+                lines.extend(["", "### " + chart.title, *measured_panels(chart)])
+                continue
+            path = image_path(index)
+            url = f"{image_base_url.rstrip('/')}/{path}" if image_base_url else path
+            lines.extend(["", "### " + chart.title, "",
+                          ("Higher" if DIRECTION[chart.metric] > 0 else "Lower") + " is better.", "",
+                          f"![{chart.title} over time for every measured configuration]({url})"])
+    if view["configurations"]:
+        lines.extend(latest_tables(view))
+    lines.extend(["", "## Measurement notes", ""])
+    if run.get("measurement_kind") == "controlled":
+        lines.extend(["Medians over measured rounds on the same host. Latency uses each round’s p50; "
+                      "round ranges and sample counts are listed below. Range overlap is an uncertainty "
+                      "note and does not replace the ±1% tolerance verdict. "
+                      "These arm comparisons are not a time history. Diagnostic trace passes are excluded.", ""])
+    elif any(metric in view["metrics"] for metric in ("output_tok_s", "ttft_p95_ms", "itl_p95_ms")):
+        lines.extend([
+            'Two trials per configuration. Throughput and latency values are means of trial summaries. '
+            'Latency is the mean of trial p95 values, not a pooled p95. '
+            f'{view["requests"]:,.0f} requests were recorded in this run.', "",
+        ])
+        if view["error_samples"] and not view["errors"]:
+            lines.extend(["No request errors were recorded.", ""])
+    else:
+        lines.extend(['Smoke throughput uses scored request token totals divided by measured phase time. '
+                      'It is a different workload from nightly AgentX.', ""])
+    lines.extend([f'The ±{tolerance} rule expresses tolerance, not statistical significance. '
+                  'Comparisons preserve workload identity; a changed benchmark starts a new series.'])
+    run_url = run.get("url")
+    if not run_url and re.fullmatch(r"[1-9][0-9]*-[1-9][0-9]*", run["id"]):
+        run_url = "https://github.com/Mesh-LLM/skippy/actions/runs/" + run["id"].split("-")[0]
+    links = [link("Source run", run_url)] if run_url else []
+    if run.get("published"):
+        links.append(f"[Full results and history]({HF_DATASET}/tree/main/runs)")
+        if not view["preview"]:
+            links.append(f"[Historical comparison audit]({HF_DATASET}/blob/main/comparability.json)")
+    if links:
+        lines.extend(["", " · ".join(links)])
+    if run.get("baseline_revision"):
+        sha(run["baseline_revision"])
+        lines.extend(["", link("Saved baseline snapshot", f"{HF_DATASET}/blob/{run['baseline_revision']}/baselines.json")])
+    return lines
+
+
+def run_summary(report, run_id, image_base_url=None, chart_format="png"):
+    if chart_format not in {"png", "mermaid"}:
+        raise ValueError("unsupported health chart format")
+    view = health_view(report, run_id)
+    charts = health_charts(view)
+    return "\n".join(["# Inference qualification", "", *health_sections(view, charts, image_base_url, chart_format), ""])
 
 
 def dataset_card(report, charts=None):
-    runs = published_runs(report)
+    view = health_view(report)
     preview = report.get("preview") is True
-    lines = [
-        "---", 'pretty_name: "Skippy inference qualification"',
-        "tags:", "- benchmark", "- tabular",
-    ]
-    if runs and not preview:
-        lines.extend([
-            "configs:", "  - config_name: default", "    data_files:",
-            '      - split: runs', '        path: "runs/*/*.parquet"',
-        ])
-    lines.extend([
-        "---", "",
-        "# Skippy inference qualification", "",
-        "Nightly performance and correctness results from Skippy’s main branch.",
-    ])
+    lines = ["---", 'pretty_name: "Skippy inference health"', "tags:", "- benchmark", "- tabular"]
+    if view is not None and not preview:
+        lines.extend(["configs:", "  - config_name: default", "    data_files:",
+                      "      - split: runs", '        path: "runs/*/*.parquet"'])
+    lines.extend(["---", "", "# Skippy inference health", ""])
     if preview:
-        lines.extend([
-            "", "**Preview.** Awaiting the first nightly publication. The values, dates, "
-            "and commit IDs on this card are illustrative.",
-        ])
-    if report.get("note"):
-        lines.extend(["", plain(report["note"])])
-    lines.extend(["", "## Latest results (preview)" if preview else "## Latest results", ""])
-    if runs:
-        lines.extend(run_sections(runs[0], "###", show_baseline_link=not preview))
-    else:
+        lines.extend(["**Preview.** Values, dates and commit IDs on this card are illustrative.", ""])
+    if view is None:
         lines.append("Awaiting the first nightly publication.")
-
-    charts = dataset_charts(report) if charts is None else charts
-    if charts:
-        if isinstance(charts[0], HistoryChart):
-            lines.extend([
-                "", "## Performance over time", "",
-                f"Up to {HISTORY_DAYS} days ending at the latest run shown. "
-                "Dashed lines show the saved baselines. Missing measurements leave gaps.",
-            ])
-        else:
-            lines.extend(["", "## Latest performance"])
-        for index, chart in enumerate(charts, start=1):
-            lines.extend(["", f"![{plain(chart.title)}]({image_path(index)})", "", plain(chart.caption)])
-    lines.extend(["", "## Saved baselines (preview)" if preview else "## Active baselines", ""])
-    baselines = report["active_baselines"]
-    lines.extend(baseline_table(baselines) if baselines else ["Awaiting the first valid measurements."])
-    if runs:
-        rows = [
-            [run_label(run), f'{utc(run["started_at"]):%Y-%m-%d %H:%M}', plain(run["profile"]),
-             sha(run["source_sha"]), OUTCOMES[run["outcome"]], coverage(run)]
-            for run in runs[:10]
-        ]
-        lines.extend([
-            "", "## Recent runs", "",
-            *table(["Run", "Started (UTC)", "Profile", "Tested SHA", "Outcome", "Coverage"], rows),
-        ])
-        history = runs[:5]
-        measurements = metric_history(history)
-        if measurements:
-            lines.extend([
-                "", "## Recent measurements", "", "Run times are in UTC.", "",
-                *table(["Workload", "Configuration", "Metric", *(
-                    link(f'{utc(run["started_at"]):%b %d %H:%M}', run.get("url")) for run in history
-                )], measurements),
-            ])
-    lines.extend([
-        "", "## Reading the results", "",
-        "Smoke prefill and decode rates and AgentX output throughput measure different workloads. "
-        "Each comparison uses its own configuration and workload.",
-        "",
-        "Changes are signed differences from the reference. Higher throughput and lower latency "
-        "are favorable. Request error rate changes are shown in percentage points.",
-        "",
-        "Qualification compares each measurement with the saved baseline using the configured "
-        "tolerance. The baseline advances when the result meets the improvement threshold.",
-        "",
-    ])
-    links = []
-    if runs and not preview:
-        links.append(f"[Run history and measurements]({HF_DATASET}/tree/main/runs)")
-    if baselines and not preview:
-        links.append(f"[Baseline manifest]({HF_DATASET}/blob/main/baselines.json)")
-    if links:
-        lines.extend([" · ".join(links), ""])
-    return "\n".join(lines)
+    else:
+        lines.extend(health_sections(view, health_charts(view) if charts is None else charts))
+    return "\n".join([*lines, ""])

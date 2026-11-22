@@ -1,4 +1,4 @@
-"""Materialize the source-bound inference qualification matrix."""
+"""Define the source-bound inference qualification matrix and split admission policy."""
 
 import re
 from pathlib import Path
@@ -6,6 +6,14 @@ from pathlib import Path
 from .ci_artifacts import read_json
 
 LADDER = Path(__file__).resolve().parents[2] / "ci/inference-ladder.json"
+
+
+def allowed_split_admissions(profile, mode):
+    if mode == "standalone":
+        return {None}
+    if profile in {"pr", "nightly", "release"}:
+        return {"certified", "uncertified_override"}
+    return {"certified"}
 
 
 def ladder_models():

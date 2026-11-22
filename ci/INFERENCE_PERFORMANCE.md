@@ -27,7 +27,7 @@ gh workflow run inference-performance.yml -f candidate=main \
 | `trace` | after the rounds, one diagnostic pass of the candidate with debug telemetry; default off |
 
 Both commits must be on protected main, unless an arm is `pr:N`: the head of an
-open pull request from this repository, never a fork's, so only code that could
+open pull request from this repository, never a fork's, authored by a collaborator with write access, so only code that could
 already run on trusted CI reaches the lab. Such an arm is reported, and stored,
 as not on main; with `pr:N` as the baseline, a change stacked on another pull
 request is measured against that one alone. The controller and the harness
@@ -86,8 +86,15 @@ logs, build logs and the AIPerf exports (as `aiperf.tar.gz`) sit beside it.
 
 The controller checks that evidence against the admitted plan and writes a table
 of medians, round ranges and the candidate's change against the baseline to the
-run summary. A change whose round ranges overlap the baseline's is reported as
-within spread rather than as a win or a loss.
+run summary. It uses the same measured-health layout as nightly Actions and the
+Hugging Face card: verdict counts, regressions first, comparison charts and current
+numbers. All model/server/point configurations appear. The tolerance is ±1%:
+higher throughput and lower latency are favorable. Overlapping round ranges are
+reported separately as uncertainty and do not override the tolerance verdict.
+Controlled latency is the median of round p50 values, distinct from nightly's
+mean of two trial p95 values. Baseline, candidate and optional llama.cpp reference
+arms are measurements from the same experiment, not artificial history points.
+Stored rows retain their actual timestamps for future trend analysis.
 
 For graphs over time it also writes `LABEL-rows.jsonl` beside each job's
 `LABEL-performance.json`, LABEL being the job's node or `any`: one row per measured sample,

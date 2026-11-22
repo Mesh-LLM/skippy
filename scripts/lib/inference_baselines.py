@@ -5,12 +5,14 @@ from decimal import Decimal
 import re
 
 from .inference_nightly_metrics import metric_value
+from .inference_comparability import contracts_match
 
 DATASET = "meshllm/skippy-inference-qualification"
 HISTORY_LIMIT = 64
 RUN_PATH = re.compile(r"runs/([1-9][0-9]*)/([1-9][0-9]*)\.parquet")
-TOLERANCE = Decimal("0.05")
+TOLERANCE = Decimal("0.01")
 DIRECTION = {
+    "ttft_ms_p50": -1, "itl_ms_p50": -1,
     "prefill_tok_s": 1, "decode_tok_s": 1, "output_tok_s": 1,
     "ttft_p95_ms": -1, "itl_p95_ms": -1,
 }
@@ -68,7 +70,7 @@ def apply_baselines(run, baselines, *, read_only=False):
     active = baseline_index(deepcopy(baselines))
     regression = False
     for config in result["configurations"]:
-        if config["outcome"] != "passed":
+        if config["outcome"] != "passed" or config.get("benchmark_compatible") is False:
             continue
         for row in config["metrics"]:
             metric = row["metric"]
@@ -81,7 +83,8 @@ def apply_baselines(run, baselines, *, read_only=False):
             key = metric_key(config["id"], row)
             saved = active.get(key)
             latest = {"value": current, "source_sha": result["source_sha"], "run_id": result["id"]}
-            if saved is None or saved["contract_sha256"] != contract:
+            if saved is None or not contracts_match(config["id"], row["workload"],
+                                                    saved["contract_sha256"], contract):
                 if read_only:
                     continue
                 row["baseline_update"] = "seeded"

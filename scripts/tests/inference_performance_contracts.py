@@ -2,6 +2,8 @@
 
 import json
 import unittest
+from pathlib import Path
+from runpy import run_path
 from unittest.mock import patch
 
 from lib import performance_plan
@@ -48,13 +50,30 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(performance_plan.pull_request_number("pr:130"), 130)
         for ref in ("main", "pr:0", "pr:x", "a" * 40):
             self.assertIsNone(performance_plan.pull_request_number(ref))
-        repo = "general-inference/skippy"
+        repo = "Mesh-LLM/skippy"
         pull = {"number": 130, "state": "open", "head": {"sha": self.candidate, "repo": {"full_name": repo}}}
         self.assertEqual(performance_plan.pull_request_head(pull, repo), self.candidate)
         fork = {**pull, "head": {"sha": self.candidate, "repo": {"full_name": "someone/skippy"}}}
         for refused in ({**pull, "state": "closed"}, fork, {**pull, "head": {"sha": self.candidate, "repo": None}}):
             with self.assertRaises(ValueError):
                 performance_plan.pull_request_head(refused, repo)
+
+    def test_native_pr_admission_requires_collaborator_write_access(self):
+        resolve = run_path(str(Path(__file__).resolve().parents[1] / "inference-performance.py"))["resolve"]
+        pull = {"number": 130, "state": "open", "user": {"login": "author"},
+                "head": {"sha": self.candidate, "repo": {"full_name": "Mesh-LLM/skippy"}}}
+        for permission in ("read", "triage", "none", "write", "maintain", "admin"):
+            calls = []
+            def github(path):
+                calls.append(path)
+                return pull if path.endswith("/pulls/130") else {"permission": permission}
+            with patch.dict(resolve.__globals__, github=github):
+                if permission in {"write", "maintain", "admin"}:
+                    self.assertEqual(resolve("pr:130"), (self.candidate, 130))
+                else:
+                    with self.assertRaisesRegex(ValueError, "collaborator"):
+                        resolve("pr:130")
+            self.assertEqual(calls[-1], "repos/Mesh-LLM/skippy/collaborators/author/permission")
 
     def test_every_arm_leads_one_round(self):
         arm_list = performance_plan.arms(self.candidate, self.baseline, self.pin)
@@ -111,6 +130,8 @@ class ServerTests(unittest.TestCase):
 
 
 class ReportTests(unittest.TestCase):
+    record = {"started_at": "2026-11-21T10:00:00Z", "arms": [{"label": "candidate", "sha": "a" * 40}]}
+
     def export(self, **overrides):
         value = {"request_count": {"avg": 16}, "request_error_rate": {"avg": 0}, "error_summary": [],
                  "is_complete": True, "output_token_throughput": {"avg": 120.5},
@@ -134,9 +155,37 @@ class ReportTests(unittest.TestCase):
         delta = rows[0]["candidate_vs_baseline"]
         self.assertAlmostEqual(delta["percent"], 20.0)
         self.assertFalse(delta["ranges_overlap"])
-        self.assertIn("+20.0% better", markdown("t", "h", rows))
+        self.assertIn("+20.00% · Improved", markdown("t", "h", rows, self.record))
         close = summarize([sample("baseline", v) for v in (100, 110)] + [sample("candidate", v) for v in (105, 108)])
-        self.assertIn("within spread", markdown("t", "h", close))
+        self.assertIn("round ranges overlap", markdown("t", "h", close, self.record))
+
+    def test_one_percent_rule_keeps_range_uncertainty_and_actual_p50_labels(self):
+        def row(metric, candidate):
+            return summarize([{"model": "m", "server": "s", "point": "p", "arm": arm,
+                               "metrics": {metric: value}}
+                              for arm, values in (("baseline", (90, 100, 110)),
+                                                  ("candidate", (candidate - 10, candidate, candidate + 10)))
+                              for value in values])[0]
+        for metric, within, improved, regressed in (("output_tok_s", 101, 102, 98),
+                                                   ("ttft_ms_p50", 99, 98, 102)):
+            for value, expected in ((within, "Within tolerance"), (improved, "Improved"), (regressed, "Regressed")):
+                result = performance_report.verdict(row(metric, value))
+                self.assertIn(expected, result)
+                self.assertIn("round ranges overlap", result)
+        report_rows = [row("ttft_ms_p50", 102), row("output_tok_s", 102)]
+        extra = {**report_rows[0], "server": "s2", "point": "p2"}
+        extra["arms"] = {**extra["arms"], "reference": {"median": 70, "min": 70, "max": 70, "n": 3}}
+        report = markdown("t", "Apple M1 Ultra", [*report_rows, extra], self.record)
+        for text in ("2 regressions", "1 improvements", "Tolerance: ±1%", "Time to first token (p50)",
+                     "m · s2 · p2", "Apple M1 Ultra", "Reference", "```mermaid", "## Latest numbers"):
+            self.assertIn(text, report)
+        for text in ("p95", "Two trials", "One Spark", "Performance over time", "M3 Ultra"):
+            self.assertNotIn(text, report)
+        self.assertEqual(report.count("xychart-beta"), 3)
+        self.assertIn('bar [100.00000000, 102.00000000, 70.00000000]', report)
+        with self.assertRaises(ValueError):
+            summarize([{"model": "m", "server": "s", "point": "p", "arm": "candidate",
+                        "metrics": {"output_tok_s": float("nan")}}])
 
     def test_stored_rows_carry_their_arm_point_and_host_but_not_the_trace_pass(self):
         shape = performance_plan.scenario()

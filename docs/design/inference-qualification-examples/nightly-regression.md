@@ -1,97 +1,51 @@
 # Inference qualification
 
-**Failed** · nightly profile · `cccccccccccc` · 2026-11-24 14:00 UTC · Run nightly-regression
+**2 regressions · 0 improvements · 0 within tolerance · 0 first measurements**
 
-Published baseline snapshot [`ffffffffffff`](https://huggingface.co/datasets/meshllm/skippy-inference-qualification/blob/ffffffffffffffffffffffffffffffffffffffff/baselines.json)
+24 Nov 2026 14:00 UTC · Engine `cccccccccccc` · nightly · **Tolerance: ±1%** · NVIDIA GB10 DGX Spark
 
-Illustrative scenario. Correctness passed. Output throughput fell 12.20% against the saved baseline, exceeding the 5% tolerance. The saved baseline stays at 30.42 tok/s.
+1 measured configurations. Counts refer to performance metrics. First measurements establish new series and have no trend verdict.
 
-## Performance charts
+## What regressed
 
-Qwen3.5-4B (1 Spark) · Nightly AgentX (v1). Gray = saved baseline · Red = regression.
+| Configuration | Metric | Latest | Reference | Change |
+| --- | --- | --- | --- | --- |
+| Qwen3.5-4B (1 Spark) | Output throughput | 26.71 tok/s | 30.42 tok/s | -12.20% |
+| Qwen3.5-4B (1 Spark) | Time to first token | 14.53 seconds | 14.34 seconds | +1.37% |
 
-```mermaid
----
-config:
-  xyChart:
-    width: 760
-    height: 290
-    yAxis:
-      showLabel: false
-      showTick: false
-  themeVariables:
-    xyChart:
-      plotColorPalette: "#68778A, #B13A4D"
----
-xychart-beta
-    title "Output throughput"
-    x-axis ["Saved baseline — 30.42", "This run — 26.71"]
-    y-axis "tok/s" 0 --> 35
-    bar [30.42, 0]
-    bar [0, 26.71]
-```
+## Performance over time
 
-Qwen3.5-4B (1 Spark) · Nightly AgentX (v1). Gray = saved baseline · Blue = equivalent (within tolerance).
+Each panel shows one measured model and hardware configuration. The dashed line is the current comparison reference; the shaded band is ±1%. Blue circles are within tolerance, green triangles indicate improvements, red triangles indicate regressions, and grey squares mark first measurements. Missing measurements leave gaps. Dates are UTC.
 
-```mermaid
----
-config:
-  xyChart:
-    width: 760
-    height: 290
-    yAxis:
-      showLabel: false
-      showTick: false
-  themeVariables:
-    xyChart:
-      plotColorPalette: "#68778A, #216FAD"
----
-xychart-beta
-    title "Time to first token (p95)"
-    x-axis ["Saved baseline — 14335", "This run — 14531"]
-    y-axis "ms" 0 --> 17000
-    bar [14335, 0]
-    bar [0, 14531]
-```
+### Output throughput
 
-Qwen3.5-4B (1 Spark) · Smoke test (v1). Gray = saved baseline · Blue = equivalent (within tolerance).
+Higher is better.
 
-```mermaid
----
-config:
-  xyChart:
-    width: 760
-    height: 290
-    yAxis:
-      showLabel: false
-      showTick: false
-  themeVariables:
-    xyChart:
-      plotColorPalette: "#68778A, #216FAD"
----
-xychart-beta
-    title "Decode throughput"
-    x-axis ["Saved baseline — 63.32", "This run — 62.95"]
-    y-axis "tok/s" 0 --> 71
-    bar [63.32, 0]
-    bar [0, 62.95]
-```
+![Output throughput over time for every measured configuration](summaries/nightly-regression/charts/qualification-1.png)
 
-## Lab outcomes
+### Time to first token
 
-| Configuration | Qualification | Evidence |
-| --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | Passed | — |
+Lower is better.
 
-## Nightly AgentX (v1)
+![Time to first token over time for every measured configuration](summaries/nightly-regression/charts/qualification-2.png)
 
-| Configuration | Metric | This run | Saved baseline | Baseline commit | Change vs saved | Comparison |
-| --- | --- | --- | --- | --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | Output throughput | 26.71 tok/s | 30.42 tok/s | `bbbbbbbbbbbb` | -12.20% | Regression |
-| Qwen3.5-4B (1 Spark) | Time to first token (p95) | 14,531 ms | 14,335 ms | `aaaaaaaaaaaa` | +1.37% | Within tolerance |
+## Latest numbers
 
-## Smoke test (v1)
+Current values and signed changes against the saved reference, or the previous comparable measurement when no saved reference exists. Higher throughput and lower latency are better.
 
-| Configuration | Metric | This run | Saved baseline | Baseline commit | Change vs saved | Comparison |
-| --- | --- | --- | --- | --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | Decode throughput | 62.95 tok/s | 63.32 tok/s | `aaaaaaaaaaaa` | -0.58% | Within tolerance |
+### One Spark
+
+| Model | Output throughput (tok/s) | Time to first token (seconds) | Time between tokens (ms) |
+| --- | --- | --- | --- |
+| Qwen3.5-4B (1 Spark) | 26.71 (-12.20% · Regressed) | 14.53 (+1.37% · Regressed) | — |
+
+
+## Measurement notes
+
+Two trials per configuration. Throughput and latency values are means of trial summaries. Latency is the mean of trial p95 values, not a pooled p95. 0 requests were recorded in this run.
+
+The ±1% rule expresses tolerance, not statistical significance. Comparisons preserve workload identity; a changed benchmark starts a new series.
+
+[Full results and history](https://huggingface.co/datasets/meshllm/skippy-inference-qualification/tree/main/runs)
+
+[Saved baseline snapshot](https://huggingface.co/datasets/meshllm/skippy-inference-qualification/blob/ffffffffffffffffffffffffffffffffffffffff/baselines.json)

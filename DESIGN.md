@@ -28,8 +28,6 @@ without learning custom UI.
 
 - Top-level order is Getting Started, Running Models, Pipeline Parallelism,
   KV Caching, Configuration Reference, then Contributing.
-- The home page credits General Inference as primary developer and sponsor in
-  a quiet inline attribution using its linked wordmark.
 - Each page begins with one task or concept and uses copyable examples.
 - Pagefind search is available in the header and indexes prose rather than code
   blocks, keeping results focused on operator intent.

@@ -11,7 +11,7 @@ from .inference_ladder import ladder_models
 
 ROOT = Path(__file__).resolve().parents[2]
 SCENARIO = ROOT / "ci/inference-performance.json"
-SKIPPY = "https://github.com/general-inference/skippy.git"
+SKIPPY = "https://github.com/Mesh-LLM/skippy.git"
 LLAMA = "https://github.com/ggml-org/llama.cpp.git"
 SHA = re.compile(r"[0-9a-f]{40}")
 PULL_REQUEST = re.compile(r"pr:([1-9][0-9]{0,6})")

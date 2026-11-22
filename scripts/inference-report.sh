@@ -10,7 +10,7 @@ fail() { printf '%s\n' "$*" >&2; exit 1; }
 [[ ${GITHUB_RUN_ATTEMPT:-} =~ ^[1-9][0-9]*$ ]] || fail 'Invalid workflow attempt'
 [[ ${REQUIRED:-} == true ]] || fail 'Results comments require inference qualification'
 
-repository=repos/general-inference/skippy
+repository=repos/Mesh-LLM/skippy
 marker='<!-- skippy-inference-results:v1 -->'
 number=$(jq -er '.number | select(type == "number" and . > 0 and . == floor)' "$GITHUB_EVENT_PATH")
 temporary=$(mktemp -d)
@@ -18,7 +18,7 @@ trap 'rm -rf -- "$temporary"' EXIT
 directory=${1:?Usage: inference-report.sh EVIDENCE_DIRECTORY}
 run=$GITHUB_RUN_ID
 attempt=$GITHUB_RUN_ATTEMPT
-url="https://github.com/general-inference/skippy/actions/runs/$run"
+url="https://github.com/Mesh-LLM/skippy/actions/runs/$run"
 
 # Pagination is needed even though today's PR ladder fits on one page.
 gh api "$repository/actions/runs/$run/attempts/$attempt/jobs?per_page=100" --paginate --slurp |
@@ -45,7 +45,7 @@ fi
 cat > "$temporary/body.md" <<EOF
 $marker
 <!-- run:$run:$attempt -->
-### [General Inference](https://generalinference.xyz) Lab Qualification: $outcome
+### Skippy Lab Qualification: $outcome
 
 Commit: \`$SOURCE_SHA\` · PR smoke · [Workflow and timings]($url/attempts/$attempt) · [Saved evidence]($url#artifacts)
 
