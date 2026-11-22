@@ -87,7 +87,7 @@ archives. JY hardware jobs declare literal runner groups and labels. The full
 CI gate matches all package jobs to the plan and checks required device results.
 
 The CPU-only `quality` job runs on GitHub-hosted `ubuntu-24.04` inside
-`ghcr.io/general-inference/skippy-ci-cpu:latest` for lint, tests and FFI binding
+`ghcr.io/mesh-llm/skippy-ci-cpu:latest` for lint, tests and FFI binding
 freshness. The image supplies the pinned Rust toolchain, Just, sccache,
 build-essential, mold and LLVM/Clang 22 development inputs. The job verifies
 its tools and pulls the private image with its own `GITHUB_TOKEN` using
@@ -133,7 +133,7 @@ receive this secret.
 ### CPU dependency image
 
 `ci/Dockerfile` builds the x86_64 CPU dependency image
-`ghcr.io/general-inference/skippy-ci-cpu:latest`. It includes **build-essential
+`ghcr.io/mesh-llm/skippy-ci-cpu:latest`. It includes **build-essential
 and mold**, LLVM/Clang 22 development packages (including `libclang-cpp22-dev`),
 libc++/libc++abi 22, OpenMP and sanitizers, Rust/Clippy/rustfmt
 from `rust-toolchain.toml`, Just, sccache, CMake, Ninja, Python, jq, OpenSSH client tools and
@@ -168,9 +168,9 @@ keys. Private same-repository pulls use `GITHUB_TOKEN` with `packages: read`.
 ### CUDA and ROCm compiler images
 
 The `CI images` workflow also builds
-`ghcr.io/general-inference/skippy-ci-cuda12`,
-`ghcr.io/general-inference/skippy-ci-cuda13`, and
-`ghcr.io/general-inference/skippy-ci-rocm` from digest-pinned vendor development
+`ghcr.io/mesh-llm/skippy-ci-cuda12`,
+`ghcr.io/mesh-llm/skippy-ci-cuda13`, and
+`ghcr.io/mesh-llm/skippy-ci-rocm` from digest-pinned vendor development
 images. CUDA 12.9.2 and 13.1.2 use separate images, matching `targets.json`, so
 each hosted runner only needs space for one toolkit. Both CUDA toolkits build
 on native x86_64 and ARM64 Ubuntu runners.
