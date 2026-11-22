@@ -13,6 +13,7 @@ from lib.ci_artifacts import read_json, write_json
 from lib.ci_process import command
 
 from lib.inference_ladder import matrix, plan
+from lib.inference_publication_policy import publication_allowed
 
 REPO = "Mesh-LLM/skippy"
 
@@ -69,7 +70,7 @@ def admit():
     if candidate:
         plan("release", candidate)
         admit_release_candidate(candidate)
-        output(source=candidate, profile="release")
+        output(source=candidate, profile="release", publication="false")
         return
     if name == "workflow_run":
         run = event["workflow_run"]
@@ -85,7 +86,8 @@ def admit():
     plan(profile, sha)
     if is_pr:
         admit_pr(sha)
-    output(source=sha, profile=profile)
+    output(source=sha, profile=profile,
+           publication=str(publication_allowed(os.environ, profile)).lower())
 
 
 def main():

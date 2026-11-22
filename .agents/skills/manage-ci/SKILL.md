@@ -98,6 +98,11 @@ contract; no downstream product's workflow topology applies here.
   Only release controller jobs may write the candidate refs. Release promotion
   and upgrade publication each use a scoped App credential. Do not expose
   publisher secrets to builds.
+- Scheduled and manually dispatched nightly runs of the protected inference
+  workflow use the same full matrix, collect public measurements and publish
+  the public report. Publication is required for their final success; the
+  trigger type must not disable it. PR and release profiles keep their own
+  qualification contracts.
 - The protected inference results-comment job alone receives pull-requests write
   permission for PR comments, plus read-only contents/actions. It receives no
   native dispatch credential and never executes candidate code.

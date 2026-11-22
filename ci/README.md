@@ -73,13 +73,14 @@ uv run --python 3.12 --with-requirements ci/inference-report-requirements.txt \
 just inference-render-report summary "$examples/examples.json" --run pr-pass
 ```
 
-The scheduled inference workflow runs the twelve nightly AgentX configurations
-and the seven PR-profile smoke configurations. The smoke runs use the same
+Scheduled and manually dispatched nightly inference runs on protected main run
+the twelve AgentX configurations and the seven PR-profile smoke configurations.
+The smoke runs use the same
 harness as labeled PRs. PR smoke, nightly, and release qualification allow
 experimental split admission, retain the actual admission status, and require
 the full checks for their profile.
 
-The protected scheduled publisher reads the current public dataset revision,
+The protected nightly publisher reads the current public dataset revision,
 compares verified measurements directly with its saved baselines, and uploads
 aggregate Parquet results, the baseline manifest, and the generated card in
 one revision-checked commit to
@@ -90,11 +91,17 @@ recorded while the saved reference remains in force until a new source exceeds
 the improvement threshold. Regressions and incomplete evidence fail nightly
 after publication and preserve the affected baseline.
 
-The scheduled publisher uses the existing `HF_TOKEN` Actions secret. It needs
+The nightly publisher uses the existing `HF_TOKEN` Actions secret. It needs
 write access to this Hugging Face dataset. Only the publisher step receives
 the token. Public receipts contain aggregate results, source and workload
 identities, and verdicts. Native logs, lab receipts, and native access
 credentials stay in their existing systems.
+
+Dispatch `inference.yml` on `main` with `profile=nightly` to run the same
+nineteen-configuration matrix, collect public measurements, and publish the
+report as a scheduled run. Both triggers require publication to succeed for
+the final qualification status to pass. Manual PR and release profiles retain
+their own qualification contracts.
 
 Scheduled, manual and reusable full/candidate validation bypass path selection.
 Tagged releases and manual llama upgrades retain their explicit triggers. The

@@ -14,27 +14,21 @@ from lib.inference_markdown import dataset_card, dataset_charts, run_summary, ut
 from lib.inference_nightly_results import nightly_run
 from lib.inference_parquet import read_run, write_run
 from lib.inference_png import export_charts
+from lib.inference_publication_policy import publication_allowed
 
 
 REPO = "meshllm/skippy-inference-qualification"
-SOURCE_REPO = "Mesh-LLM/skippy"
 HISTORY_LIMIT = 64
 RUN_PATH = re.compile(r"runs/([1-9][0-9]*)/([1-9][0-9]*)\.parquet")
 CHART_PATH = re.compile(r"charts/qualification-[1-4]\.png")
 
 
 def admit(environment):
-    expected = {
-        "GITHUB_EVENT_NAME": "schedule", "GITHUB_REPOSITORY": SOURCE_REPO,
-        "GITHUB_REF": "refs/heads/main",
-        "GITHUB_WORKFLOW_REF": f"{SOURCE_REPO}/.github/workflows/inference.yml@refs/heads/main",
-        "GITHUB_WORKFLOW_SHA": environment.get("GITHUB_SHA"),
-    }
-    if any(environment.get(key) != value for key, value in expected.items()):
-        raise ValueError("only scheduled qualification on protected main can publish")
+    if not publication_allowed(environment, environment.get("QUALIFICATION_PROFILE")):
+        raise ValueError("only nightly qualification on protected main can publish")
     source = environment["GITHUB_SHA"]
     if not SHA.fullmatch(source) or environment.get("SOURCE_SHA") != source:
-        raise ValueError("nightly publication source must match the scheduled SHA")
+        raise ValueError("nightly publication source must match the workflow SHA")
     run_id, attempt, number = (environment[key] for key in (
         "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_RUN_NUMBER",
     ))

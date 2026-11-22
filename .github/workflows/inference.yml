@@ -71,7 +71,7 @@ on:
       JIANYANG_INFERENCE_SSH_KEY:
         required: true
       HF_TOKEN:
-        description: Hugging Face write token used only by the protected scheduled publisher.
+        description: Hugging Face write token used only by the protected nightly publisher.
         required: false
 permissions:
   contents: read
@@ -94,13 +94,14 @@ jobs:
     outputs:
       source: ${{ steps.admission.outputs.source || github.event.pull_request.head.sha || github.sha }}
       profile: ${{ steps.admission.outputs.profile || 'pr' }}
+      publication: ${{ steps.admission.outputs.publication }}
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       # Credentialed controller source always comes from protected main.
       # Candidate source is never checked out or executed by this workflow.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: ${{ github.event_name == 'schedule' && github.sha || 'main' }}
+          ref: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && github.sha || 'main' }}
           persist-credentials: false
       - uses: ./.github/actions/setup
       - id: admission
@@ -113,7 +114,7 @@ jobs:
         env:
           SOURCE_SHA: ${{ steps.admission.outputs.source }}
           PROFILE: ${{ steps.admission.outputs.profile }}
-          NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'Mesh-LLM/skippy' }}
+          NIGHTLY_PUBLICATION: ${{ steps.admission.outputs.publication }}
         run: |
           flags=()
           if [[ "$NIGHTLY_PUBLICATION" == true ]]; then flags+=(--include-smoke); fi
@@ -132,7 +133,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: ${{ github.event_name == 'schedule' && github.sha || 'main' }}
+          ref: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && github.sha || 'main' }}
           persist-credentials: false
       - uses: ./.github/actions/setup
       - name: Dispatch and await native Spark qualification
@@ -140,7 +141,7 @@ jobs:
           SOURCE_SHA: ${{ needs.plan.outputs.source }}
           PROFILE: ${{ matrix.profile }}
           CONFIGURATION: ${{ matrix.configuration }}
-          NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'Mesh-LLM/skippy' }}
+          NIGHTLY_PUBLICATION: ${{ needs.plan.outputs.publication }}
           JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
         run: |
           flags=()
@@ -165,8 +166,7 @@ jobs:
     name: Publish nightly qualification
     needs: [plan, qualification]
     if: >-
-      always() && !cancelled() && github.event_name == 'schedule' &&
-      github.repository == 'Mesh-LLM/skippy' && github.ref == 'refs/heads/main' &&
+      always() && !cancelled() && needs.plan.outputs.publication == 'true' &&
       needs.plan.result == 'success'
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 20
@@ -198,6 +198,7 @@ jobs:
       - name: Compare against saved baselines and publish the public report
         env:
           SOURCE_SHA: ${{ needs.plan.outputs.source }}
+          QUALIFICATION_PROFILE: ${{ needs.plan.outputs.profile }}
           MATRIX_RESULT: ${{ needs.qualification.result }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_HUB_DISABLE_PROGRESS_BARS: '1'
@@ -218,6 +219,7 @@ jobs:
           PLAN: ${{ needs.plan.result }}
           RESULT: ${{ needs.qualification.result }}
           PUBLICATION: ${{ needs.nightly_publish.result }}
+          PUBLICATION_REQUIRED: ${{ needs.plan.outputs.publication }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |
@@ -227,7 +229,7 @@ jobs:
             // qualify label, so no Spark pair was reserved. Report it green
             // instead of failing unlabeled PRs.
             const skipped = plan === 'skipped';
-            const nightly = context.eventName === 'schedule';
+            const nightly = process.env.PUBLICATION_REQUIRED === 'true';
             const passed = plan === 'success' && result === 'success' &&
               (!nightly || publication === 'success');
             const description = passed
