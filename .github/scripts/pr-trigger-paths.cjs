@@ -34,15 +34,17 @@ function workflowPaths(workflow, eventName) {
   return rules;
 }
 
-function expectedWorkflows(files) {
+function expectedWorkflows(files, sameRepositoryPR = false, depot = false) {
   const filenames = files.flatMap(({ filename, previous_filename }) => [filename, previous_filename]).filter(Boolean);
   const expected = new Map();
-  for (const [workflow, eventName] of producers) {
-    const rules = workflowPaths(workflow, eventName);
+  for (const [workflow, defaultEvent] of producers) {
+    const eventName = workflow === 'ci.yml' && sameRepositoryPR ? 'pull_request_target' : defaultEvent;
+    const producer = depot && eventName === 'pull_request' ? workflow.replace('.yml', '-pr.yml') : workflow;
+    const rules = workflowPaths(producer, eventName);
     // GitHub applies matching path patterns in order, with the last match
     // determining whether each changed file is included.
     if (filenames.some(filename => rules.findLast(rule => rule.regex.test(filename))?.include)) {
-      expected.set(`.github/workflows/${workflow}`, eventName);
+      expected.set(`.github/workflows/${producer}`, eventName);
     }
   }
   return expected;

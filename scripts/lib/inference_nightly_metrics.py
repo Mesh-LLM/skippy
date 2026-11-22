@@ -9,6 +9,7 @@ import time
 
 from .ci_artifacts import digest, write_json
 from .inference_inputs import fixture, input_hashes
+from .inference_ladder import allowed_split_admissions
 from .inference_throughput import collect, successful_run
 
 WORKLOADS = {"pr": "DGX Spark smoke v1", "nightly": "DGX Spark AgentX nightly v1"}
@@ -104,10 +105,7 @@ def collect_nightly(pilot, job, row, sha, output, key, profile):
     if qualification.get("gpu", "").strip() != "NVIDIA GB10":
         raise ValueError("nightly evidence requires the DGX Spark GPU")
     certification = qualification.get("split_certification")
-    allowed = {None} if row["mode"] == "standalone" else {"certified"}
-    if row["mode"] == "split" and profile == "pr":
-        allowed.add("uncertified_override")
-    if certification not in allowed:
+    if certification not in allowed_split_admissions(profile, row["mode"]):
         raise ValueError("invalid split admission for nightly measurement")
     write_json(output / "measurements.json", {
         "schema_version": 1, "source_sha": sha, "configuration": row["id"], "profile": profile,

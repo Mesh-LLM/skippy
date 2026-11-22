@@ -1,0 +1,130 @@
+name: Build CI images
+on:
+  workflow_call:
+    inputs:
+      image-set:
+        description: Select CPU, GPU, or both sets of compiler images.
+        type: string
+        default: all
+    outputs:
+      cpu-artifact-id:
+        value: ${{ jobs.cpu-build.outputs.artifact_id }}
+      cpu-image-id:
+        value: ${{ jobs.cpu-build.outputs.image_id }}
+      gpu-matrix:
+        value: ${{ jobs.matrix.outputs.gpu }}
+permissions:
+  contents: read
+jobs:
+  matrix:
+    name: Validate compiler image targets
+    if: >-
+      github.repository == 'Mesh-LLM/skippy' &&
+      (inputs.image-set != 'cpu' ||
+       (github.event_name == 'pull_request' && vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true'))
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    outputs:
+      gpu: ${{ steps.plan.outputs.gpu }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - id: plan
+        run: |
+          set -euo pipefail
+          matrix="$(jq -ce '
+            .include as $rows
+            | select(($rows | map([.backend, .arch]) | sort) == [
+                ["cuda12", "amd64"], ["cuda12", "arm64"], ["cuda13", "amd64"],
+                ["cuda13", "arm64"], ["rocm", "amd64"]])
+            | select(all($rows[]; (.toolkit_version | test("^[0-9]+[.][0-9]+[.][0-9]+$")) and
+              (.toolkit_base | test("@sha256:[a-f0-9]{64}$"))))
+          ' ci/image-targets.json)"
+          printf 'gpu=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+  cpu-build:
+    name: Build and test CPU image
+    if: >-
+      github.repository == 'Mesh-LLM/skippy' &&
+      (inputs.image-set != 'gpu' ||
+       (github.event_name == 'pull_request' && vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true'))
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    outputs:
+      artifact_id: ${{ steps.image.outputs.artifact-id }}
+      image_id: ${{ steps.metadata.outputs.image_id }}
+    env:
+      SKIPPY_CI_IMAGE_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      SOURCE_REVISION: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - run: just ci-image-build
+      - run: time just ci-image-smoke
+      - id: metadata
+        run: |
+          echo "image_id=$(docker image inspect --format '{{.Id}}' skippy-ci-cpu:build)" >> "$GITHUB_OUTPUT"
+          docker image inspect --format 'Uncompressed image size: {{.Size}} bytes' skippy-ci-cpu:build
+      - run: just ci-image-export
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        id: image
+        with:
+          name: skippy-ci-cpu-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/ci-image/skippy-ci-cpu.tar
+          if-no-files-found: error
+          retention-days: 7
+  gpu-build:
+    name: Build and test ${{ matrix.backend }} image (${{ matrix.arch }})
+    needs: matrix
+    runs-on: >-
+      ${{ matrix.arch == 'arm64' && (vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-arm-4' || 'ubuntu-24.04-arm') ||
+          (vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04') }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.gpu) }}
+    env:
+      SKIPPY_CI_IMAGE_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.backend }}-${{ matrix.arch }}
+      SOURCE_REVISION: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - name: Free unused runner disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h /
+      - name: Build image
+        env:
+          BACKEND: ${{ matrix.backend }}
+          ARCH: ${{ matrix.arch }}
+          TOOLKIT_BASE: ${{ matrix.toolkit_base }}
+          TOOLKIT_VERSION: ${{ matrix.toolkit_version }}
+        run: just ci-gpu-image-build "$BACKEND" "$TOOLKIT_BASE" "$TOOLKIT_VERSION" "$ARCH"
+      - name: Smoke test image
+        run: time just ci-gpu-image-smoke '${{ matrix.backend }}' '${{ matrix.arch }}'
+      - name: Free build cache before export
+        run: |
+          docker builder prune -f
+          df -h /
+      - name: Export tested image
+        run: just ci-gpu-image-export '${{ matrix.backend }}'
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          # A publish-only retry can reuse the successful build's archive.
+          name: skippy-ci-${{ matrix.backend }}-${{ matrix.arch }}-${{ github.run_id }}
+          path: |
+            target/ci-image/skippy-ci-${{ matrix.backend }}.tar.gz
+            target/ci-image/skippy-ci-${{ matrix.backend }}.id
+          compression-level: 0
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
