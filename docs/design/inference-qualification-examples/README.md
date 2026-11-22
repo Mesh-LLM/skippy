@@ -1,91 +1,60 @@
 ---
-pretty_name: "Skippy inference qualification"
+pretty_name: "Skippy inference health"
 tags:
 - benchmark
 - tabular
 ---
 
-# Skippy inference qualification
+# Skippy inference health
 
-Nightly performance and correctness results from Skippy’s main branch.
+**Preview.** Values, dates and commit IDs on this card are illustrative.
 
-**Preview.** Awaiting the first nightly publication. The values, dates, and commit IDs on this card are illustrative.
+**2 regressions · 0 improvements · 0 within tolerance · 0 first measurements**
 
-## Latest results (preview)
+24 Nov 2026 14:00 UTC · Engine `cccccccccccc` · nightly · **Tolerance: ±1%** · NVIDIA GB10 DGX Spark
 
-**Failed** · nightly profile · `cccccccccccc` · 2026-11-24 14:00 UTC · Run nightly-regression
+1 measured configurations. Counts refer to performance metrics. First measurements establish new series and have no trend verdict.
 
-Illustrative scenario. Correctness passed. Output throughput fell 12.20% against the saved baseline, exceeding the 5% tolerance. The saved baseline stays at 30.42 tok/s.
+## What regressed
 
-### Lab outcomes
-
-| Configuration | Qualification | Evidence |
-| --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | Passed | — |
-
-### Nightly AgentX (v1)
-
-| Configuration | Metric | This run | Saved baseline | Baseline commit | Change vs saved | Comparison |
-| --- | --- | --- | --- | --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | Output throughput | 26.71 tok/s | 30.42 tok/s | `bbbbbbbbbbbb` | -12.20% | Regression |
-| Qwen3.5-4B (1 Spark) | Time to first token (p95) | 14,531 ms | 14,335 ms | `aaaaaaaaaaaa` | +1.37% | Within tolerance |
-
-### Smoke test (v1)
-
-| Configuration | Metric | This run | Saved baseline | Baseline commit | Change vs saved | Comparison |
-| --- | --- | --- | --- | --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | Decode throughput | 62.95 tok/s | 63.32 tok/s | `aaaaaaaaaaaa` | -0.58% | Within tolerance |
+| Configuration | Metric | Latest | Reference | Change |
+| --- | --- | --- | --- | --- |
+| Qwen3.5-4B (1 Spark) | Output throughput | 26.71 tok/s | 30.42 tok/s | -12.20% |
+| Qwen3.5-4B (1 Spark) | Time to first token | 14.53 seconds | 14.34 seconds | +1.37% |
 
 ## Performance over time
 
-Up to 30 days ending at the latest run shown. Dashed lines show the saved baselines. Missing measurements leave gaps.
+Each panel shows one measured model and hardware configuration. The dashed line is the current comparison reference; the shaded band is ±1%. Blue circles are within tolerance, green triangles indicate improvements, red triangles indicate regressions, and grey squares mark first measurements. Missing measurements leave gaps. Dates are UTC.
 
-![Output throughput](charts/qualification-1.png)
+### Output throughput
 
-Qwen3.5-4B (1 Spark) · Nightly AgentX (v1)
+Higher is better.
 
-![Time to first token (p95)](charts/qualification-2.png)
+![Output throughput over time for every measured configuration](charts/qualification-1.png)
 
-Qwen3.5-4B (1 Spark) · Nightly AgentX (v1)
+### Time to first token
 
-![Decode throughput](charts/qualification-3.png)
+Lower is better.
 
-Qwen3.5-4B (1 Spark) · Smoke test (v1)
+![Time to first token over time for every measured configuration](charts/qualification-2.png)
 
-## Saved baselines (preview)
+## Latest numbers
 
-| Configuration | Workload | Metric | Baseline | Reference SHA |
-| --- | --- | --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | Nightly AgentX (v1) | Output throughput | 30.42 tok/s | `bbbbbbbbbbbb` |
-| Qwen3.5-4B (1 Spark) | Nightly AgentX (v1) | Time to first token (p95) | 14,335 ms | `aaaaaaaaaaaa` |
-| Qwen3.5-4B (1 Spark) | Smoke test (v1) | Prefill throughput | 612.17 tok/s | `aaaaaaaaaaaa` |
-| Qwen3.5-4B (1 Spark) | Smoke test (v1) | Decode throughput | 63.32 tok/s | `aaaaaaaaaaaa` |
+Current values and signed changes against the saved reference, or the previous comparable measurement when no saved reference exists. Higher throughput and lower latency are better.
 
-## Recent runs
+### One Spark
 
-| Run | Started (UTC) | Profile | Tested SHA | Outcome | Coverage |
-| --- | --- | --- | --- | --- | --- |
-| nightly-regression | 2026-11-24 14:00 | nightly | `cccccccccccc` | Failed | 1/1 configurations passed |
-| nightly-steady | 2026-11-21 14:00 | nightly | `333333333333` | Passed | 1/1 configurations passed |
-| nightly-promotion | 2026-11-19 14:00 | nightly | `bbbbbbbbbbbb` | Passed | 1/1 configurations passed |
-| nightly-gap | 2026-11-16 14:00 | nightly | `222222222222` | Incomplete | 0/1 configurations passed |
-| nightly-stable | 2026-11-12 14:00 | nightly | `111111111111` | Passed | 1/1 configurations passed |
-| nightly-seed | 2026-11-09 14:00 | nightly | `aaaaaaaaaaaa` | Passed | 1/1 configurations passed |
+| Model | Output throughput (tok/s) | Time to first token (seconds) | Time between tokens (ms) |
+| --- | --- | --- | --- |
+| Qwen3.5-4B (1 Spark) | 26.71 (-12.20% · Regressed) | 14.53 (+1.37% · Regressed) | — |
 
-## Recent measurements
 
-Run times are in UTC.
+## Measurement notes
 
-| Workload | Configuration | Metric | Nov 24 14:00 | Nov 21 14:00 | Nov 19 14:00 | Nov 16 14:00 | Nov 12 14:00 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Nightly AgentX (v1) | Qwen3.5-4B (1 Spark) | Output throughput | 26.71 tok/s | 30.14 tok/s | 30.42 tok/s | — | 26.5 tok/s |
-| Nightly AgentX (v1) | Qwen3.5-4B (1 Spark) | Time to first token (p95) | 14,531 ms | 14,270 ms | 14,230 ms | — | 14,312 ms |
-| Smoke test (v1) | Qwen3.5-4B (1 Spark) | Decode throughput | 62.95 tok/s | 63.82 tok/s | 64.01 tok/s | — | 63.44 tok/s |
+Two trials per configuration. Throughput and latency values are means of trial summaries. Latency is the mean of trial p95 values, not a pooled p95. 0 requests were recorded in this run.
 
-## Reading the results
+The ±1% rule expresses tolerance, not statistical significance. Comparisons preserve workload identity; a changed benchmark starts a new series.
 
-Smoke prefill and decode rates and AgentX output throughput measure different workloads. Each comparison uses its own configuration and workload.
+[Full results and history](https://huggingface.co/datasets/meshllm/skippy-inference-qualification/tree/main/runs)
 
-Changes are signed differences from the reference. Higher throughput and lower latency are favorable. Request error rate changes are shown in percentage points.
-
-Qualification compares each measurement with the saved baseline using the configured tolerance. The baseline advances when the result meets the improvement threshold.
+[Saved baseline snapshot](https://huggingface.co/datasets/meshllm/skippy-inference-qualification/blob/ffffffffffffffffffffffffffffffffffffffff/baselines.json)

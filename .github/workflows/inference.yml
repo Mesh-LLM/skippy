@@ -71,7 +71,7 @@ on:
       JIANYANG_INFERENCE_SSH_KEY:
         required: true
       HF_TOKEN:
-        description: Hugging Face write token used only by the protected scheduled publisher.
+        description: Hugging Face write token used only by the protected nightly publisher.
         required: false
 permissions:
   contents: read
@@ -89,11 +89,12 @@ jobs:
     if: >-
       github.event_name != 'pull_request_target' ||
       contains(github.event.pull_request.labels.*.name, 'qualify')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 20
     outputs:
       source: ${{ steps.admission.outputs.source || github.event.pull_request.head.sha || github.sha }}
       profile: ${{ steps.admission.outputs.profile || 'pr' }}
+      publication: ${{ steps.admission.outputs.publication }}
       matrix: ${{ steps.matrix.outputs.matrix }}
       metal_matrix: ${{ steps.metal_matrix.outputs.matrix }}
       controller: ${{ steps.controller.outputs.sha }}
@@ -102,7 +103,7 @@ jobs:
       # Candidate source is never checked out or executed by this workflow.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: ${{ github.event_name == 'schedule' && !inputs.release_candidate && github.sha || 'main' }}
+          ref: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && github.sha || 'main' }}
           persist-credentials: false
       - id: controller
         run: printf 'sha=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -117,7 +118,7 @@ jobs:
         env: &matrix-env
           SOURCE_SHA: ${{ steps.admission.outputs.source }}
           PROFILE: ${{ steps.admission.outputs.profile }}
-          NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && !inputs.release_candidate && github.ref == 'refs/heads/main' && github.repository == 'general-inference/skippy' }}
+          NIGHTLY_PUBLICATION: ${{ steps.admission.outputs.publication }}
         run: |
           flags=()
           if [[ "$NIGHTLY_PUBLICATION" == true ]]; then flags+=(--include-smoke); fi
@@ -135,7 +136,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: ${{ matrix.profile == 'pr' && 100 || 360 }}
     env: &qualification-env
       EVIDENCE: target/ci-evidence/inference-${{ matrix.id }}
@@ -178,7 +179,7 @@ jobs:
       # the Actions timeout clock until the preceding model finishes.
       max-parallel: 1
       matrix: ${{ fromJSON(needs.plan.outputs.metal_matrix) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: ${{ matrix.profile == 'pr' && 100 || 360 }}
     env: *qualification-env
     steps: *qualification-steps
@@ -186,11 +187,9 @@ jobs:
     name: Publish nightly qualification
     needs: [plan, qualification, qualification_metal]
     if: >-
-      always() && !cancelled() && github.event_name == 'schedule' &&
-      !inputs.release_candidate && github.repository == 'general-inference/skippy' &&
-      github.ref == 'refs/heads/main' &&
+      always() && !cancelled() && needs.plan.outputs.publication == 'true' &&
       needs.plan.result == 'success'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -220,19 +219,31 @@ jobs:
       - name: Compare against saved baselines and publish the public report
         env:
           SOURCE_SHA: ${{ needs.plan.outputs.source }}
+          QUALIFICATION_PROFILE: ${{ needs.plan.outputs.profile }}
           MATRIX_RESULT: ${{ needs.qualification.result == 'success' && needs.qualification_metal.result == 'success' && 'success' || 'failure' }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_HUB_DISABLE_PROGRESS_BARS: '1'
         run: |
           SKIPPY_PYTHON="$RUNNER_TEMP/inference-publication/bin/python" \
             just inference-publish-nightly target/ci-evidence/nightly-inference
+      - name: Retain the full inference health report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: inference-health-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/ci-evidence/nightly-inference/publication-report.json
+          if-no-files-found: warn
+          retention-days: 30
+
   compare:
     name: Report inference qualification
     needs: [plan, qualification, qualification_metal]
     if: >-
       always() && !cancelled() && needs.plan.result == 'success' &&
-      (github.event_name == 'pull_request_target' || github.event_name == 'workflow_dispatch' || inputs.release_candidate)
-    runs-on: ubuntu-24.04
+      needs.plan.outputs.publication != 'true' &&
+      (github.event_name == 'pull_request_target' || github.event_name == 'workflow_dispatch' || inputs.release_candidate) &&
+      (needs.plan.outputs.profile == 'pr' || needs.plan.outputs.profile == 'nightly' || needs.plan.outputs.profile == 'release')
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -259,12 +270,12 @@ jobs:
           RUN_STARTED_AT=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
             --jq '.run_started_at')
           export RUN_STARTED_AT
-          python3 scripts/inference-compare.py target/ci-evidence/inference-comparison
+          just inference-compare target/ci-evidence/inference-comparison
 
   summary:
     needs: [plan, qualification, qualification_metal, nightly_publish, compare]
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: Publish the source-bound qualification result
@@ -279,6 +290,7 @@ jobs:
           COMPARISON: ${{ needs.compare.result }}
           PROFILE: ${{ needs.plan.outputs.profile }}
           RELEASE_CANDIDATE: ${{ inputs.release_candidate }}
+          PUBLICATION_REQUIRED: ${{ needs.plan.outputs.publication }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |
@@ -291,8 +303,8 @@ jobs:
             const pullRequest = context.eventName === 'pull_request_target';
             const skipped = plan === 'skipped' && pullRequest &&
               !(context.payload.pull_request.labels ?? []).some(label => label.name === 'qualify');
-            const nightly = context.eventName === 'schedule' && !candidate;
-            const compare = pullRequest || context.eventName === 'workflow_dispatch' || Boolean(candidate);
+            const nightly = process.env.PUBLICATION_REQUIRED === 'true';
+            const compare = !nightly && (pullRequest || context.eventName === 'workflow_dispatch' || Boolean(candidate));
             const qualified = cuda === 'success' && metal === 'success';
             const passed = plan === 'success' && qualified &&
               (!nightly || publication === 'success') && (!compare || comparison === 'success');
@@ -322,7 +334,7 @@ jobs:
   report:
     needs: [plan, qualification, qualification_metal, summary]
     if: always() && github.event_name == 'pull_request_target' && needs.plan.result == 'success'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -337,7 +349,7 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         continue-on-error: true
         with:
-          pattern: inference-*-${{ github.run_id }}-${{ github.run_attempt }}
+          pattern: inference-*-${{ github.run_id }}-*
           path: target/inference-comment
           merge-multiple: true
       - name: Update the PR results comment

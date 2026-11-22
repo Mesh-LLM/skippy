@@ -120,7 +120,13 @@ impl SpanWindow {
     /// command execution that completed, the change in footprint, and the
     /// live KV cells at the end. Process-wide, not this thread's alone.
     pub(crate) fn close(self) -> BTreeMap<String, Value> {
-        let counters = Counters::now();
+        self.charge(Counters::now(), process_usage())
+    }
+
+    /// [`Self::close`] against readings taken as the window ends. Tests pass
+    /// fixed readings: the counters are process-wide, and other tests bump
+    /// them while they run.
+    fn charge(self, counters: Counters, process: Option<ProcessUsage>) -> BTreeMap<String, Value> {
         let ms = |nanos: u64| nanos as f64 / 1e6;
         let mut attributes = BTreeMap::from([
             (
@@ -140,7 +146,7 @@ impl SpanWindow {
                 )),
             ),
         ]);
-        if let Some((before, after)) = self.process.zip(process_usage()) {
+        if let Some((before, after)) = self.process.zip(process) {
             let cpu =
                 after.user.saturating_sub(before.user) + after.system.saturating_sub(before.system);
             attributes.insert(
@@ -736,23 +742,37 @@ mod tests {
 
     #[test]
     fn a_span_window_charges_what_the_process_used_while_it_was_open() {
-        let window = SpanWindow::open();
-        record_gpu_command(Duration::from_millis(8), Duration::from_millis(1));
-        record_gpu_command(Duration::from_millis(2), Duration::ZERO);
-        record_runtime_busy(Duration::from_millis(3));
-        // Burn some CPU so the charged time is visible on every platform.
-        let spin = Instant::now();
-        while spin.elapsed() < Duration::from_millis(5) {
-            std::hint::black_box(0);
-        }
-        let attributes = window.close();
+        let start = Instant::now();
+        let opened = reading(
+            start,
+            1_000,
+            Counters {
+                gpu_execute_nanos: 4_000_000,
+                gpu_commands: 3,
+                runtime_busy_nanos: 1_000_000,
+                ..Counters::default()
+            },
+        );
+        let closed = reading(
+            start,
+            1_004,
+            Counters {
+                gpu_execute_nanos: 14_000_000,
+                gpu_commands: 5,
+                runtime_busy_nanos: 4_000_000,
+                ..Counters::default()
+            },
+        );
+        let window = SpanWindow {
+            counters: opened.counters,
+            process: opened.process,
+        };
+        let attributes = window.charge(closed.counters, closed.process);
         assert_eq!(attributes["skippy.span.gpu_execute_ms"], json!(10.0));
         assert_eq!(attributes["skippy.span.gpu_command_buffers"], json!(2));
         assert_eq!(attributes["skippy.span.runtime_busy_ms"], json!(3.0));
-        if let Some(cpu) = attributes.get("skippy.span.cpu_ms") {
-            assert!(cpu.as_f64().unwrap() >= 0.0);
-            assert!(attributes.contains_key("skippy.span.footprint_delta_bytes"));
-        }
+        assert_eq!(attributes["skippy.span.cpu_ms"], json!(6.0));
+        assert_eq!(attributes["skippy.span.footprint_delta_bytes"], json!(0));
     }
 
     fn reading(at: Instant, cpu_ms: u64, counters: Counters) -> Reading {

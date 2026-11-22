@@ -35,12 +35,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01QA3dWey3RBtBgDz1Tery9Y
 ---
  include/skippy/runtime.h                     |   4 +-
- src/CMakeLists.txt                           |  26 ++
+ src/CMakeLists.txt                           |  27 ++
  src/skippy/execution-single.cpp              |  11 +
  src/skippy/model_loading.cpp                 |  14 +-
  src/skippy/tests/backend_sample_capacity.cpp | 251 ++++++++++++++
  src/skippy/tests/recurrent_retention.cpp     | 326 +++++++++++++++++++
- 6 files changed, 627 insertions(+), 5 deletions(-)
+ 6 files changed, 628 insertions(+), 5 deletions(-)
  create mode 100644 src/skippy/tests/backend_sample_capacity.cpp
  create mode 100644 src/skippy/tests/recurrent_retention.cpp
 
@@ -63,10 +63,10 @@ index 856c98f97..10ea60e7c 100644
  
  /** @brief Sentinel for `skippy_runtime_config` tri-state fields: keep the derived default. */
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index cfd896714..75cb30503 100644
+index 2e85dbfe1..fb1c5b560 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -435,6 +435,32 @@ if (LLAMA_STAGE_BUILD_TESTS)
+@@ -435,6 +435,33 @@ if (LLAMA_STAGE_BUILD_TESTS)
      add_skippy_verify_rollback_test(qwen4exp qwen4exp-moe.gguf)
      # lfm2's fixture slides its attention window, so it checkpoints every window.
      add_skippy_verify_rollback_test(lfm2 lfm2-dense.gguf sliding-window)
@@ -95,6 +95,7 @@ index cfd896714..75cb30503 100644
 +        COMMAND skippy-recurrent-retention "${SKIPPY_MODEL_FIXTURE_DIR}/qwen35-dense.gguf")
 +    set_tests_properties(skippy_recurrent_retention_qwen35 PROPERTIES
 +        FIXTURES_REQUIRED skippy-noalloc-qwen35-fixture ENVIRONMENT "SKIPPY_RS_SEQ=")
++    set_property(TEST skippy_recurrent_retention_gemma skippy_recurrent_retention_qwen35 PROPERTY RESOURCE_LOCK skippy_recurrent_retention)
 +
      add_executable(skippy-sampling-history
          skippy/tests/sampling_history.cpp

@@ -18,7 +18,7 @@ pull request flow so the change remains reviewable and attributable.
 
 - Start by opening a GitHub issue to discuss the proposed change. Once the
   approach is agreed, submit a pull request linked to that issue.
-- Submit pull requests from a fork unless you are a core contributor.
+- Use a fork or an upstream branch if you have permission to push one.
 - AI-assisted and AI-generated pull requests are welcome. Contributors remain
   responsible for understanding, testing, and explaining the submitted
   changes.
@@ -30,19 +30,12 @@ pull request flow so the change remains reviewable and attributable.
 
 ## Why pull requests need approval
 
-Skippy tests inference on real hardware. [General Inference](https://generalinference.xyz)
-donates time on its lab machines, which include Mac Studios, Mac minis, NVIDIA
-DGX Sparks, and AMD Ryzen Halo 395 development systems. The lab also supports
-commercial development of General Inference’s products.
-
-General Inference has an established trust relationship with members of the
-Mesh-LLM GitHub organization. A Mesh-LLM organization member must approve a
-pull request before its inference tests can run in the shared lab.
-
-Test jobs run in isolated environments. The Mesh LLM team is improving that
-isolation so more contributors can test their pull requests. The team is also
-exploring dedicated infrastructure for Skippy, with potential donations from
-General Inference and other contributing organizations.
+Skippy tests inference on real hardware, including Mac Studios, Mac minis,
+NVIDIA DGX Sparks, and AMD Ryzen Halo 395 development systems. A Mesh-LLM
+organization member with repository write access approves workflow runs for
+external fork pull requests. Fork builds require isolated runners. Shared lab
+qualification requires a trusted contributor and a branch in the upstream
+repository.
 
 If you’re interested in sponsoring cloud-based inference hardware for Skippy,
 please reach out to the Mesh LLM team on Discord or Buzz.

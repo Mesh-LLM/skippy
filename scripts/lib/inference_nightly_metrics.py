@@ -8,8 +8,10 @@ from statistics import fmean
 import time
 
 from .ci_artifacts import digest, write_json
+from .inference_comparability import benchmark_functions
 from .inference_inputs import fixture, input_hashes
 from .inference_metal import DEVICE as METAL_DEVICE
+from .inference_ladder import allowed_split_admissions
 from .inference_throughput import collect, successful_run
 
 WORKLOADS = {"pr": "DGX Spark smoke v1", "nightly": "DGX Spark AgentX nightly v1",
@@ -19,10 +21,6 @@ METAL_WORKLOADS = {"pr": "Apple M3 Ultra smoke v1", "nightly": "Apple M3 Ultra A
 SMOKE_METRICS = ("prefill_tok_s", "decode_tok_s")
 AGENTX_METRICS = ("output_tok_s", "ttft_p95_ms", "itl_p95_ms", "requests", "request_error_pct")
 METRIC_NAMES = {"pr": SMOKE_METRICS, "nightly": AGENTX_METRICS, "release": AGENTX_METRICS}
-HARNESS = (
-    "scripts/inference-execute.py", "scripts/lib/inference_checks.py",
-    "scripts/lib/inference_nightly_metrics.py", "ci/inference-quality.json",
-)
 
 
 def metric_value(value, *, positive=False):
@@ -71,24 +69,36 @@ def agentx_metrics(trials):
             "requests": sum(requests), "request_error_pct": 0}
 
 
-def harness_files(profile, backend):
-    files = HARNESS
-    if backend == "metal":
-        files += ("scripts/lib/inference_metal.py", "scripts/lib/ci_smoke.py")
+def benchmark_definition(profile, mode, backend="cuda"):
+    functions = {
+        "scripts/inference-execute.py": ["execute"],
+        "scripts/lib/inference_checks.py": ["score"],
+    }
+    if mode == "split":
+        functions["scripts/inference-execute.py"].append("prepare_split")
+    files = ("ci/inference-quality.json",)
     if profile == "pr":
-        files += ("scripts/lib/inference_throughput.py",)
+        functions["scripts/lib/inference_checks.py"].append("streaming")
+        functions["scripts/lib/inference_throughput.py"] = ["collect", "totals"]
     else:
+        functions["scripts/lib/inference_checks.py"].append("performance")
+        functions["scripts/lib/inference_nightly_metrics.py"] = ["agentx_metrics"]
         files += ("ci/inference-corpus.json", "ci/aiperf-requirements.lock")
-    return files
+    if backend == "metal":
+        functions["scripts/lib/inference_metal.py"] = ["device_and_budget", "available_memory", "offload"]
+        functions["scripts/lib/ci_smoke.py"] = ["require_device"]
+    return functions, files
 
 
 def contract(profile, row, key, certification):
-    backend = row.get("backend", "cuda")
-    files = harness_files(profile, backend)
+    functions, files = benchmark_definition(profile, row["mode"], row.get("backend", "cuda"))
     inputs = {
-        "profile": profile, "mode": row["mode"], "device": METAL_DEVICE if backend == "metal" else "NVIDIA GB10",
+        "recipe_version": 2,
+        "profile": profile, "mode": row["mode"], "device": METAL_DEVICE if row.get("backend") == "metal" else "NVIDIA GB10",
         "certification": certification, "model": fixture(key),
         "harness": {name: digest(Path(name)) for name in files},
+        "benchmark_functions": {path: benchmark_functions(path, names)
+                                for path, names in functions.items()},
     }
     encoded = json.dumps(inputs, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
@@ -118,10 +128,7 @@ def collect_measurements(pilot, job, row, sha, output, key, profile):
     if qualification.get("gpu", "").strip() != device or qualification.get("backend", "cuda") != backend:
         raise ValueError(f"inference evidence requires {backend} on {device}")
     certification = qualification.get("split_certification")
-    allowed = {None} if row["mode"] == "standalone" else {"certified"}
-    if row["mode"] == "split" and profile == "pr":
-        allowed.add("uncertified_override")
-    if certification not in allowed:
+    if certification not in allowed_split_admissions(profile, row["mode"]):
         raise ValueError("invalid split admission for nightly measurement")
     write_json(output / "measurements.json", {
         "schema_version": 1, "source_sha": sha, "configuration": row["id"], "profile": profile,

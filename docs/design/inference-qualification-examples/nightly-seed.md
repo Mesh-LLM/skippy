@@ -1,112 +1,42 @@
 # Inference qualification
 
-**Passed** · nightly profile · `aaaaaaaaaaaa` · 2026-11-09 14:00 UTC · Run nightly-seed
+**0 regressions · 0 improvements · 0 within tolerance · 2 first measurements**
 
-Illustrative scenario using sample results.
+09 Nov 2026 14:00 UTC · Engine `aaaaaaaaaaaa` · nightly · **Tolerance: ±1%** · NVIDIA GB10 DGX Spark
 
-## Performance charts
+1 measured configurations. Counts refer to performance metrics. First measurements establish new series and have no trend verdict.
 
-Qwen3.5-4B (1 Spark) · Nightly AgentX (v1). Slate = measurement without a verdict.
+## Performance over time
 
-```mermaid
----
-config:
-  xyChart:
-    width: 760
-    height: 290
-  themeVariables:
-    xyChart:
-      plotColorPalette: "#537489"
----
-xychart-beta
-    title "Output throughput"
-    x-axis ["This run — 26.29"]
-    y-axis "tok/s" 0 --> 30
-    bar [26.29]
-```
+Each panel shows one measured model and hardware configuration. The dashed line is the current comparison reference; the shaded band is ±1%. Blue circles are within tolerance, green triangles indicate improvements, red triangles indicate regressions, and grey squares mark first measurements. Missing measurements leave gaps. Dates are UTC.
 
-Qwen3.5-4B (1 Spark) · Nightly AgentX (v1). Slate = measurement without a verdict.
+### Output throughput
 
-```mermaid
----
-config:
-  xyChart:
-    width: 760
-    height: 290
-  themeVariables:
-    xyChart:
-      plotColorPalette: "#537489"
----
-xychart-beta
-    title "Time to first token (p95)"
-    x-axis ["This run — 14335"]
-    y-axis "ms" 0 --> 17000
-    bar [14335]
-```
+Higher is better.
 
-Qwen3.5-4B (1 Spark) · Smoke test (v1). Slate = measurement without a verdict.
+![Output throughput over time for every measured configuration](summaries/nightly-seed/charts/qualification-1.png)
 
-```mermaid
----
-config:
-  xyChart:
-    width: 760
-    height: 290
-  themeVariables:
-    xyChart:
-      plotColorPalette: "#537489"
----
-xychart-beta
-    title "Prefill throughput"
-    x-axis ["This run — 612.17"]
-    y-axis "tok/s" 0 --> 690
-    bar [612.17]
-```
+### Time to first token
 
-Qwen3.5-4B (1 Spark) · Smoke test (v1). Slate = measurement without a verdict.
+Lower is better.
 
-```mermaid
----
-config:
-  xyChart:
-    width: 760
-    height: 290
-  themeVariables:
-    xyChart:
-      plotColorPalette: "#537489"
----
-xychart-beta
-    title "Decode throughput"
-    x-axis ["This run — 63.32"]
-    y-axis "tok/s" 0 --> 71
-    bar [63.32]
-```
+![Time to first token over time for every measured configuration](summaries/nightly-seed/charts/qualification-2.png)
 
-## Lab outcomes
+## Latest numbers
 
-| Configuration | Qualification | Evidence |
-| --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | Passed | — |
+Current values and signed changes against the saved reference, or the previous comparable measurement when no saved reference exists. Higher throughput and lower latency are better.
 
-## Nightly AgentX (v1)
+### One Spark
 
-| Configuration | Metric | This run | Saved baseline | Baseline commit | Change vs saved | Comparison |
-| --- | --- | --- | --- | --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | Output throughput | 26.29 tok/s | — | — | — | No matching baseline |
-| Qwen3.5-4B (1 Spark) | Time to first token (p95) | 14,335 ms | — | — | — | No matching baseline |
+| Model | Output throughput (tok/s) | Time to first token (seconds) | Time between tokens (ms) |
+| --- | --- | --- | --- |
+| Qwen3.5-4B (1 Spark) | 26.29 (New series) | 14.34 (New series) | — |
 
-## Smoke test (v1)
 
-| Configuration | Metric | This run | Saved baseline | Baseline commit | Change vs saved | Comparison |
-| --- | --- | --- | --- | --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | Prefill throughput | 612.17 tok/s | — | — | — | No matching baseline |
-| Qwen3.5-4B (1 Spark) | Decode throughput | 63.32 tok/s | — | — | — | No matching baseline |
+## Measurement notes
 
-## Baseline updates
+Two trials per configuration. Throughput and latency values are means of trial summaries. Latency is the mean of trial p95 values, not a pooled p95. 0 requests were recorded in this run.
 
-| Configuration | Workload | Metric | Action | New baseline |
-| --- | --- | --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | Nightly AgentX (v1) | Output throughput | Seeded | 26.29 tok/s |
-| Qwen3.5-4B (1 Spark) | Nightly AgentX (v1) | Time to first token (p95) | Seeded | 14,335 ms |
-| Qwen3.5-4B (1 Spark) | Smoke test (v1) | Prefill throughput | Seeded | 612.17 tok/s |
-| Qwen3.5-4B (1 Spark) | Smoke test (v1) | Decode throughput | Seeded | 63.32 tok/s |
+The ±1% rule expresses tolerance, not statistical significance. Comparisons preserve workload identity; a changed benchmark starts a new series.
+
+[Full results and history](https://huggingface.co/datasets/meshllm/skippy-inference-qualification/tree/main/runs)

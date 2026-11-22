@@ -9,10 +9,8 @@ from unittest.mock import patch
 
 from inference_nightly import PR_PATH, SOURCE, smoke_receipt
 from lib.ci_artifacts import read_json
-from lib.inference_charts import Chart
 from lib.inference_markdown import dataset_charts
 from lib.inference_parquet import read_run
-from lib.inference_png import draw
 
 
 class Dataset:
@@ -58,38 +56,21 @@ class Dataset:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_bytes(source.read_bytes())
         self.directory = target
-        return SimpleNamespace(commit_url=f"https://example.invalid/{self.sha}")
+        return SimpleNamespace(commit_url=f"https://example.invalid/{self.sha}", oid=self.sha)
 
 
 class PublicationTests(unittest.TestCase):
-    def test_mixed_platform_png_has_room_for_long_labels_and_caption(self):
-        from matplotlib import dates
-        from matplotlib.backends.backend_agg import FigureCanvasAgg
-        from matplotlib.figure import Figure
-
-        chart = Chart(
-            "Decode throughput", "tok/s",
-            ("CUDA - Qwen3-Coder-30B-A3B (1 Spark)", "Metal - Qwen3-Coder-30B-A3B (M3 Ultra)"),
-            (100, 80), "Smoke test (v1). Blue = equivalent (within tolerance) · Red = regression. "
-            "The gray line shows the saved baseline for each configuration.", ("passed", "regressed"),
-            (100, 90), horizontal=True,
-        )
-        figures = []
-
-        def factory(**options):
-            figure = Figure(**options)
-            FigureCanvasAgg(figure)
-            figures.append(figure)
-            return figure
-
+    def test_three_headline_figures_export_as_pngs_with_all_configurations(self):
+        from inference_markdown import history
+        from lib.inference_charts import dataset_charts, image_path
+        from lib.inference_png import export_charts
+        charts = dataset_charts(history())
+        self.assertEqual(len(charts), 3)
+        self.assertTrue(all(len(chart.panels) == 2 for chart in charts))
         with TemporaryDirectory() as directory:
-            draw(chart, Path(directory) / "test.png", factory, dates)
-        figure = figures[0]
-        renderer = figure.canvas.get_renderer()
-        for label in [*figure.texts, *figure.axes[0].get_yticklabels()]:
-            extent = label.get_window_extent(renderer)
-            self.assertGreater(extent.x0, 0)
-            self.assertLess(extent.x1, figure.bbox.width)
+            export_charts(charts, Path(directory))
+            for index in range(1, 4):
+                self.assertEqual((Path(directory) / image_path(index)).read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
 
     def test_failed_run_is_published_and_does_not_replace_saved_baseline(self):
         publish = run_path(str(PR_PATH))["publish"]
@@ -99,8 +80,10 @@ class PublicationTests(unittest.TestCase):
             evidence = root / "evidence"
 
             def release(source, run_id, number, started_at):
+                evidence.mkdir(exist_ok=True)
                 return publish(dataset, dataset.download, dict, dict, evidence,
-                               (source, run_id, "1", number, started_at, False))
+                               (source, run_id, "1", number, started_at, False),
+                               report_output=evidence / "publication-report.json")
 
             first_stamp = "2026-11-21T00:00:00Z"
             smoke_receipt(evidence, SOURCE, "23")
@@ -108,12 +91,17 @@ class PublicationTests(unittest.TestCase):
             first = release(SOURCE, "23", 1, first_stamp)
             self.assertEqual(first["outcome"], "failed")
             self.assertEqual(dataset.version, 2)
+            first_report = read_json(evidence / "publication-report.json")
+            self.assertEqual(first_report["chart_base_url"],
+                             "https://huggingface.co/datasets/meshllm/skippy-inference-qualification/resolve/"
+                             + dataset.sha + "/reports/23-1")
             initial = read_json(dataset.directory / "baselines.json")
             self.assertEqual(len(initial["baselines"]), 4)
             self.assertEqual(read_run(dataset.directory / "runs/23/1.parquet"), first)
             self.assertTrue((dataset.directory / "charts/qualification-1.png").is_file())
             self.assertEqual(release(SOURCE, "23", 1, first_stamp), first)
             self.assertEqual(dataset.version, 2)
+            self.assertEqual(read_json(evidence / "publication-report.json")["runs"], [first])
 
             second_stamp = "2026-11-22T00:00:00Z"
             other_source = "b" * 40
@@ -125,18 +113,36 @@ class PublicationTests(unittest.TestCase):
             current = read_json(dataset.directory / "baselines.json")
             self.assertEqual(current["baselines"], initial["baselines"])
             self.assertEqual(current["history"], ["runs/24/1.parquet", "runs/23/1.parquet"])
+            report = read_json(evidence / "publication-report.json")
+            self.assertEqual([run["id"] for run in report["runs"]], ["24-1", "23-1"])
+            from lib.inference_markdown import run_summary
+            summary = run_summary(report, second["id"], image_base_url=report["chart_base_url"])
+            self.assertIn(report["chart_base_url"] + "/charts/qualification-1.png", summary)
+            self.assertIn("-10.00%", summary)
             card = (dataset.directory / "README.md").read_text(encoding="utf-8")
-            self.assertIn("## Latest results", card)
-            self.assertIn("| -10.00% | Regression |", card)
+            self.assertIn("## Latest numbers", card)
+            self.assertIn("-10.00% · Regressed", card)
             self.assertIn("## Performance over time", card)
-            self.assertIn("CUDA and M3 Ultra Metal", card)
+            self.assertIn("Metal · Apple M3 Ultra", card)
             charts = dataset_charts({"schema_version": 1, "runs": [first, second]})
-            self.assertEqual(charts[0].values, (100, 90))
-            self.assertEqual(charts[0].baseline, (100, 100))
-            self.assertEqual(charts[0].metal.values, (125, 112))
-            self.assertEqual(charts[0].metal.baseline, (125, 125))
+            self.assertEqual(len(charts[0].panels), 2)
+            self.assertEqual({panel.current for panel in charts[0].panels}, {90, 112})
+            self.assertEqual({panel.reference for panel in charts[0].panels}, {100, 125})
             self.assertNotIn("job_fixture", card)
             self.assertEqual(read_run(dataset.directory / "runs/24/1.parquet"), second)
+            # Replaying an older run must embed its own immutable images, not
+            # the latest card's charts or the newer run's measurements.
+            self.assertEqual(release(SOURCE, "23", 1, first_stamp), first)
+            replay = read_json(evidence / "publication-report.json")
+            self.assertTrue(replay["chart_base_url"].endswith("/reports/23-1"))
+            first_chart = dataset.directory / "reports/23-1/charts/qualification-1.png"
+            second_chart = dataset.directory / "reports/24-1/charts/qualification-1.png"
+            self.assertNotEqual(first_chart.read_bytes(), second_chart.read_bytes())
+            card_before = (dataset.directory / "README.md").read_bytes()
+            first_chart.unlink()
+            release(SOURCE, "23", 1, first_stamp)
+            self.assertTrue((dataset.directory / "reports/23-1/charts/qualification-1.png").is_file())
+            self.assertEqual((dataset.directory / "README.md").read_bytes(), card_before)
             with self.assertRaisesRegex(ValueError, "older nightly"):
                 release(SOURCE, "22", 1, first_stamp)
 

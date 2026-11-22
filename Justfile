@@ -1,4 +1,6 @@
-automation_python := env("SKIPPY_PYTHON", "python3")
+# macOS's python3 is 3.9, older than the 3.12 the report tooling and the AIPerf
+# lock target; with uv installed, use the interpreter .python-version names.
+automation_python := env("SKIPPY_PYTHON", `command -v uv >/dev/null 2>&1 && test -f .python-version && uv python find 2>/dev/null || command -v python3`)
 llama_dir := env("SKIPPY_LLAMA_DIR", ".deps/llama.cpp")
 macos_target := env("MACOSX_DEPLOYMENT_TARGET", "")
 export MACOSX_DEPLOYMENT_TARGET := if macos_target == "" { trim(read(justfile_directory() / "scripts/lib/macos-deployment-target.txt")) } else { macos_target }
@@ -184,6 +186,10 @@ ci-plan:
 [positional-arguments]
 inference-plan profile source output="target/ci-evidence/inference-plan.json":
     @"{{ automation_python }}" scripts/inference-plan.py plan "$@"
+
+[positional-arguments]
+inference-compare evidence:
+    @"{{ automation_python }}" scripts/inference-compare.py "$@"
 
 process-supervision-test:
     @cargo test --locked -p process-supervision
