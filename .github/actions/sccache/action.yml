@@ -1,5 +1,5 @@
 name: Prepare compiler cache
-description: Reuse or install pinned sccache, enable the GitHub cache backend, and reset job statistics.
+description: Prepare pinned sccache and select the compiler cache backend and access mode.
 inputs:
   scope:
     description: Platform and backend identity for cache isolation.
@@ -10,19 +10,24 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Export GitHub cache credentials
+    - name: Export Actions cache settings
       uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+      env:
+        USE_DEPOT_CACHE: ${{ startsWith(runner.name, 'depot-') }}
       with:
         script: |
-          core.exportVariable('ACTIONS_CACHE_SERVICE_V2', 'true');
-          core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
-          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
           core.exportVariable('SKIPPY_ACTIONS_CACHE_MODE', process.env.ACTIONS_CACHE_MODE || '');
+          if (process.env.USE_DEPOT_CACHE !== 'true') {
+            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', 'true');
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+          }
     - name: Prepare pinned sccache
       shell: bash
       env:
         SCCACHE_SCOPE: ${{ inputs.scope }}
         SCCACHE_READ_ONLY: ${{ inputs.read-only }}
+        USE_DEPOT_CACHE: ${{ startsWith(runner.name, 'depot-') }}
       run: |
         set -euo pipefail
         version=0.19.0
@@ -67,19 +72,35 @@ runs:
             llama_cpp/upstream.txt llama_cpp/whisper-upstream.txt llama_cpp/patches
         } | xargs -0 git hash-object | shasum -a 256 | awk '{print $1}')"
         export SCCACHE_BASEDIRS="$GITHUB_WORKSPACE"
-        export SCCACHE_GHA_VERSION="skippy-v1-$SCCACHE_SCOPE-$recipe_digest"
-        export SCCACHE_GHA_RW_MODE=READ_ONLY
+        namespace="skippy-v1-$SCCACHE_SCOPE-$recipe_digest"
+        cache_mode=READ_ONLY
         case "${GITHUB_REF:-}:$GITHUB_EVENT_NAME" in
           refs/heads/main:push|refs/heads/main:schedule|refs/heads/main:workflow_dispatch)
             if [[ "$SCCACHE_READ_ONLY" != true && "${GITHUB_REF_PROTECTED:-false}" == true &&
                   "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]; then
               case "${SKIPPY_ACTIONS_CACHE_MODE:-write}" in
-                write|write-only) export SCCACHE_GHA_RW_MODE=READ_WRITE ;;
+                write|write-only) cache_mode=READ_WRITE ;;
               esac
             fi
             ;;
         esac
-        echo "sccache GitHub cache mode: $SCCACHE_GHA_RW_MODE"
+        if [[ "$USE_DEPOT_CACHE" == true ]]; then
+          if [[ -z "${SCCACHE_WEBDAV_ENDPOINT:-}" ]]; then
+            echo "::error::Depot did not configure the sccache WebDAV connection for this job."
+            exit 1
+          fi
+          # SCCACHE_GHA_VERSION enables the Actions backend even when its flag is false.
+          unset SCCACHE_GHA_VERSION
+          export SCCACHE_GHA_ENABLED=false
+          export SCCACHE_WEBDAV_KEY_PREFIX="$namespace"
+          export SCCACHE_WEBDAV_RW_MODE="$cache_mode"
+          backend=WebDAV
+        else
+          export SCCACHE_GHA_VERSION="$namespace"
+          export SCCACHE_GHA_RW_MODE="$cache_mode"
+          backend=Actions
+        fi
+        echo "sccache $backend cache mode: $cache_mode"
         "$sccache_path" --stop-server >/dev/null 2>&1 || true
         "$sccache_path" --start-server
         "$sccache_path" --zero-stats
@@ -89,6 +110,13 @@ runs:
           echo "CMAKE_C_COMPILER_LAUNCHER=$sccache_path"
           echo "CMAKE_CXX_COMPILER_LAUNCHER=$sccache_path"
           echo "SCCACHE_BASEDIRS=$SCCACHE_BASEDIRS"
-          echo "SCCACHE_GHA_VERSION=$SCCACHE_GHA_VERSION"
-          echo "SCCACHE_GHA_RW_MODE=$SCCACHE_GHA_RW_MODE"
+          if [[ "$USE_DEPOT_CACHE" == true ]]; then
+            echo "SCCACHE_GHA_ENABLED=$SCCACHE_GHA_ENABLED"
+            echo 'SCCACHE_GHA_VERSION='
+            echo "SCCACHE_WEBDAV_KEY_PREFIX=$SCCACHE_WEBDAV_KEY_PREFIX"
+            echo "SCCACHE_WEBDAV_RW_MODE=$SCCACHE_WEBDAV_RW_MODE"
+          else
+            echo "SCCACHE_GHA_VERSION=$SCCACHE_GHA_VERSION"
+            echo "SCCACHE_GHA_RW_MODE=$SCCACHE_GHA_RW_MODE"
+          fi
         } >> "$GITHUB_ENV"

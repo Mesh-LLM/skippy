@@ -153,21 +153,22 @@ GitHub's ordinary PR triggers and call their runner-owning workflows from
 protected `main` without forwarding secrets. The image dispatcher enters
 through `ci.yml`, which calls the read-only image builders at its protected
 revision. The same builders supply exact artifacts for the image publishers.
-The CI dispatcher requests `cache-mode: read` for sccache. The image and docs
-dispatchers request `cache-mode: none`. All retain GitHub's fork-run approval
-policy.
+The CI dispatcher requests `cache-mode: read` for the Actions cache. The image
+and docs dispatchers request `cache-mode: none`. All retain GitHub's fork-run
+approval policy.
 Same-repository PRs to main continue to use the protected `ci.yml` path for
 code and native admission. The PR controller expects the producer for the
 active route. Refresh affected open PRs with a new PR event after cutover so
 their selected workflows run against the current head.
 
-Depot routes sccache's GitHub Actions backend to its repository-wide cache.
-sccache writes only when building the exact protected `main` commit on push,
-schedule, or manual dispatch with a write-capable job cache mode. PR and other
-branch builds use `SCCACHE_GHA_RW_MODE=READ_ONLY`. Ordinary Depot jobs skip
-shared Cargo, model, native source, and npm caches.
-[Actions cache behavior](https://depot.dev/docs/cache/integrations/github-actions)
-· [sccache Actions backend](https://github.com/mozilla/sccache/blob/main/docs/GHA.md)
+On Depot, sccache uses WebDAV with the job connection supplied by the Depot
+organization setting **Allow Actions jobs to automatically connect to Depot
+Cache**. sccache writes only when building the exact protected `main` commit
+on push, schedule, or manual dispatch with a write-capable job cache mode.
+PR and other branch builds use `SCCACHE_WEBDAV_RW_MODE=READ_ONLY`. Ordinary
+Depot jobs skip shared Cargo, model, native source, and npm caches. The
+GitHub-hosted jobs use sccache's Actions backend.
+[Depot sccache integration](https://depot.dev/docs/cache/integrations/sccache)
 
 Leave `SKIPPY_DEPOT_RUNNERS_ENABLED` unset while merging the workflows and
 configuring their runner-group refs. Add `ci-image-builds.yml` once it exists

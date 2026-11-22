@@ -428,7 +428,7 @@ jobs:
       - id: lint
         run: just lint
       - name: Report sccache statistics before tests
-        if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
+        if: ${{ !cancelled() && env.SCCACHE != '' }}
         uses: ./.github/actions/report-sccache
         with:
           phase: ${{ steps.lint.outcome == 'skipped' && 'setup' || 'lint' }}
@@ -484,7 +484,7 @@ jobs:
       - uses: ./.github/actions/native-source
       - run: just llama-check
       - uses: ./.github/actions/report-sccache
-        if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
+        if: ${{ !cancelled() && env.SCCACHE != '' }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:

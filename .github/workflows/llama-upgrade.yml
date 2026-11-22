@@ -69,7 +69,7 @@ jobs:
           UPSTREAM_SHA: ${{ steps.resolve.outputs.upstream_sha }}
         run: just automation-run upgrade prepare "$UPSTREAM_SHA"
       - uses: ./.github/actions/report-sccache
-        if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
+        if: ${{ !cancelled() && env.SCCACHE != '' }}
         with:
           artifact-prefix: llama-candidate-preparation
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -141,7 +141,7 @@ jobs:
           BACKEND: ${{ matrix.backend }}
         run: just automation-run upgrade certify --backend "$BACKEND" --suite supported --pass candidate
       - uses: ./.github/actions/report-sccache
-        if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
+        if: ${{ !cancelled() && env.SCCACHE != '' }}
         with:
           artifact-prefix: llama-candidate-${{ matrix.backend }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -206,7 +206,7 @@ jobs:
           BACKEND: ${{ matrix.backend }}
         run: just automation-run upgrade certify --backend "$BACKEND" --suite supported --pass independent
       - uses: ./.github/actions/report-sccache
-        if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
+        if: ${{ !cancelled() && env.SCCACHE != '' }}
         with:
           artifact-prefix: llama-independent-${{ matrix.backend }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0

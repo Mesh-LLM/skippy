@@ -8,8 +8,8 @@ case "$phase" in
   *) echo "Unknown sccache smoke phase $phase" >&2; exit 1 ;;
 esac
 
-if [[ "$SCCACHE_GHA_RW_MODE" != "$mode" ]]; then
-  echo "Expected sccache mode $mode, got $SCCACHE_GHA_RW_MODE" >&2
+if [[ "${SCCACHE_WEBDAV_RW_MODE:-}" != "$mode" ]]; then
+  echo "Expected sccache WebDAV mode $mode, got ${SCCACHE_WEBDAV_RW_MODE:-unset}" >&2
   exit 1
 fi
 
@@ -30,7 +30,7 @@ if [[ "$phase" == read ]]; then
 fi
 
 stats=$("$SCCACHE" --show-stats --stats-format json | jq '{
-  remote: (.cache_location | startswith("ghac,")),
+  remote: (.cache_location | startswith("webdav,")),
   hits: (.stats.cache_hits.counts | add // 0),
   misses: (.stats.cache_misses.counts | add // 0),
   writes: .stats.cache_writes,
