@@ -17,7 +17,7 @@ from lib.release_version import bump, parse_tag, workspace_version
 # The host installer downloads this name; keep both in step with
 # NativeRuntimeCatalog in crates/skippy-runtime-install/src/types.rs.
 CATALOG = "native-runtimes.json"
-RELEASES_URL = "https://github.com/general-inference/skippy/releases"
+RELEASES_URL = "https://github.com/Mesh-LLM/skippy/releases"
 
 
 def version(tag):

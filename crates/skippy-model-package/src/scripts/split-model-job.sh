@@ -187,14 +187,14 @@ fetch_ref_with_retry() {
 }
 
 echo "=== [3/9] Cloning skippy and building skippy-package-builder ==="
-: "${SKIPPY_GITHUB_TOKEN:?read access to general-inference/skippy is required}"
+: "${SKIPPY_GITHUB_TOKEN:?read access to Mesh-LLM/skippy is required}"
 # Keep credentials out of clone URLs, Git configuration files and command logs.
 export GIT_CONFIG_COUNT=2
 export GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0=
 export GIT_CONFIG_KEY_1=credential.https://github.com.helper
 export GIT_CONFIG_VALUE_1='!f() { printf "username=x-access-token\npassword=%s\n" "$SKIPPY_GITHUB_TOKEN"; }; f'
 export GIT_TERMINAL_PROMPT=0
-git clone --filter=blob:none https://github.com/general-inference/skippy.git "$BUILD_DIR"
+git clone --filter=blob:none https://github.com/Mesh-LLM/skippy.git "$BUILD_DIR"
 cd "$BUILD_DIR"
 if git ls-remote --exit-code --heads origin "$SKIPPY_REF" >/dev/null 2>&1 || \
    git ls-remote --exit-code --tags origin "$SKIPPY_REF" >/dev/null 2>&1; then

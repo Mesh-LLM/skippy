@@ -5,8 +5,8 @@ license.workspace = true
 publish = false
 version.workspace = true
 description = "Hugging Face model repository integration for Skippy"
-repository = "https://github.com/general-inference/skippy"
-homepage = "https://github.com/general-inference/skippy"
+repository = "https://github.com/Mesh-LLM/skippy"
+homepage = "https://github.com/Mesh-LLM/skippy"
 
 [dependencies]
 hex = "0.4"

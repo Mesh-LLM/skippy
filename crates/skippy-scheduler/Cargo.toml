@@ -5,8 +5,8 @@ edition = { workspace = true }
 license = { workspace = true }
 publish = false
 description = "Iteration-level scheduler for concurrent staged serving with unified KV"
-repository = "https://github.com/general-inference/skippy"
-homepage = "https://github.com/general-inference/skippy"
+repository = "https://github.com/Mesh-LLM/skippy"
+homepage = "https://github.com/Mesh-LLM/skippy"
 categories = ["concurrency", "artificial-intelligence"]
 
 [features]

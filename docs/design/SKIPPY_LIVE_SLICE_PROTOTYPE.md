@@ -723,8 +723,8 @@ successful certification.
 An alternative Jianyang route was prepared for micstudio before the GitHub
 dispatch was selected; it is not needed for this request.
 The installed MeshLLM templates currently lack a canary entry. A complete
-`skippy-canary` template is prepared for the owner (`general-inference/jianyang`,
-`pilot/templates/mesh-llm.yaml`); `jy repos validate` passes with no warnings.
+`skippy-canary` template is prepared in `pilot/templates/mesh-llm.yaml`.
+`jy repos validate` passes with no warnings.
 It preserves the existing templates, runs two independent candidate builds,
 reconciles the complete roster, and archives failure receipts. It is not yet
 installed or submitted. Publish the candidate and template, sync the repository,

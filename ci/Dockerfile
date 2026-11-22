@@ -1,6 +1,6 @@
 FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
 
-LABEL org.opencontainers.image.source="https://github.com/general-inference/skippy" \
+LABEL org.opencontainers.image.source="https://github.com/Mesh-LLM/skippy" \
       org.opencontainers.image.description="Skippy CPU CI toolchain"
 
 # Image builds have no interactive package-configuration terminal.
