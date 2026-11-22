@@ -117,10 +117,16 @@ def resource_id(identifier):
 
 
 def cancel(pilot, ledger):
+    failures = []
     for identifier in read_json(ledger):
-        job = pilot.api("GET", f"/v1/jobs/{resource_id(identifier)}")
-        if job.get("status") not in TERMINAL:
-            pilot.api("POST", f"/v1/jobs/{identifier}/cancel")
+        try:
+            job = pilot.api("GET", f"/v1/jobs/{resource_id(identifier)}")
+            if job.get("status") not in TERMINAL:
+                pilot.api("POST", f"/v1/jobs/{identifier}/cancel")
+        except (OSError, ValueError, KeyError, RuntimeError) as error:
+            failures.append(f"{identifier}: {error}")
+    if failures:
+        raise RuntimeError("could not cancel: " + "; ".join(failures))
 
 
 def wait(pilot, identifier, evidence, deadline):
@@ -176,7 +182,10 @@ def dispatch(evidence):
             print(f'{job["label"]}: {created["id"]} {created.get("status")}', flush=True)
         finished = [wait(pilot, identifier, evidence, deadline) for identifier in identifiers]
     except (Exception, KeyboardInterrupt):
-        cancel(pilot, ledger)
+        try:
+            cancel(pilot, ledger)
+        except (OSError, ValueError, KeyError, RuntimeError) as cleanup:
+            print(f"Cancellation incomplete: {cleanup}", file=sys.stderr)
         raise
     reports, failures = [], []
     for job, spec in zip(finished, plan["jobs"]):

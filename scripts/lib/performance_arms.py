@@ -7,6 +7,8 @@ from .ci_artifacts import digest
 from .ci_process import capture, command
 
 PORT = 9337
+REQUIRED = ("--startup-timeout-secs", "--bind-addr", "--model-id", "--ctx-size",
+            "--n-gpu-layers", "--model-path")
 METAL = {"LLAMA_STAGE_BACKEND": "metal", "LLAMA_STAGE_LINK_MODE": "static"}
 
 
@@ -44,14 +46,23 @@ def build(arm, log):
 def capabilities(built):
     """What an arm's server accepts, so an older commit runs with what it had, recorded as such."""
     args = [built["binary"], "serve", "--help"] if built["kind"] == "skippy" else [built["binary"], "--help"]
-    return command(args, timeout=60, capture_stdout=True)
+    text = command(args, timeout=60, capture_stdout=True)
+    require_capabilities(built, text)
+    return text
 
 
 def supports(help_text, flag):
     return re.search(rf"(?<![\w-]){re.escape(flag)}(?![\w-])", help_text) is not None
 
 
+def require_capabilities(built, help_text):
+    missing = [flag for flag in REQUIRED if not supports(help_text, flag)] if built["kind"] == "skippy" else []
+    if missing:
+        raise ValueError(f'{built["label"]} unsupported: required server options missing: {", ".join(missing)}')
+
+
 def server_args(built, help_text, model, coordinate, context, server):
+    require_capabilities(built, help_text)
     lanes, pool = server["lanes"], server["pool_tokens"]
     if built["kind"] == "llama-server":
         total = pool if pool is not None else context * lanes

@@ -59,7 +59,9 @@ pressure and batching show.
 
 An arm that lacks a setting, such as `--kv-pool-tokens` on a commit from before
 the pool existed, runs without it. Each sample records what was applied and
-what the arm did not support. `llama-server` gets the same lanes and the same
+what the arm did not support. All arms are probed before model measurements begin.
+An arm missing required endpoint/model/context/GPU or startup options fails explicitly
+as unsupported before any measured round; required options are never silently omitted. `llama-server` gets the same lanes and the same
 total context (`-np`, `-c`, `-kvu`).
 
 ## Traces

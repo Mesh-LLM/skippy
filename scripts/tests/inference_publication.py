@@ -5,7 +5,7 @@ from runpy import run_path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from inference_nightly import PR_PATH, SOURCE, smoke_receipt
 from lib.ci_artifacts import read_json
@@ -71,6 +71,26 @@ class PublicationTests(unittest.TestCase):
             export_charts(charts, Path(directory))
             for index in range(1, 4):
                 self.assertEqual((Path(directory) / image_path(index)).read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
+
+    def test_run_charts_select_the_run_even_when_start_times_are_reversed(self):
+        publish = run_path(str(PR_PATH))["publish"]
+        export = publish.__globals__["export_charts"]
+        spy = Mock(wraps=export)
+        with TemporaryDirectory() as directory, patch("lib.inference_nightly_results.print", create=True), patch.dict(
+            publish.__globals__, export_charts=spy,
+        ):
+            root = Path(directory)
+            dataset, evidence = Dataset(root), root / "evidence"
+            evidence.mkdir()
+            for run_id, number, stamp, value in (("23", 1, "2026-11-22T00:00:00Z", 100),
+                                                  ("24", 2, "2026-11-21T00:00:00Z", 90)):
+                smoke_receipt(evidence, SOURCE, run_id, value=value)
+                publish(dataset, dataset.download, dict, dict, evidence,
+                        (SOURCE, run_id, "1", number, stamp, False))
+            root_export, scoped_export = spy.call_args_list[-2:]
+            self.assertEqual(root_export.args[0][0].panels[0].current, 100)
+            self.assertEqual(scoped_export.args[0][0].panels[0].current, 90)
+            self.assertTrue(str(scoped_export.args[1]).endswith("reports/24-1"))
 
     def test_failed_run_is_published_and_does_not_replace_saved_baseline(self):
         publish = run_path(str(PR_PATH))["publish"]

@@ -4,10 +4,10 @@ import json
 import unittest
 from pathlib import Path
 from runpy import run_path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from lib import performance_plan
-from lib.performance_arms import server_args
+from lib.performance_arms import REQUIRED, capabilities, server_args
 from lib.performance_load import measurements
 from lib import performance_report
 from lib.performance_report import markdown, summarize
@@ -109,16 +109,54 @@ class PlanTests(unittest.TestCase):
             performance_plan.models(["llama-70b"])
 
 
+class CleanupTests(unittest.TestCase):
+    def test_all_jobs_are_attempted_despite_individual_cancel_failures(self):
+        from tempfile import TemporaryDirectory
+        cancel = run_path(str(Path(__file__).resolve().parents[1] / "inference-performance.py"))["cancel"]
+        with TemporaryDirectory() as directory:
+            ledger = Path(directory) / "jobs.json"
+            ledger.write_text(json.dumps(["job_1", "job_2", "job_3"]))
+            pilot = Mock()
+            pilot.api.side_effect = [RuntimeError("GET failed"), {"status": "running"},
+                                     RuntimeError("POST failed"), {"status": "queued"}, {}]
+            with self.assertRaisesRegex(RuntimeError, "job_1.*job_2"):
+                cancel(pilot, ledger)
+            self.assertEqual(pilot.api.call_args.args, ("POST", "/v1/jobs/job_3/cancel"))
+
+    def test_dispatch_retains_original_error_when_cleanup_fails(self):
+        from tempfile import TemporaryDirectory
+        dispatch = run_path(str(Path(__file__).resolve().parents[1] / "inference-performance.py"))["dispatch"]
+        with TemporaryDirectory() as directory:
+            evidence = Path(directory)
+            (evidence / "plan.json").write_text(json.dumps({"jobs": [{"spec": {}, "label": "test"}]}))
+            pilot = Mock()
+            pilot.api.side_effect = RuntimeError("original dispatch failure")
+            with patch.dict(dispatch.__globals__, Pilot=lambda: pilot,
+                            cancel=Mock(side_effect=RuntimeError("cleanup failure"))), patch("sys.stderr") as stderr:
+                with self.assertRaisesRegex(RuntimeError, "original dispatch failure"):
+                    dispatch(evidence)
+                self.assertIn("cleanup failure", "".join(str(call) for call in stderr.write.call_args_list))
+
+
 class ServerTests(unittest.TestCase):
     skippy = {"label": "baseline", "kind": "skippy", "binary": "/b/skippy"}
     server = {"id": "lanes4-pool16k", "lanes": 4, "pool_tokens": 16384}
 
     def test_an_older_skippy_runs_without_settings_it_lacks_and_says_so(self):
-        help_text = "  --generation-concurrency <N>\n  --adaptive-generation-concurrency\n"
+        help_text = " ".join(REQUIRED) + "  --generation-concurrency <N>\n  --adaptive-generation-concurrency\n"
         args, applied, missing = server_args(self.skippy, help_text, "/m.gguf", "org/m@rev", 8192, self.server)
         self.assertIn("--generation-concurrency", args)
         self.assertEqual(applied["generation_concurrency"], 4)
         self.assertEqual(missing, ["--speculative-strategy", "--kv-pool-tokens"])
+
+    def test_required_options_are_probed_before_any_measured_round(self):
+        for missing in REQUIRED:
+            help_text = " ".join(flag for flag in REQUIRED if flag != missing)
+            with patch("lib.performance_arms.command", return_value=help_text):
+                with self.assertRaisesRegex(ValueError, "unsupported.*" + missing):
+                    capabilities(self.skippy)
+            with self.assertRaisesRegex(ValueError, "unsupported"):
+                server_args(self.skippy, help_text, "/m.gguf", "org/m@rev", 8192, self.server)
 
     def test_llama_server_gets_the_same_cells(self):
         built = {"label": "reference", "kind": "llama-server", "binary": "/b/llama-server"}

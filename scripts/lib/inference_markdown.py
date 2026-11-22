@@ -202,7 +202,7 @@ def health_sections(view, charts, image_base_url=None, chart_format="png"):
         f'**{counts.get("regressed", 0)} regressions · {counts.get("improved", 0)} improvements · '
         f'{counts.get("passed", 0)} within tolerance · {counts.get("new", 0)} first measurements**', "",
         f'{utc(run["started_at"]):%d %b %Y %H:%M UTC} · Engine {sha(run["source_sha"])} · '
-        f'{plain(run["profile"])} · **Tolerance: ±{tolerance}**', "",
+        f'{plain(run["profile"])} · Qualification: {OUTCOMES[run["outcome"]]} · **Tolerance: ±{tolerance}**', "",
         f'{len(view["configurations"])} measured configurations. Counts refer to performance metrics. '
         'First measurements establish new series and have no trend verdict.',
     ]
@@ -256,9 +256,11 @@ def health_sections(view, charts, image_base_url=None, chart_format="png"):
     elif any(metric in view["metrics"] for metric in ("output_tok_s", "ttft_p95_ms", "itl_p95_ms")):
         lines.extend([
             'Two trials per configuration. Throughput and latency values are means of trial summaries. '
-            'Latency is the mean of trial p95 values, not a pooled p95. '
-            f'{view["requests"]:,.0f} requests were recorded in this run.', "",
+            'Latency is the mean of trial p95 values, not a pooled p95.'
+            "",
         ])
+        if view["requests"] is not None:
+            lines.extend([f'{view["requests"]:,.0f} requests were recorded in this run.', ""])
         if view["error_samples"] and not view["errors"]:
             lines.extend(["No request errors were recorded.", ""])
     else:
