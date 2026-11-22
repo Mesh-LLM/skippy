@@ -37,8 +37,6 @@ The fixture checks incompatible runtime and stage identities, in-process
 generation, typed cancellation, drain, compute observations, admitted
 two-stage output and endpoint release. Absent inputs, incompatible recipes,
 failure to load, and missing execution evidence fail the command.
-`--split-policy experimental` must be supplied to exercise an uncertified
-model split and is recorded in the evidence. The separate
-[static facade](../../skippy-api-rs/README.md) has a different native linkage
-closure. The [embedding guide](../../docs/PRODUCTION_EMBEDDING.md) describes
-the production contract.
+Split qualification validates native stage plans, runtime recipe compatibility and
+matching activation frontiers. The evidence identifies the exact tested model,
+backend and topology.

@@ -104,7 +104,7 @@ def split_model_diff(diff: str) -> dict[str, str]:
     return sections
 
 
-def load_certified_families(path: Path) -> set[str]:
+def load_fixture_families(path: Path) -> set[str]:
     """Require source mappings for causal split targets, not full-model-only workloads."""
     payload = json.loads(path.read_text(encoding="utf-8"))
     models = payload.get("models")
@@ -119,7 +119,7 @@ def load_certified_families(path: Path) -> set[str]:
         profile = model.get("profile")
         if model_class == "causal_generation":
             if profile not in ("full", "package-oracle", "graph-only"):
-                raise RuntimeError("causal family requires a split certification profile")
+                raise RuntimeError("causal fixture requires a split qualification profile")
             split_families.add(model["family"])
         elif model_class in (
             "embedding", "rerank", "encoder_decoder", "ocr",
@@ -139,11 +139,11 @@ def write_family_shards(
     family_manifest_path: Path,
 ) -> dict:
     family_map = load_family_map(family_map_path)
-    certified_families = load_certified_families(family_manifest_path)
-    missing = sorted(certified_families - set(family_map))
+    fixture_families = load_fixture_families(family_manifest_path)
+    missing = sorted(fixture_families - set(family_map))
     if missing:
         raise RuntimeError(
-            f"family source map does not cover the certification manifest; missing={missing}"
+            f"family source map does not cover the fixture manifest; missing={missing}"
         )
     reverse: dict[str, set[str]] = {}
     for family, sources in family_map.items():

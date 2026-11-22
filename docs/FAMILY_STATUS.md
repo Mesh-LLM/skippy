@@ -1,12 +1,10 @@
 # Model Family Support Matrix
 
-This is the current customer-facing support contract for stage-split serving.
-When we say a family is supported, use the settings in this file unless a new
-certification run updates them.
+These records describe measured model configurations, artifacts and settings.
+Qualification results apply to their recorded native recipe, backend and stage
+plan. Split admission validates the actual native graph and activation frontier.
 
-Certification process lives in `docs/FAMILY_CERTIFY.md`. Payload measurements
-and topology constraints are summarized here so this file stays the only
-customer-facing source of truth.
+The measurement process lives in `docs/FAMILY_QUALIFICATION.md`.
 
 Last updated: 2026-08-28.
 

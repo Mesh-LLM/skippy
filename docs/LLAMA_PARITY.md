@@ -22,7 +22,7 @@ enough to promote.
    cargo xtool automation replay-matrix parity-local --input /absolute/parity-local.json
    ```
 
-2. Provision the exact immutable model revisions and files from `ci/llama-canary/family-certified.json`:
+2. Provision the exact immutable model revisions and files from `ci/llama-canary/model-fixtures.json`:
 
    ```bash
    hf download REPOSITORY FILE --revision IMMUTABLE_COMMIT
@@ -72,7 +72,7 @@ enough to promote.
    package-only proof.
 
 5. Promote passing rows into `docs/FAMILY_STATUS.md` and the
-   release-bound certification manifest at `ci/llama-canary/family-certified.json`.
+   immutable qualification fixture registry at `ci/llama-canary/model-fixtures.json`.
    Review exceptional topology rules in `crates/skippy-topology`.
 
 Raw run artifacts stay under `target/family-certify/...`.

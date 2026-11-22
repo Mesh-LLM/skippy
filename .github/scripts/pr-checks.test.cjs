@@ -5,6 +5,7 @@ const { join } = require('node:path');
 const aggregate = require('./pr-checks.cjs');
 const expectedWorkflows = require('./pr-trigger-paths.cjs');
 const sha = '1'.repeat(40);
+const body = readFileSync(join(__dirname, '../PULL_REQUEST_TEMPLATE.md'), 'utf8').replaceAll('- [ ]', '- [x]');
 const inferenceChange = { filename: 'crates/skippy-cli/src/main.rs' };
 const run = (path, id = 1, extra = {}) => ({
   id, workflow_id: path, path: `.github/workflows/${path}`, name: path,
@@ -15,7 +16,7 @@ const run = (path, id = 1, extra = {}) => ({
 
 async function evaluate(options = {}) {
   const calls = [], failures = [];
-  const pr = { number: 52, state: 'open', head: { sha } };
+  const pr = { number: 52, state: 'open', head: { sha }, body };
   let reads = 0;
   const rest = {
     pulls: { get: async () => ({ data: ++reads > 1 && options.current ? options.current : { ...pr, ...options.pr } }), listFiles: 'files' },
@@ -65,14 +66,14 @@ test('combined image workflow cannot be missed before it is scheduled', async ()
   const triggers = [...workflow.matchAll(/paths: \[([^\]]+)\]/g)];
   const expectedPaths = ['.github/workflows/ci-images.yml', '.github/workflows/ci-images-pr.yml',
     '.github/workflows/ci-image-builds.yml', 'ci/image-targets.json', 'ci/Dockerfile*',
-    'ci/targets.json', 'rust-toolchain.toml', 'ci/images.just'];
+    'ci/targets.json', 'scripts/ci-preserve-cuda-license.sh', 'rust-toolchain.toml', 'ci/images.just'];
   assert.equal(triggers.length, 2);
   for (const trigger of triggers) assert.deepEqual(JSON.parse('[' + trigger[1].replaceAll("'", '"') + ']'), expectedPaths);
   const pr = readFileSync(join(__dirname, '../workflows/ci-images-pr.yml'), 'utf8');
   assert.equal(pr.match(/paths: \[([^\]]+)\]/)[1], triggers[0][1]);
   for (const filename of [
     'ci/Dockerfile', 'ci/Dockerfile.cuda', 'ci/Dockerfile.gpu', 'ci/Dockerfile.gpu.dockerignore',
-    'ci/targets.json', 'rust-toolchain.toml', 'ci/images.just', '.github/workflows/ci-images.yml'
+    'ci/targets.json', 'scripts/ci-preserve-cuda-license.sh', 'rust-toolchain.toml', 'ci/images.just', '.github/workflows/ci-images.yml'
   ]) {
     assert.equal((await evaluate({ files: [{ filename }] })).state, 'pending');
     assert.equal((await evaluate({ files: [{ filename }], runs: [run('ci.yml'), run('inference.yml', 2), run('ci-images.yml', 3)] })).state, 'success');
@@ -116,7 +117,7 @@ test('native trigger patterns distinguish metadata, code-only, inference and mix
     ['.github/workflows/llama-upgrade.yml', ['ci.yml']],
     ['.cargo/config.toml', ['ci.yml', 'inference.yml']],
     ['Justfile', ['ci.yml', 'inference.yml']],
-    ['ci/images.just', ['ci-images.yml']],
+    ['ci/images.just', ['ci.yml', 'ci-images.yml']],
   ];
   for (const [filename, workflows] of cases) {
     assert.deepEqual([...expectedWorkflows([{ filename }]).keys()],
@@ -127,27 +128,34 @@ test('native trigger patterns distinguish metadata, code-only, inference and mix
   }
 });
 
-test('native CI and inference triggers match the internal route lists', () => {
+test('native CI and inference triggers match their independent route lists', () => {
   const lists = text => [...text.matchAll(/^ {2,6}- '([^']+)'$/gm)].map(match => match[1]);
   const config = readFileSync(join(__dirname, '../path-filters.yml'), 'utf8');
-  const [code, inference] = config.split(/^inference:\n/m).map(lists);
+  const route = name => lists(config.match(new RegExp(`^${name}:\\n((?:  .+\\n)+)`, 'm'))[1]);
+  const automation = route('automation');
+  const inference = route('inference');
   const ci = readFileSync(join(__dirname, '../workflows/ci.yml'), 'utf8');
   const [prPaths, targetPaths, pushPaths] = ci.split(/^  (?:pull_request_target|push):\n/m);
   const spark = readFileSync(join(__dirname, '../workflows/inference.yml'), 'utf8');
-  assert.deepEqual(lists(pushPaths.split(/^  schedule:\n/m)[0]), code);
+  assert.deepEqual(lists(pushPaths.split(/^  schedule:\n/m)[0]), automation);
   assert.deepEqual(lists(spark.split(/^  schedule:\n/m)[0]), inference);
-  const ciOnly = ['.gi/templates.yaml', 'ci/inference-ladder.json',
-    'ci/inference-artifacts.json', 'ci/inference-quality.json'];
-  assert.ok(ciOnly.every(path => inference.includes(path)));
-  const exclusion = code.findIndex(path => path.startsWith('!'));
-  assert.deepEqual(lists(prPaths), [...code.slice(0, exclusion), ...ciOnly, ...code.slice(exclusion)]);
-  assert.deepEqual(lists(targetPaths), lists(prPaths));
+  assert.deepEqual(lists(prPaths), automation);
+  assert.deepEqual(lists(targetPaths), automation);
   const depotPr = readFileSync(join(__dirname, '../workflows/ci-pr.yml'), 'utf8');
-  assert.deepEqual(lists(depotPr), lists(prPaths));
-  const includes = lists(prPaths).filter(path => !path.startsWith('!'));
-  for (const path of inference.filter(path => !path.startsWith('!'))) {
-    assert.ok(includes.some(trigger => trigger === path ||
-      (trigger.endsWith('/**') && path.startsWith(trigger.slice(0, -2)))), `CI never triggers for ${path}`);
+  assert.deepEqual(lists(depotPr), automation);
+  const includes = automation.filter(path => !path.startsWith('!'));
+  for (const group of ['code', 'packages', 'inference']) {
+    for (const path of route(group).filter(path => !path.startsWith('!'))) {
+      assert.ok(includes.some(trigger => trigger === path ||
+        (trigger.endsWith('/**') && path.startsWith(trigger.slice(0, -2)))), `CI never triggers for ${path}`);
+    }
+  }
+  const mainIncludes = lists(pushPaths.split(/^  schedule:\n/m)[0]).filter(path => !path.startsWith('!'));
+  for (const name of ['packaging', 'native']) {
+    for (const path of route(name).filter(path => !path.startsWith('!'))) {
+      assert.ok(mainIncludes.some(trigger => trigger === path ||
+        (trigger.endsWith('/**') && path.startsWith(trigger.slice(0, -2)))), `Main CI never triggers for ${name}: ${path}`);
+    }
   }
 });
 
@@ -233,4 +241,29 @@ test('workflow completion, external-check and status events re-evaluate the exac
     { check_run: { head_sha: sha, pull_requests: [{ number: 52 }] } },
     { sha }
   ]) assert.equal((await evaluate({ payload })).state, 'success');
+});
+
+test('acceptance criteria block otherwise successful checks and pending workflows', async () => {
+  for (const invalid of [null, '', '## Acceptance criteria\n', body.replace('- [x]', '- [ ]')]) {
+    for (const runs of [[], [run('ci.yml'), run('inference.yml')]]) {
+      const result = await evaluate({ pr: { body: invalid }, runs });
+      assert.equal(result.state, 'failure');
+      assert.match(result.failures[0], /Acceptance criteria/);
+    }
+  }
+});
+
+test('live description governs edits, including an edit while workflows are inspected', async () => {
+  const payload = { action: 'edited', pull_request: { number: 52, head: { sha }, body: '' } };
+  assert.equal((await evaluate({ payload })).state, 'success');
+  const current = { state: 'open', head: { sha }, body: body.replace('- [x]', '- [ ]') };
+  const result = await evaluate({ current });
+  assert.equal(result.state, 'failure');
+  assert.match(result.failures[0], /Acceptance criteria incomplete/);
+});
+
+test('description edits trigger the protected metadata-only controller', () => {
+  const workflow = readFileSync(join(__dirname, '../workflows/pr-checks.yml'), 'utf8');
+  assert.match(workflow, /pull_request_target:\n\s+types: \[[^\]]*\bedited\b/);
+  assert.match(workflow, /ref: main/);
 });

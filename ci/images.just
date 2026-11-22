@@ -45,10 +45,12 @@ ci-gpu-image-smoke backend arch="amd64":
       test "$SKIPPY_CI_BACKEND" = "{{ backend }}"
       case "$SKIPPY_CI_BACKEND" in
         cuda13)
+          test -s /usr/local/cuda/EULA.txt
           /usr/local/cuda-13.1/bin/nvcc --version | grep -F "release 13.1,"
           test -e /usr/local/cuda-13.1/lib64/libcudart.so
           ;;
         cuda12)
+          test -s /usr/local/cuda/EULA.txt
           /usr/local/cuda-12.9/bin/nvcc --version | grep -F "release 12.9,"
           test -e /usr/local/cuda-12.9/lib64/libcudart.so
           ;;
