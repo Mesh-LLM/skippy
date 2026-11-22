@@ -34,6 +34,15 @@ Explain material architecture changes and why they are needed.
 Describe ABI, API, wire/hash, model/runtime, or artifact compatibility impact
 and any required migration.
 
+## Workflow diagrams (required for GitHub Actions changes)
+
+For each affected workflow, add labeled **Before** and **After** Mermaid diagrams
+comparing the target branch with the final proposed change. Show changed triggers,
+job dependencies, artifact handoffs, and qualification or publication gates.
+Include shared composite action diagrams when their execution flow changes.
+Remove this section only when the PR changes neither Actions workflows nor
+shared composite actions.
+
 ## Validation
 
 List exact commands, relevant configuration/features, and observed results.
