@@ -15,7 +15,7 @@ use crate::frontend::generation::{
 use crate::frontend::iteration_scheduler::IterationScheduler;
 use crate::frontend::local_generation::{
     include_undelivered_samples, linear_proposal_allowed, native_mtp_dispatch_counts_for_test,
-    post_decode_checkpoint_tokens, prompt_fits_single_prefill_sample,
+    post_decode_checkpoint_tokens,
 };
 use crate::frontend::{
     EmbeddedOpenAiRequestDefaults, GenerationAbort, GenerationCommit, GenerationReceipt,
@@ -171,14 +171,6 @@ fn wait_for_receipts(sink: &RecordingReceiptSink, expected: usize) {
         thread::sleep(Duration::from_millis(1));
     }
     panic!("timed out waiting for {expected} generation receipts");
-}
-
-#[test]
-fn single_prefill_sample_requires_prompt_to_fit_session_batch() {
-    assert!(!prompt_fits_single_prefill_sample(0, 2048));
-    assert!(!prompt_fits_single_prefill_sample(1, 2048));
-    assert!(prompt_fits_single_prefill_sample(2048, 2048));
-    assert!(!prompt_fits_single_prefill_sample(2049, 2048));
 }
 
 #[test]

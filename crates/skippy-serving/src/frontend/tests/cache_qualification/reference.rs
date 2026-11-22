@@ -15,6 +15,10 @@ use tokio::{
     time::{Instant, sleep, timeout},
 };
 
+// Large pinned fixtures may load from shared storage. Keep this separate from
+// the request deadline so slow initialization does not weaken generation checks.
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(600);
+
 pub(super) async fn observe(
     backend: Backend,
     directory: &Path,
@@ -98,7 +102,7 @@ pub(super) async fn observe(
         .timeout(TIMEOUT)
         .build()?;
     let result = async {
-        let deadline = Instant::now() + TIMEOUT;
+        let deadline = Instant::now() + STARTUP_TIMEOUT;
         loop {
             if let Some(status) = child.try_wait()? {
                 anyhow::bail!("llama-server exited before readiness: {status}");

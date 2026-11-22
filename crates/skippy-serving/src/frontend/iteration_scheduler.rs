@@ -740,6 +740,8 @@ impl IterationScheduler {
         }
     }
 
+    // Tests use one-off channels; serving retains a channel across prefill chunks.
+    #[cfg(test)]
     pub(super) fn execute_iteration(
         &self,
         session_id: &str,

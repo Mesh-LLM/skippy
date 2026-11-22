@@ -9,6 +9,7 @@ mod resident_prefill;
 #[cfg(test)]
 mod tests;
 mod token_generation;
+mod uncached_prefill;
 // Test-only: re-export of the outstanding-capture guard used by
 // iteration_scheduler tests (see token_generation::exact_state_recording).
 pub(in crate::frontend) use dflash_decode::AdaptiveBlocks;
@@ -144,11 +145,4 @@ impl StageOpenAiBackend {
                 .emit_debug("stage.openai_session_stop", attrs);
         }
     }
-}
-
-pub(super) fn prompt_fits_single_prefill_sample(
-    prompt_token_count: usize,
-    session_batch_size: usize,
-) -> bool {
-    prompt_token_count > 1 && prompt_token_count <= session_batch_size
 }

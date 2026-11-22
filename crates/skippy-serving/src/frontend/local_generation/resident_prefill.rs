@@ -43,9 +43,19 @@ impl StageOpenAiBackend {
                 "deferred suffix prefill requires at least one token",
             ));
         }
+        let admitted_session = session_id.to_string();
+        let batch_limit = self.iteration_scheduler.execute_runtime(
+            "prefill-batch-admission",
+            move |runtime| {
+                runtime
+                    .admit_session_batch_size(&admitted_session)
+                    .map_err(crate::frontend::util::openai_backend_error)
+            },
+        )?;
         let chunk_tokens = usize::try_from(self.config.n_ubatch.unwrap_or(256))
             .unwrap_or(MAX_NATIVE_ITERATION_TOKENS)
-            .clamp(1, MAX_NATIVE_ITERATION_TOKENS);
+            .clamp(1, MAX_NATIVE_ITERATION_TOKENS)
+            .min(batch_limit.max(1));
         let sample_flags = suffix_chunk_sample_flags(suffix.len(), chunk_tokens, sample_last);
         let channel = self.iteration_scheduler.direct_iteration_channel();
         let mut predicted = None;
@@ -95,7 +105,7 @@ fn ensure_suffix_prefill_active(
     }
     if Instant::now() >= deadline {
         return Err(InferenceError::timeout(
-            "cache operation deadline exceeded during deferred suffix prefill",
+            "generation deadline exceeded during prompt prefill",
         ));
     }
     Ok(())
