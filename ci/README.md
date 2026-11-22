@@ -170,12 +170,6 @@ Depot jobs skip shared Cargo, model, native source, and npm caches. The
 GitHub-hosted jobs use sccache's Actions backend.
 [Depot sccache integration](https://depot.dev/docs/cache/integrations/sccache)
 
-Leave `SKIPPY_DEPOT_RUNNERS_ENABLED` unset while merging the workflows and
-configuring their runner-group refs. Add `ci-image-builds.yml` once it exists
-on `main`. Dispatch `CI` on `main` with `profile=sccache` while the switch is
-off. Check that the first Depot job writes a compiler cache entry and the
-second job records one cache hit, one deliberate miss, and zero writes.
-
 After enabling the switch, verify full CI and `CI images` with
 `build_only=true`, then check one ordinary PR and one same-repository PR
 through the aggregate.
