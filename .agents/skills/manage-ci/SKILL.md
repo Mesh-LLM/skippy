@@ -70,7 +70,9 @@ contract; no downstream product's workflow topology applies here.
 - Ordinary tests are offline. Model admission is explicit and digest-bound.
   GPU qualification requires a real matching device; missing fixtures, devices,
   capacity, or evidence fail or queue, never become passing skips.
-- Split admission unit tests use explicit recipe-bound fixtures. PR smoke,
+- Split admission unit tests use explicit architecture-roster fixtures. The
+  llama upgrade owns family certification; recipe metadata records provenance
+  and does not gate runtime family admission. PR smoke,
   nightly, and release split runs allow experimental planning and retain the
   actual admission status. All require stage/frontier validation and the full
   checks for their profile. Default CLI planning requires certified admission.

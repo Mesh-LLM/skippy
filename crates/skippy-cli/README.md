@@ -204,11 +204,14 @@ the topology rather than editing stage files by hand. The direct-GGUF planner
 defaults to one lane, a 512-token context, and CPU execution
 (`--n-gpu-layers 0`).
 
-To test a native recipe that has not been release-certified, add
+To test an architecture outside the llama upgrade's certified family roster, add
 `--allow-uncertified-split` explicitly. The planner still validates every stage
 and frontier, and reports `uncertified_override` in `admissions.json` and its
-console output when the release roster does not match. Default planning keeps
-requiring the exact certified recipe. This option does not renew certificates.
+console output when the architecture is not listed. Family certification uses
+the roster's architecture list; upstream commit, patch-queue digest and ABI
+metadata record provenance and do not restrict that list to an exact build.
+Native runtime compatibility checks still apply. This option does not renew
+certificates.
 
 ## Run stages on different machines
 

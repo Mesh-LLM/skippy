@@ -471,7 +471,7 @@ pub struct PlanSplitArgs {
     pub lanes: u32,
     #[arg(long, default_value_t = 0, allow_hyphen_values = true)]
     pub n_gpu_layers: i32,
-    /// Experiment with a native recipe absent from the release certification roster.
+    /// Experiment with an architecture absent from the certified family roster.
     #[arg(long)]
     pub allow_uncertified_split: bool,
     /// New directory for stage configs and their admission descriptors; never overwritten.

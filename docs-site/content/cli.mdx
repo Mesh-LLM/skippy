@@ -208,9 +208,15 @@ See [Anonymous analytics](/configuration/analytics/) for precedence and the data
 
 ## `plan-split`
 
-This example uses a local `model.gguf` with a release-certified split recipe
+This example uses a local `model.gguf` whose architecture is in the certified family roster
 and writes to a new `split-plan` directory. Skippy admits the stages before
 writing `stage-N.json` and `admissions.json`.
+
+The llama upgrade's family qualification determines the roster. Admission checks
+the architecture list; upstream commit, patch-queue digest and ABI metadata record
+provenance and do not restrict certification to an exact build. Native runtime
+compatibility and stage/frontier validation still apply. An unlisted architecture
+requires `--allow-uncertified-split` and is reported as `uncertified_override`.
 
 ```console
 skippy plan-split --model-path model.gguf \
@@ -225,7 +231,7 @@ skippy plan-split --model-path model.gguf \
 | `--model-id ID` | Set the model ID. Defaults to the GGUF filename stem. |
 | `--ctx-size N`, `--lanes N` | Set context capacity and concurrency per stage. Defaults are 512 tokens and one lane. |
 | `--n-gpu-layers N` | Set GPU layer placement. Defaults to `0` for CPU execution. |
-| `--allow-uncertified-split` | Allow experimental admission for a recipe outside the release certification roster. |
+| `--allow-uncertified-split` | Allow experimental admission for an architecture outside the certified family roster. |
 
 For a full split example and startup order, see [Pipeline parallelism](/pipeline-parallelism/).
 

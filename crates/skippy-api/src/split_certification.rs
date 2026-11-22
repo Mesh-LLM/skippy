@@ -25,15 +25,7 @@ impl SplitCertificationAdmission {
 #[derive(Debug, Deserialize)]
 struct SplitCertificationRoster {
     schema_version: u32,
-    native_recipe: NativeRecipe,
     architectures: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct NativeRecipe {
-    llama_upstream_sha: String,
-    skippy_abi: String,
-    patch_queue_sha256: String,
 }
 
 fn roster() -> Result<&'static SplitCertificationRoster> {
@@ -47,36 +39,11 @@ fn roster() -> Result<&'static SplitCertificationRoster> {
         .map_err(|error| anyhow::anyhow!(error.clone()))
 }
 
-fn compiled_skippy_abi() -> String {
-    format!(
-        "{}.{}.{}",
-        skippy_ffi::ABI_VERSION_MAJOR,
-        skippy_ffi::ABI_VERSION_MINOR,
-        skippy_ffi::ABI_VERSION_PATCH
-    )
-}
-
-fn validate_recipe(roster: &SplitCertificationRoster) -> Result<()> {
+fn validate_schema(roster: &SplitCertificationRoster) -> Result<()> {
     anyhow::ensure!(
         roster.schema_version == 2,
         "unsupported split certification roster schema {}",
         roster.schema_version
-    );
-    anyhow::ensure!(
-        roster.native_recipe.llama_upstream_sha == env!("SKIPPY_LLAMA_UPSTREAM_SHA"),
-        "split certification roster targets llama.cpp {}, but this build uses {}",
-        roster.native_recipe.llama_upstream_sha,
-        env!("SKIPPY_LLAMA_UPSTREAM_SHA")
-    );
-    anyhow::ensure!(
-        roster.native_recipe.patch_queue_sha256 == env!("SKIPPY_PATCH_QUEUE_SHA256"),
-        "split certification roster does not match this build's Skippy patch queue"
-    );
-    anyhow::ensure!(
-        roster.native_recipe.skippy_abi == compiled_skippy_abi(),
-        "split certification roster targets Skippy ABI {}, but this build uses {}",
-        roster.native_recipe.skippy_abi,
-        compiled_skippy_abi()
     );
     Ok(())
 }
@@ -85,7 +52,7 @@ fn architecture_is_certified(
     roster: &SplitCertificationRoster,
     architecture: &str,
 ) -> Result<bool> {
-    validate_recipe(roster).context("validate split certification roster recipe")?;
+    validate_schema(roster).context("validate split certification roster schema")?;
     Ok(roster
         .architectures
         .iter()
@@ -175,15 +142,10 @@ mod tests {
     use super::*;
 
     // This fixture tests admission policy, not real-model qualification. The
-    // release roster remains bound to its independently qualified recipe.
+    // llama upgrade owns the qualified architecture list.
     fn fixture_roster() -> SplitCertificationRoster {
         SplitCertificationRoster {
             schema_version: 2,
-            native_recipe: NativeRecipe {
-                llama_upstream_sha: env!("SKIPPY_LLAMA_UPSTREAM_SHA").into(),
-                patch_queue_sha256: env!("SKIPPY_PATCH_QUEUE_SHA256").into(),
-                skippy_abi: compiled_skippy_abi(),
-            },
             architectures: vec!["inkling".into()],
         }
     }
@@ -208,13 +170,61 @@ mod tests {
     #[test]
     fn admits_different_artifact_of_certified_architecture() {
         let roster = fixture_roster();
-        validate_recipe(&roster).unwrap();
+        validate_schema(&roster).unwrap();
         let architecture = &roster.architectures[0];
         assert_eq!(
             require_with_roster(Ok(&roster), &package(&"f".repeat(64)), architecture, false)
                 .unwrap(),
             SplitCertificationAdmission::Certified
         );
+    }
+
+    #[test]
+    fn bundled_roster_admits_a_listed_architecture_without_an_override() {
+        let roster = roster().unwrap();
+        assert_eq!(
+            require_split_certification(
+                &package(&"f".repeat(64)),
+                &roster.architectures[0],
+                false,
+            )
+            .unwrap(),
+            SplitCertificationAdmission::Certified
+        );
+    }
+
+    #[test]
+    fn certification_is_independent_of_native_recipe_metadata() {
+        let mut json = serde_json::json!({
+            "schema_version": 2,
+            "architectures": ["inkling"],
+        });
+        // Qualification metadata is provenance, so absent metadata and a
+        // different upstream pin, patch queue or ABI cannot revoke a family.
+        for recipe in [
+            None,
+            Some(serde_json::json!({
+                "llama_upstream_sha": "0".repeat(40),
+                "patch_queue_sha256": "0".repeat(64),
+                "skippy_abi": "0.1.0",
+            })),
+            Some(serde_json::json!({
+                "llama_upstream_sha": "f".repeat(40),
+                "patch_queue_sha256": "f".repeat(64),
+                "skippy_abi": "99.0.0",
+            })),
+        ] {
+            if let Some(recipe) = recipe {
+                json["native_recipe"] = recipe;
+            }
+            let roster = serde_json::from_value(json.clone()).unwrap();
+            let package = package(&"f".repeat(64));
+            assert_eq!(
+                require_with_roster(Ok(&roster), &package, "inkling", false).unwrap(),
+                SplitCertificationAdmission::Certified
+            );
+            assert!(require_with_roster(Ok(&roster), &package, "unknown", false).is_err());
+        }
     }
 
     #[test]
@@ -248,22 +258,15 @@ mod tests {
     }
 
     #[test]
-    fn recipe_mismatches_never_certify_a_listed_architecture() {
-        for mismatch in 0..4 {
-            let mut roster = fixture_roster();
-            match mismatch {
-                0 => roster.schema_version = 1,
-                1 => roster.native_recipe.llama_upstream_sha = "stale".into(),
-                2 => roster.native_recipe.patch_queue_sha256 = "stale".into(),
-                _ => roster.native_recipe.skippy_abi = "stale".into(),
-            }
-            let package = package(&"f".repeat(64));
-            assert!(require_with_roster(Ok(&roster), &package, "inkling", false).is_err());
-            assert_eq!(
-                require_with_roster(Ok(&roster), &package, "inkling", true).unwrap(),
-                SplitCertificationAdmission::UncertifiedOverride
-            );
-        }
+    fn unsupported_schema_never_certifies_a_listed_architecture() {
+        let mut roster = fixture_roster();
+        roster.schema_version = 1;
+        let package = package(&"f".repeat(64));
+        assert!(require_with_roster(Ok(&roster), &package, "inkling", false).is_err());
+        assert_eq!(
+            require_with_roster(Ok(&roster), &package, "inkling", true).unwrap(),
+            SplitCertificationAdmission::UncertifiedOverride
+        );
     }
 
     #[test]
