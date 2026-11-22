@@ -78,7 +78,9 @@ contract; no downstream product's workflow topology applies here.
   Candidate preparation and repair run directly on the native JY Linux runner
   (`jy-rnr_vfnz8k5p4yrh334`, `jy-linux-docker`) with its installed Goose and
   provider authentication; do not move them into a hosted CPU container or
-  onto Depot. The workflow defaults to noninteractive Goose and preflights its
+  onto Depot. Select the pool's `native-contracts` label without restricting
+  preparation to x64: both Linux x64 and ARM64 can prepare CPU candidates.
+  The workflow defaults to noninteractive Goose and preflights its
   native tools. Seed the protected current patch queue before replaying a new
   upstream revision so cold repositories have intermediate merge-base blobs.
   A bounded agent repair produces a fresh candidate and fresh full CI. Only the

@@ -47,7 +47,16 @@ test('candidate preparation and repair run with Goose on the native JY runner', 
   for (const name of ['candidate', 'repair']) {
     const job = jobs(controller).find(job => job.startsWith(`  ${name}:\n`));
     assert.match(job, /group: jy-rnr_vfnz8k5p4yrh334/);
-    assert.match(job, /labels: \[self-hosted, jy-linux-docker, Linux, X64\]/);
+    const requested = job.match(/labels: \[([^\]]+)\]/)[1].split(',').map(label => label.trim().toLowerCase());
+    assert.ok(requested.includes('jy-linux-docker'));
+    assert.ok(requested.includes('native-contracts'));
+    // The pool has both architectures. Requiring X64 stranded preparation
+    // while its only x64 machine served another pool and ARM64 hosts were idle.
+    for (const arch of ['X64', 'ARM64']) {
+      const available = new Set(['self-hosted', 'jy-linux-docker', 'Linux', 'native-contracts', arch]
+        .map(label => label.toLowerCase()));
+      assert.ok(requested.every(label => available.has(label)), `${name} excludes ${arch} JY capacity`);
+    }
     assert.doesNotMatch(job, /depot-|ubuntu-24\.04|container:|\/etc\/skippy-ci-image-id/);
     assert.match(job, /GOOSE_MODE: auto/);
     assert.match(job, /run: just automation-run upgrade runner-check/);
