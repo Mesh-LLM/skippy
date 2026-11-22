@@ -196,15 +196,12 @@ limit for cleanup and evidence retention.
 
 ## Split admission
 
-PR smoke and nightly split qualification pass `plan-split --allow-uncertified-split`
-and retain `split-admissions.json` from each member. `qualification.json` records
-the planner's actual `certified` or `uncertified_override` admission. Both profiles
-require native stage/frontier admission, GPU offload, and deterministic scored
-responses. Nightly also requires chain parity, state handoff, and both AgentX
-trials. The nightly report labels override measurements as experimental split.
-Default CLI planning and release qualification require the exact certified
-recipe. Admission unit tests use explicit fixtures and test rejection of stale
-upstream, patch digest, ABI and schema identities independently of that roster.
+All profiles use ordinary `plan-split` native admission. Both formation members
+retain `split-admissions.json`, containing the native stage descriptors and
+activation frontiers. `qualification.json` binds their canonical digest to the
+source, model, backend and mode. Missing or malformed native evidence fails
+qualification. Nightly also requires chain parity, state handoff and both AgentX
+trials. Qualification describes the exact configuration tested by that run.
 
 ## PR results comment
 

@@ -3,27 +3,22 @@
   "policy": {
     "profiles": {
       "full": {
-        "status": "certified",
         "oracle": "local-monolithic",
         "required_lanes": ["single-step", "chain", "state-handoff"]
       },
       "package-oracle": {
-        "status": "certified",
         "oracle": "independent-trace",
         "required_lanes": ["single-step", "chain", "state-handoff"]
       },
       "graph-only": {
-        "status": "provisional",
         "oracle": "none",
         "required_lanes": ["graph-parse", "tensor-ownership", "stage-load"]
       },
       "workload-smoke": {
-        "status": "provisional",
         "oracle": "none",
         "required_lanes": ["class-specific-smoke"]
       },
       "workload-oracle": {
-        "status": "certified",
         "oracle": "local-monolithic",
         "required_lanes": ["class-specific-smoke", "class-specific-oracle"]
       }
@@ -797,7 +792,7 @@
       "mmproj_artifact": {"repo": "Qwen/Qwen3-VL-30B-A3B-Instruct-GGUF", "revision": "f54435e6cc31258f04b0969105c3f6badb197931", "files": ["mmproj-Qwen3VL-30B-A3B-Instruct-Q8_0.gguf"], "file_integrity": {"mmproj-Qwen3VL-30B-A3B-Instruct-Q8_0.gguf": {"size_bytes": 712148928, "blob_id": "82a9966edfdbc1b18a27fd90af96d50cbf111a51484f6290e946dccf461c8150"}}, "selector": "Q8_0"},
       "execution": {"trunk_layers": 48, "mtp_layers": 0, "activation_width": 2048, "speculative_policy": "mtp-if-present"},
       "resources": {"runner_role": "family-certify", "cache_policy": "immutable-local", "estimated_model_bytes": 18550716416, "startup_timeout_secs": 900},
-      "notes": "Qwen3 VL MoE text and real-projector split certification"
+      "notes": "Qwen3 VL MoE text and real-projector split qualification"
     },
     {
       "family": "mistral4",

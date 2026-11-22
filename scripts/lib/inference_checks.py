@@ -53,7 +53,7 @@ def request(model, prompt, maximum, timeout, stream=False):
 
 def score(coordinate, output, profile):
     evidence = []
-    timeout, maximum = (60, 64) if profile == "pr" else (300, 256)
+    timeout, maximum = (60, 64) if profile in {"pr", "upgrade"} else (300, 256)
     for case in read_json(Path("ci/inference-quality.json")):
         first = json.loads(request(coordinate, case["prompt"], maximum, timeout))
         second = json.loads(request(coordinate, case["prompt"], maximum, timeout))
@@ -131,7 +131,7 @@ def performance(profile, coordinate, context, output, fixture):
         "--use-server-token-count", "--random-seed", "42", "--benchmark-duration", duration,
         "--artifact-dir", str(directory),
     ]
-    if profile == "pr":
+    if profile in {"pr", "upgrade"}:
         args += ["--unsafe-override", "--num-dataset-entries", "4"]
     else:
         args += ["--num-profile-runs", "2", "--no-profile-run-disable-warmup-after-first"]
@@ -143,7 +143,7 @@ def performance(profile, coordinate, context, output, fixture):
         finally:
             retain(directory, output)
     exports = list(directory.rglob("profile_export_aiperf.json"))
-    expected = 1 if profile == "pr" else 2
+    expected = 1 if profile in {"pr", "upgrade"} else 2
     if len(exports) != expected:
         raise ValueError(f"AgentX requires {expected} complete trial exports")
     for path in exports:
@@ -153,5 +153,5 @@ def performance(profile, coordinate, context, output, fixture):
                 or type(errors) not in {int, float} or errors != 0
                 or value.get("error_summary") != [] or value.get("is_complete") is not True):
             raise ValueError("AgentX produced empty, incomplete or failed request evidence")
-        if profile != "pr" and value["metadata"].get("submission_valid") is not True:
+        if profile not in {"pr", "upgrade"} and value["metadata"].get("submission_valid") is not True:
             raise ValueError("AgentX rejected extended-run validity")

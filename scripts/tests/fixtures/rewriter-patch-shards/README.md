@@ -27,7 +27,7 @@ mail subjects and full-mail digests do not include the filename.
 `63db182a4a539ef45e9910565d79d0f3b92ab57b590ceef6175b2769c1e7ad83`.
 Its insertion order and RWKV6 source order are deliberately reversed.
 `certified.json` projects the four causal family/class/profile triples from
-`ci/llama-canary/family-certified.json`, SHA-256
+`ci/llama-canary/model-fixtures.json`, SHA-256
 `90834e6f52cf494cff216b3bce40953919109596512eb68efd07b4e33f938cdf`.
 It adds a synthetic embedding row to exercise the workload-only exemption.
 Neither reduced JSON file is represented as historical generator output.

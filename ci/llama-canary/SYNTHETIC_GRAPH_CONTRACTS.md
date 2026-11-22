@@ -9,7 +9,7 @@ The native CTest table in `src/skippy/tests/graph_contract_cases.cmake` is carri
 by core patch `0006-test-skippy-cover-live-graph-and-state-contracts.patch`.
 `tools/xtask/src/repo_consistency/synthetic_graph_contracts.rs`, run by `just ci-validate`,
 compares every family, architecture, trunk depth, activation width, MTP count and
-test mode against `family-certified.json`. Missing, duplicate or stale rows fail.
+test mode against `model-fixtures.json`. Missing, duplicate or stale rows fail.
 Adding an architecture requires an executable fixture; rejection modes are explicit.
 
 Each metadata profile is built again into independent graph storage, and every

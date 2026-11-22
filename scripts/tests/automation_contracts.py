@@ -208,7 +208,8 @@ class Upgrade(unittest.TestCase):
         cwd = os.getcwd()
         os.chdir(root)
         try:
-            with patch.object(source, "regenerate", regenerate), patch.object(source, "command", native), \
+            with patch.object(source, "regenerate", regenerate), patch.object(source, "prepare_selection"), \
+                    patch.object(source, "write_native_recipe"), patch.object(source, "command", native), \
                     patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("GITHUB_OUTPUT", None)
                 with patch("sys.stdout", io.StringIO()) as stdout:
@@ -287,29 +288,68 @@ class Upgrade(unittest.TestCase):
                              ["llama_cpp/patches/generated/0001-family-fixture.patch",
                               "llama_cpp/patches/generated/series", "llama_cpp/upstream.txt"])
 
+    def test_repaired_candidate_is_fresh_and_directly_descends_from_protected_base(self):
+        source = module("upgrade-source")
+        upstream = "b" * 40
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base = self.prepare_fixture(Path(tmp))
+            def regenerate(checkout):
+                generated = checkout / "llama_cpp/patches/generated"
+                generated.mkdir(parents=True, exist_ok=True)
+                (generated / "series").write_text("0001-fixture.patch\n")
+                (generated / "0001-fixture.patch").write_text("fixture\n")
+            self.run_prepare(root, regenerate, upstream)
+            output = root / "target/llama-upgrade"
+            original_candidate = json.loads((output / "candidate.json").read_text())["candidate_sha"]
+            def agent(checkout, diagnostics):
+                self.assertEqual(diagnostics, (root / "target/diagnostics").resolve())
+                (checkout / "llama_cpp/patches/repair.patch").write_text("native repair\n")
+            real = source.command
+            def native(args, **kwargs):
+                return None if args[:1] == ["just"] else real(args, **kwargs)
+            cwd = Path.cwd()
+            try:
+                os.chdir(root)
+                with patch.object(source, "regenerate", regenerate), \
+                     patch.object(source, "prepare_selection"), patch.object(source, "write_native_recipe"), \
+                     patch.object(source, "repair", side_effect=agent) as repair_agent, \
+                     patch.object(source, "command", side_effect=native), \
+                     patch("sys.stdout", io.StringIO()):
+                    source.prepare(upstream, output / "candidate.bundle", root / "target/diagnostics")
+                repaired = json.loads((output / "candidate.json").read_text())["candidate_sha"]
+                self.assertNotEqual(repaired, original_candidate)
+                self.assertEqual(git(root, "bundle", "list-heads", str(output / "candidate.bundle")), f"{repaired} HEAD")
+                git(root, "fetch", str(output / "candidate.bundle"), "HEAD")
+                self.assertEqual(git(root, "rev-list", "--parents", "-n1", repaired), f"{repaired} {base}")
+                repair_agent.assert_called_once()
+            finally:
+                os.chdir(cwd)
+
     def test_publisher_accepts_complete_exact_passes_only(self):
         publisher = module("upgrade-publish")
         manifest = ci_artifacts.read_json(ROOT / MANIFEST)
         candidate = {"candidate_sha": "a" * 40, "upstream_sha": "b" * 40}
         manifest_hash, recipe_hash = "c" * 64, "d" * 64
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, patch.object(publisher, "admit_dgx") as dgx:
             root = Path(tmp)
-            for pass_name in ("candidate", "independent"):
-                for backend in ("cpu", "metal", "cuda"):
-                    directory = root / f"llama-{pass_name}-{backend}-evidence"
-                    directory.mkdir()
-                    evidence = directory / "native-result.json"
-                    evidence.write_bytes(b'{"success":true}')
-                    ci_artifacts.write_json(directory / "receipt.json", {
-                        "schema_version": 1, **candidate, "manifest_sha256": manifest_hash,
-                        "native_recipe_sha256": recipe_hash, "backend": backend, "pass": pass_name,
-                        "result": "pass", "families": list(publisher.expected_families(manifest).values()),
-                        "artifacts": {evidence.name: ci_artifacts.digest(evidence)},
-                    })
-            publisher.admit_receipts(root, candidate, manifest, manifest_hash, recipe_hash)
-            (root / "llama-independent-cuda-evidence/native-result.json").write_bytes(b"changed")
+            for backend in ("cpu", "cuda"):
+                directory = root / f"llama-candidate-{backend}-evidence"
+                directory.mkdir()
+                evidence = directory / "native-result.json"
+                evidence.write_bytes(b'{"success":true}')
+                ci_artifacts.write_json(directory / "receipt.json", {
+                    "schema_version": 1, **candidate, "manifest_sha256": manifest_hash,
+                    "selection_sha256": ci_artifacts.digest(ROOT / "ci/llama-canary/upgrade-selection.json"),
+                    "suite": "routine", "native_recipe_sha256": recipe_hash, "backend": backend,
+                    "pass": "candidate", "result": "pass",
+                    "families": list(publisher.expected_families(manifest, ROOT, backend, "routine").values()),
+                    "artifacts": {evidence.name: ci_artifacts.digest(evidence)},
+                })
+            publisher.admit_receipts(root, candidate, manifest, manifest_hash, recipe_hash, ROOT)
+            dgx.assert_called_once_with(root / "llama-dgx-evidence", candidate["candidate_sha"], candidate["upstream_sha"])
+            (root / "llama-candidate-cuda-evidence/native-result.json").write_bytes(b"changed")
             with self.assertRaisesRegex(ValueError, "changed family evidence"):
-                publisher.admit_receipts(root, candidate, manifest, manifest_hash, recipe_hash)
+                publisher.admit_receipts(root, candidate, manifest, manifest_hash, recipe_hash, ROOT)
 
 
 class RewriterReport(unittest.TestCase):

@@ -46,14 +46,13 @@ def build(root, backend, output):
         "LLAMA_WORKDIR": str(root / ".deps/llama.cpp"), "LLAMA_PIN_FILE": str(root / PIN),
         "LLAMA_PATCH_DIR": str(root / "llama_cpp/patches"), "LLAMA_STAGE_BACKEND": backend,
         "LLAMA_STAGE_LINK_MODE": "static", "LLAMA_STAGE_BUILD_DIR": str(native),
-        "LLAMA_BUILD_DIR": str(native), "LLAMA_STAGE_BUILD_TESTS": "ON",
-        "LLAMA_STAGE_FULL_REPLAY": "ON", "LLAMA_STAGE_WORKLOAD_ORACLE": "ON" if backend == "cpu" else "OFF",
+        "LLAMA_BUILD_DIR": str(native), "LLAMA_STAGE_BUILD_TESTS": "OFF",
+        "LLAMA_STAGE_FULL_REPLAY": "OFF", "LLAMA_STAGE_WORKLOAD_ORACLE": "ON" if backend == "cpu" else "OFF",
         "CARGO_TARGET_DIR": str(cargo),
     }
     logged(["just", "llama-build"], environment, output / f"native-build-{backend}", 7200)
     prepared_head(root)
-    logged(["bash", "scripts/check-skippy-generated-family-patch.sh", "--full-native-suite"],
-           environment, output / f"native-check-{backend}", 7200)
+    # Normal CI owns the complete graph/patch suite before these real-weight jobs.
     logged(["just", "with-lld", "cargo", "build", "--locked", "-p", "skippy-cli", "-p",
             "skippy-correctness", "-p", "skippy-package-builder", "-p", "skippy-topology", "--bins"],
            environment, output / f"rust-build-{backend}", 7200)

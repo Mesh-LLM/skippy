@@ -52,8 +52,12 @@ contract; no downstream product's workflow topology applies here.
   its tag together. It cannot move an existing tag or publish an incomplete
   artifact matrix. Canary runs leave main, tags, and publication untouched.
 - `.github/workflows/llama-upgrade.yml` keeps control on protected main, prepares
-  an immutable candidate, certifies it, independently repeats certification,
-  and opens an ordinary PR. Failed or incomplete qualification cannot publish.
+  an immutable candidate, runs normal CI once and qualifies broad CPU standalone
+  compatibility, selected CPU/CUDA splits and seven exact-source Spark rows.
+  The full graph registry remains authoritative. Routine Metal coverage is the
+  normal package/device smoke. A bounded agent repair produces a fresh candidate
+  and fresh qualification. The staging and publisher controllers alone receive
+  scoped publication credentials. Failed or incomplete qualification cannot publish.
 - `ci/targets.json` owns four host definitions and eleven runtime definitions.
   `enabled_hosts` selects the active CI and release roster. Windows is temporarily
   deferred; the active roster has three hosts and eight runtimes. Do not publish
@@ -70,11 +74,11 @@ contract; no downstream product's workflow topology applies here.
 - Ordinary tests are offline. Model admission is explicit and digest-bound.
   GPU qualification requires a real matching device; missing fixtures, devices,
   capacity, or evidence fail or queue, never become passing skips.
-- Split admission unit tests use explicit recipe-bound fixtures. PR smoke and
-  nightly split runs allow experimental planning and retain the actual admission
-  status. Both require stage/frontier validation and the full checks for their
-  profile. Release requires certified admission. Roster renewal requires its
-  own certification process.
+- Split admission is established by actual native stage plans, tensor closures,
+  activation frontiers, artifact identities and backend compatibility. Qualification
+  records exact tested configurations. There is no architecture certification
+  allowlist or experimental bypass. PR, nightly, release and upgrade use the same
+  native admission requirements.
 - Trusted same-repository PRs from repository collaborators may run as native
   JY jobs on persistent dedicated lab hardware, including DGX Sparks. Admission
   must verify the source repository and contributor's collaborator status using

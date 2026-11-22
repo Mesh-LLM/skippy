@@ -6,9 +6,10 @@ import re
 from .ci_artifacts import archive_path, digest, read_json, write_json
 from .upgrade_source import validate_sha
 
-MANIFEST = "ci/llama-canary/family-certified.json"
+MANIFEST = "ci/llama-canary/model-fixtures.json"
 RECIPE = ("llama_cpp", "scripts/build-llama.sh", "scripts/prepare-llama.sh", "skippy_api",
-          "crates/skippy-ffi")
+          "crates/skippy-ffi", "ci/llama-canary", "ci/inference-artifacts.json",
+          "ci/inference-ladder.json", "crates/skippy-api/src/native-recipe.json")
 ARTIFACTS = ("artifact", "mmproj_artifact", "draft_artifact")
 WORKLOADS = {"embedding", "rerank", "encoder_decoder", "ocr", "speech_synthesis", "speech_recognition"}
 

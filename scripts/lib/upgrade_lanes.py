@@ -68,11 +68,11 @@ def causal(model, target, projector, bins, out):
                        overrides=env, capture_stdout=True)
     (out / "topology.json").write_bytes(topology.encode("utf-8"))
     split, splits = topology_splits(json.loads(topology), layers)
-    args = ["bash", "scripts/family-certify.sh", "--family", model["family"], "--target-model",
+    args = ["bash", "scripts/family-qualify.sh", "--family", model["family"], "--target-model",
             str(target), "--model-id", model_id, "--layer-end", str(layers), "--split-layer",
             str(split), "--splits", splits, "--activation-width", width, "--n-gpu-layers",
             "0" if bins.backend == "cpu" else "999", "--startup-timeout-secs", "900", "--skip-build",
-            "--skip-speculative", "--require-lanes", "--cert-root", str(out), "--run-id", "parity"]
+            "--skip-speculative", "--require-lanes", "--output-root", str(out), "--run-id", "parity"]
     if execution["mtp_layers"]:
         args.append("--require-native-mtp-draft")
     logged(args, dict(env, FAMILY_BATTERY_BIN_DIR=str(bins.bin)), out / "parity", 7200)

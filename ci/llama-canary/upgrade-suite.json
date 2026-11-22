@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "dgx_families": {
+    "qwen35": {
+      "fixture": "qwen35-4b",
+      "quantization": "Q4_K_M"
+    },
+    "qwen3-moe": {
+      "fixture": "qwen3-coder-30b-a3b",
+      "quantization": "Q4_K_M"
+    },
+    "qwen35moe": {
+      "fixture": "qwen36-35b-a3b",
+      "quantization": "UD-Q4_K_M"
+    },
+    "qwen4exp": {
+      "fixture": "qwen38-flash-next",
+      "quantization": "UD-IQ4_XS"
+    }
+  },
+  "split_families": [
+    "deepseek2",
+    "gpt-oss",
+    "qwen3-vl",
+    "gemma4",
+    "nemotron",
+    "rwkv7",
+    "kimi-k3",
+    "mimo2"
+  ],
+  "workload_families": [
+    "nomic-bert-embedding",
+    "jina-bert-v2-rerank",
+    "t5-encoder-decoder",
+    "paddleocr",
+    "qwen3tts",
+    "ultravox"
+  ]
+}

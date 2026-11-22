@@ -87,7 +87,7 @@ test('hosted CI cannot satisfy a native inference requirement', () => {
 });
 
 test('the repository switch moves every hosted job to Depot', () => {
-  const workflows = ['ci', 'ci-images', 'ci-image-builds', 'docs', 'inference', 'llama-upgrade', 'pr-checks', 'release'];
+  const workflows = ['ci', 'ci-images', 'ci-image-builds', 'docs', 'inference', 'llama-upgrade', 'llama-upgrade-checks', 'pr-checks', 'release'];
   for (const name of workflows) {
     const yaml = readFileSync(join(__dirname, '../workflows', name + '.yml'), 'utf8');
     const labels = [...yaml.matchAll(/^    runs-on: (.+)\n((?:      .+\n)*)/gm)]
@@ -97,7 +97,7 @@ test('the repository switch moves every hosted job to Depot', () => {
     const smokeLabels = [...smokeJobs.matchAll(/^    runs-on: (.+)$/gm)].map(([, label]) => label);
     assert.deepEqual(smokeLabels, name === 'ci' ? ['depot-ubuntu-24.04-4', 'depot-ubuntu-24.04-4'] : []);
     for (const label of labels.slice(smokeLabels.length)) {
-      if (name === 'llama-upgrade' && label === '${{ matrix.runner }}') continue;
+      if (name.startsWith('llama-upgrade') && label === '${{ matrix.runner }}') continue;
       assert.match(label, /vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true'.*depot-/, name);
     }
   }

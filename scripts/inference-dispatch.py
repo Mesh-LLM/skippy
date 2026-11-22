@@ -16,6 +16,7 @@ from lib.inference_ladder import plan
 from lib.inference_nightly_metrics import collect_nightly
 from lib.inference_throughput import collect
 from lib.jy_qualification import Pilot, placement
+from lib.upgrade_dgx import collect_upgrade
 
 TERMINAL = {"succeeded", "failed", "cancelled", "expired"}
 FAILURE = TERMINAL - {"succeeded"}
@@ -133,12 +134,12 @@ def dispatch(pilot, profile, sha, output, configuration, collect_public=False):
     # Manual qualification may queue behind another PR's atomic Spark pair;
     # a PR profile waits for placement instead of failing fast, and the job
     # timeout in inference.yml carries the same headroom.
-    deadline = time.monotonic() + (5400 if profile == "pr" else 21000)
+    deadline = time.monotonic() + (5400 if profile in {"pr", "upgrade"} else 21000)
     try:
         for row in result["rows"]:
             identity, mode = row["id"], row["mode"]
             model_key = identity.removesuffix(f"-{mode}")
-            template = "inference-" + ("pr-" if profile == "pr" else "") + mode
+            template = "inference-" + ("pr-" if profile in {"pr", "upgrade"} else "") + mode
             run_id = os.environ.get("GITHUB_RUN_ID", "local")
             attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "1")
             body = {
@@ -154,9 +155,11 @@ def dispatch(pilot, profile, sha, output, configuration, collect_public=False):
             record(ledger, identifiers)
             write_json(output / f"{identity}-launch.json", launched)
             job = wait(pilot, handle, identity, sha, output, deadline)
-            if collect_public:
+            if profile == "upgrade":
+                collect_upgrade(pilot, job, row, sha, output, model_key)
+            elif collect_public:
                 collect_nightly(pilot, job, row, sha, output, model_key, profile)
-            elif profile == "pr":
+            elif profile in {"pr", "upgrade"}:
                 try:
                     collect(pilot, job, row, sha, output, model_key)
                 except (OSError, ValueError, KeyError, TypeError, RuntimeError) as error:

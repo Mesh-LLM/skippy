@@ -1,0 +1,168 @@
+name: Llama upgrade qualification
+on:
+  workflow_call:
+    inputs:
+      candidate_sha:
+        type: string
+        required: true
+      candidate_artifact:
+        type: string
+        required: true
+      attempt:
+        type: string
+        required: true
+      suite:
+        type: string
+        default: routine
+    secrets:
+      SKIPPY_UPGRADE_APP_PRIVATE_KEY:
+        required: true
+      JIANYANG_INFERENCE_SSH_KEY:
+        required: true
+permissions:
+  contents: read
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  SCCACHE_GHA_ENABLED: 'true'
+  SKIPPY_REQUIRE_SCCACHE: '1'
+jobs:
+  ci:
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+      pull-requests: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      artifact_scope: upgrade-${{ inputs.attempt }}
+      candidate_artifact: ${{ inputs.candidate_artifact }}
+      candidate_sha: ${{ inputs.candidate_sha }}
+  families:
+    needs: ci
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: cpu
+            runner: [self-hosted, skippy-ephemeral, Linux, X64, family-256g, cpu]
+          - backend: cuda
+            runner: [self-hosted, skippy-ephemeral, Linux, X64, family-256g, cuda13]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 1440
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/source
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/cache
+        with:
+          scope: upgrade-tools
+          download-scope: upgrade-family
+      - uses: ./.github/actions/sccache
+        with:
+          scope: upgrade-family-${{ matrix.backend }}-${{ runner.os }}-${{ runner.arch }}
+      - uses: ./.github/actions/native-source
+      - name: Qualify selected real-weight fixtures
+        env:
+          BACKEND: ${{ matrix.backend }}
+          SUITE: ${{ inputs.suite }}
+        run: just automation-run upgrade certify --backend "$BACKEND" --suite "$SUITE" --pass candidate
+      - uses: ./.github/actions/report-sccache
+        if: ${{ !cancelled() && env.SCCACHE != '' }}
+        with:
+          artifact-prefix: llama-${{ inputs.attempt }}-${{ matrix.backend }}
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: llama-${{ inputs.attempt }}-${{ matrix.backend }}-evidence
+          path: target/llama-upgrade/evidence
+          if-no-files-found: error
+          retention-days: 14
+  stage:
+    needs: ci
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ inputs.candidate_artifact }}
+          path: candidate
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
+        id: app
+        with:
+          app-id: ${{ vars.SKIPPY_UPGRADE_APP_ID }}
+          private-key: ${{ secrets.SKIPPY_UPGRADE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: skippy
+          permission-contents: write
+      - name: Stage admitted candidate for native JY checkout
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: just automation-run upgrade publish --stage --candidate candidate/candidate.bundle
+  dgx:
+    needs: stage
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        configuration:
+          - qwen35-4b-standalone
+          - qwen3-coder-30b-a3b-standalone
+          - qwen3-coder-30b-a3b-split
+          - qwen36-35b-a3b-standalone
+          - qwen36-35b-a3b-split
+          - qwen38-flash-next-standalone
+          - qwen38-flash-next-split
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 360
+    env:
+      EVIDENCE: target/ci-evidence/upgrade-dgx
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Dispatch exact-source Spark qualification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.candidate_sha }}
+          CONFIGURATION: ${{ matrix.configuration }}
+          JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
+        run: just automation-run upgrade dgx "$SOURCE_SHA" "$EVIDENCE" "$CONFIGURATION"
+      - name: Cancel outstanding native work
+        if: cancelled() || failure()
+        env:
+          JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
+        run: |
+          if test -f "$EVIDENCE/jobs.json"; then
+            just inference-cancel "$EVIDENCE/jobs.json"
+          fi
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: llama-${{ inputs.attempt }}-dgx-${{ matrix.configuration }}-evidence
+          path: ${{ env.EVIDENCE }}
+          if-no-files-found: error
+          retention-days: 14
+  gate:
+    needs: [ci, families, stage, dgx]
+    if: always()
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    steps:
+      - name: Require every qualification job
+        env:
+          CI_RESULT: ${{ needs.ci.result }}
+          FAMILIES: ${{ needs.families.result }}
+          STAGE: ${{ needs.stage.result }}
+          DGX: ${{ needs.dgx.result }}
+        run: test "$CI_RESULT/$FAMILIES/$STAGE/$DGX" = success/success/success/success

@@ -12,12 +12,20 @@ from lib.ci_artifacts import write_json
 from lib.inference_baselines import apply_baselines, classify
 from lib.inference_inputs import input_hashes
 from lib.inference_ladder import matrix
+from lib.inference_admission import split_admissions_digest
 from lib.inference_nightly_metrics import agentx_metrics, await_artifacts, collect_nightly, contract
 from lib.inference_nightly_results import nightly_run, read_configuration
 
 
 SOURCE = "a" * 40
 PR_PATH = Path(__file__).resolve().parents[1] / "inference-publish-nightly.py"
+
+
+def admissions_fixture():
+    return {"schema_version": 2, "stages": [
+        {"package_id": "fixture", "plan_id": f"plan-{start}", "layer_start": start,
+         "layer_end": start + 2, "resident_tensor_ids": [start], "profiles": [{"profile_id": "decode"}]}
+        for start in (0, 2)]}
 
 
 def trial(throughput, latency, requests):
@@ -36,9 +44,10 @@ def smoke_receipt(root, sha, run_id, configuration="qwen35-4b-standalone", value
     directory.mkdir(parents=True)
     job = {"id": "job_fixture", "repo_rev": sha, "status": "succeeded",
            "runs": [{"id": "run_fixture", "status": "succeeded"}]}
-    certification = None
+    admission_hash = None
     if entry["mode"] == "split":
-        certification = "uncertified_override"
+        admission_hash = split_admissions_digest(admissions_fixture())
+        write_json(directory / "split-admissions.json", admissions_fixture())
         job["formation_id"] = "frm_fixture"
         write_json(directory / f"{configuration}-formation.json", {
             "id": "frm_fixture", "status": "succeeded",
@@ -49,39 +58,36 @@ def smoke_receipt(root, sha, run_id, configuration="qwen35-4b-standalone", value
     model = configuration.removesuffix(f'-{entry["mode"]}')
     write_json(directory / "measurements.json", {
         "schema_version": 1, "source_sha": sha, "configuration": configuration, "profile": "pr",
-        "job_id": "job_fixture", "run_id": "run_fixture", "split_certification": certification,
-        "contract_sha256": contract("pr", entry, model, certification),
+        "job_id": "job_fixture", "run_id": "run_fixture", "split_admissions_sha256": admission_hash,
+        "contract_sha256": contract("pr", entry, model),
         "metrics": {"prefill_tok_s": value, "decode_tok_s": value},
     })
 
 
 class NightlyTests(unittest.TestCase):
-    def test_split_planning_only_allows_override_for_pr_and_nightly(self):
+    def test_every_profile_requires_native_stage_admissions_without_an_override(self):
         prepare_split = run_path(str(PR_PATH.with_name("inference-execute.py")))["prepare_split"]
         peers = json.dumps([{"role": "leader", "host": "192.0.2.1", "node": "leader"},
                             {"role": "worker", "host": "192.0.2.2", "node": "worker"}])
+        for profile in ("pr", "nightly", "release", "upgrade"):
+            for valid in (True, False):
+                with self.subTest(profile=profile, valid=valid), TemporaryDirectory() as temporary:
+                    def plan_split(args, *, timeout):
+                        plan_dir = Path(args[args.index("--output-dir") + 1])
+                        plan_dir.mkdir()
+                        write_json(plan_dir / "admissions.json", admissions_fixture() if valid else {})
+                        write_json(plan_dir / "stage-1.json", {})
+                    command = Mock(side_effect=plan_split)
+                    with patch.dict(prepare_split.__globals__, command=command), patch.dict(os.environ, JIANYANG_PEERS=peers):
+                        args = (Path("model.gguf"), "test-model", profile, 65536, Path(temporary), True)
+                        if valid:
+                            self.assertEqual(len(prepare_split(*args)), 2)
+                        else:
+                            with self.assertRaisesRegex(ValueError, "native stage admissions"):
+                                prepare_split(*args)
+                    self.assertNotIn("--allow-uncertified-split", command.call_args.args[0])
 
-        def plan_split(args, *, timeout):
-            plan_dir = Path(args[args.index("--output-dir") + 1])
-            plan_dir.mkdir()
-            write_json(plan_dir / "admissions.json", {"certification": "uncertified_override"})
-            write_json(plan_dir / "stage-1.json", {})
-
-        for profile in ("pr", "nightly", "release"):
-            with self.subTest(profile=profile), TemporaryDirectory() as temporary:
-                command = Mock(side_effect=plan_split)
-                with patch.dict(prepare_split.__globals__, command=command), patch.dict(
-                    os.environ, JIANYANG_PEERS=peers,
-                ):
-                    args = (Path("model.gguf"), "test-model", profile, 65536, Path(temporary), True)
-                    if profile == "release":
-                        with self.assertRaisesRegex(ValueError, "required certification admission"):
-                            prepare_split(*args)
-                    else:
-                        self.assertEqual(prepare_split(*args)[2], "uncertified_override")
-                self.assertEqual("--allow-uncertified-split" in command.call_args.args[0], profile != "release")
-
-    def test_nightly_split_reports_experimental_admission_after_valid_agentx_trials(self):
+    def test_nightly_split_retains_native_admission_after_valid_agentx_trials(self):
         key = "qwen38-27b"
         configuration = f"{key}-split"
         entry = next(row for row in matrix("nightly", SOURCE) if row["id"] == configuration)
@@ -89,12 +95,12 @@ class NightlyTests(unittest.TestCase):
                "runs": [{"id": "run_fixture", "status": "succeeded"}]}
         qualification = {"source_sha": SOURCE, "model": key, "mode": "split", "profile": "nightly",
                          "status": "passed", "artifact_manifest_sha256": input_hashes()["model_manifest_sha256"],
-                         "gpu": "NVIDIA GB10", "split_certification": "uncertified_override"}
+                         "gpu": "NVIDIA GB10", "split_admissions_sha256": split_admissions_digest(admissions_fixture())}
         formation = {"id": "frm_fixture", "status": "succeeded",
                      "members": [{"role": "leader", "job_id": "job_leader", "status": "succeeded"},
                                  {"role": "worker", "job_id": "job_worker", "status": "succeeded"}]}
         pilot = Mock()
-        pilot.api.side_effect = [qualification, trial(20, 1200, 70), trial(22, 1000, 60)]
+        pilot.api.side_effect = [qualification, trial(20, 1200, 70), trial(22, 1000, 60), admissions_fixture()]
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             directory = root / f"inference-{configuration}-23-1"
@@ -104,10 +110,9 @@ class NightlyTests(unittest.TestCase):
             write_json(directory / f"{configuration}-formation.json", formation)
             result = read_configuration(root, entry, SOURCE, "23", "1")
             self.assertEqual(result["outcome"], "passed")
-            self.assertEqual(result["workload"], "DGX Spark AgentX nightly v1 (experimental split)")
+            self.assertEqual(result["workload"], "DGX Spark AgentX nightly v1")
             self.assertEqual(result["metrics"][0]["measured"], 21)
-            self.assertNotEqual(result["metrics"][0]["contract_sha256"],
-                                contract("nightly", entry, key, "certified"))
+            self.assertEqual(result["metrics"][0]["contract_sha256"], contract("nightly", entry, key))
 
     def test_matrix_preserves_existing_profiles_and_uses_pr_smoke(self):
         ordinary = matrix("nightly", SOURCE)
@@ -184,7 +189,7 @@ class NightlyTests(unittest.TestCase):
             smoke_receipt(root, SOURCE, "23", configuration="qwen3-coder-30b-a3b-split")
             report = nightly_run(root, SOURCE, "23", "1", "2026-11-21T00:00:00Z", True)
             split = next(config for config in report["configurations"]
-                         if config["workload"].endswith("(experimental split)"))
+                         if config["id"] == "qwen3-coder-30b-a3b-split" and config["workload"] == "DGX Spark smoke v1")
             self.assertEqual(split["outcome"], "passed")
             self.assertEqual(report["outcome"], "failed")
             self.assertEqual(len(report["configurations"]), 19)

@@ -47,7 +47,7 @@ def regenerate(checkout):
     command(["ctest", "--test-dir", str(tools), "--output-on-failure", "--no-tests=error"], timeout=600)
     generated, report = scratch / "generated", scratch / "report.json"
     family_map = checkout / "ci/llama-canary/generated-family-map.json"
-    manifest = checkout / "ci/llama-canary/family-certified.json"
+    manifest = checkout / "ci/llama-canary/model-fixtures.json"
     argv = [sys.executable, str(SCRIPTS / "generate-skippy-family-patch.py"), "generate",
             "--git", shutil.which("git"), "--source-root", str(source), "--build-dir", str(native),
             "--rewriter", str(tools / "skippy-stage-rewriter"), "--report", str(report),

@@ -478,46 +478,87 @@ theirs for retry and diagnosis.
 
 ## Llama upgrades
 
-`llama-upgrade.yml` runs from protected main. The controller resolves a release
-or explicit immutable upstream SHA and exports a digest-bound Git bundle. Both
-CI passes and both family passes restore the same candidate. The CPU, Metal and
-CUDA family jobs consume immutable offline model caches and retain per-pass
-evidence. They receive no GitHub write credential.
+Issue [#12](https://github.com/Mesh-LLM/skippy/issues/12) tracks the reduced
+qualification pipeline. `llama-upgrade.yml` runs from protected main. It resolves
+an immutable upstream SHA and prepares a digest-bound candidate bundle. Each
+candidate runs normal CI once, followed by parallel CPU, CUDA and Spark checks.
+The successful path has one qualification pass. A failed candidate may receive
+one agent repair and fresh qualification.
 
-Candidate preparation can be rehearsed before merge from a clean local PR
-checkout, with the native build prerequisites above and
-`SKIPPY_REWRITER_LLVM_PREFIX` set:
+`ci/llama-canary/upgrade-suite.json` selects real split tests independently of the
+complete `model-fixtures.json` registry. CPU runs short public standalone
+completion comparisons for all 89 causal fixtures, the selected 12 split
+families, and six specialist workload oracles. CUDA runs the eight additional
+split families. The four fixed Spark models reuse the exact pinned artifacts in
+`inference-artifacts.json` and the seven PR configurations in
+`inference-ladder.json`, with the source-bound `upgrade` evidence profile.
+The CPU and CUDA split lanes retain two-stage parity, three-stage parity and
+state handoff, plus applicable multimodal and every-head MTP checks. CPU closes
+the native reference before loading Skippy to bound large-model residency.
+
+The four fixed models are Qwen3.5-4B, Qwen3-Coder-30B-A3B-Instruct,
+Qwen3.6-35B-A3B and Qwen3.8-Flash-Next. The eight additional split families are
+DeepSeek-Coder-V2-Lite, gpt-oss-20B, Qwen3-VL-8B, Gemma 4 E4B,
+Nemotron 3.5 Lightning 30B-A3B, RWKV7 World3 2.9B, Kimi-K3 0.40B and MiMo V2.5.
+The six CPU workload fixtures cover embeddings, reranking, encoder-decoder,
+OCR, speech synthesis and speech recognition. Normal CI supplies Metal package
+and device smoke. There is no dedicated Metal real-weight family job.
+
+Preparation derives `upgrade-selection.json` from the exact upstream factory
+and model-source diff. Changed mapped builders add real split fixtures.
+`compatibility-inventory.json` records every upstream factory architecture and
+those without a real fixture. Newly added architectures without a fixture block
+qualification. Existing coverage gaps stay explicit. A green representative
+suite supplies no universal model, quantization or context-window guarantee.
+Broad synthetic graph contracts continue to cover the complete family registry.
+
+The `suite=full` dispatch mode selects the complete real-weight split roster for
+periodic comparison. Both modes retain immutable local fixture admission and
+fail on missing models or device evidence. The daily schedule remains disabled
+until unchanged-pin and changed-pin acceptance runs finish. Periodic full-roster
+runs can be dispatched with `suite=full` and `force_certify=true`; retained
+results are needed to assess the 90% split-success target.
+
+Candidate preparation can be rehearsed from a clean checkout with the native
+prerequisites and `SKIPPY_REWRITER_LLVM_PREFIX` set.
 
 ```sh
 just automation-run upgrade resolve --upstream FULL_UPSTREAM_SHA --force-certify false
 just automation-run upgrade prepare FULL_UPSTREAM_SHA
 ```
 
-These commands do not push, merge, tag or publish. Preparation writes a candidate
-bundle only after regeneration and full patch replay succeed. It does not run
-family qualification. Core/model-support conflicts require a reviewed repair,
-not a wider automatic-update allowlist. Failed native preparation retains Git
-status, the source diff and the active failed patch (when available) under
-`target/llama-upgrade/diagnostics` before removing its temporary checkout; the
-workflow uploads that directory on failure. Local preparation does not bypass
-the protected-main admission checks for the full Actions pipeline.
+Preparation regenerates bindings and documentation and updates the portable
+native source-recipe identity used by embedding consumers. Split planning
+admits the actual stage graphs, tensor closures and activation frontiers. The
+seven Spark configurations retain each native admission descriptor together
+with strict source, fixture, quality and executable provenance receipts.
+Qualification results apply to the configurations executed by that run.
 
-Only the publisher uses `SKIPPY_UPGRADE_APP_ID` and
-`SKIPPY_UPGRADE_APP_PRIVATE_KEY`, with repository-scoped Contents and Pull
-requests write permissions. It pushes only the verified candidate and opens a
-normal PR; it does not merge, tag or release. App authentication ensures the PR
-starts ordinary CI.
+A protected staging job admits the bundle before creating
+`upgrade-candidates/RUN_ID/SHA_PREFIX` for JY's fresh native checkout. Its scoped
+App credential stays on the staging controller. Build, inference and repair
+jobs receive no publication credential. Failed candidate refs retain the exact
+source for diagnosis. The publisher admits both backend receipts and every
+Spark row before pushing the verified commit and opening an ordinary PR.
 
-The daily cron is intentionally disabled until the unchanged-pin and real
-changed-pin acceptance runs succeed. The controller/family migration must be
-completed and validated before enabling it; the retained shell battery must not
-be treated as working merely because its script is present. Missing native
-commands, regeneration, family receipts or publisher admission are hard failures.
+Configure `SKIPPY_UPGRADE_REPAIR_COMMAND` as a repository variable containing a
+JSON argv array for the installed repair agent. The protected controller appends
+a diagnostic prompt as its final argument. The runner must already provide that
+agent and its authentication. Preparation can make one repair attempt when
+native regeneration fails. After qualification failure, the controller collects
+failed job logs and evidence, runs one repair in a fresh disposable checkout,
+and repeats the complete gate on a fresh direct-child candidate. Native patch
+queues and generated binding/documentation repairs are admitted. Policy,
+workflow and fixture edits are rejected. Repair cannot alter its selected pin,
+commit history or generated source identity inputs. An unavailable agent, exhausted
+repair attempt or incomplete evidence fails the upgrade.
 
-The retained family manifest includes dense, MoE, Next, VL, VL MoE and TTS Qwen3
-fixtures, plus the broader supported family roster. Preserve declared
-profile-specific oracles and all pinned sidecars. The OCR image's legacy filename
-and label are fixture compatibility data, not a downstream product dependency.
+Only the staging and final publisher jobs use `SKIPPY_UPGRADE_APP_ID` and
+`SKIPPY_UPGRADE_APP_PRIVATE_KEY`. Keep their Contents permission scoped to this
+repository and Pull requests write permission on the final publisher. Sync the
+JY short-smoke template profile choices from `.gi/templates.yaml` before the
+first `upgrade` dispatch. A real Spark and changed-pin pilot is still required
+to validate native provisioning, agent availability and the external settings.
 
 ## Bring-up evidence
 
