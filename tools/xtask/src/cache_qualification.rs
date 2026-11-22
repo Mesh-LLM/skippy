@@ -359,7 +359,9 @@ fn assess_report(
             return Err("qualification exited without a result report".into());
         }
     };
-    if report.schema_version != 9 || report.backend != backend.profile() || report.fixture != *model
+    if report.schema_version != 10
+        || report.backend != backend.profile()
+        || report.fixture != *model
     {
         return Err("qualification result identity does not match the requested cell".into());
     }

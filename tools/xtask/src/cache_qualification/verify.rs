@@ -167,7 +167,7 @@ mod tests {
     fn offline_verification_requires_both_executable_digests() {
         let model = KvFixtureManifest::bundled().unwrap().models.remove(0);
         let mut report = super::super::Report {
-            schema_version: 9,
+            schema_version: 10,
             status: Status::Pass,
             backend: Backend::Metal.profile().into(),
             model_sha256: Some(model.sha256.clone()),

@@ -20,7 +20,7 @@ SKIPPY_CACHE_QUAL_REPORT_DIR=/absolute/fresh-report-directory \
 just cache-correctness-metal
 ```
 
-On x86_64 Linux with CUDA, point the same variables at the CUDA builds and use
+On ARM64 or x86_64 Linux with CUDA, point the same variables at the CUDA builds and use
 `just cache-correctness-cuda`.
 
 The test renders the same chat in both engines and compares the rendered prompt

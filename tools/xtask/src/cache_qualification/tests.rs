@@ -14,7 +14,7 @@ fn a_passing_child_cannot_hide_missing_or_mismatched_evidence() {
     let model = &manifest.models[0];
     assert!(assess_report(Backend::Metal, model, Ok(()), None).is_err());
     let report = |status, backend: &str| Report {
-        schema_version: 9,
+        schema_version: 10,
         status,
         backend: backend.into(),
         fixture: KvFixtureManifest::bundled().unwrap().models.remove(0),
