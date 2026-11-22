@@ -28,6 +28,7 @@ use std::{
     time::Duration,
 };
 
+mod answer;
 mod backend;
 mod conversation;
 mod evidence;
@@ -356,8 +357,9 @@ fn generate(
     context: &InferenceRequestContext,
 ) -> Result<Candidate> {
     let defaults = backend.request_defaults.snapshot();
-    let prompt =
-        backend.prepare_chat_prompt(request, chat_template_options(request, &defaults)?)?;
+    let options = chat_template_options(request, &defaults)?;
+    let prompt = backend.prepare_chat_prompt(request, options.clone())?;
+    let metadata = prompt.chat_parse_metadata.clone();
     let prompt_sha256 = sha256(prompt.text.as_bytes());
     let checkpoint = prompt
         .recurrent_cache_prefix_text
@@ -399,7 +401,14 @@ fn generate(
         prompt_sha256,
         prompt_ids: receipt.prompt_token_ids.to_vec(),
         generated_ids: receipt.generated_token_ids.into_vec(),
-        content: output.text,
+        content: answer::content(
+            backend,
+            request,
+            &options,
+            metadata.as_deref(),
+            &output.text,
+        )?,
+        raw_content: Some(output.text),
         top_logprobs: output
             .token_logprobs
             .context("missing Skippy logprobs")?

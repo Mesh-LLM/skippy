@@ -123,6 +123,8 @@ pub(super) struct Generation {
     pub(super) prompt_ids: Vec<i32>,
     pub(super) generated_ids: Vec<i32>,
     pub(super) content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) raw_content: Option<String>,
     pub(super) top_logprobs: Vec<Vec<TokenScore>>,
 }
 
@@ -598,6 +600,7 @@ mod tests {
             prompt_ids: vec![1; 100],
             generated_ids: vec![2; MAX_TOKENS as usize],
             content: "{\"code\":1729}".into(),
+            raw_content: None,
             top_logprobs: vec![score; MAX_TOKENS as usize],
         };
         let cold = Candidate {

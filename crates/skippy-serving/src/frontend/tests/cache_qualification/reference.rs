@@ -246,6 +246,7 @@ async fn observe_generation(
         prompt_ids: tokenized.tokens,
         generated_ids: completion.tokens,
         content: completion.content,
+        raw_content: None,
         top_logprobs: completion
             .completion_probabilities
             .into_iter()

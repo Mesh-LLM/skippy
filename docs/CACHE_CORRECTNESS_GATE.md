@@ -26,11 +26,15 @@ and known answers. Each base/replay request must return the JSON object
 `{"code":1729}`. Conversation extensions change the requested code to 3141
 and then 2718; a changed tail requests 1618. The grammar constrains the shape
 but does not supply or force the answer. Wrong values, malformed/truncated JSON,
-and missing native generation evidence fail the gate. Equivalent JSON whitespace
+and missing native generation evidence fail the gate. The harness validates
+content from the production chat parser; a native-grammar-permitted Markdown
+wrapper is parsed there rather than rejected as raw JSON. Equivalent JSON whitespace
 or tokenization is allowed; free-form wording is not a correctness oracle.
 
 Report schema **11**, contract `behavior_and_reuse_v1`, separates this gate from
-the previous numerical contract. Raw generated tokens and top-five scores remain
+the previous numerical contract. Raw decoder text is retained in `raw_content`
+alongside parsed `content`; the optional diagnostic field is additive to schema 11.
+Raw generated tokens and top-five scores remain
 in the report for diagnosis. Exact alternative-token rankings and numerical
 score differences do not determine qualification. Old reports cannot qualify
 under the new contract.
@@ -51,8 +55,9 @@ selected prefix.
 The L1 test also replays two successive conversation extensions and a changed
 tail after a common prefix. Each request runs cold and warm through Skippy.
 The validator derives retained-prefix bounds from the actual prompt plus
-previously decoded generated tokens, excluding the last sample that has not
-been decoded. Valid extra reuse is accepted; claims beyond retained history
+delivered generated tokens, including a stop token the scheduler may have
+consumed before observing Stop. Receipts exclude queued, undelivered samples;
+the harness must not subtract another token from them. Valid extra reuse is accepted; claims beyond retained history
 or inconsistent suffix accounting fail. A recurrent checkpoint is reusable only
 when the full checkpoint remains a prefix of the rendered prompt. Each conversation case
 reports its own outcome and token accounting.

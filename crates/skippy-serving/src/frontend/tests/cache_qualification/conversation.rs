@@ -189,11 +189,12 @@ fn expected_match(family: Family, source: &Candidate, prompt: &[i32]) -> Result<
         Family::DenseAttention | Family::AttentionMoe => {
             let previous_prefill = source_prompt.len().saturating_sub(1);
             let minimum = common_prefix(prompt, &source_prompt[..previous_prefill]);
-            // The native checkpoint also retains prompt + decoded generated
-            // tokens; the newest sampled token has not been decoded yet.
+            // Receipts contain delivered tokens, not the scheduler's queued
+            // sample. Read-ahead may already have consumed the delivered stop
+            // token, so the entire delivered prefix is a valid upper bound.
             let mut retained = source_prompt.to_vec();
             let generated = &source.generation.generated_ids;
-            retained.extend_from_slice(&generated[..generated.len().saturating_sub(1)]);
+            retained.extend_from_slice(generated);
             let maximum = common_prefix(prompt, &retained);
             Ok((u32::try_from(minimum)?, u32::try_from(maximum)?))
         }
@@ -244,10 +245,49 @@ fn attention_accounting_includes_decoded_generated_tokens() {
     .unwrap();
     assert_eq!(
         expected_match(Family::AttentionMoe, &source, &[1, 2, 3, 4, 5, 6, 7, 8]).unwrap(),
-        (3, 6)
+        (3, 7)
     );
     assert_eq!(
         expected_match(Family::DenseAttention, &source, &[1, 2, 9, 8]).unwrap(),
         (2, 2)
+    );
+    let mut cold = source.clone();
+    cold.generation.prompt_ids = (1..=9).collect();
+    cold.cache.status = "disabled".into();
+    cold.cache.prompt_tokens = 9;
+    cold.cache.suffix_tokens = 9;
+    let mut warm = cold.clone();
+    warm.cache.status = "hit".into();
+    warm.cache.hit_kind = Some("resident_prefix".into());
+    warm.cache.cached_tokens = 7;
+    warm.cache.matched_tokens = 7;
+    warm.cache.suffix_tokens = 2;
+    let mut observation = Observation { cold, warm };
+    let mut row = ResultRow {
+        status: Status::Fail,
+        minimum_matched_tokens: None,
+        maximum_matched_tokens: None,
+        errors: Vec::new(),
+    };
+    validate_accounting(
+        Case::FirstFollowUp,
+        Family::AttentionMoe,
+        &observation,
+        &source,
+        &mut row,
+    )
+    .unwrap();
+    observation.warm.cache.cached_tokens = 8;
+    observation.warm.cache.matched_tokens = 8;
+    observation.warm.cache.suffix_tokens = 1;
+    assert!(
+        validate_accounting(
+            Case::FirstFollowUp,
+            Family::AttentionMoe,
+            &observation,
+            &source,
+            &mut row,
+        )
+        .is_err()
     );
 }
