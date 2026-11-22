@@ -5,22 +5,14 @@ import re
 import sys
 
 from .ci_artifacts import read_json
-from .inference_ladder import allowed_split_admissions, matrix
+from .inference_admission import split_admissions_digest
+from .inference_ladder import matrix
 from .inference_nightly_metrics import METAL_WORKLOADS, METRIC_NAMES, WORKLOADS, contract, metric_value
 from .inference_throughput import successful_run
 
 
 def workload_for(entry):
     return (METAL_WORKLOADS if entry["backend"] == "metal" else WORKLOADS)[entry["profile"]]
-
-
-def admitted_workload(entry, certification):
-    if certification not in allowed_split_admissions(entry["profile"], entry["mode"]):
-        raise ValueError("invalid split admission")
-    workload = workload_for(entry)
-    if certification == "uncertified_override":
-        return workload + " (experimental split)"
-    return workload
 
 
 def measurements(directory, entry, sha):
@@ -44,10 +36,11 @@ def measurements(directory, entry, sha):
                 or any(member["status"] != "succeeded" for member in members)
                 or not any(member["role"] == "leader" and member["job_id"] == job["id"] for member in members)):
             raise ValueError("nightly receipt requires a successful split formation")
-    certification = receipt["split_certification"]
-    workload = admitted_workload(entry, certification)
+        if receipt.get("split_admissions_sha256") != split_admissions_digest(read_json(directory / "split-admissions.json")):
+            raise ValueError("nightly split admission evidence mismatch")
+    workload = workload_for(entry)
     model = entry["configuration"].removeprefix("metal-").removesuffix(f'-{entry["mode"]}')
-    fingerprint = contract(entry["profile"], entry, model, certification)
+    fingerprint = contract(entry["profile"], entry, model)
     if receipt["contract_sha256"] != fingerprint:
         raise ValueError("inference workload fingerprint mismatch")
     values = receipt["metrics"]

@@ -10,8 +10,8 @@ import time
 from .ci_artifacts import digest, write_json
 from .inference_comparability import benchmark_functions
 from .inference_inputs import fixture, input_hashes
+from .inference_admission import split_admissions_digest
 from .inference_metal import DEVICE as METAL_DEVICE
-from .inference_ladder import allowed_split_admissions
 from .inference_throughput import collect, successful_run
 
 WORKLOADS = {"pr": "DGX Spark smoke v1", "nightly": "DGX Spark AgentX nightly v1",
@@ -91,12 +91,12 @@ def benchmark_definition(profile, mode, backend="cuda"):
     return functions, files
 
 
-def contract(profile, row, key, certification):
+def contract(profile, row, key):
     functions, files = benchmark_definition(profile, row["mode"], row.get("backend", "cuda"))
     inputs = {
         "recipe_version": 2,
         "profile": profile, "mode": row["mode"], "device": METAL_DEVICE if row.get("backend") == "metal" else "NVIDIA GB10",
-        "certification": certification, "model": fixture(key),
+        "admission": "native-stage-plan-v2", "model": fixture(key),
         "harness": {name: digest(Path(name)) for name in files},
         "benchmark_functions": {path: benchmark_functions(path, names)
                                 for path, names in functions.items()},
@@ -128,11 +128,15 @@ def collect_measurements(pilot, job, row, sha, output, key, profile):
     device = METAL_DEVICE if backend == "metal" else "NVIDIA GB10"
     if qualification.get("gpu", "").strip() != device or qualification.get("backend", "cuda") != backend:
         raise ValueError(f"inference evidence requires {backend} on {device}")
-    certification = qualification.get("split_certification")
-    if certification not in allowed_split_admissions(profile, row["mode"]):
-        raise ValueError("invalid split admission for nightly measurement")
+    admission_hash = None
+    if row["mode"] == "split":
+        admissions = await_artifacts(lambda: pilot.api("GET", prefix + "/raw/split-admissions.json"))
+        admission_hash = split_admissions_digest(admissions)
+        if qualification.get("split_admissions_sha256") != admission_hash:
+            raise ValueError("nightly split admission evidence mismatch")
+        write_json(output / "split-admissions.json", admissions)
     write_json(output / "measurements.json", {
         "schema_version": 1, "source_sha": sha, "configuration": row["id"], "profile": profile,
-        "job_id": job["id"], "run_id": run_id, "split_certification": certification, "backend": backend,
-        "contract_sha256": contract(profile, row, key, certification), "metrics": measurements,
+        "job_id": job["id"], "run_id": run_id, "split_admissions_sha256": admission_hash, "backend": backend,
+        "contract_sha256": contract(profile, row, key), "metrics": measurements,
     })

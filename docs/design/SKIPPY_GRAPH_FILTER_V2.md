@@ -677,7 +677,7 @@ measurement.
 
 The existing `.github/workflows/llama-upstream-canary.yml`,
 `ci/model-artifacts/registry.json`, and generated
-`ci/llama-canary/family-certified.json` remain the sole family-certification
+`ci/llama-canary/model-fixtures.json` remain the sole family-certification
 orchestration and roster. This cutover does not add a second canary or an
 EveryCut expansion. Canary runs continue to provide upstream and family breadth
 coverage, while the existing core and two-node product smokes independently

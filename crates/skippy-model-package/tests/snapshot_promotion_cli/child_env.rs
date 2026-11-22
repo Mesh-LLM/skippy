@@ -24,9 +24,26 @@ pub fn path_with(dir: &Path) -> OsString {
     std::env::join_paths(dirs).expect("PATH entries are joinable")
 }
 
-/// Bash 4 or newer: Homebrew's on macOS (the system one is 3.2), otherwise the
-/// first `bash` on [`path`].
+/// The bash the fixtures run: `SKIPPY_TEST_BASH` when set, so a bash outside
+/// the usual places can be chosen on purpose. Relative overrides are resolved
+/// against the test process's current directory. Otherwise use Homebrew's bash
+/// on macOS (the system one is 3.2), or the first `bash` on [`path`].
 pub fn bash() -> PathBuf {
+    if let Some(chosen) = std::env::var_os("SKIPPY_TEST_BASH").map(PathBuf::from) {
+        let chosen = if chosen.is_absolute() {
+            chosen
+        } else {
+            std::env::current_dir()
+                .expect("resolve SKIPPY_TEST_BASH against the current directory")
+                .join(chosen)
+        };
+        assert!(
+            chosen.is_file(),
+            "SKIPPY_TEST_BASH={} is not a file",
+            chosen.display()
+        );
+        return chosen;
+    }
     let homebrew = Path::new("/opt/homebrew/bin/bash");
     if homebrew.exists() {
         return homebrew.to_path_buf();
