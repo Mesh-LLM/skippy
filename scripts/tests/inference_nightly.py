@@ -56,7 +56,7 @@ def smoke_receipt(root, sha, run_id, configuration="qwen35-4b-standalone", value
 
 
 class NightlyTests(unittest.TestCase):
-    def test_split_planning_only_allows_override_for_pr_and_nightly(self):
+    def test_split_planning_preserves_experimental_admission_in_all_profiles(self):
         prepare_split = run_path(str(PR_PATH.with_name("inference-execute.py")))["prepare_split"]
         peers = json.dumps([{"role": "leader", "host": "192.0.2.1", "node": "leader"},
                             {"role": "worker", "host": "192.0.2.2", "node": "worker"}])
@@ -74,12 +74,8 @@ class NightlyTests(unittest.TestCase):
                     os.environ, JIANYANG_PEERS=peers,
                 ):
                     args = (Path("model.gguf"), "test-model", profile, 65536, Path(temporary), True)
-                    if profile == "release":
-                        with self.assertRaisesRegex(ValueError, "required certification admission"):
-                            prepare_split(*args)
-                    else:
-                        self.assertEqual(prepare_split(*args)[2], "uncertified_override")
-                self.assertEqual("--allow-uncertified-split" in command.call_args.args[0], profile != "release")
+                    self.assertEqual(prepare_split(*args)[2], "uncertified_override")
+                self.assertIn("--allow-uncertified-split", command.call_args.args[0])
 
     def test_nightly_split_reports_experimental_admission_after_valid_agentx_trials(self):
         key = "qwen38-27b"
