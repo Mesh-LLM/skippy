@@ -17,7 +17,7 @@ from lib.inference_png import export_charts
 
 
 REPO = "meshllm/skippy-inference-qualification"
-SOURCE_REPO = "general-inference/skippy"
+SOURCE_REPO = "Mesh-LLM/skippy"
 HISTORY_LIMIT = 64
 RUN_PATH = re.compile(r"runs/([1-9][0-9]*)/([1-9][0-9]*)\.parquet")
 CHART_PATH = re.compile(r"charts/qualification-[1-4]\.png")

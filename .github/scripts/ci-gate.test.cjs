@@ -14,7 +14,7 @@ const packageJobs = rows.map(row => `package_${row.id.replaceAll('-', '_')}`);
 const prPackages = ['package_darwin_aarch64_metal', 'package_linux_x86_64_cuda13'];
 const releaseSmokes = ['release_smoke_linux_x86_64_cuda12', 'release_smoke_linux_aarch64_cuda12', 'release_smoke_linux_aarch64_cuda13'];
 
-function results({ code = true, inference = false, full = false, release = false } = {}) {
+function results({ code = true, inference = false, full = false, release = false, hostedRequiresNative = false } = {}) {
   const selected = code || inference;
   const required = ['changes'];
   if (selected) required.push('plan');
@@ -23,7 +23,7 @@ function results({ code = true, inference = false, full = false, release = false
   else if (inference) required.push(...prPackages);
   if (release) required.push(...releaseSmokes);
   const needs = Object.fromEntries(declared.map(job => [job, { result: required.includes(job) ? 'success' : 'skipped' }]));
-  needs.changes.outputs = { code: String(code), inference: String(inference) };
+  needs.changes.outputs = { code: String(code), inference: String(inference), hosted_requires_native: String(hostedRequiresNative) };
   if (selected) needs.plan.outputs = { profile: full ? 'full' : 'pr', runtimes: JSON.stringify({ include: rows }) };
   return needs;
 }
@@ -82,6 +82,94 @@ test('release validation requires the three other GPU smokes', () => {
   assert.throws(() => gate(results(), true), /requires full CI/);
 });
 
+test('hosted CI cannot satisfy a native inference requirement', () => {
+  assert.throws(() => gate(results({ hostedRequiresNative: true })), /require native hardware qualification on an isolated runner/);
+});
+
+test('the repository switch moves every hosted job to Depot', () => {
+  const workflows = ['ci', 'ci-images', 'ci-image-builds', 'docs', 'inference', 'llama-upgrade', 'pr-checks', 'release'];
+  for (const name of workflows) {
+    const yaml = readFileSync(join(__dirname, '../workflows', name + '.yml'), 'utf8');
+    const labels = [...yaml.matchAll(/^    runs-on: (.+)\n((?:      .+\n)*)/gm)]
+      .map(([, label, continuation]) => `${label} ${continuation.trim().replaceAll(/\s+/g, ' ')}`.trim());
+    assert.ok(labels.some(label => label.includes('SKIPPY_DEPOT_RUNNERS_ENABLED')), name);
+    for (const label of labels) {
+      if (name === 'llama-upgrade' && label === '${{ matrix.runner }}') continue;
+      assert.match(label, /vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true'.*depot-/, name);
+    }
+  }
+});
+
+test('ordinary PRs call protected workflows with scoped cache access and read-only permissions', () => {
+  const workflows = { 'ci-pr': 'ci', 'ci-images-pr': 'ci', 'docs-pr': 'docs' };
+  for (const [caller, callee] of Object.entries(workflows)) {
+    const yaml = readFileSync(join(__dirname, '../workflows', caller + '.yml'), 'utf8');
+    assert.ok(yaml.includes(`uses: Mesh-LLM/skippy/.github/workflows/${callee}.yml@main`));
+    assert.match(yaml, caller === 'ci-pr' ? /^    cache-mode: read$/m : /^    cache-mode: none$/m);
+    assert.doesNotMatch(yaml, /runs-on:|secrets:|: write$/m);
+    const reusable = readFileSync(join(__dirname, '../workflows', callee + '.yml'), 'utf8');
+    assert.doesNotMatch(reusable, /^(?:    )+\w+: write$/m);
+  }
+});
+
+test('the protected image PR bridge routes only the image workflow', () => {
+  const bridge = workflow.split('\n  pr_image_builds:\n')[1].split('\n  changes:\n')[0];
+  const admission = bridge.match(/if: >-\n([\s\S]+?)\n    uses:/)[1];
+  const eligible = new Function('github', 'vars', 'startsWith', `return (${admission});`);
+  const event = {
+    repository: 'Mesh-LLM/skippy', event_name: 'pull_request',
+    workflow_ref: 'Mesh-LLM/skippy/.github/workflows/ci-images-pr.yml@refs/pull/136/merge',
+  };
+  const vars = { SKIPPY_DEPOT_RUNNERS_ENABLED: 'true' };
+  const startsWith = (value, prefix) => value.startsWith(prefix);
+  assert.equal(eligible(event, vars, startsWith), true);
+  assert.equal(eligible(event, {}, startsWith), false);
+  assert.equal(eligible({ ...event, workflow_ref: event.workflow_ref.replace('ci-images-pr', 'ci-pr') }, vars, startsWith), false);
+  assert.match(bridge, /uses: \.\/\.github\/workflows\/ci-image-builds\.yml/);
+});
+
+test('host CPU packages install Just on GitHub and Depot runners', () => {
+  for (const row of rows) {
+    const job = `package_${row.id.replaceAll('-', '_')}`;
+    const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
+    assert.equal(body.includes("setup-host: 'true'"), row.backend === 'cpu', job);
+  }
+  const action = readFileSync(join(__dirname, '../actions/ci-package/action.yml'), 'utf8');
+  assert.match(action, /uses: \.\/\.github\/actions\/setup\n      if: inputs.setup-host == 'true'/);
+});
+
+test('manual compiler image smoke can skip publication on either runner provider', () => {
+  const images = readFileSync(join(__dirname, '../workflows/ci-images.yml'), 'utf8');
+  const repository = 'Mesh-LLM/skippy';
+  const ref = 'refs/heads/main';
+  for (const kind of ['cpu', 'gpu']) {
+    const publish = images.split(`\n  ${kind}-publish:\n`)[1];
+    const publishPolicy = publish.match(/if: >-\n([\s\S]+?)\n    runs-on:/)[1];
+    const publishImage = new Function('github', 'inputs', `return (${publishPolicy});`);
+    assert.equal(publishImage({ repository, ref, event_name: 'workflow_dispatch' }, { build_only: true }), false);
+    assert.equal(publishImage({ repository, ref, event_name: 'workflow_dispatch' }, { build_only: false }), true);
+    assert.equal(publishImage({ repository, ref, event_name: 'push' }, {}), true);
+    assert.equal(publishImage({ repository, ref, event_name: 'pull_request' }, {}), false);
+  }
+});
+
+test('native CI trusts only an immutable same-repository PR from a writer', async () => {
+  const admission = workflow.split('      - name: Verify the same-repository PR author\n')[1].split('\n  plan:\n')[0];
+  const script = admission.split('          script: |\n')[1];
+  const evaluate = new Function('github', 'context', 'return (async () => {\n' + script + '\n})()');
+  const candidate = { head: { sha: 'a'.repeat(40), repo: { id: 42 } }, base: { ref: 'main' }, user: { login: 'maintainer' } };
+  const assertAdmission = (pr, permission) => evaluate({ rest: { repos: {
+    getCollaboratorPermissionLevel: async ({ username }) => {
+      assert.equal(username, 'maintainer');
+      return { data: { permission } };
+    },
+  } } }, { repo: {}, payload: { pull_request: pr, repository: { id: 42 } } });
+  await assert.doesNotReject(() => assertAdmission(candidate, 'write'));
+  await assert.rejects(() => assertAdmission(candidate, 'read'), /trusted PR author/);
+  await assert.rejects(() => assertAdmission({ ...candidate, head: { ...candidate.head, repo: { id: 43 } } }, 'admin'), /same-repository PR/);
+  await assert.rejects(() => assertAdmission({ ...candidate, head: { ...candidate.head, sha: 'main' } }, 'admin'), /immutable source/);
+});
+
 test('main can reuse only a receipt for the exact release dispatch and candidate', async () => {
   const changes = workflow.split('\n  changes:\n')[1].split('\n  plan:\n')[0];
   const receiptScript = changes.split('          script: |\n')[1].split('\n      - uses:')[0];
@@ -89,7 +177,7 @@ test('main can reuse only a receipt for the exact release dispatch and candidate
     'return (async () => {\n' + receiptScript + '\n})()');
   const sha = 'a'.repeat(40);
   const base = 'b'.repeat(40);
-  const full_name = 'general-inference/skippy';
+  const full_name = 'Mesh-LLM/skippy';
   const commit = {
     commit: { message: 'release: prepare v0.81.0\n\nSkippy-Release-Run: 123' },
     parents: [{ sha: base }],

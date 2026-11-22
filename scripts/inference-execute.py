@@ -19,7 +19,7 @@ from lib.ci_process import cancel_on_signal, capture, command, start, stop
 from lib.ci_smoke import curl
 from lib.inference_checks import ENDPOINT, numerical, offload, performance, score, streaming
 from lib.inference_inputs import admit, fixture, input_hashes, record
-from lib.inference_ladder import plan
+from lib.inference_ladder import allowed_split_admissions, plan
 
 
 def authority():
@@ -60,13 +60,14 @@ def prepare_split(model, coordinate, profile, context, output, worker):
             coordinate, "--worker", address(leader, 9400), "--worker", address(follower, 9401),
             "--ctx-size", str(context), "--n-gpu-layers", "999", "--output-dir", str(directory),
         ]
-        if profile == "pr":
+        allowed = allowed_split_admissions(profile, "split")
+        if "uncertified_override" in allowed:
             args.append("--allow-uncertified-split")
         command(args, timeout=900)
         admissions = output / "split-admissions.json"
         shutil.copyfile(directory / "admissions.json", admissions)
         certification = read_json(admissions).get("certification")
-        if certification != "certified" and (profile, certification) != ("pr", "uncertified_override"):
+        if certification not in allowed:
             raise ValueError("split plan lacks the profile's required certification admission")
         local = output / "stage.json"
         shutil.copyfile(directory / ("stage-1.json" if worker else "stage-0.json"), local)

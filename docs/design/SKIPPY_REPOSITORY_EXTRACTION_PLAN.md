@@ -5,7 +5,7 @@ original extraction decisions and acceptance criteria; live runner, tag-release,
 and downstream Mesh cutover acceptance remain separate operational work.
 
 Prepared against source commit `937f236c3de65f496324af79739d4aed7b438733`.
-Destination: private `general-inference/skippy`.
+Original destination: a standalone private Skippy repository.
 
 ## Outcome and scope
 
@@ -251,8 +251,8 @@ command. Protect release tags from movement/deletion and restrict their creation
 Changing the current public URL to a private repository URL is insufficient:
 the runtime downloader currently performs unauthenticated HTTP requests.
 
-For the first release, use authenticated `gh release download --repo
-general-inference/skippy --pattern <bundle>` and install the complete bundle.
+For a private release, use authenticated `gh release download --repo
+Mesh-LLM/skippy --pattern <bundle>` and install the complete bundle.
 Adjacent `native-runtimes/` discovery then works offline without credentials in
 the serving process. Standalone commands should report a clear private-download
 instruction when no local runtime is present, rather than falling back to Mesh
@@ -415,8 +415,8 @@ GitHub documents [reusable workflows](https://docs.github.com/en/actions/how-tos
 [workflow triggering and token behavior](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow),
 and [authenticated release asset access](https://docs.github.com/en/rest/releases/assets).
 
-The planning-time `gh repo view general-inference/skippy` lookup did not resolve
-the repository. Publication therefore includes an explicit private-repository
+GitHub did not resolve the standalone repository at planning time.
+Publication therefore includes an explicit private-repository
 creation and settings audit rather than assuming prior state. Local standalone
 build, lint, Rust/native tests, history verification, workflow contracts, and
 deterministic llama patch replay are implementation gates. GPU/Windows runner

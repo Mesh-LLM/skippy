@@ -14,7 +14,7 @@ from lib.ci_process import command
 
 from lib.inference_ladder import matrix, plan
 
-REPO = "general-inference/skippy"
+REPO = "Mesh-LLM/skippy"
 
 
 def github(path):
