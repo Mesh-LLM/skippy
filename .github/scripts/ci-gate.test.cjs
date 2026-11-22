@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const workflow = readFileSync(join(__dirname, '../workflows/ci.yml'), 'utf8');
 const section = workflow.split('\n  gate:\n')[1];
@@ -118,7 +119,7 @@ test('ARM64 owns routine CUDA device smoke and x64 retains exact release device 
   assert.match(arm, /build-cli:.*profile == 'pr'/);
   assert.doesNotMatch(arm, /smoke: artifact/);
   const x64 = workflow.split('\n  package_linux_x86_64_cuda13:\n')[1].split(/\n  \w+:\n/)[0];
-  assert.match(x64, /skippy-ci-cuda13:latest\n/);
+  assert.match(x64, /skippy-ci-cuda13@/);
   assert.match(x64, /smoke: artifact\n/);
   const release = workflow.split('\n  release_smoke_linux_x86_64_cuda13:\n')[1].split(/\n  \w+:\n/)[0];
   assert.match(release, /needs: \[package_linux_x86_64_cuda13\]/);
@@ -238,6 +239,82 @@ test('manual compiler image smoke can skip publication on either runner provider
     assert.equal(publishImage({ repository, ref, event_name: 'workflow_dispatch' }, { build_only: false }), true);
     assert.equal(publishImage({ repository, ref, event_name: 'push' }, {}), true);
     assert.equal(publishImage({ repository, ref, event_name: 'pull_request' }, {}), false);
+  }
+});
+
+test('image publication builds once while build-only and PR runs remain read-only', () => {
+  const images = readFileSync(join(__dirname, '../workflows/ci-images.yml'), 'utf8');
+  const cpu = images.split('\n  cpu-build:\n')[1].split('\n  gpu-build:\n')[0];
+  const gpu = images.split('\n  gpu-build:\n')[1].split('\n  cpu-publish:\n')[0];
+  const cpuPolicy = cpu.match(/if: >-\n([\s\S]+?)\n    uses:/)[1];
+  const gpuPolicy = gpu.match(/build-images: \$\{\{ (.+) \}\}/)[1];
+  const buildsCPU = new Function('github', 'inputs', 'vars', `return (${cpuPolicy});`);
+  const buildsGPU = new Function('github', 'inputs', `return (${gpuPolicy});`);
+  const main = { repository: 'Mesh-LLM/skippy', ref: 'refs/heads/main', event_name: 'push' };
+  for (const depot of ['true', 'false']) {
+    const vars = { SKIPPY_DEPOT_RUNNERS_ENABLED: depot };
+    assert.equal(buildsCPU(main, {}, vars), false);
+    assert.equal(buildsGPU(main, {}), false);
+    const manual = { ...main, event_name: 'workflow_dispatch' };
+    assert.equal(buildsCPU(manual, { build_only: true }, vars), true);
+    assert.equal(buildsGPU(manual, { build_only: true }), true);
+    assert.equal(buildsCPU(manual, { build_only: false }, vars), false);
+    assert.equal(buildsGPU(manual, { build_only: false }), false);
+    const pr = { ...main, ref: 'refs/pull/131/merge', event_name: 'pull_request' };
+    assert.equal(buildsCPU(pr, {}, vars), depot !== 'true');
+    assert.equal(buildsGPU(pr, {}), true);
+  }
+  const builders = readFileSync(join(__dirname, '../workflows/ci-image-builds.yml'), 'utf8');
+  assert.doesNotMatch(builders, /packages: write|docker image push|upload-artifact|image-export/);
+  for (const kind of ['cpu', 'gpu']) {
+    const publish = images.split(`\n  ${kind}-publish:\n`)[1].split(/\n  [\w-]+:\n/)[0];
+    assert.match(publish, /packages: write/);
+    const build = publish.indexOf(`just --justfile ci/images.just --working-directory . ci-${kind === 'gpu' ? 'gpu-' : ''}image-build`);
+    const smoke = publish.indexOf(`time just --justfile ci/images.just --working-directory . ci-${kind === 'gpu' ? 'gpu-' : ''}image-smoke`);
+    const push = publish.indexOf('docker image push');
+    assert.ok(build >= 0 && build < smoke && smoke < push);
+    assert.doesNotMatch(publish, /download-artifact|image load/);
+  }
+});
+
+test('container consumers pin images and Cargo snapshots to the selected digest', () => {
+  const plan = workflow.split('\n  plan:\n')[1].split('\n  quality:\n')[0];
+  const native = workflow.split('\n  native_contracts:\n')[1].split('\n  package_')[0];
+  assert.match(native, /skippy-ci-cpu@\$\{\{ needs.plan.outputs.cpu_digest \}\}/);
+  assert.match(native, /scope: native-contracts-\$\{\{ needs.plan.outputs.cpu_digest \}\}/);
+  const packages = [
+    ['linux_x86_64_cuda12', 'cuda12', 'cuda12:latest'],
+    ['linux_x86_64_cuda13', 'cuda13', 'cuda13:latest'],
+    ['linux_aarch64_cuda12', 'cuda12_arm', 'cuda12:latest-arm64'],
+  ];
+  for (const [runtime, digest, tag] of packages) {
+    const body = workflow.split(`\n  package_${runtime}:\n`)[1].split(/\n  \w+:\n/)[0];
+    const output = `\${{ needs.plan.outputs.${digest}_digest }}`;
+    assert.ok(plan.includes(`resolve ${digest} ${tag}`));
+    assert.ok(body.includes(`skippy-ci-${tag.split(':')[0]}@${output}`));
+    assert.ok(body.includes(`compiler-image-digest: ${output}`));
+  }
+});
+
+test('both image recipe files expose the compiler image build and smoke commands', () => {
+  const commands = [
+    ['ci-image-build'], ['ci-image-smoke'],
+    ['ci-gpu-image-build', 'cuda13', 'example:toolkit', '13.1.2', 'arm64'],
+    ['ci-gpu-image-smoke', 'cuda13', 'arm64'],
+  ];
+  const imageJustfile = ['--justfile', 'ci/images.just', '--working-directory', '.'];
+  for (const justfile of [[], imageJustfile]) {
+    for (const command of commands) {
+      const result = spawnSync('just', [...justfile, '--dry-run', ...command], {
+        cwd: join(__dirname, '../..'), encoding: 'utf8',
+      });
+      assert.equal(result.status, 0, result.stderr);
+      const recipe = result.stdout + result.stderr;
+      assert.match(recipe, /docker /);
+      if (command[0] === 'ci-gpu-image-smoke') {
+        assert.match(recipe, /test -s \/usr\/local\/cuda\/EULA\.txt/);
+      }
+    }
   }
 });
 

@@ -66,14 +66,14 @@ test('combined image workflow cannot be missed before it is scheduled', async ()
   const triggers = [...workflow.matchAll(/paths: \[([^\]]+)\]/g)];
   const expectedPaths = ['.github/workflows/ci-images.yml', '.github/workflows/ci-images-pr.yml',
     '.github/workflows/ci-image-builds.yml', 'ci/image-targets.json', 'ci/Dockerfile*',
-    'ci/targets.json', 'scripts/ci-preserve-cuda-license.sh', 'rust-toolchain.toml', 'Justfile'];
+    'ci/targets.json', 'scripts/ci-preserve-cuda-license.sh', 'rust-toolchain.toml', 'ci/images.just'];
   assert.equal(triggers.length, 2);
   for (const trigger of triggers) assert.deepEqual(JSON.parse('[' + trigger[1].replaceAll("'", '"') + ']'), expectedPaths);
   const pr = readFileSync(join(__dirname, '../workflows/ci-images-pr.yml'), 'utf8');
   assert.equal(pr.match(/paths: \[([^\]]+)\]/)[1], triggers[0][1]);
   for (const filename of [
     'ci/Dockerfile', 'ci/Dockerfile.cuda', 'ci/Dockerfile.gpu', 'ci/Dockerfile.gpu.dockerignore',
-    'ci/targets.json', 'scripts/ci-preserve-cuda-license.sh', 'rust-toolchain.toml', 'Justfile', '.github/workflows/ci-images.yml'
+    'ci/targets.json', 'scripts/ci-preserve-cuda-license.sh', 'rust-toolchain.toml', 'ci/images.just', '.github/workflows/ci-images.yml'
   ]) {
     assert.equal((await evaluate({ files: [{ filename }] })).state, 'pending');
     assert.equal((await evaluate({ files: [{ filename }], runs: [run('ci.yml'), run('inference.yml', 2), run('ci-images.yml', 3)] })).state, 'success');
@@ -116,7 +116,8 @@ test('native trigger patterns distinguish metadata, code-only, inference and mix
     ['.github/workflows/inference.yml', ['ci.yml']],
     ['.github/workflows/llama-upgrade.yml', ['ci.yml']],
     ['.cargo/config.toml', ['ci.yml', 'inference.yml']],
-    ['Justfile', ['ci.yml', 'inference.yml', 'ci-images.yml']],
+    ['Justfile', ['ci.yml', 'inference.yml']],
+    ['ci/images.just', ['ci.yml', 'ci-images.yml']],
   ];
   for (const [filename, workflows] of cases) {
     assert.deepEqual([...expectedWorkflows([{ filename }]).keys()],

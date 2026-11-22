@@ -57,21 +57,8 @@ RUN set -eu \
 # /usr/local/cuda-<version> and the flattened /opt/rocm ->
 # /opt/rocm-<version>, and scripts call the versioned paths.
 FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8
-COPY --from=toolkit /usr/local/ /usr/local/
-COPY --from=toolkit /opt/ /opt/
 
-ARG BACKEND
-ARG TOOLKIT_VERSION
-ARG TARGETARCH
-ARG SKIPPY_CI_IMAGE_ID=local
-ARG SOURCE_REVISION=local
-
-LABEL org.opencontainers.image.source="https://github.com/Mesh-LLM/skippy" \
-      org.opencontainers.image.description="Skippy ${BACKEND} CI toolchain" \
-      org.opencontainers.image.revision="${SOURCE_REVISION}" \
-      org.opencontainers.image.version="${TOOLKIT_VERSION}" \
-      io.skippy.ci.backend="${BACKEND}"
-
+# All GPU backends use the same host build tools for a given architecture.
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential ca-certificates clang clang-format clang-tidy cmake curl \
@@ -79,6 +66,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libssl-dev libzstd-dev lld llvm-dev mold ninja-build patchelf pkg-config jq python3 \
       rustup xz-utils zlib1g-dev zstd \
     && rm -rf /var/lib/apt/lists/*
+
+# Copy the pruned vendor trees after installing the common host packages.
+COPY --from=toolkit /usr/local/ /usr/local/
+COPY --from=toolkit /opt/ /opt/
+
+ARG BACKEND
+ARG TOOLKIT_VERSION
+ARG TARGETARCH
+
+LABEL org.opencontainers.image.source="https://github.com/Mesh-LLM/skippy" \
+      org.opencontainers.image.description="Skippy ${BACKEND} CI toolchain" \
+      org.opencontainers.image.version="${TOOLKIT_VERSION}" \
+      io.skippy.ci.backend="${BACKEND}"
 
 ENV CARGO_HOME=/opt/rust/cargo \
     RUSTUP_HOME=/opt/rust/rustup \
@@ -154,6 +154,9 @@ RUN --network=none image_probe_dir="$(mktemp -d)" \
     && rm -rf "$image_probe_dir"
 
 USER root
+ARG SKIPPY_CI_IMAGE_ID=local
+ARG SOURCE_REVISION=local
+LABEL org.opencontainers.image.revision="${SOURCE_REVISION}"
 RUN test -n "$SKIPPY_CI_IMAGE_ID" \
     && printf '%s\n' "$SKIPPY_CI_IMAGE_ID" > /etc/skippy-ci-image-id
 USER runner

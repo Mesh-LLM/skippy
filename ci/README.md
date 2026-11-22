@@ -141,7 +141,8 @@ credentials stay in their existing systems.
 Scheduled, manual and reusable full/candidate validation bypass path selection.
 Tagged releases and manual llama upgrades retain their explicit triggers. The
 `CI images` workflow retains its native paths for its workflow,
-`ci/Dockerfile*`, `ci/targets.json`, `rust-toolchain.toml` and `Justfile`.
+`ci/Dockerfile*`, `ci/targets.json`, `scripts/ci-preserve-cuda-license.sh`,
+`rust-toolchain.toml` and `ci/images.just`.
 Protected inference and aggregate workflow changes take effect after they
 reach `main`.
 Nightly, reusable candidate validation and tagged releases use the full profile.
@@ -200,7 +201,9 @@ With Depot enabled, `ci-pr.yml`, `ci-images-pr.yml`, and `docs-pr.yml` retain
 GitHub's ordinary PR triggers and call their runner-owning workflows from
 protected `main` without forwarding secrets. The image dispatcher enters
 through `ci.yml`, which calls the read-only image builders at its protected
-revision. The same builders supply exact artifacts for the image publishers.
+revision. The read-only builders smoke images without exporting archives. Protected-main
+publishers build, smoke, verify and push on one runner, using the same recipes
+and the validated compiler image matrix.
 The CI dispatcher requests `cache-mode: read` for the Actions cache. The image
 and docs dispatchers request `cache-mode: none`. All retain GitHub's fork-run
 approval policy.
@@ -247,10 +250,10 @@ build-essential, mold and LLVM/Clang 22 development inputs. The job verifies
 its tools and pulls the private image with its own `GITHUB_TOKEN` using
 `packages: read`.
 
-Cargo and CMake compilation use two workers to fit standard private-repository
-hosted capacity. Cargo build snapshots and
-sccache include `/etc/skippy-ci-image-id`, so updates to `latest` use a new
-compiled-output namespace. Cargo downloads use separate container cache scopes
+Cargo and CMake compilation use two workers on standard private-repository
+hosted runners. The plan pins compiler image tags to digests. Cargo snapshots
+use the selected digest, and sccache uses `/etc/skippy-ci-image-id` to identify
+the compiler image. Cargo downloads use separate container cache scopes
 to avoid restoring archives made with hosted-VM home/workspace paths. Native
 source caches remain shared. Protected candidate admission precedes build-cache
 restoration and compiler-cache credential export.
@@ -311,14 +314,11 @@ with a fresh `/github/home` mount, as used by GitHub container jobs.
 
 The `.github/workflows/ci-images.yml` workflow is named `CI images` and builds
 and tests relevant PRs. Main pushes and manual main dispatches publish the exact
-tested CPU and GPU images in separate jobs with package-write permission. Each
-publisher verifies its tested artifact and metadata, then pushes immutable build
-tags and `latest` without rebuilding or running the image. Run manual refreshes
+tested CPU and GPU images from the runner that built and smoked each image.
+The publisher verifies image metadata before pushing the build and latest tags. Run manual refreshes
 with `gh workflow run ci-images.yml --ref main` after the workflow lands.
 
-This PR only bootstraps the image; consumer adoption follows after publication.
-Future consumers use `latest` and include `/etc/skippy-ci-image-id` in build-cache
-keys. Private same-repository pulls use `GITHUB_TOKEN` with `packages: read`.
+Container jobs pull the compiler image by its planned digest. Private same-repository pulls use `GITHUB_TOKEN` with `packages: read`.
 
 ### CUDA and ROCm compiler images
 
@@ -336,11 +336,10 @@ or matching `cuda-cudart` package copyright at `/usr/local/cuda/EULA.txt`.
 Image builds and smoke checks require this file so runtime packaging can copy
 the original redistribution terms into `licenses/NVIDIA-CUDA-LICENSE.txt`.
 The images include Rust and native build tools and compile a small
-backend-specific kernel during the image build. PRs build,
-smoke, and stream each exact image into a gzip-compressed archive without
-publication credentials. Protected-main publication loads those same
-artifacts, checks their image IDs, platforms, source revisions, backend and
-toolkit labels, then pushes immutable build tags and the corresponding latest
+backend-specific kernel during the image build. PRs build and smoke each image without exporting archives or receiving
+publication credentials. Protected-main publication builds and smokes each
+image on its publishing runner, checks its platform, source revision, backend
+and toolkit labels, then pushes immutable build tags and the corresponding latest
 tags. ARM64 build tags also end in `-arm64`.
 
 The kernel compiler probes and container smoke establish compiler/toolkit image
@@ -468,9 +467,10 @@ another; the shell scripts read it too.
    `just ci-package` to compose verified producer archives. It smokes the
    extracted product on the same runner and uploads the package with its evidence.
 3. Release-only device jobs download the exact compiler-only CUDA archives,
-   run inference smoke, and upload the same archives with device evidence under
-   `release-product-*`. The publisher requires all eight variants and smoke
-   evidence before publication.
+   run inference smoke, and upload only `release-device-evidence-*`. Both release
+   stages check the smoke report against the SHA-256 of the original product
+   archive. The publisher requires all eight variants and smoke evidence before
+   publication.
 4. The hosted CI gate reads the dependency results and the validated plan
    without checkout or Rust setup. Required work must pass and unselected work
    must report a skip.
