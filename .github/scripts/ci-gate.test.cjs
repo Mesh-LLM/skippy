@@ -192,6 +192,27 @@ test('the repository switch moves every hosted job to Depot', () => {
   }
 });
 
+test('manual branch inference bypasses the main-only Depot group in every controller job', () => {
+  const yaml = readFileSync(join(__dirname, '../workflows/inference.yml'), 'utf8');
+  const labels = [...yaml.matchAll(/^    runs-on: \$\{\{ (.+) \}\}$/gm)].map(match => match[1]);
+  assert.equal(labels.length, 5);
+  const enabled = { SKIPPY_DEPOT_RUNNERS_ENABLED: 'true' };
+  for (const expression of labels) {
+    const runner = new Function('github', 'vars', `return (${expression});`);
+    assert.equal(runner({ event_name: 'workflow_dispatch', ref: 'refs/heads/pr-branch' }, enabled), 'ubuntu-24.04');
+    for (const event_name of ['workflow_dispatch', 'schedule', 'pull_request_target']) {
+      assert.equal(runner({ event_name, ref: 'refs/heads/main' }, enabled), 'depot-ubuntu-24.04-4');
+      assert.equal(runner({ event_name, ref: 'refs/heads/main' }, {}), 'ubuntu-24.04');
+    }
+  }
+  const admission = yaml.split('      - id: admission\n')[1].split('      - id: matrix\n')[0];
+  assert.match(admission, /GITHUB_EVENT_NAME.*workflow_dispatch.*GITHUB_REF.*refs\/heads\/main/);
+  assert.match(admission, /PYTHONPATH=scripts python3 -c/);
+  assert.match(admission, /runpy\.run_path\("scripts\/inference-plan.py"\)\["admit_pr"\]\(os.environ\["GITHUB_SHA"\]\)/);
+  assert.ok(admission.indexOf('["admit_pr"]') < admission.indexOf('just inference-admit'));
+  assert.match(yaml, /ref: \$\{\{ github.event_name == 'schedule' && github.sha \|\| 'main' \}\}/);
+});
+
 test('ordinary PRs call protected workflows with scoped cache access and read-only permissions', () => {
   const workflows = { 'ci-pr': 'ci', 'ci-images-pr': 'ci', 'docs-pr': 'docs' };
   for (const [caller, callee] of Object.entries(workflows)) {

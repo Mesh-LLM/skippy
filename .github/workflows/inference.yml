@@ -93,7 +93,8 @@ jobs:
     if: >-
       github.event_name != 'pull_request_target' ||
       contains(github.event.pull_request.labels.*.name, 'qualify')
-    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    # The Depot group admits this workflow only at refs/heads/main.
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' && 'ubuntu-24.04' || vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 20
     outputs:
       source: ${{ steps.admission.outputs.source || github.event.pull_request.head.sha || github.sha }}
@@ -112,7 +113,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           QUALIFICATION_PROFILE: ${{ inputs.profile || 'release' }}
           RELEASE_CANDIDATE: ${{ inputs.release_candidate }}
-        run: just inference-admit
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && "$GITHUB_REF" != refs/heads/main ]]; then
+            PYTHONPATH=scripts python3 -c 'import os, runpy; runpy.run_path("scripts/inference-plan.py")["admit_pr"](os.environ["GITHUB_SHA"])'
+          fi
+          just inference-admit
       - id: matrix
         env:
           SOURCE_SHA: ${{ steps.admission.outputs.source }}
@@ -129,7 +134,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' && 'ubuntu-24.04' || vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: ${{ matrix.profile == 'pr' && 100 || 360 }}
     env:
       EVIDENCE: target/ci-evidence/inference-${{ matrix.id }}
@@ -172,7 +177,7 @@ jobs:
       always() && !cancelled() && github.event_name == 'schedule' &&
       github.repository == 'Mesh-LLM/skippy' && github.ref == 'refs/heads/main' &&
       needs.plan.result == 'success'
-    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' && 'ubuntu-24.04' || vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -211,7 +216,7 @@ jobs:
   summary:
     needs: [plan, qualification, nightly_publish]
     if: always()
-    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' && 'ubuntu-24.04' || vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: Publish the source-bound qualification result
@@ -250,7 +255,7 @@ jobs:
   report:
     needs: [plan, qualification, summary]
     if: always() && github.event_name == 'pull_request_target' && needs.plan.result == 'success'
-    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' && 'ubuntu-24.04' || vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       contents: read

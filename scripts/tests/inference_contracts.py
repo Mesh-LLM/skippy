@@ -185,6 +185,31 @@ class PlacementTests(unittest.TestCase):
             placement(agents, "controller", 0, "b" * 40)
 
 
+class ManualBranchAdmissionTests(unittest.TestCase):
+    def test_manual_branch_requires_current_same_repository_pr_from_a_writer(self):
+        admit = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))["admit_pr"]
+        sha = "a" * 40
+        pr = {"state": "open", "number": 34, "user": {"login": "maintainer"},
+              "head": {"sha": sha, "repo": {"full_name": "Mesh-LLM/skippy"}}}
+        for repo, permission, current, error in [
+            ("Mesh-LLM/skippy", "write", sha, None),
+            ("someone/fork", "write", sha, "fork PR"),
+            ("Mesh-LLM/skippy", "read", sha, "trusted collaborator"),
+            ("Mesh-LLM/skippy", "write", "b" * 40, "head changed"),
+        ]:
+            with self.subTest(repo=repo, permission=permission, current=current):
+                pr["head"]["repo"]["full_name"] = repo
+                api = Mock(side_effect=lambda path: [pr] if path.endswith("/pulls") else
+                           {"permission": permission} if path.endswith("/permission") else
+                           {"head": {"sha": current}})
+                with patch.dict(admit.__globals__, github=api):
+                    if error:
+                        with self.assertRaisesRegex(ValueError, error):
+                            admit(sha)
+                    else:
+                        admit(sha)
+
+
 class ReleaseAdmissionTests(unittest.TestCase):
     def test_only_the_staged_commit_from_protected_release_dispatch_is_admitted(self):
         admission = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))

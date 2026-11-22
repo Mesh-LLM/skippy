@@ -173,6 +173,16 @@ PR validation and its aggregate, code and package CI, compiler images and
 publishing, documentation and deployment, release validation and publication,
 the inference controllers, and llama upgrade preparation and publication. Most
 Linux jobs use four-core Ubuntu 24.04 runners of the existing architecture.
+Manual inference dispatches from a PR branch use GitHub-hosted Ubuntu instead:
+the Depot group allows the workflow only at `refs/heads/main`. These dispatches
+still load controller code from protected `main` and require the exact current
+head of an open same-repository PR authored by a trusted collaborator. Scheduled
+and main-branch inference runs retain Depot placement. For example:
+
+```sh
+gh workflow run inference.yml --ref codex/skippy-kv-qualification -f profile=nightly
+```
+
 Graph Contracts and llama upgrade preparation use eight-core x64 runners. The
 macOS CPU package uses Depot's macOS 15 ARM64 runner. Device jobs use their
 specified JY groups. Clearing the variable or setting it to `false` restores
