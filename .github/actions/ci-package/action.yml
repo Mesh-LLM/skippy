@@ -110,7 +110,7 @@ runs:
         overwrite: true
         retention-days: 7
     - uses: ./.github/actions/report-sccache
-      if: ${{ !cancelled() && env.SCCACHE_GHA_VERSION != '' }}
+      if: ${{ !cancelled() && env.SCCACHE != '' }}
       with:
         artifact-prefix: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-package-${{ inputs.runtime-id }}
     - name: Upload build and smoke failure evidence
