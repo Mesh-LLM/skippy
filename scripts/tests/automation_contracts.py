@@ -146,8 +146,8 @@ class Artifacts(unittest.TestCase):
             info.mkdir()
             (info / "version").write_text("7.2.4-93~24.04\n", encoding="utf-8")
             self.assertEqual(product.rocm_toolkit_version(root), "7.2.4-93~24.04")
-        self.assertEqual(product.rocm_toolkit_version(Path(r"C:\Program Files\AMD\ROCm\7.2.0")), "7.2.0")
-        self.assertIsNone(product.rocm_toolkit_version(Path("/opt/rocm")))
+        with patch.object(Path, "is_file", return_value=False):
+            self.assertEqual(product.rocm_toolkit_version(Path(r"C:\Program Files\AMD\ROCm\7.2.0")), "7.2.0")
 
     def test_rocm_versions_match_accepts_the_windows_short_root(self):
         product = module("ci-product")

@@ -60,6 +60,7 @@ Environment:
   SKIPPY_NATIVE_RUNTIME_MODEL_PACKAGE_TOOL (non-Windows test/packaging override)
   SKIPPY_CUDA_VERSION / SKIPPY_CUDA_TOOLKIT_MAJOR (validated against the selected compiler)
   SKIPPY_CUDA_LICENSE_FILE (optional CUDA EULA/copyright file override)
+  SKIPPY_ROCM_LICENSE_FILE (optional combined AMD/HIP component license override)
   SKIPPY_LLAMA_PIN_SHA
   SKIPPY_NATIVE_RUNTIME_RANK (manifest rank, default 0; among compatible
                       runtimes the highest rank wins)
@@ -595,43 +596,6 @@ bundle_cuda_distribution_license() {
     license_paths+=("licenses/NVIDIA-CUDA-LICENSE.txt")
 }
 
-# The Windows package redistributes HIP runtime, rocBLAS, and hipBLASLt
-# libraries from the pinned HIP SDK. Keep AMD's per-component licenses from
-# the SDK's share/doc tree next to them; fail the package when the SDK layout
-# no longer matches so the licenses are never silently dropped.
-bundle_windows_rocm_distribution_license() {
-    local root="${ROCM_PATH:-}" component candidate name source
-    local -a sources=()
-    if [[ -n "${SKIPPY_ROCM_LICENSE_FILE:-}" ]]; then
-        if [[ -f "$SKIPPY_ROCM_LICENSE_FILE" ]]; then
-            sources+=("$SKIPPY_ROCM_LICENSE_FILE")
-        else
-            echo "configured ROCm license file does not exist: $SKIPPY_ROCM_LICENSE_FILE" >&2
-            return 1
-        fi
-    elif [[ -n "$root" ]]; then
-        for component in rocblas hipblaslt hipblas-common hipblas; do
-            for candidate in LICENSE.md LICENSE.txt LICENSE; do
-                if [[ -f "$root/share/doc/$component/$candidate" ]]; then
-                    sources+=("$root/share/doc/$component/$candidate")
-                    break
-                fi
-            done
-        done
-    fi
-    if [[ "${#sources[@]}" -eq 0 ]]; then
-        echo "AMD HIP SDK component licenses were not found under ${root:-\$ROCM_PATH}/share/doc; set SKIPPY_ROCM_LICENSE_FILE" >&2
-        return 1
-    fi
-    mkdir -p "$stage_dir/licenses"
-    for source in "${sources[@]}"; do
-        component="$(basename "$(dirname "$source")")"
-        name="AMD-HIP-SDK-$component-$(basename "$source")"
-        cp "$source" "$stage_dir/licenses/$name"
-        license_paths+=("licenses/$name")
-    done
-}
-
 linux_cuda_redistributable_present() {
     local rel_path library_name
     for rel_path in "${library_paths[@]}"; do
@@ -834,7 +798,11 @@ if [[ "$runtime_os" == "windows" ]]; then
         bundle_cuda_distribution_license
     fi
     if [[ "$BACKEND" == "rocm" || "$BACKEND" == "hip" ]]; then
-        bundle_windows_rocm_distribution_license
+        rocm_licenses="$(bash "$SCRIPT_DIR/rocm-distribution-licenses.sh" \
+            "$stage_dir" "${ROCM_PATH:-}" "${SKIPPY_ROCM_LICENSE_FILE:-}")"
+        while IFS= read -r license; do
+            license_paths+=("$license")
+        done <<< "$rocm_licenses"
     fi
     for library in "${runtime_libraries[@]}"; do
         dependency_args+=(--search-dir "$(dirname "$library")")

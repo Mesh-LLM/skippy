@@ -2,6 +2,7 @@
 
 import importlib.util
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -87,6 +88,61 @@ class ProductContract(unittest.TestCase):
         ci_artifacts.write_json(receipt, value)
         with self.assertRaisesRegex(ValueError, "identity mismatch"):
             self.product.package(HOST, RUNTIME, self.host_input, self.runtime_input)
+
+
+class RocmLicenseContract(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name) / "SDK with spaces"
+        self.stage = Path(temporary.name) / "stage"
+        self.licenses = {}
+        for component, name in zip(("rocblas", "hipblaslt", "hipblas-common", "hipblas"),
+                                   ("LICENSE.md", "LICENSE.txt", "LICENSE", "LICENSE.md")):
+            path = self.root / "share/doc" / component / name
+            path.parent.mkdir(parents=True)
+            path.write_bytes(component.encode())
+            self.licenses[component] = path
+
+    def collect(self, override=""):
+        return subprocess.run(["bash", str(SCRIPTS / "rocm-distribution-licenses.sh"),
+                               str(self.stage), str(self.root), str(override)],
+                              capture_output=True, text=True)
+
+    def test_complete_sdk_copies_every_component_license(self):
+        result = self.collect()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        paths = result.stdout.splitlines()
+        self.assertEqual(len(paths), len(self.licenses))
+        self.assertEqual({(self.stage / path).read_bytes() for path in paths},
+                         {component.encode() for component in self.licenses})
+
+    def test_each_missing_component_fails_before_copying_any_licenses(self):
+        for component, path in self.licenses.items():
+            with self.subTest(component=component):
+                path.unlink()
+                result = self.collect()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"license for {component}", result.stderr)
+                self.assertFalse(self.stage.exists())
+                path.write_bytes(component.encode())
+
+    def test_explicit_combined_license_does_not_require_sdk_discovery(self):
+        for path in self.licenses.values():
+            path.unlink()
+        combined = self.root / "combined-license.txt"
+        combined.write_bytes(b"Combined AMD redistribution terms")
+        result = self.collect(combined)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        paths = result.stdout.splitlines()
+        self.assertEqual(len(paths), 1)
+        self.assertEqual((self.stage / paths[0]).read_bytes(), combined.read_bytes())
+
+    def test_missing_explicit_license_does_not_fall_back_to_sdk(self):
+        result = self.collect(self.root / "missing-license.txt")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("configured ROCm license file does not exist", result.stderr)
+        self.assertFalse(self.stage.exists())
 
 
 if __name__ == "__main__":

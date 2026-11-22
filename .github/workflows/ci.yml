@@ -788,6 +788,7 @@ jobs:
         with:
           runtime-id: windows-x86_64-cuda12
           host-id: windows-x86_64
+          setup-host: 'true'
           smoke: artifact
           windows-cuda: '12.9.2'
           candidate-artifact: ${{ inputs.candidate_artifact }}
@@ -809,6 +810,7 @@ jobs:
         with:
           runtime-id: windows-x86_64-cuda13
           host-id: windows-x86_64
+          setup-host: 'true'
           smoke: artifact
           windows-cuda: '13.1.2'
           candidate-artifact: ${{ inputs.candidate_artifact }}
@@ -830,6 +832,7 @@ jobs:
         with:
           runtime-id: windows-x86_64-rocm
           host-id: windows-x86_64
+          setup-host: 'true'
           smoke: artifact
           windows-rocm: '7.2.0'
           candidate-artifact: ${{ inputs.candidate_artifact }}

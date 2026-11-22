@@ -194,11 +194,11 @@ test('the protected image PR bridge routes only the image workflow', () => {
   assert.match(bridge, /uses: \.\/\.github\/workflows\/ci-image-builds\.yml/);
 });
 
-test('host CPU packages install Just on GitHub and Depot runners', () => {
+test('host CPU and Windows backend packages install Just on their own runners', () => {
   for (const row of rows) {
     const job = `package_${row.id.replaceAll('-', '_')}`;
     const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
-    assert.equal(body.includes("setup-host: 'true'"), row.backend === 'cpu', job);
+    assert.equal(body.includes("setup-host: 'true'"), row.backend === 'cpu' || row.host === 'windows-x86_64', job);
   }
   const action = readFileSync(join(__dirname, '../actions/ci-package/action.yml'), 'utf8');
   assert.match(action, /uses: \.\/\.github\/actions\/setup\n      if: inputs.setup-host == 'true'/);
