@@ -294,7 +294,9 @@ case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
     CMAKE_ARGS+=(-DCMAKE_OBJECT_PATH_MAX=180 -DGGML_AVX512=OFF -DGGML_BMI2=OFF)
     if [[ "${CXX:-}" == cl || "${CXX:-}" == *cl.exe ]]; then
-      CMAKE_ARGS+=("-DCMAKE_CXX_FLAGS_INIT=/DPATH_MAX=4096")
+      # Dash form: Git Bash turns a value starting with "/" after "=" into a
+      # path under its install directory before CMake sees it. MSVC takes both.
+      CMAKE_ARGS+=("-DCMAKE_CXX_FLAGS_INIT=-DPATH_MAX=4096")
     fi
     ;;
 esac
