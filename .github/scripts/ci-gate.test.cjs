@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
+const { execFileSync } = require('node:child_process');
 
 const workflow = readFileSync(join(__dirname, '../workflows/ci.yml'), 'utf8');
 const section = workflow.split('\n  gate:\n')[1];
@@ -24,7 +25,10 @@ function results({ code = true, inference = false, full = false, release = false
   if (release) required.push(...releaseSmokes);
   const needs = Object.fromEntries(declared.map(job => [job, { result: required.includes(job) ? 'success' : 'skipped' }]));
   needs.changes.outputs = { code: String(code), inference: String(inference), hosted_requires_native: String(hostedRequiresNative) };
-  if (selected) needs.plan.outputs = { profile: full ? 'full' : 'pr', runtimes: JSON.stringify({ include: rows }) };
+  if (selected) needs.plan.outputs = {
+    profile: full ? 'full' : 'pr',
+    runtimes: JSON.stringify({ include: full ? rows : rows.filter(row => row.validation !== 'artifact') }),
+  };
   return needs;
 }
 
@@ -57,14 +61,42 @@ test('all thirteen runtime packages match the planned matrix and depend on the c
   assert.doesNotThrow(() => gate(results({ full: true })));
 });
 
-test('release publication downloads the product archives before comparing the candidate receipt', () => {
+test('release publication consumes prepared assets and independently verifies their receipt', () => {
   const release = readFileSync(join(__dirname, '../workflows/release.yml'), 'utf8');
+  const verify = release.split('\n  verify:\n')[1].split('\n  publish:\n')[0];
   const publish = release.split('\n  publish:\n')[1].split('\n  documentation:\n')[0];
-  const download = publish.indexOf('pattern: release-product-*');
-  const inventory = publish.indexOf('just release-prepare-candidate');
-  assert.ok(download >= 0 && download < inventory);
-  assert.match(publish.slice(download, inventory), /path: release-artifacts/);
+  assert.match(verify, /just release-prepare-candidate/);
+  assert.match(verify, /name: prepared-release-\$\{\{ needs.admission.outputs.source \}\}/);
+  const download = publish.indexOf('name: prepared-release-');
+  const verification = publish.indexOf('just release-verify dist/release');
+  assert.ok(download >= 0 && download < verification);
+  assert.match(publish.slice(download, verification), /path: dist\/release/);
   assert.match(publish, /cmp release-receipt\/release.json dist\/release\/release.json/);
+  assert.doesNotMatch(publish, /release-prepare-candidate|release-product-/);
+  assert.match(publish, /ARTIFACT_ONLY: \$\{\{ needs.verify.outputs.artifact_only \}\}/);
+});
+
+test('PR plans exclude full-only archive targets but still require both inference packages', () => {
+  const plan = profile => JSON.parse(execFileSync('just', ['ci-plan'], {
+    cwd: join(__dirname, '../..'), encoding: 'utf8',
+    env: { ...process.env, SKIPPY_CI_PROFILE: profile, GITHUB_OUTPUT: '' },
+  }));
+  const pr = plan('pr').runtimes.include;
+  const full = plan('full').runtimes.include;
+  assert.equal(pr.length, 8);
+  assert.equal(full.length, 13);
+  assert.ok(pr.every(row => row.validation === 'inference'));
+  assert.deepEqual(full.filter(row => row.validation !== 'artifact'), pr);
+  const needs = results({ inference: true });
+  assert.equal(JSON.parse(needs.plan.outputs.runtimes).include.length, 8);
+  assert.doesNotThrow(() => gate(needs));
+  for (const job of prPackages) {
+    const invalid = structuredClone(needs);
+    const include = JSON.parse(invalid.plan.outputs.runtimes).include
+      .filter(row => 'package_' + row.id.replaceAll('-', '_') !== job);
+    invalid.plan.outputs.runtimes = JSON.stringify({ include });
+    assert.throws(() => gate(invalid), /active runtime matrix/);
+  }
 });
 
 test('only inference pull requests require the two package and smoke jobs', () => {
@@ -120,7 +152,8 @@ test('the repository switch moves Linux and macOS hosted jobs to Depot and retai
       assert.match(label, /vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true'.*depot-/, name);
     }
   }
-  for (const job of ['windows_toolchain_probe', ...packageJobs.filter(job => job.startsWith('package_windows_'))]) {
+  assert.doesNotMatch(workflow, /windows_toolchain_probe/);
+  for (const job of packageJobs.filter(job => job.startsWith('package_windows_'))) {
     const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
     assert.match(body, /^    runs-on: windows-2022$/m, job);
   }

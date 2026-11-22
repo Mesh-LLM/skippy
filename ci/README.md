@@ -145,7 +145,7 @@ Depot for Linux and macOS jobs that otherwise use GitHub-hosted runners.
 This includes PR validation and its aggregate, code and package CI, compiler images and
 publishing, documentation and deployment, release validation and publication,
 the inference controllers, and llama upgrade preparation and publication.
-Windows package and toolchain probe jobs retain GitHub-hosted `windows-2022`
+Windows package jobs retain GitHub-hosted `windows-2022`
 for the pinned HIP SDK and MSVC toolchain. Most
 Linux jobs use four-core Ubuntu 24.04 runners of the existing architecture.
 Graph Contracts and llama upgrade preparation use eight-core x64 runners. The
@@ -424,22 +424,31 @@ artifact smoke is recorded separately from inference evidence.
 ## Artifact flow
 
 `just ci-plan` validates the target matrix with `jq`. The package and
-smoke commands use Python 3.9 or later. Release inventory uses Python
+smoke commands use Python 3.9 or later. The PR plan includes the eight
+inference-validated runtimes; the five archive-only targets appear only in the
+full plan. Both profiles validate the complete source manifest before selecting
+their roster. Release inventory uses Python
 3.11 or later for TOML parsing. Set `SKIPPY_PYTHON` to select the interpreter.
 
 1. Each platform's CPU job builds and verifies its CLI once using
    `just ci-host`. Inference PR jobs build their two CLIs locally because they
    do not run the CPU package jobs.
-2. Each selected job calls `just ci-runtime` for its variant, then
-   `just ci-package` to compose verified producer archives. It smokes the
-   extracted product on the same runner and uploads the package with its evidence.
+2. Each selected job calls `just ci-runtime` for its variant, retaining a
+   source-bound runtime directory with a verified file receipt. `just ci-package`
+   combines it with the shared CLI archive and compresses the final product once.
+   Startup and inference checks run against the extracted final archive, and the
+   job uploads that archive with its evidence.
 3. Release-only device jobs download the three Linux CUDA archives built on
    compiler-only runners, run inference smoke, and upload the same archives with
    device evidence under `release-product-*`. Windows and ROCm already upload
    their final archives with SHA-256-bound artifact smoke evidence. The publisher
    requires all thirteen variants and the evidence declared by each target. The
    release notes identify the targets with pending inference qualification.
-4. The hosted CI gate reads the dependency results and the validated plan
+4. Release verification prepares the complete release directory once and
+   transfers those exact assets to the publisher. The publisher verifies their
+   hashes and catalog against the independent candidate receipt before promotion;
+   it does not unpack the products or reconstruct the inventory again.
+5. The hosted CI gate reads the dependency results and the validated plan
    without checkout or Rust setup. Required work must pass and unselected work
    must report a skip.
 

@@ -107,6 +107,8 @@ result="$(jq -cer --arg profile "$profile" '
   | ([$m.runtimes[]
       | . as $runtime
       | select(($m.enabled_hosts == null or any($m.enabled_hosts[]; . == $runtime.host)) and $runtime.enabled != false)
+      # Archive-only targets run exclusively in full CI, not the PR profile.
+      | select($profile == "full" or ($runtime.validation // "inference") != "artifact")
       | ($m.hosts[] | select(.id == $runtime.host)) as $host
       | . + {host_runner: $host.runner, enabled: true, validation: ($runtime.validation // "inference")}
       | if ($runtime.runner_group // null) != null

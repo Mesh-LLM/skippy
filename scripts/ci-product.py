@@ -118,7 +118,11 @@ def build_runtime(host, runtime):
     validate_native_identity(directory, host, runtime, arches)
     command([sys.executable, "scripts/native-inspect.py", "verify-runtime-package", str(directory)])
     artifacts.receipt(directory, "runtime", host["target"], runtime["id"])
-    artifacts.archive(directory, Path("dist/runtimes") / runtime["id"] / "runtime.tar.gz")
+    output = Path("dist/runtimes") / runtime["id"]
+    if output.exists():
+        raise ValueError("runtime output directory must be absent")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    directory.rename(output)
 
 
 def package(host, runtime, host_input, runtime_input):
@@ -126,9 +130,9 @@ def package(host, runtime, host_input, runtime_input):
     variant = runtime["id"]
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        host_dir, runtime_dir, product = (root / name for name in ("host", "runtime", "product"))
+        host_dir, product = (root / name for name in ("host", "product"))
+        runtime_dir = runtime_input
         artifacts.unpack(host_input, host_dir)
-        artifacts.unpack(runtime_input, runtime_dir)
         artifacts.verify(host_dir, "host", host["target"], "")
         artifacts.verify(runtime_dir, "runtime", host["target"], variant)
         validate_native_identity(runtime_dir, host, runtime)
@@ -139,7 +143,6 @@ def package(host, runtime, host_input, runtime_input):
             if Path(name).is_file():
                 shutil.copy(name, product / name)
         artifacts.receipt(product, "product", host["target"], variant)
-        command([str(artifacts.binary(product, host["os"])), "--version"], timeout=60)
         artifacts.archive(product, Path("dist/products") / variant / f"skippy-{variant}.tar.gz")
 
 

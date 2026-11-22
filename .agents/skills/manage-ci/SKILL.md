@@ -36,7 +36,9 @@ contract; no downstream product's workflow topology applies here.
   compiler-image runners.
   Tagged releases add device smoke on those exact archives. Windows x64 CPU,
   CUDA, and ROCm plus Linux x64 ROCm require archive smoke in full CI and on
-  release tags.
+  release tags. The PR plan excludes these full-only archive targets while
+  still validating the complete manifest. Toolchain failures belong to the
+  package builds; do not add a separate Windows toolchain probe.
   The lightweight CI gate checks the validated matrix and requires all applicable results.
 - `.github/workflows/docs.yml` directly validates `docs-site/**` changes on PRs
   and deploys to beta on protected-main pushes. The protected PR aggregate
@@ -50,8 +52,10 @@ contract; no downstream product's workflow topology applies here.
 - `.github/workflows/release.yml` runs daily and on dispatch from protected main
   (a daily run takes the next patch version and skips an already released main), stages the
   version-only candidate, and calls the shared validation implementations on
-  its exact SHA. Only the publisher can promote the verified commit and create
-  its tag together. It cannot move an existing tag or publish an incomplete
+  its exact SHA. Verification prepares release assets once; publication verifies
+  their hashes against the candidate receipt without unpacking them again.
+  Only the publisher can promote the verified commit and create its tag together.
+  It cannot move an existing tag or publish an incomplete
   artifact matrix. Canary runs leave main, tags, and publication untouched.
 - `.github/workflows/llama-upgrade.yml` keeps control on protected main, prepares
   an immutable candidate, certifies it, independently repeats certification,
@@ -61,7 +65,9 @@ contract; no downstream product's workflow topology applies here.
   `validation` evidence for each release asset. Declare pending inference
   qualification in the release notes for targets using archive evidence.
   Keep CLI builds backend-neutral and build each host once. Package by copying
-  exact verified producer outputs; consumers must not rebuild missing inputs.
+  exact verified producer outputs; keep same-job runtime producers as directories
+  with file receipts, and archive only cross-job CLI inputs and final products.
+  Consumers must not rebuild missing inputs.
 - Keep workflow path routing declarative in YAML. Keep Just recipes and platform adapters thin. Use
   shell for orchestration and focused Python modules for structured build and
   qualification work under `scripts/`. PR lab-result comments use the focused Bash/gh/jq report

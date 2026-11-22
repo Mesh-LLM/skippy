@@ -290,109 +290,6 @@ jobs:
           sha: ${{ inputs.candidate_sha }}
       - id: plan
         run: just ci-plan
-  windows_toolchain_probe:
-    name: Probe Windows HIP and CUDA toolchains
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
-    runs-on: windows-2022
-    timeout-minutes: 90
-    permissions:
-      contents: read
-    env:
-      SKIPPY_WINDOWS_ROCM_VERSION: '7.2.0'
-      SKIPPY_WINDOWS_ROCM_ARCHES: 'gfx1100;gfx1101;gfx1102;gfx1151;gfx1200;gfx1201'
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-        with:
-          cache: 'false'
-      - uses: ./.github/actions/source
-        with:
-          artifact: ${{ inputs.candidate_artifact }}
-          sha: ${{ inputs.candidate_sha }}
-      # The native stage needs MSVC on PATH; rustc locates Visual Studio itself.
-      - name: Enable the MSVC developer environment
-        shell: pwsh
-        run: ./scripts/enable-msvc-dev-env.ps1
-      - name: Install the pinned HIP SDK
-        shell: pwsh
-        run: ./scripts/install-windows-rocm-sdk.ps1 -ExpectedVersion "$env:SKIPPY_WINDOWS_ROCM_VERSION"
-      - name: Report the HIP SDK layout
-        shell: pwsh
-        run: |
-          Write-Host "ROCM_PATH root entries:"
-          Get-ChildItem "$env:ROCM_PATH" | ForEach-Object { Write-Host "  $($_.Name)" }
-          Write-Host 'License-like files anywhere under the SDK (depth 4):'
-          Get-ChildItem "$env:ROCM_PATH" -Recurse -Depth 4 -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '(?i)licen|eula|notice' } |
-            Select-Object -First 30 | ForEach-Object { Write-Host "  $($_.FullName)" }
-      - name: Verify packaged kernel architectures
-        shell: pwsh
-        run: |
-          $expected = $env:SKIPPY_WINDOWS_ROCM_ARCHES -split ';'
-          foreach ($library in 'rocblas', 'hipblaslt') {
-            $directory = Join-Path $env:ROCM_PATH "bin\$library\library"
-            $arches = Get-ChildItem $directory -File |
-              ForEach-Object { if ($_.Name -match '(gfx[0-9a-f]+)') { $Matches[1] } } |
-              Sort-Object -Unique
-            Write-Host "$library kernels: $($arches -join ' ')"
-            foreach ($target in $expected) {
-              if ($arches -notcontains $target) {
-                throw "$library ships no kernels for $target"
-              }
-            }
-          }
-      - name: Compile the HIP fingerprint probe
-        shell: bash
-        run: |
-          rocm_bin="$(cygpath -u "$ROCM_PATH")/bin"
-          echo '--- HIP-related entries in the SDK bin:'
-          find "$rocm_bin" -maxdepth 1 -iname '*hip*' -o -maxdepth 1 -iname 'clang*' | sed 's|.*/||'
-          failures=0
-          for arch in gfx1100 gfx1201; do
-            echo "--- variant A: direct \$HIPCC ($HIPCC)"
-            if "$HIPCC" -O3 -std=c++17 --offload-arch="$arch" \
-                 crates/skippy-gpu-bench/native/hip/membench-fingerprint.hip \
-                 -o "membench-a-$arch.exe"; then
-              echo "variant A OK for $arch"
-            else
-              echo "variant A FAILED for $arch"
-              failures=$((failures + 1))
-            fi
-            echo "--- variant B: hipcc wrapper"
-            if cmd //c hipcc -O3 -std=c++17 --offload-arch="$arch" \
-                 crates/skippy-gpu-bench/native/hip/membench-fingerprint.hip \
-                 -o "membench-b-$arch.exe"; then
-              echo "variant B OK for $arch"
-            else
-              echo "variant B FAILED for $arch"
-              failures=$((failures + 1))
-            fi
-          done
-          ls -l membench-*.exe 2>/dev/null || true
-          test "$failures" -lt 4
-      - name: Provision the pinned CUDA toolkit
-        shell: bash
-        run: python scripts/ci-windows-cuda.py 12.9.2
-      - name: Compile a CUDA kernel with the provisioned toolkit
-        shell: bash
-        run: |
-          printf '__global__ void probe() {}\n' > probe.cu
-          "$CUDACXX" -arch=sm_80 -c probe.cu -o probe.o
-          "$CUDACXX" --version | grep -F 'release 12.9'
-      - name: Configure llama.cpp for HIP without building
-        shell: bash
-        run: |
-          just llama-prepare
-          cmake -S .deps/llama.cpp -B hip-configure -G Ninja \
-            -DGGML_HIP=ON -DAMDGPU_TARGETS=gfx1100 \
-            -DBUILD_SHARED_LIBS=ON -DGGML_BUILD_TESTS=OFF -DGGML_BUILD_EXAMPLES=OFF \
-            -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=OFF \
-            -DLLAMA_CURL=OFF
-          grep -E 'CMAKE_HIP|GGML_HIP' hip-configure/CMakeCache.txt | head
   quality:
     name: Quality canary
     needs: [changes, plan]
@@ -982,7 +879,8 @@ jobs:
               const rows = JSON.parse(needs.plan.outputs.runtimes).include;
               const matrixJobs = rows.map(row => 'package_' + row.id.replaceAll('-', '_'));
               if (matrixJobs.length === 0 ||
-                  matrixJobs.length !== packageJobs.length || new Set(matrixJobs).size !== matrixJobs.length ||
+                  (full && matrixJobs.length !== packageJobs.length) || new Set(matrixJobs).size !== matrixJobs.length ||
+                  prPackages.some(job => !matrixJobs.includes(job)) ||
                   matrixJobs.some(job => !packageJobs.includes(job))) {
                 throw new Error('Package jobs do not match the active runtime matrix');
               }
