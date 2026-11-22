@@ -32,6 +32,13 @@ function gate(needs, release = false) {
   evaluate({ env: { CHECK_RESULTS: JSON.stringify(needs), RELEASE_SMOKE: String(release) } });
 }
 
+test('protected pull_request_target skips CI when trusted admission skips changes', () => {
+  const condition = section.match(/^    if: (.+)$/m)[1].replace('always()', 'true');
+  const shouldRun = new Function('needs', `return (${condition})`);
+  assert.equal(shouldRun({ changes: { result: 'skipped' } }), false);
+  assert.equal(shouldRun({ changes: { result: 'success' } }), true);
+});
+
 test('all eight runtime packages match the planned matrix and depend on the canary', () => {
   assert.equal(packageJobs.length, 8);
   assert.deepEqual(declared.filter(job => job.startsWith('package_')).sort(), packageJobs.sort());
@@ -227,7 +234,11 @@ test('native CI trusts only an immutable same-repository PR from a writer', asyn
   const admission = workflow.split('      - name: Verify the same-repository PR author\n')[1].split('\n  plan:\n')[0];
   const script = admission.split('          script: |\n')[1];
   const evaluate = new Function('github', 'context', 'return (async () => {\n' + script + '\n})()');
-  const candidate = { head: { sha: 'a'.repeat(40), repo: { id: 42 } }, base: { ref: 'main' }, user: { login: 'maintainer' } };
+  const candidate = {
+    head: { sha: 'a'.repeat(40), repo: { id: 42 } },
+    base: { ref: 'codex/native-decode-port', repo: { id: 42 } },
+    user: { login: 'maintainer' },
+  };
   const assertAdmission = (pr, permission) => evaluate({ rest: { repos: {
     getCollaboratorPermissionLevel: async ({ username }) => {
       assert.equal(username, 'maintainer');
@@ -236,6 +247,7 @@ test('native CI trusts only an immutable same-repository PR from a writer', asyn
   } } }, { repo: {}, payload: { pull_request: pr, repository: { id: 42 } } });
   await assert.doesNotReject(() => assertAdmission(candidate, 'write'));
   await assert.rejects(() => assertAdmission(candidate, 'read'), /trusted PR author/);
+  await assert.rejects(() => assertAdmission({ ...candidate, base: { ...candidate.base, repo: { id: 43 } } }, 'admin'), /same-repository PR/);
   await assert.rejects(() => assertAdmission({ ...candidate, head: { ...candidate.head, repo: { id: 43 } } }, 'admin'), /same-repository PR/);
   await assert.rejects(() => assertAdmission({ ...candidate, head: { ...candidate.head, sha: 'main' } }, 'admin'), /immutable source/);
 });

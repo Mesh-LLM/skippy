@@ -34,7 +34,6 @@ on:
       - '!**/docs/**'
       - '!docs-site/**'
   pull_request_target:
-    branches: [main]
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
     # Include the inference-only inputs as well as the code filter.
     paths:
@@ -242,9 +241,9 @@ jobs:
         with:
           script: |
             const { pull_request: pr, repository } = context.payload;
-            if (pr.base.ref !== 'main' || pr.head.repo?.id !== repository.id ||
+            if (pr.base.repo?.id !== repository.id || pr.head.repo?.id !== repository.id ||
                 !/^[a-f0-9]{40}$/.test(pr.head.sha)) {
-              throw new Error('Native CI requires a same-repository PR to main and an immutable source');
+              throw new Error('Native CI requires a same-repository PR and an immutable source');
             }
             const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
               ...context.repo, username: pr.user.login,
