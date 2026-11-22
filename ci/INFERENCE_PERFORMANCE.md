@@ -66,6 +66,15 @@ total context (`-np`, `-c`, `-kvu`). It also starts with `-lv 4`: at the pinned
 llama.cpp that is the lowest log verbosity that prints the GPU-offload line the
 startup check reads, and the sample records it as `log_verbosity`.
 
+A failed request fails the job: a point counts only when AIPerf reports every
+request served. `llama-server` has one exception. It frees KV from idle slots
+only, so at a point whose requests, all in flight, need more than its pool holds
+it fails them: sixteen lanes at depth 4,096 in the 32K pool, and four lanes at
+that depth in the 16K pool. There the failures are its result. The sample keeps
+them as `rejected`, with null metrics, and the summary table shows `rejected` for
+that arm. The server must still be running afterwards, or the job fails. A Skippy
+arm is held to every point.
+
 ## Traces
 
 With `trace` on, each job runs the candidate once more per model and server after
@@ -85,8 +94,13 @@ The job writes `performance.json` with the harness commit, scenario digest,
 host chip, macOS version and Metal working-set limit, every arm's commit and binary SHA-256, the model
 shards, and one sample per model, round, arm and point. Each sample holds output
 tokens per second, requests per second, time to first token (p50 and p95),
-inter-token latency (p50), request latency (p50) and mean output tokens. Server
-logs, build logs and the AIPerf exports (as `aiperf.tar.gz`) sit beside it.
+inter-token latency (p50), request latency (p50) and mean output tokens. A sample
+from a point its server rejected has those as null and a `rejected` entry: the
+measured requests, how many AIPerf recorded as failed, how many were cut short,
+and its error details with their counts. Cut short means a stream that ended on
+an error event: AIPerf counts it as served and leaves it without an output
+length. Server logs, build logs and the AIPerf exports (as `aiperf.tar.gz`) sit
+beside it.
 
 The controller checks that evidence against the admitted plan and writes a table
 of medians, round ranges and the candidate's change against the baseline to the
@@ -105,6 +119,7 @@ For graphs over time it also writes `LABEL-rows.jsonl` beside each job's
 with the job, when the run started, the host, the arm's commit and when it was
 committed, the model revision, the server's lanes and pool, the point's
 concurrency, depth and token counts, the round, and each metric as its own column.
+A rejected point keeps its row, with null metrics and the `rejected` entry as JSON text.
 An arm taken from a pull request has `on_main` false and its number in
 `pull_request`; llama.cpp's server has `on_main` null. Rows from every run can
 share one table. With DuckDB, over a folder per run, main's history alone:

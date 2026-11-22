@@ -7,8 +7,8 @@ from runpy import run_path
 from unittest.mock import Mock, patch
 
 from lib import performance_plan
-from lib.performance_arms import REQUIRED, capabilities, server_args
-from lib.performance_load import measurements
+from lib.performance_arms import REQUIRED, capabilities, may_reject, server_args
+from lib.performance_load import measurements, rejection, run_point
 from lib import performance_report
 from lib.performance_report import markdown, summarize
 
@@ -181,6 +181,105 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(args[args.index("-lv") + 1], "4")
         self.assertEqual(applied["log_verbosity"], 4)
 
+    def test_only_llama_server_may_reject_a_point_and_only_past_its_pool(self):
+        reference = {"label": "reference", "kind": "llama-server", "binary": "/b/llama-server"}
+        cells = [(server, point) for server in performance_plan.scenario()["servers"]
+                 for point in server["points"]]
+        self.assertEqual([point["id"] for server, point in cells if may_reject(reference, server, point)],
+                         ["c16-depth4096", "c4-depth4096-pool16k"])
+        self.assertFalse(any(may_reject(self.skippy, server, point) for server, point in cells))
+
+
+class RejectionTests(unittest.TestCase):
+    point = {"id": "c4-depth4096-pool16k", "concurrency": 4, "depth": 4096, "input_tokens": 512,
+             "output_tokens": 128, "requests": 4}
+    refused = {"code": 500, "type": "Internal Server Error", "message": "Context size has been exceeded."}
+    summary = {"request_count": {"avg": 4}, "request_error_rate": {"avg": 0}, "error_summary": [],
+               "is_complete": True, "output_token_throughput": {"avg": 120.5}}
+
+    def write(self, directory, failed=(), served=0, cut_short=0):
+        """AIPerf's per-request export: two warmup requests, then the measured ones."""
+        def request(phase, error, metrics):
+            return {"metadata": {"benchmark_phase": phase}, "error": error, "metrics": metrics}
+
+        whole = {"output_sequence_length": {"value": 128, "unit": "tokens"}}
+        records = ([request("warmup", None, whole)] * 2
+                   + [request("profiling", error, {}) for error in failed]
+                   + [request("profiling", None, whole)] * served
+                   + [request("profiling", None, {"request_latency": {"value": 9.5, "unit": "ms"}})] * cut_short)
+        (Path(directory) / "profile_export.jsonl").write_text(
+            "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+
+    def drive(self, directory, may_reject):
+        return run_point("http://127.0.0.1:9337", self.point, "org/m@rev", "/t", 2, Path(directory),
+                         may_reject=may_reject)
+
+    def test_rejection_counts_failed_and_cut_short_requests_among_the_measured_ones(self):
+        from tempfile import TemporaryDirectory
+        other = dict(self.refused, code=503)
+        with TemporaryDirectory() as directory:
+            self.write(directory, failed=[self.refused, other, self.refused], cut_short=1)
+            self.assertEqual(rejection(Path(directory), 4), {
+                "requests": 4, "failed": 3, "cut_short": 1,
+                "errors": [{"error_details": self.refused, "count": 2}, {"error_details": other, "count": 1}]})
+            # A load run that broke off before every request is not the server's answer.
+            self.assertIsNone(rejection(Path(directory), 5))
+        with TemporaryDirectory() as directory:
+            self.assertIsNone(rejection(Path(directory), 4))
+            self.write(directory, served=4)
+            self.assertIsNone(rejection(Path(directory), 4))
+
+    def test_a_point_the_server_may_reject_keeps_what_it_rejected_in_place_of_metrics(self):
+        from subprocess import CalledProcessError
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as directory:
+            self.write(directory, failed=[self.refused] * 4)
+            # AIPerf exits non-zero, with no summary export, when every measured request failed.
+            with patch("lib.performance_load.command", side_effect=CalledProcessError(1, ["aiperf"])):
+                metrics, rejected = self.drive(directory, may_reject=True)
+                self.assertEqual((metrics["output_tok_s"], set(metrics.values())), (None, {None}))
+                self.assertEqual((rejected["failed"], rejected["cut_short"]), (4, 0))
+                with self.assertRaises(CalledProcessError):
+                    self.drive(directory, may_reject=False)
+        with TemporaryDirectory() as directory:
+            self.write(directory, failed=[self.refused], served=2, cut_short=1)
+            (Path(directory) / "profile_export_aiperf.json").write_text(json.dumps(self.summary))
+            with patch("lib.performance_load.command"):
+                self.assertEqual(self.drive(directory, may_reject=True)[1]["cut_short"], 1)
+
+    def test_a_point_the_server_served_is_measured_and_a_broken_load_run_still_fails(self):
+        from subprocess import CalledProcessError
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as directory:
+            self.write(directory, served=4)
+            (Path(directory) / "profile_export_aiperf.json").write_text(json.dumps(self.summary))
+            with patch("lib.performance_load.command"):
+                metrics, rejected = self.drive(directory, may_reject=True)
+            self.assertEqual((metrics["output_tok_s"], rejected), (120.5, None))
+            with patch("lib.performance_load.command", side_effect=CalledProcessError(1, ["aiperf"])):
+                with self.assertRaises(CalledProcessError):
+                    self.drive(directory, may_reject=True)
+
+    def test_a_rejected_point_is_a_sample_only_while_its_server_stays_up(self):
+        from tempfile import TemporaryDirectory
+        measure = run_path(str(Path(__file__).resolve().parents[1] / "inference-performance.py"))["measure"]
+        built = {"label": "reference", "kind": "llama-server", "binary": "/b/llama-server"}
+        server = {"id": "lanes4-pool16k", "lanes": 4, "pool_tokens": 16384, "points": [self.point]}
+        inputs = {"repo": "org/m", "revision": "rev", "tokenizer_path": "/t"}
+        shape = {"context_per_lane": 8192, "warmup_requests": 2}
+        rejected = {"requests": 4, "failed": 4, "cut_short": 0, "errors": []}
+        process, load = Mock(), Mock(return_value=({"output_tok_s": None}, rejected))
+        with TemporaryDirectory() as directory, patch.dict(
+                measure.__globals__, start=Mock(return_value=process), ready=Mock(), offload=Mock(),
+                stop=Mock(), run_point=load):
+            process.poll.return_value = None
+            sample, = measure(built, "", "/m.gguf", inputs, "m", 0, server, shape, Path(directory))
+            self.assertEqual((sample["rejected"], sample["metrics"]), (rejected, {"output_tok_s": None}))
+            self.assertTrue(load.call_args.kwargs["may_reject"])
+            process.poll.return_value = 1
+            with self.assertRaisesRegex(RuntimeError, "exited while it was rejecting"):
+                measure(built, "", "/m.gguf", inputs, "m", 0, server, shape, Path(directory))
+
 
 class ReportTests(unittest.TestCase):
     record = {"started_at": "2026-11-21T10:00:00Z", "arms": [{"label": "candidate", "sha": "a" * 40}]}
@@ -201,7 +300,8 @@ class ReportTests(unittest.TestCase):
 
     def test_medians_spreads_and_verdicts(self):
         def sample(arm, value):
-            return {"model": "m", "server": "s", "point": "p", "arm": arm, "metrics": {"output_tok_s": value}}
+            return {"model": "m", "server": "s", "point": "p", "arm": arm, "metrics": {"output_tok_s": value},
+                    "rejected": None}
 
         rows = summarize([sample("baseline", v) for v in (100, 102, 98)]
                          + [sample("candidate", v) for v in (120, 118, 121)])
@@ -215,7 +315,7 @@ class ReportTests(unittest.TestCase):
     def test_one_percent_rule_keeps_range_uncertainty_and_actual_p50_labels(self):
         def row(metric, candidate):
             return summarize([{"model": "m", "server": "s", "point": "p", "arm": arm,
-                               "metrics": {metric: value}}
+                               "metrics": {metric: value}, "rejected": None}
                               for arm, values in (("baseline", (90, 100, 110)),
                                                   ("candidate", (candidate - 10, candidate, candidate + 10)))
                               for value in values])[0]
@@ -238,7 +338,24 @@ class ReportTests(unittest.TestCase):
         self.assertIn('bar [100.00000000, 102.00000000, 70.00000000]', report)
         with self.assertRaises(ValueError):
             summarize([{"model": "m", "server": "s", "point": "p", "arm": "candidate",
-                        "metrics": {"output_tok_s": float("nan")}}])
+                        "metrics": {"output_tok_s": float("nan")}, "rejected": None}])
+
+    def test_rejected_rounds_are_counted_beside_the_arms_that_measured_the_point(self):
+        rejected = {"requests": 16, "failed": 14, "cut_short": 2, "errors": []}
+
+        def sample(arm, value, rejected=None):
+            return {"model": "m", "server": "s", "point": "p", "arm": arm, "metrics": {"output_tok_s": value},
+                    "rejected": rejected}
+
+        rows = summarize([sample("baseline", v) for v in (100, 102, 98)]
+                         + [sample("candidate", v) for v in (120, 118, 121)]
+                         + [sample("reference", None, rejected)] * 3)
+        self.assertEqual((rows[0]["rejected"], sorted(rows[0]["arms"])),
+                         ({"reference": 3}, ["baseline", "candidate"]))
+        self.assertIn("| rejected (n=3) |", markdown("t", "h", rows, self.record))
+        self.assertEqual(performance_report.cell({"median": 70, "min": 68, "max": 72, "n": 2}, 1),
+                         "70.0 (68.0–72.0, n=2); rejected n=1")
+        self.assertEqual(performance_report.cell(None, 0), "—")
 
     def test_stored_rows_carry_their_arm_point_and_host_but_not_the_trace_pass(self):
         shape = performance_plan.scenario()
@@ -246,7 +363,7 @@ class ReportTests(unittest.TestCase):
         point = server["points"][0]
         measured = {"model": "qwen35-4b", "round": 2, "arm": "baseline", "server": server["id"],
                     "point": point["id"], "applied": {}, "unsupported": [],
-                    "metrics": {"output_tok_s": 99.5, "ttft_ms_p50": None}}
+                    "metrics": {"output_tok_s": 99.5, "ttft_ms_p50": None}, "rejected": None}
         record = {"harness": "d" * 40, "scenario_sha256": "e" * 64, "started_at": "2026-11-21T10:00:00+00:00",
                   "host": {"chip": "Apple M1 Ultra", "node": "n1"},
                   "arms": [{"label": "baseline", "kind": "skippy", "sha": "b" * 40, "binary_sha256": "f" * 64},
@@ -261,7 +378,12 @@ class ReportTests(unittest.TestCase):
         self.assertEqual((row["lanes"], row["concurrency"], row["depth"]),
                          (server["lanes"], point["concurrency"], point["depth"]))
         self.assertEqual((row["output_tok_s"], row["ttft_ms_p50"], row["chip"]), (99.5, None, "Apple M1 Ultra"))
+        self.assertIsNone(row["rejected"])
         json.dumps(row)
+        rejected = {"requests": 8, "failed": 8, "cut_short": 0, "errors": []}
+        record["samples"] = [{**measured, "metrics": {"output_tok_s": None}, "rejected": rejected}]
+        stored, = performance_report.rows(record, shape, {}, "job_1", {})
+        self.assertEqual((stored["output_tok_s"], json.loads(stored["rejected"])), (None, rejected))
 
 
 if __name__ == "__main__":

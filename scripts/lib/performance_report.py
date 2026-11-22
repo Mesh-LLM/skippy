@@ -14,9 +14,15 @@ HEADLINE = {"output_tok_s": "higher", "ttft_ms_p50": "lower", "itl_ms_p50": "low
 
 
 def summarize(samples):
-    """Group by (model, server, point, metric), then by arm: median, min, max and n over rounds."""
-    groups = {}
+    """Group by (model, server, point, metric), then by arm: median, min, max and n over rounds.
+
+    `rejected` counts, by arm, the rounds in which the arm's server rejected the point.
+    """
+    groups, rejected = {}, {}
     for sample in samples:
+        if sample["rejected"] is not None:
+            rounds = rejected.setdefault((sample["model"], sample["server"], sample["point"]), {})
+            rounds[sample["arm"]] = rounds.get(sample["arm"], 0) + 1
         for metric, value in sample["metrics"].items():
             if value is None:
                 continue
@@ -27,6 +33,7 @@ def summarize(samples):
         arms = {arm: {"median": statistics.median(values), "min": min(values), "max": max(values),
                       "n": len(values)} for arm, values in sorted(by_arm.items())}
         rows.append({"model": model, "server": server, "point": point, "metric": metric, "arms": arms,
+                     "rejected": rejected.get((model, server, point), {}),
                      "candidate_vs_baseline": change(arms.get("candidate"), arms.get("baseline"))})
     return rows
 
@@ -39,10 +46,12 @@ def change(candidate, baseline):
             "ranges_overlap": overlap}
 
 
-def cell(stats):
+def cell(stats, rejected):
+    """An arm's rounds at one point: what they measured, and how many of them its server rejected."""
     if not stats:
-        return "—"
-    return f'{stats["median"]:.1f} ({stats["min"]:.1f}–{stats["max"]:.1f}, n={stats["n"]})'
+        return f"rejected (n={rejected})" if rejected else "—"
+    measured = f'{stats["median"]:.1f} ({stats["min"]:.1f}–{stats["max"]:.1f}, n={stats["n"]})'
+    return f"{measured}; rejected n={rejected}" if rejected else measured
 
 
 def verdict(row):
@@ -87,13 +96,16 @@ def markdown(title, host, rows, record):
     lines = ["# " + plain(title), "", "Host: " + plain(host), "",
              *health_sections(view, health_charts(view), chart_format="mermaid"), "",
              "## Round ranges", "", "Median (min–max, n). Reference is the optional llama.cpp arm. "
-             "Its measurements are shown separately from the candidate/baseline verdict.", ""]
+             "Its measurements are shown separately from the candidate/baseline verdict. "
+             "Rejected is the number of rounds in which its server failed requests at a point "
+             "that needs more KV than its pool holds.", ""]
     detail = []
     for row in rows:
         if row["metric"] in HEADLINE:
             arms = row["arms"]
             detail.append([plain(row[field]) for field in ("model", "server", "point", "metric")] +
-                          [cell(arms.get(arm)) for arm in ("baseline", "candidate", "reference")] + [verdict(row)])
+                          [cell(arms.get(arm), row["rejected"].get(arm, 0))
+                           for arm in ("baseline", "candidate", "reference")] + [verdict(row)])
     lines.extend(table(["Model", "Server", "Point", "Metric", "Baseline", "Candidate", "Reference", "Change"], detail))
     return "\n".join(lines) + "\n"
 
@@ -106,7 +118,8 @@ def rows(record, shape, committed_at, job, pull_requests):
     `started_at` orders runs by when they ran. An arm that `pull_requests` maps to a pull
     request has `on_main` false, so a graph of main's history can leave it out; llama.cpp's
     server has it null. What an arm applied or lacked differs by arm, so it is kept as JSON
-    text and every row has the same columns.
+    text and every row has the same columns. A point the server rejected keeps its row: its
+    metrics are null and `rejected` holds what was rejected, as JSON text.
     """
     arms = {arm["label"]: arm for arm in record["arms"]}
     points = {(server["id"], point["id"]): (server, point)
@@ -131,5 +144,7 @@ def rows(record, shape, committed_at, job, pull_requests):
             "input_tokens": point["input_tokens"], "output_tokens": point["output_tokens"],
             "requests": point["requests"], "round": sample["round"],
             "applied": json.dumps(sample["applied"], sort_keys=True),
-            "unsupported": json.dumps(sample["unsupported"]), **sample["metrics"],
+            "unsupported": json.dumps(sample["unsupported"]),
+            "rejected": None if sample["rejected"] is None else json.dumps(sample["rejected"], sort_keys=True),
+            **sample["metrics"],
         }

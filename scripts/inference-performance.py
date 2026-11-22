@@ -24,7 +24,7 @@ from lib.inference_checks import ENDPOINT, offload
 from lib.inference_inputs import admit as admit_model
 from lib.inference_inputs import fixture
 from lib.jy_qualification import ORIGIN, Pilot
-from lib.performance_arms import build, capabilities, server_args, supports
+from lib.performance_arms import build, capabilities, may_reject, server_args, supports
 from lib.performance_load import run_point, tokenizer
 from lib.performance_plan import (SCENARIO, arms, job_spec, models, nodes, pull_request_head,
                                   pull_request_number, round_order, scenario)
@@ -281,12 +281,16 @@ def measure(built, help_text, model, inputs, key, index, server, shape, output, 
             ready(process, 900)
             offload(log)
             for point in server["points"]:
-                metrics = run_point(ENDPOINT, point, coordinate, inputs["tokenizer_path"],
-                                    shape["warmup_requests"], WORK / "aiperf" / name / point["id"])
+                metrics, rejected = run_point(ENDPOINT, point, coordinate, inputs["tokenizer_path"],
+                                              shape["warmup_requests"], WORK / "aiperf" / name / point["id"],
+                                              may_reject=may_reject(built, server, point))
+                # A rejection is the answer of a server that is still serving; one that died is a fault.
+                if rejected is not None and process.poll() is not None:
+                    raise RuntimeError("server exited while it was rejecting requests; inspect its log")
                 samples.append({"model": key, "round": None if index is None else index + 1,
                                 "arm": built["label"],
                                 "server": server["id"], "point": point["id"], "applied": applied,
-                                "unsupported": missing, "metrics": metrics})
+                                "unsupported": missing, "metrics": metrics, "rejected": rejected})
         finally:
             stop(process)
     return samples

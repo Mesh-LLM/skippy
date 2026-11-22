@@ -1,5 +1,8 @@
 """Drive one load point with the pinned AIPerf and read back what it measured."""
 
+import json
+import subprocess
+from collections import Counter
 from pathlib import Path
 
 from .ci_artifacts import read_json
@@ -64,9 +67,45 @@ def measurements(export):
             for name, (metric, statistic) in METRICS.items()}
 
 
-def run_point(endpoint, point, coordinate, tokenizer_path, warmup, directory: Path):
-    command(profile_args(endpoint, point, coordinate, tokenizer_path, warmup, directory), timeout=5400)
+def rejection(directory, requests):
+    """What the server failed among the measured requests, from AIPerf's per-request export.
+
+    AIPerf records an error for a request the server answers with one. A stream that ends on
+    an error event it counts as served and leaves without an output length: that request is
+    cut short here. None when nothing failed, and None unless the export accounts for every
+    measured request, so a load run that broke off is never taken for the server's answer.
+    """
+    exports = list(directory.rglob("profile_export.jsonl"))
+    if len(exports) != 1:
+        return None
+    # One record a line. A server's own error text sits inside a record, so split on newlines alone.
+    records = [json.loads(line) for line in exports[0].read_text(encoding="utf-8").split("\n") if line.strip()]
+    measured = [record for record in records
+                if (record.get("metadata") or {}).get("benchmark_phase") == "profiling"]
+    failed = Counter(json.dumps(record["error"], sort_keys=True) for record in measured if record.get("error"))
+    cut_short = sum(1 for record in measured if not record.get("error")
+                    and "output_sequence_length" not in (record.get("metrics") or {}))
+    if len(measured) != requests or not (failed or cut_short):
+        return None
+    return {"requests": requests, "failed": sum(failed.values()), "cut_short": cut_short,
+            "errors": [{"error_details": json.loads(error), "count": count}
+                       for error, count in sorted(failed.items())]}
+
+
+def run_point(endpoint, point, coordinate, tokenizer_path, warmup, directory: Path, *, may_reject):
+    """One point's metrics, or null metrics and what the server rejected where it may reject."""
+    failure = None
+    try:
+        command(profile_args(endpoint, point, coordinate, tokenizer_path, warmup, directory), timeout=5400)
+    except subprocess.CalledProcessError as error:
+        # AIPerf exits non-zero, with no summary export, when every measured request failed.
+        failure = error
+    rejected = rejection(directory, point["requests"]) if may_reject else None
+    if rejected is not None:
+        return dict.fromkeys(METRICS), rejected
+    if failure is not None:
+        raise failure
     exports = list(directory.rglob("profile_export_aiperf.json"))
     if len(exports) != 1:
         raise ValueError(f'{point["id"]}: expected one AIPerf export, found {len(exports)}')
-    return measurements(read_json(exports[0]))
+    return measurements(read_json(exports[0])), None

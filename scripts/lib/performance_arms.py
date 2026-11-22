@@ -90,3 +90,15 @@ def server_args(built, help_text, model, coordinate, context, server):
         args += [flag] if value is None else [flag, str(value)]
         applied[flag.removeprefix("--").replace("-", "_")] = True if value is None else value
     return args, applied, missing
+
+
+def may_reject(built, server, point):
+    """Whether failed requests at this point are a result rather than a fault.
+
+    `llama-server` frees KV from idle slots only, so when the requests in flight need more
+    than its pool holds it fails them. Only there is a failure its answer: a Skippy arm is
+    held to every point, and so is `llama-server` inside its pool.
+    """
+    pool = server["pool_tokens"]
+    in_flight = point["concurrency"] * (point["depth"] + point["input_tokens"] + point["output_tokens"])
+    return built["kind"] == "llama-server" and pool is not None and in_flight > pool
