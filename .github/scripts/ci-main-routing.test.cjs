@@ -26,11 +26,11 @@ function matches(name, files) {
 }
 
 function selection(github, files, { force = false, verified = false } = {}) {
-  const paths = Object.fromEntries(['code', 'inference', 'packaging', 'native']
+  const paths = Object.fromEntries(['automation', 'code', 'packages', 'inference', 'packaging', 'native']
     .map(name => [name, String(matches(name, files))]));
   const steps = { paths: { outputs: paths }, release: { outputs: { verified: String(verified) } },
     main_base: { outputs: { force: String(force) } } };
-  return Object.fromEntries(['code', 'inference', 'native', 'hosted_requires_native'].map(name => {
+  return Object.fromEntries(['automation', 'code', 'packages', 'native', 'hosted_requires_native'].map(name => {
     const expression = changes.match(new RegExp(`^      ${name}: \\$\\{\\{ (.+) \\}\\}$`, 'm'))[1];
     return [name, new Function('github', 'steps', `return (${expression});`)(github, steps)];
   }));
@@ -65,24 +65,24 @@ test('main runs device smokes for inference and packaging changes, Graph Contrac
   ];
   for (const [file, inference, native] of cases) {
     const actual = selection(main, [file]);
-    assert.equal(actual.inference, inference, file);
+    assert.equal(actual.packages, inference, file);
     assert.equal(actual.native, native, file);
     assert.equal(actual.hosted_requires_native, false, file);
   }
   assert.deepEqual(selection(main, ['scripts/tests/inference_contracts.py'], { force: true }),
-    { code: true, inference: true, native: true, hosted_requires_native: false });
+    { automation: true, code: true, packages: true, native: true, hosted_requires_native: false });
   assert.deepEqual(selection(main, ['llama_cpp/upstream.txt'], { verified: true }),
-    { code: false, inference: false, native: false, hosted_requires_native: false });
+    { automation: false, code: false, packages: false, native: false, hosted_requires_native: false });
 });
 
 test('PR hardware selection and full nightly/release profile selection stay unchanged', () => {
   const pr = event_name => ({ event_name, event: { pull_request: {} } });
   assert.deepEqual(selection(pr('pull_request_target'), ['crates/skippy-cli/src/main.rs']),
-    { code: true, inference: true, native: false, hosted_requires_native: false });
+    { automation: true, code: true, packages: true, native: false, hosted_requires_native: false });
   assert.deepEqual(selection(pr('pull_request'), ['crates/skippy-cli/src/main.rs']),
-    { code: true, inference: false, native: false, hosted_requires_native: true });
-  assert.equal(selection(pr('pull_request_target'), ['scripts/tests/inference_contracts.py']).inference, false);
-  assert.equal(selection(pr('pull_request_target'), ['crates/skippy-package-builder/src/lib.rs']).inference, false);
+    { automation: true, code: true, packages: false, native: false, hosted_requires_native: true });
+  assert.equal(selection(pr('pull_request_target'), ['scripts/tests/inference_contracts.py']).packages, false);
+  assert.equal(selection(pr('pull_request_target'), ['crates/skippy-package-builder/src/lib.rs']).packages, false);
   const profile = workflow.match(/SKIPPY_CI_PROFILE: \$\{\{ (.+) \}\}/)[1];
   const selectProfile = new Function('github', 'inputs', `return (${profile});`);
   assert.equal(selectProfile(main, {}), 'pr');
@@ -97,7 +97,7 @@ test('main path selection and package jobs remain bound to the exact merged SHA'
   assert.match(workflow, /fetch-depth: \$\{\{ github.event_name == 'push' && '0' \|\| '1' \}\}/);
   assert.match(workflow, /base: \$\{\{ steps.main_base.outputs.base \}\}\n          ref: \$\{\{ github.sha \}\}/);
   assert.match(workflow, /SKIPPY_CI_SOURCE_REF: .+\|\| github.sha \}\}/);
-  for (const job of ['package_darwin_aarch64_metal', 'package_linux_x86_64_cuda13']) {
+  for (const job of ['package_darwin_aarch64_metal', 'package_linux_aarch64_cuda13']) {
     const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
     assert.match(body, /needs: \[plan, quality,/);
     assert.match(body, /ref: \$\{\{ env.SKIPPY_CI_SOURCE_REF \}\}/);
