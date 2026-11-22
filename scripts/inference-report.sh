@@ -11,7 +11,7 @@ fail() { printf '%s\n' "$*" >&2; exit 1; }
 [[ ${REQUIRED:-} == true ]] || fail 'Results comments require inference qualification'
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-repository=repos/general-inference/skippy
+repository=repos/Mesh-LLM/skippy
 marker='<!-- skippy-inference-results:v1 -->'
 number=$(jq -er '.number | select(type == "number" and . > 0 and . == floor)' "$GITHUB_EVENT_PATH")
 temporary=$(mktemp -d)
@@ -19,7 +19,7 @@ trap 'rm -rf -- "$temporary"' EXIT
 directory=${1:?Usage: inference-report.sh EVIDENCE_DIRECTORY}
 run=$GITHUB_RUN_ID
 attempt=$GITHUB_RUN_ATTEMPT
-url="https://github.com/general-inference/skippy/actions/runs/$run"
+url="https://github.com/Mesh-LLM/skippy/actions/runs/$run"
 
 # Pagination is needed even though today's PR ladder fits on one page.
 gh api "$repository/actions/runs/$run/attempts/$attempt/jobs?per_page=100" --paginate --slurp |
@@ -48,7 +48,7 @@ fi
 cat > "$temporary/body.md" <<EOF
 $marker
 <!-- run:$run:$attempt -->
-### [General Inference](https://generalinference.xyz) Lab Qualification: $outcome
+### Skippy Lab Qualification: $outcome
 
 Commit: \`$SOURCE_SHA\` · PR smoke · [Workflow and timings]($url/attempts/$attempt) · [Saved evidence]($url#artifacts)
 
@@ -121,7 +121,7 @@ cat >> "$temporary/body.md" <<'EOF'
 
 TPS describes the first response of each of three short scored smoke cases at concurrency 1; deterministic repeats are excluded. Each rate is total tokens / total server-reported phase time, not an average of request rates. Prefill excludes cached prompt tokens. These short samples include startup/warmup effects and are not sustained benchmarks or controlled speedup comparisons. Missing or invalid timings show as Unavailable.
 
-Smoke checks cover GPU startup, deterministic endpoint repeats and bounded streaming. They do not establish an AgentX performance score. The General Inference lab retains native results and logs; GitHub evidence copies expire after 30 days.
+Smoke checks cover GPU startup, deterministic endpoint repeats and bounded streaming. They do not establish an AgentX performance score. The lab retains native results and logs. GitHub evidence copies expire after 30 days.
 EOF
 if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then cat "$temporary/body.md" >> "$GITHUB_STEP_SUMMARY"; fi
 

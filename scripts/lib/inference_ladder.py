@@ -1,4 +1,4 @@
-"""Materialize the source-bound inference qualification matrix."""
+"""Define the source-bound inference qualification matrix and split admission policy."""
 
 import re
 from pathlib import Path
@@ -6,6 +6,14 @@ from pathlib import Path
 from .ci_artifacts import read_json
 
 LADDER = Path(__file__).resolve().parents[2] / "ci/inference-ladder.json"
+
+
+def allowed_split_admissions(profile, mode):
+    if mode == "standalone":
+        return {None}
+    if profile in {"pr", "nightly", "release"}:
+        return {"certified", "uncertified_override"}
+    return {"certified"}
 
 
 def plan(profile, sha):
@@ -50,3 +58,16 @@ def plan(profile, sha):
                               else "extended-qualification-requires-pinned-harness-and-repeats"),
         "rows": rows,
     }
+
+
+def matrix(profile, sha, include_smoke=False):
+    rows = [{**row, "configuration": row["id"], "profile": profile}
+            for row in plan(profile, sha)["rows"]]
+    if include_smoke:
+        if profile != "nightly":
+            raise ValueError("the additional smoke matrix requires the nightly profile")
+        rows.extend(
+            {**row, "id": f'smoke-{row["id"]}', "configuration": row["id"], "profile": "pr"}
+            for row in plan("pr", sha)["rows"]
+        )
+    return rows

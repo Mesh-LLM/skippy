@@ -5,7 +5,7 @@ const automaticPR = run => ['pull_request', 'pull_request_target'].includes(run.
 const accepted = new Set(['success', 'skipped', 'neutral']);
 const controllerName = 'Evaluate aggregate PR checks';
 
-module.exports = async function aggregate({ github, context, core }) {
+module.exports = async function aggregate({ github, context, core, depot = false }) {
   const repo = context.repo;
   const trigger = context.payload.workflow_run;
   const source = context.payload.pull_request?.head.sha || trigger?.head_sha ||
@@ -34,7 +34,9 @@ module.exports = async function aggregate({ github, context, core }) {
       if (files.length < pr.changed_files) {
         throw new Error('GitHub returned an incomplete PR file list');
       }
-      const expected = expectedWorkflows(files);
+      const sameRepositoryPR = pr.head.repo?.id != null &&
+        pr.head.repo.id === pr.base.repo?.id;
+      const expected = expectedWorkflows(files, sameRepositoryPR, depot);
       const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo,
         { ...repo, head_sha: source, per_page: 100 });
       const latest = new Map();

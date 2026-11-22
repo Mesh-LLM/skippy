@@ -13,7 +13,7 @@ The executable automatically discovers the verified `native-runtimes/` directory
 beside it, including `target/debug/native-runtimes` from that build. Use
 `just skippy-cli-build` only when a compatible runtime is already available.
 Private release assets require an authorized GitHub login; download them with
-`gh release download --repo general-inference/skippy`, verify and extract them.
+`gh release download --repo Mesh-LLM/skippy`, verify and extract them.
 Source builds can have a newer ABI than a published release. Use
 `--runtime-bundle /path/to/bundle` to select another local bundle explicitly.
 

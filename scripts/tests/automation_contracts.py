@@ -182,6 +182,111 @@ class Upgrade(unittest.TestCase):
                     restore_at(root, bundle, child)
                     self.assertEqual(git(root, "rev-parse", "HEAD"), child)
 
+    def prepare_fixture(self, sandbox):
+        root = sandbox / "checkout"
+        root.mkdir()
+        git(root, "init", "--initial-branch=main")
+        pin = root / "llama_cpp/upstream.txt"
+        pin.parent.mkdir()
+        pin.write_text("a" * 40 + "\n", encoding="utf-8")
+        (root / ".gitignore").write_text("/.deps/\n/target/\n", encoding="utf-8")
+        # prepare() stages every allowlisted path, so the fixture carries them all.
+        for relative in ("crates/skippy-ffi/src/bindings/llama.rs", "docs/native-api.md"):
+            (root / relative).parent.mkdir(parents=True)
+            (root / relative).write_text("fixture\n", encoding="utf-8")
+        return root, commit(root, "base")
+
+    def run_prepare(self, root, regenerate, upstream):
+        source = module("upgrade-source")
+        real = source.command
+
+        def native(args, **kwargs):
+            if args[:1] == ["just"]:
+                return None
+            return real(args, **kwargs)
+
+        cwd = os.getcwd()
+        os.chdir(root)
+        try:
+            with patch.object(source, "regenerate", regenerate), patch.object(source, "command", native), \
+                    patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("GITHUB_OUTPUT", None)
+                with patch("sys.stdout", io.StringIO()) as stdout:
+                    source.prepare(upstream)
+                return stdout.getvalue()
+        finally:
+            os.chdir(cwd)
+
+    def test_failed_preparation_keeps_native_evidence_without_candidate(self):
+        failure = RuntimeError("native patch replay failed")
+
+        def conflicting(checkout):
+            native = checkout / ".deps/llama.cpp"
+            native.mkdir(parents=True)
+            git(native, "init", "--initial-branch=main")
+            (native / "model.cpp").write_text("upstream\n", encoding="utf-8")
+            commit(native, "base")
+            (native / "model.cpp").write_text("skippy\n", encoding="utf-8")
+            commit(native, "skippy change")
+            mail = checkout / "conflict.patch"
+            mail.write_text(git(native, "format-patch", "-1", "--stdout") + "\n", encoding="utf-8")
+            git(native, "reset", "--hard", "HEAD~1")
+            (native / "model.cpp").write_text("refactored upstream\n", encoding="utf-8")
+            commit(native, "upstream refactor")
+            with self.assertRaises(subprocess.CalledProcessError):
+                git(native, "-c", "user.name=Fixture", "-c", "user.email=fixture@skippy.local",
+                    "am", "--3way", str(mail))
+            raise failure
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
+            "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "user.useConfigOnly", "GIT_CONFIG_VALUE_0": "true",
+        }):
+            for key in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"):
+                os.environ.pop(key, None)
+            root, base = self.prepare_fixture(Path(tmp))
+            with self.assertRaises(RuntimeError) as raised:
+                self.run_prepare(root, conflicting, "b" * 40)
+            self.assertIs(raised.exception, failure)
+            output = root / "target/llama-upgrade"
+            evidence = output / "diagnostics"
+            self.assertIn("UU model.cpp", (evidence / "source-status.txt").read_text())
+            self.assertIn("<<<<<<<", (evidence / "source.diff").read_text())
+            failed = (evidence / "failed.patch").read_text()
+            self.assertIn("diff --git a/model.cpp b/model.cpp", failed)
+            self.assertIn("+skippy", failed)
+            self.assertEqual(sorted(path.name for path in output.iterdir()), ["diagnostics"])
+            self.assertEqual(git(root, "rev-parse", "HEAD"), base)
+            self.assertEqual(git(root, "status", "--porcelain"), "")
+
+    def test_prepared_candidate_bundle_restores_as_direct_child(self):
+        upstream = "b" * 40
+
+        def regenerated(checkout):
+            generated = checkout / "llama_cpp/patches/generated"
+            generated.mkdir(parents=True)
+            (generated / "series").write_text("0001-family-fixture.patch\n", encoding="utf-8")
+            (generated / "0001-family-fixture.patch").write_text("fixture\n", encoding="utf-8")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base = self.prepare_fixture(Path(tmp))
+            stdout = self.run_prepare(root, regenerated, upstream)
+            output = root / "target/llama-upgrade"
+            self.assertEqual(sorted(path.name for path in output.iterdir()),
+                             ["candidate.bundle", "candidate.json"])
+            metadata = json.loads((output / "candidate.json").read_text())
+            candidate = metadata["candidate_sha"]
+            self.assertIn(f"candidate_sha={candidate}", stdout)
+            self.assertEqual(metadata, {"schema_version": 1, "base_sha": base, "candidate_sha": candidate,
+                                        "upstream_sha": upstream,
+                                        "bundle_sha256": ci_artifacts.digest(output / "candidate.bundle")})
+            restore_at(root, output / "candidate.bundle", candidate)
+            self.assertEqual(git(root, "rev-parse", "HEAD"), candidate)
+            self.assertEqual(git(root, "show", f"{candidate}:llama_cpp/upstream.txt"), upstream)
+            self.assertEqual(sorted(git(root, "diff", "--name-only", base, candidate).splitlines()),
+                             ["llama_cpp/patches/generated/0001-family-fixture.patch",
+                              "llama_cpp/patches/generated/series", "llama_cpp/upstream.txt"])
+
     def test_publisher_accepts_complete_exact_passes_only(self):
         publisher = module("upgrade-publish")
         manifest = ci_artifacts.read_json(ROOT / MANIFEST)
