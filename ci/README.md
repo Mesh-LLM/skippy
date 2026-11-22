@@ -73,8 +73,9 @@ just inference-render-report summary "$examples/examples.json" --run pr-pass
 
 The scheduled inference workflow runs the twelve nightly AgentX configurations
 and the seven PR-profile smoke configurations. The smoke runs use the same
-harness as labeled PRs and retain the actual split admission status. AgentX
-nightly split qualification still requires certified admission.
+harness as labeled PRs. PR smoke, nightly, and release qualification allow
+experimental split admission, retain the actual admission status, and require
+the full checks for their profile.
 
 The protected scheduled publisher reads the current public dataset revision,
 compares verified measurements directly with its saved baselines, and uploads

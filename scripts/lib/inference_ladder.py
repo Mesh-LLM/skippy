@@ -11,7 +11,7 @@ LADDER = Path(__file__).resolve().parents[2] / "ci/inference-ladder.json"
 def allowed_split_admissions(profile, mode):
     if mode == "standalone":
         return {None}
-    if profile in {"pr", "nightly"}:
+    if profile in {"pr", "nightly", "release"}:
         return {"certified", "uncertified_override"}
     return {"certified"}
 
