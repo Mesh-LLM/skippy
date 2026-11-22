@@ -32,6 +32,13 @@ function gate(needs, release = false) {
   evaluate({ env: { CHECK_RESULTS: JSON.stringify(needs), RELEASE_SMOKE: String(release) } });
 }
 
+test('protected pull_request_target skips CI when trusted admission skips changes', () => {
+  const condition = section.match(/^    if: (.+)$/m)[1].replace('always()', 'true');
+  const shouldRun = new Function('needs', `return (${condition})`);
+  assert.equal(shouldRun({ changes: { result: 'skipped' } }), false);
+  assert.equal(shouldRun({ changes: { result: 'success' } }), true);
+});
+
 test('all eight runtime packages match the planned matrix and depend on the canary', () => {
   assert.equal(packageJobs.length, 8);
   assert.deepEqual(declared.filter(job => job.startsWith('package_')).sort(), packageJobs.sort());
@@ -46,7 +53,7 @@ test('all eight runtime packages match the planned matrix and depend on the cana
   assert.doesNotThrow(() => gate(results({ full: true })));
 });
 
-test('only inference pull requests require the two package and smoke jobs', () => {
+test('opt-in inference pull requests require the two package and smoke jobs', () => {
   for (const options of [{}, { code: false }, { inference: true }, { code: false, inference: true }]) {
     assert.doesNotThrow(() => gate(results(options)));
   }
@@ -59,6 +66,76 @@ test('only inference pull requests require the two package and smoke jobs', () =
   const unexpectedSmoke = results();
   unexpectedSmoke[prPackages[0]].result = 'success';
   assert.throws(() => gate(unexpectedSmoke), /must be skipped/);
+});
+
+test('main pushes use full CI and ordinary PRs use only the quality canary', () => {
+  const profile = workflow.match(/SKIPPY_CI_PROFILE: \$\{\{ (.+) \}\}/)[1];
+  const selectProfile = new Function('github', 'inputs', `return (${profile});`);
+  for (const event_name of ['push', 'schedule', 'workflow_dispatch', 'workflow_call']) {
+    assert.equal(selectProfile({ event_name, event: {} }, {}), 'full', event_name);
+  }
+  assert.equal(selectProfile({ event: {} }, { profile: 'pr' }), 'pr');
+  for (const event_name of ['pull_request', 'pull_request_target']) {
+    assert.equal(selectProfile({ event_name, event: { pull_request: {} } }, { profile: 'full' }), 'pr');
+  }
+
+  const outputs = workflow.split('\n  changes:\n')[1].split('\n    steps:\n')[0];
+  const select = (key, github, paths, verified = '') => {
+    const expression = outputs.match(new RegExp(`^      ${key}: \\$\\{\\{ (.+) \\}\\}$`, 'm'))[1]
+      .replace('github.event.pull_request.labels.*.name', 'github.event.pull_request?.labels?.map(label => label.name)');
+    return new Function('github', 'steps', 'contains', `return (${expression});`)(
+      github, { paths: { outputs: paths }, release: { outputs: { verified } } },
+      (values, value) => values?.includes(value) || false);
+  };
+  for (const event_name of ['pull_request', 'pull_request_target']) {
+    for (const paths of [{ code: 'true', inference: 'false' }, { code: 'false', inference: 'true' }]) {
+      const github = { event_name, event: { pull_request: { labels: [] } } };
+      assert.equal(select('code', github, paths), true);
+      assert.equal(select('inference', github, paths), false);
+      assert.equal(select('hosted_requires_native', github, paths), false);
+      github.event.pull_request.labels = [{ name: 'qualify' }];
+      assert.equal(select('inference', github, paths), event_name === 'pull_request_target' && paths.inference === 'true');
+      assert.equal(select('hosted_requires_native', github, paths), event_name === 'pull_request' && paths.inference === 'true');
+    }
+  }
+  const push = { event_name: 'push', event: {} };
+  assert.equal(select('code', push, {}), true);
+  assert.equal(select('inference', push, {}), false);
+  assert.equal(select('code', push, {}, 'true'), false);
+});
+
+test('qualify label changes re-evaluate protected PR checks and Spark qualification', () => {
+  const inference = readFileSync(join(__dirname, '../workflows/inference.yml'), 'utf8');
+  for (const yaml of [workflow, inference]) {
+    const pr = yaml.split('\n  pull_request_target:\n')[1].split(/\n  \w+:\n/)[0];
+    const events = pr.match(/types: \[([^\]]+)\]/)[1].split(',').map(value => value.trim());
+    assert.ok(events.includes('labeled'));
+    assert.ok(events.includes('unlabeled'));
+  }
+  const plan = inference.split('\n  plan:\n')[1].split('\n  qualification:\n')[0];
+  const expression = plan.match(/if: >-\n([\s\S]+?)\n    runs-on:/)[1]
+    .replace('github.event.pull_request.labels.*.name', 'github.event.pull_request?.labels?.map(label => label.name)');
+  const selected = new Function('github', 'contains', `return (${expression});`);
+  const contains = (values, value) => values?.includes(value) || false;
+  assert.equal(selected({ event_name: 'push', event: {} }, contains), true);
+  assert.equal(selected({ event_name: 'pull_request_target', event: { pull_request: { labels: [] } } }, contains), false);
+  assert.equal(selected({ event_name: 'pull_request_target', event: { pull_request: { labels: [{ name: 'qualify' }] } } }, contains), true);
+});
+
+test('Spark main pushes coalesce while scheduled and manual qualification retain evidence', () => {
+  const inference = readFileSync(join(__dirname, '../workflows/inference.yml'), 'utf8');
+  const concurrency = inference.split('\nconcurrency:\n')[1].split('\njobs:\n')[0];
+  const expression = concurrency.match(/group: >-\n([\s\S]+?)\n  cancel-in-progress:/)[1];
+  const group = github => expression.replace(/\$\{\{([\s\S]+?)\}\}/g,
+    (_, value) => new Function('github', `return (${value});`)(github));
+  const main = { event_name: 'push', ref: 'refs/heads/main', event: { pull_request: {} }, run_id: 1 };
+  assert.equal(group(main), group({ ...main, run_id: 2 }));
+  for (const event_name of ['schedule', 'workflow_dispatch']) {
+    assert.notEqual(group({ ...main, event_name }), group({ ...main, event_name, run_id: 2 }));
+  }
+  assert.match(concurrency, /cancel-in-progress: \$\{\{ github.event_name == 'pull_request_target' \}\}/);
+  const pinnedCheckout = "ref: ${{ (github.event_name == 'schedule' || github.event_name == 'push') && github.sha || 'main' }}";
+  assert.equal(inference.split(pinnedCheckout).length - 1, 2);
 });
 
 test('missing, skipped, failed and cancelled required work cannot pass full CI', () => {
@@ -93,10 +170,7 @@ test('the repository switch moves every hosted job to Depot', () => {
     const labels = [...yaml.matchAll(/^    runs-on: (.+)\n((?:      .+\n)*)/gm)]
       .map(([, label, continuation]) => `${label} ${continuation.trim().replaceAll(/\s+/g, ' ')}`.trim());
     assert.ok(labels.some(label => label.includes('SKIPPY_DEPOT_RUNNERS_ENABLED')), name);
-    const smokeJobs = name === 'ci' ? workflow.split('\n  pr_image_builds:')[0] : '';
-    const smokeLabels = [...smokeJobs.matchAll(/^    runs-on: (.+)$/gm)].map(([, label]) => label);
-    assert.deepEqual(smokeLabels, name === 'ci' ? ['depot-ubuntu-24.04-4', 'depot-ubuntu-24.04-4'] : []);
-    for (const label of labels.slice(smokeLabels.length)) {
+    for (const label of labels) {
       if (name.startsWith('llama-upgrade') && label === '${{ matrix.runner }}') continue;
       assert.match(label, /vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true'.*depot-/, name);
     }
@@ -113,19 +187,6 @@ test('ordinary PRs call protected workflows with scoped cache access and read-on
     const reusable = readFileSync(join(__dirname, '../workflows', callee + '.yml'), 'utf8');
     assert.doesNotMatch(reusable, /^(?:    )+\w+: write$/m);
   }
-});
-
-test('Depot compiler cache smoke runs only on manual protected main and caps its reader', () => {
-  const [seed, read] = workflow.split('\n  sccache_seed:\n')[1]
-    .split('\n  pr_image_builds:\n')[0].split('\n  sccache_read:\n');
-  assert.match(seed, /github\.workflow_ref == 'Mesh-LLM\/skippy\/\.github\/workflows\/ci\.yml@refs\/heads\/main'/);
-  assert.match(seed, /github\.event_name == 'workflow_dispatch' && inputs\.profile == 'sccache'/);
-  assert.doesNotMatch(seed + read, /^    cache-mode:/m);
-  assert.match(read, /^    needs: sccache_seed$/m);
-  assert.match(read, /needs\.sccache_seed\.outputs\.scope/);
-  assert.match(read, /read-only: 'true'/);
-  const changes = workflow.split('\n  changes:\n')[1].split('\n  plan:\n')[0];
-  assert.match(changes, /github\.event_name != 'workflow_dispatch' \|\| inputs\.profile != 'sccache'/);
 });
 
 test('the protected image PR bridge routes only the image workflow', () => {
@@ -173,7 +234,11 @@ test('native CI trusts only an immutable same-repository PR from a writer', asyn
   const admission = workflow.split('      - name: Verify the same-repository PR author\n')[1].split('\n  plan:\n')[0];
   const script = admission.split('          script: |\n')[1];
   const evaluate = new Function('github', 'context', 'return (async () => {\n' + script + '\n})()');
-  const candidate = { head: { sha: 'a'.repeat(40), repo: { id: 42 } }, base: { ref: 'main' }, user: { login: 'maintainer' } };
+  const candidate = {
+    head: { sha: 'a'.repeat(40), repo: { id: 42 } },
+    base: { ref: 'codex/native-decode-port', repo: { id: 42 } },
+    user: { login: 'maintainer' },
+  };
   const assertAdmission = (pr, permission) => evaluate({ rest: { repos: {
     getCollaboratorPermissionLevel: async ({ username }) => {
       assert.equal(username, 'maintainer');
@@ -182,6 +247,7 @@ test('native CI trusts only an immutable same-repository PR from a writer', asyn
   } } }, { repo: {}, payload: { pull_request: pr, repository: { id: 42 } } });
   await assert.doesNotReject(() => assertAdmission(candidate, 'write'));
   await assert.rejects(() => assertAdmission(candidate, 'read'), /trusted PR author/);
+  await assert.rejects(() => assertAdmission({ ...candidate, base: { ...candidate.base, repo: { id: 43 } } }, 'admin'), /same-repository PR/);
   await assert.rejects(() => assertAdmission({ ...candidate, head: { ...candidate.head, repo: { id: 43 } } }, 'admin'), /same-repository PR/);
   await assert.rejects(() => assertAdmission({ ...candidate, head: { ...candidate.head, sha: 'main' } }, 'admin'), /immutable source/);
 });

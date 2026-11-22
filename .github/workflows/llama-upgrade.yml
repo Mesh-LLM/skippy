@@ -34,16 +34,23 @@ env:
 jobs:
   candidate:
     if: github.ref == 'refs/heads/main'
-    env:
-      SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
-      LIBCLANG_PATH: /usr/lib/llvm-22/lib
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-8' || 'ubuntu-24.04' }}
+    timeout-minutes: 180
     permissions:
       contents: read
+      packages: read
       pull-requests: read
-    runs-on:
-      group: jy-rnr_vfnz8k5p4yrh334
-      labels: [self-hosted, jy-linux-docker, Linux, X64]
-    timeout-minutes: 180
+    container:
+      image: ghcr.io/mesh-llm/skippy-ci-cpu:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_BUILD_JOBS: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && '4' || '2' }}
+      CMAKE_BUILD_PARALLEL_LEVEL: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && '4' || '2' }}
     outputs:
       changed: ${{ steps.resolve.outputs.changed }}
       certify: ${{ steps.resolve.outputs.certify }}
@@ -54,13 +61,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: ./.github/actions/cache
-        with:
-          scope: upgrade-tools
-          download-scope: upgrade-candidate
-      - uses: ./.github/actions/sccache
-        with:
-          scope: upgrade-candidate-${{ runner.os }}-${{ runner.arch }}
+      - name: Install pinned GitHub CLI
+        run: |
+          bash scripts/install-gh.sh "$RUNNER_TEMP/skippy-gh"
+          echo "$RUNNER_TEMP/skippy-gh" >> "$GITHUB_PATH"
       - name: Resolve immutable upstream source
         id: resolve
         env:
@@ -68,6 +72,22 @@ jobs:
           FORCE_CERTIFY: ${{ inputs.force_certify || false }}
           GH_TOKEN: ${{ github.token }}
         run: just automation-run upgrade resolve --upstream "$UPSTREAM_SHA" --force-certify "$FORCE_CERTIFY"
+      - name: Identify the CPU toolchain image
+        if: steps.resolve.outputs.certify == 'true'
+        run: |
+          image_id="$(cat /etc/skippy-ci-image-id)"
+          test -n "$image_id"
+          echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/cache
+        if: steps.resolve.outputs.certify == 'true'
+        with:
+          scope: upgrade-candidate-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
+          download-scope: upgrade-candidate
+      - uses: ./.github/actions/sccache
+        id: compiler_cache
+        if: steps.resolve.outputs.certify == 'true'
+        with:
+          scope: upgrade-candidate-${{ runner.os }}-${{ runner.arch }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
       - name: Prepare and freeze candidate
         id: prepare
         if: steps.resolve.outputs.certify == 'true'
@@ -76,7 +96,7 @@ jobs:
           SKIPPY_UPGRADE_REPAIR_COMMAND: ${{ vars.SKIPPY_UPGRADE_REPAIR_COMMAND }}
         run: just automation-run upgrade prepare "$UPSTREAM_SHA"
       - uses: ./.github/actions/report-sccache
-        if: ${{ !cancelled() && env.SCCACHE != '' }}
+        if: ${{ !cancelled() && steps.compiler_cache.outcome == 'success' }}
         with:
           artifact-prefix: llama-candidate-preparation
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -119,25 +139,36 @@ jobs:
   repair:
     permissions:
       contents: read
+      packages: read
       actions: read
     needs: [candidate, qualify]
     if: >-
       !cancelled() && needs.candidate.result == 'success' &&
       needs.candidate.outputs.certify == 'true' && needs.qualify.result == 'failure'
-    runs-on:
-      group: jy-rnr_vfnz8k5p4yrh334
-      labels: [self-hosted, jy-linux-docker, Linux, X64]
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-8' || 'ubuntu-24.04' }}
+    container:
+      image: ghcr.io/mesh-llm/skippy-ci-cpu:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 180
     outputs:
       candidate_sha: ${{ steps.prepare.outputs.candidate_sha }}
     env:
-      SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
-      LIBCLANG_PATH: /usr/lib/llvm-22/lib
+      CARGO_BUILD_JOBS: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && '4' || '2' }}
+      CMAKE_BUILD_PARALLEL_LEVEL: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && '4' || '2' }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Install pinned GitHub CLI
+        run: |
+          bash scripts/install-gh.sh "$RUNNER_TEMP/skippy-gh"
+          echo "$RUNNER_TEMP/skippy-gh" >> "$GITHUB_PATH"
       - uses: ./.github/actions/cache
         with:
           scope: upgrade-tools

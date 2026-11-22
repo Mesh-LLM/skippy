@@ -1,6 +1,6 @@
 # Skippy continuous integration
 
-`ci.yml` reports `CI` for code checks and inference PR package smoke, and
+`ci.yml` reports `CI` for PR code checks and opt-in PR package smoke, and
 `Full CI gate` for the complete package roster and Graph Contracts. Release callers
 require the full workflow result independently
 of the check name. The single required status is `PR checks`, the
@@ -26,20 +26,26 @@ hold a hosted runner open waiting for native hardware. Repository `GITHUB_TOKEN`
 status updates cannot recursively trigger the controller.
 
 `ci.yml` uses native paths to start on code or inference PRs and on code pushes
-to `main`. Once a PR run starts, a pinned `dorny/paths-filter` action reads
-`.github/path-filters.yml` to choose code and package jobs independently. It uses
+to `main`. Its protected `pull_request_target` path admits same-repository PRs
+from repository collaborators against any base branch; fork PRs stay on the
+isolated `pull_request` path. Once a PR run starts, a pinned `dorny/paths-filter`
+action reads `.github/path-filters.yml` to choose code checks and opt-in package
+jobs. It uses
 `some-with-excludes`, so a changed file must match an inclusion and no exclusion.
 Mixed PRs run every applicable check group.
 These are file-level rules. Inline tests in production files, shared Cargo
 manifests/lockfiles, and any `Justfile` edit still count as changes to those files.
-Separate test files/directories and standalone tools are excluded from GPU
-qualification; `.gi/templates.yaml` is exact and `.gi/agents/**` is excluded.
+For PR qualification, separate test files/directories and standalone tools are
+excluded from GPU qualification; `.gi/templates.yaml` is exact and
+`.gi/agents/**` is excluded.
 
-Code paths select Quality canary, which runs CI automation tests before
-formatting, Clippy, FFI, and Rust and C++ tests. CI reads PR path rules from the
-base commit. PRs matching the inference filter also require Linux x64 CUDA 13 and
-macOS ARM64 Metal packages to build and serve a short inference request on real
-hardware. Both jobs wait for Quality canary when code checks apply. Docs-only
+Code or inference paths select Quality canary, which runs CI automation tests
+before formatting, Clippy, FFI, and Rust and C++ tests. Ordinary PRs run only
+this canary within CI. CI reads PR path rules from the base commit. PRs matching
+the inference filter may opt into Linux x64 CUDA 13 and macOS ARM64 Metal
+package/device smoke by adding the `qualify` label. Both jobs wait for Quality
+canary. Adding or removing the label re-evaluates protected PR qualification;
+forks still require isolated native execution when qualification is requested. Docs-only
 and metadata-only PRs do not start CI. The CI result gate rejects missing,
 failed or unexpectedly skipped results.
 
@@ -52,6 +58,15 @@ budget waits for placement instead of failing fast. Relevant PRs retain
 same-repository/collaborator admission, a fresh-head check and all seven GPU
 smoke configurations. The credentialed controller runs only protected source.
 Python admission verifies trust and source identity.
+
+Main code pushes automatically run full CI: Quality canary gates Graph Contracts
+and all eight package/smoke jobs. The separate inference workflow uses the same
+main-push paths and automatically runs all seven smoke configurations using the
+exact pushed commit. Its controller also checks out that immutable main SHA.
+The two workflows run independently; package builds wait for their own canary.
+Each workflow finishes its active main-push run and retains only the newest
+pending push. Manual, nightly and release qualification keep independent evidence.
+
 The syntax/dependency classifier and offline replay command have been removed.
 The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
 `gh` and `jq`; it needs no Rust setup or compilation. It checks receipt source,
@@ -73,8 +88,9 @@ just inference-render-report summary "$examples/examples.json" --run pr-pass
 
 The scheduled inference workflow runs the twelve nightly AgentX configurations
 and the seven PR-profile smoke configurations. The smoke runs use the same
-harness as labeled PRs and retain the actual split admission status. AgentX
-nightly split qualification still requires certified admission.
+harness as labeled PRs. PR smoke, nightly, and release qualification allow
+experimental split admission, retain the actual admission status, and require
+the full checks for their profile.
 
 The protected scheduled publisher reads the current public dataset revision,
 compares verified measurements directly with its saved baselines, and uploads
@@ -99,7 +115,9 @@ Tagged releases and manual llama upgrades retain their explicit triggers. The
 `ci/Dockerfile*`, `ci/targets.json`, `rust-toolchain.toml` and `Justfile`.
 Protected inference and aggregate workflow changes take effect after they
 reach `main`.
-Nightly, reusable candidate validation and tagged releases use the full profile.
+Main pushes, nightly, reusable candidate validation and tagged releases use the
+full CI profile. Main-push Spark qualification uses the seven-configuration `pr`
+smoke profile; nightly and release qualification retain the extended profiles.
 Manual dispatch from protected main defaults to full. Both nightly workflows run
 at 14:00 UTC. Release validation uses the complete CUDA architecture lists from
 `targets.json`. Full runs may instead use the assigned GPU's native architecture
@@ -127,8 +145,9 @@ The repository Actions variable `SKIPPY_DEPOT_RUNNERS_ENABLED=true` selects
 Depot for every job that otherwise uses a GitHub-hosted runner. This includes
 PR validation and its aggregate, code and package CI, compiler images and
 publishing, documentation and deployment, release validation and publication,
-the inference controllers, and the llama upgrade publisher. The Linux jobs
-use four-core Ubuntu 24.04 runners of the existing architecture, and the
+the inference controllers, and llama upgrade preparation and publication. Most
+Linux jobs use four-core Ubuntu 24.04 runners of the existing architecture.
+Graph Contracts and llama upgrade preparation use eight-core x64 runners. The
 macOS CPU package uses Depot's macOS 15 ARM64 runner. Device jobs use their
 specified JY groups. Clearing the variable or setting it to `false` restores
 GitHub-hosted placement and direct PR workflow routing for subsequent runs.
@@ -170,12 +189,6 @@ Depot jobs skip shared Cargo, model, native source, and npm caches. The
 GitHub-hosted jobs use sccache's Actions backend.
 [Depot sccache integration](https://depot.dev/docs/cache/integrations/sccache)
 
-Leave `SKIPPY_DEPOT_RUNNERS_ENABLED` unset while merging the workflows and
-configuring their runner-group refs. Add `ci-image-builds.yml` once it exists
-on `main`. Dispatch `CI` on `main` with `profile=sccache` while the switch is
-off. Check that the first Depot job writes a compiler cache entry and the
-second job records one cache hit, one deliberate miss, and zero writes.
-
 After enabling the switch, verify full CI and `CI images` with
 `build_only=true`, then check one ordinary PR and one same-repository PR
 through the aggregate.
@@ -213,11 +226,12 @@ to avoid restoring archives made with hosted-VM home/workspace paths. Native
 source caches remain shared. Protected candidate admission precedes build-cache
 restoration and compiler-cache credential export.
 
-Full CI runs `just llama-check` on the ephemeral Linux JY `native-contracts`
-runner after the canary, in parallel with packaging. It checks Graph Contracts,
-patch regeneration, public headers and generated API docs. The gate requires
-both CTest batches to pass. The `native-contracts-evidence` artifact retains
-logs and patch reports.
+Full CI runs `just llama-check` in the same x64 CPU toolchain image after the
+canary, in parallel with packaging. It uses Depot Ubuntu 24.04 with four build
+workers when the repository switch is enabled, and GitHub-hosted Ubuntu 24.04
+with two build workers otherwise. It checks Graph Contracts, patch regeneration,
+public headers and generated API docs. The gate requires both CTest batches to
+pass. The `native-contracts-evidence` artifact retains logs and patch reports.
 
 `docs.yml` triggers directly for `docs-site/**` changes on PRs and pushes to
 `main`. It installs the lockfile, builds Nextra, generates the Pagefind index
@@ -393,12 +407,6 @@ only orchestrates these jobs, so the 6 GiB runner-container limit does not bound
 model execution. Split jobs reserve both Sparks atomically. This policy does not
 prove live JY configuration.
 
-Llama native contracts and upstream candidate generation use preprovisioned
-JY builders with LLVM/Clang 22 development and CMake packages, Ninja and lld.
-The contracts job accepts either 64-bit Linux architecture; candidate
-generation uses its Linux x86_64 lane. The same generator tools must be
-available on full family builders.
-
 Qwen3 dense smoke preparation is explicit: `just ci-model-fetch`
 resolves the immutable public model URL and verifies the family manifest's size
 and SHA-256. A runner-provided `SKIPPY_CI_MODEL` is verified without downloading.
@@ -482,6 +490,8 @@ Issue [#12](https://github.com/Mesh-LLM/skippy/issues/12) tracks the reduced
 qualification pipeline. `llama-upgrade.yml` runs from protected main. It resolves
 an immutable upstream SHA and prepares a digest-bound candidate bundle. Each
 candidate runs normal CI once, followed by parallel CPU, CUDA and Spark checks.
+Candidate preparation uses the selected Ubuntu runner and the pinned CPU
+toolchain image, with checksum-verified GitHub CLI installation.
 The successful path has one qualification pass. A failed candidate may receive
 one agent repair and fresh qualification.
 
