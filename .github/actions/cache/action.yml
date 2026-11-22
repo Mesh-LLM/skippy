@@ -35,6 +35,7 @@ runs:
         fi
         echo "SKIPPY_CARGO_CACHE_LAYOUT=${digest:0:16}" >> "$GITHUB_ENV"
     - name: Restore shared Cargo downloads
+      if: ${{ !startsWith(runner.name, 'depot-') }}
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: |
@@ -44,10 +45,12 @@ runs:
         restore-keys: |
           cargo-downloads-v1-${{ github.event_name == 'pull_request_target' && 'same-repo-pr-' || '' }}${{ runner.os }}-${{ env.SKIPPY_CARGO_CACHE_LAYOUT }}-${{ inputs.download-scope }}-
     - name: Identify checked-out source
+      if: ${{ !startsWith(runner.name, 'depot-') }}
       id: source
       shell: bash
       run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
     - name: Restore rolling Cargo build snapshot
+      if: ${{ !startsWith(runner.name, 'depot-') }}
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ inputs.build-paths }}
