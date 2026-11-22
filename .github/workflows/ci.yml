@@ -327,6 +327,13 @@ jobs:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
       - run: just automation-contracts
+      - name: Set up inference report test tooling
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: '0.13.0'
+          enable-cache: 'false'
+      - name: Test inference health publication and PNG charts
+        run: uv run --no-project --python 3.12 --with-requirements ci/inference-publish-requirements.txt -- just inference-publication-test
       - name: Test inference results reporting
         run: bash scripts/tests/inference-report.sh
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6

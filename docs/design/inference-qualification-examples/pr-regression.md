@@ -1,68 +1,46 @@
 # Inference qualification
 
-**Failed** · pr profile · `eeeeeeeeeeee` · 2026-11-24 17:30 UTC · Run pr-regression
+**1 regressions · 0 improvements · 1 within tolerance · 0 first measurements**
 
-Published baseline snapshot [`ffffffffffff`](https://huggingface.co/datasets/meshllm/skippy-inference-qualification/blob/ffffffffffffffffffffffffffffffffffffffff/baselines.json)
+24 Nov 2026 17:30 UTC · Engine `eeeeeeeeeeee` · pr · **Tolerance: ±1%** · NVIDIA GB10 DGX Spark
 
-Illustrative qualifying PR. Decode throughput fell 5.09% against the saved baseline, exceeding the 5% tolerance.
+1 measured configurations. Counts refer to performance metrics. First measurements establish new series and have no trend verdict.
 
-## Performance charts
+## What regressed
 
-Qwen3.5-4B (1 Spark) · Smoke test (v1). Gray = saved baseline · Blue = equivalent (within tolerance).
+| Configuration | Metric | Latest | Reference | Change |
+| --- | --- | --- | --- | --- |
+| Qwen3.5-4B (1 Spark) | Decode throughput | 60.10 tok/s | 63.32 tok/s | -5.09% |
 
-```mermaid
----
-config:
-  xyChart:
-    width: 760
-    height: 290
-    yAxis:
-      showLabel: false
-      showTick: false
-  themeVariables:
-    xyChart:
-      plotColorPalette: "#68778A, #216FAD"
----
-xychart-beta
-    title "Prefill throughput"
-    x-axis ["Saved baseline — 612.17", "This run — 611.12"]
-    y-axis "tok/s" 0 --> 690
-    bar [612.17, 0]
-    bar [0, 611.12]
-```
+## Performance over time
 
-Qwen3.5-4B (1 Spark) · Smoke test (v1). Gray = saved baseline · Red = regression.
+Each panel shows one measured model and Spark configuration. The dashed line is the current comparison reference; the shaded band is ±1%. Blue circles are within tolerance, green triangles indicate improvements, red triangles indicate regressions, and grey squares mark first measurements. Missing measurements leave gaps. Dates are UTC.
 
-```mermaid
----
-config:
-  xyChart:
-    width: 760
-    height: 290
-    yAxis:
-      showLabel: false
-      showTick: false
-  themeVariables:
-    xyChart:
-      plotColorPalette: "#68778A, #B13A4D"
----
-xychart-beta
-    title "Decode throughput"
-    x-axis ["Saved baseline — 63.32", "This run — 60.1"]
-    y-axis "tok/s" 0 --> 71
-    bar [63.32, 0]
-    bar [0, 60.1]
-```
+### Prefill throughput
 
-## Lab outcomes
+Higher is better.
 
-| Configuration | Qualification | Evidence |
+![Prefill throughput over time for every measured configuration](summaries/pr-regression/charts/qualification-1.png)
+
+### Decode throughput
+
+Higher is better.
+
+![Decode throughput over time for every measured configuration](summaries/pr-regression/charts/qualification-2.png)
+
+## Latest numbers
+
+Current values and signed changes against the saved reference, or the previous comparable measurement when no saved reference exists. Higher throughput and lower latency are better.
+
+### One Spark
+
+| Model | Prefill throughput (tok/s) | Decode throughput (tok/s) |
 | --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | Passed | — |
+| Qwen3.5-4B (1 Spark) | 611.12 (-0.17% · Within tolerance) | 60.10 (-5.09% · Regressed) |
 
-## Smoke test (v1)
 
-| Configuration | Metric | This run | Saved baseline | Baseline commit | Change vs saved | Comparison |
-| --- | --- | --- | --- | --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | Prefill throughput | 611.12 tok/s | 612.17 tok/s | `aaaaaaaaaaaa` | -0.17% | Within tolerance |
-| Qwen3.5-4B (1 Spark) | Decode throughput | 60.1 tok/s | 63.32 tok/s | `aaaaaaaaaaaa` | -5.09% | Regression |
+## Measurement notes
+
+Smoke throughput uses scored request token totals divided by measured phase time. It is a different workload from nightly AgentX.
+
+The ±1% rule expresses tolerance, not statistical significance. Comparisons preserve workload identity; a changed benchmark starts a new series.

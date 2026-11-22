@@ -60,10 +60,14 @@ The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
 configuration and native-attempt identity, updates only its bot-owned comment,
 and refuses to replace results for a newer commit or workflow attempt.
 
-The shared report renderer takes normalized qualification JSON. It renders
-Mermaid charts for Actions summaries and saves the Hugging Face card’s PNG
-charts in `charts/` beside its README. PNG export uses the reporting
-requirements. The Actions summary renderer uses the Python standard library.
+The shared health renderer takes normalized qualification JSON. Hugging Face
+cards and Actions summaries show the same regression-first summary, complete
+trend panels for every measured configuration, and compact latest values.
+Output throughput, first-token latency and token-gap latency are charted for
+both standalone and split runs. Unmeasured workloads do not become result rows.
+PNG export uses the reporting requirements. Actions embeds public PNGs pinned
+to the exact dataset commit, and retains the complete normalized report as an
+artifact. Formatting Markdown alone uses the Python standard library.
 
 ```sh
 examples=docs/design/inference-qualification-examples
@@ -85,11 +89,20 @@ compares verified measurements directly with its saved baselines, and uploads
 aggregate Parquet results, the baseline manifest, and the generated card in
 one revision-checked commit to
 [the public qualification dataset](https://huggingface.co/datasets/meshllm/skippy-inference-qualification).
-The initial tolerance and promotion threshold are 5% per performance metric.
+The tolerance and promotion threshold are 1% per performance metric.
 A changed benchmark recipe seeds its own reference. Passing measurements are
 recorded while the saved reference remains in force until a new source exceeds
 the improvement threshold. Regressions and incomplete evidence fail nightly
 after publication and preserve the affected baseline.
+
+Trend comparisons use the saved reference, with the previous comparable
+measurement as fallback when no saved reference exists. A benchmark change
+starts a new series; gaps remain gaps. Recipe identities bind measured model
+inputs, mode, admission, corpus, client lock and the benchmark functions, rather
+than hashing whole controller/reporting files. `ci/inference-comparability.json`
+records the explicit, configuration/workload-scoped audit of the legacy
+standalone history and the transition to recipe version 2. It changes no saved
+measurements. The 1% rule expresses tolerance, not statistical significance.
 
 The nightly publisher uses the existing `HF_TOKEN` Actions secret. It needs
 write access to this Hugging Face dataset. Only the publisher step receives

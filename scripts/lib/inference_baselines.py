@@ -5,8 +5,9 @@ from decimal import Decimal
 import re
 
 from .inference_nightly_metrics import metric_value
+from .inference_comparability import contracts_match
 
-TOLERANCE = Decimal("0.05")
+TOLERANCE = Decimal("0.01")
 DIRECTION = {
     "prefill_tok_s": 1, "decode_tok_s": 1, "output_tok_s": 1,
     "ttft_p95_ms": -1, "itl_p95_ms": -1,
@@ -61,7 +62,8 @@ def apply_baselines(run, baselines):
             key = metric_key(config["id"], row)
             saved = active.get(key)
             latest = {"value": current, "source_sha": result["source_sha"], "run_id": result["id"]}
-            if saved is None or saved["contract_sha256"] != contract:
+            if saved is None or not contracts_match(config["id"], row["workload"],
+                                                    saved["contract_sha256"], contract):
                 row["baseline_update"] = "seeded"
             else:
                 row["reference"] = {"value": saved["value"], "source_sha": saved["source_sha"]}

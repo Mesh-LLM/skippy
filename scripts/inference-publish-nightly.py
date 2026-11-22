@@ -5,6 +5,7 @@ import argparse
 import os
 from pathlib import Path
 import re
+import shutil
 import sys
 from tempfile import TemporaryDirectory
 
@@ -15,12 +16,15 @@ from lib.inference_nightly_results import nightly_run
 from lib.inference_parquet import read_run, write_run
 from lib.inference_png import export_charts
 from lib.inference_publication_policy import publication_allowed
+from lib.inference_health import health_view
+from lib.inference_charts import health_charts, image_path
+from lib.inference_comparability import AUDITS
 
 
 REPO = "meshllm/skippy-inference-qualification"
 HISTORY_LIMIT = 64
 RUN_PATH = re.compile(r"runs/([1-9][0-9]*)/([1-9][0-9]*)\.parquet")
-CHART_PATH = re.compile(r"charts/qualification-[1-4]\.png")
+CHART_PATH = re.compile(r"charts/(?:qualification-[1-4]|health-(?:output_tok_s|ttft_p95_ms|itl_p95_ms))\.png")
 
 
 def admit(environment):
@@ -69,7 +73,28 @@ def load_history(paths, fetch):
     return history
 
 
-def publish(api, fetch_file, add, delete, evidence, identity):
+def summary_report(api, add, files, revision, report, run, destination):
+    """Pin Actions to this run's own charts, including historical reruns."""
+    root = f"reports/{run['id']}"
+    charts = health_charts(health_view(report, run["id"]))
+    expected = {f"{root}/{image_path(index)}" for index in range(1, len(charts) + 1)}
+    if expected - files:
+        with TemporaryDirectory(prefix="skippy-health-replay-") as temporary:
+            output = Path(temporary)
+            export_charts(charts, output)
+            operations = [add(path_in_repo=f"{root}/{image_path(index)}",
+                              path_or_fileobj=output / image_path(index))
+                          for index in range(1, len(charts) + 1)]
+            receipt = api.create_commit(
+                repo_id=REPO, repo_type="dataset", parent_commit=revision,
+                commit_message=f"Backfill immutable health charts for {run['id']}", operations=operations,
+            )
+            revision = receipt.oid
+    report["chart_base_url"] = f"https://huggingface.co/datasets/{REPO}/resolve/{revision}/{root}"
+    write_json(destination, report)
+
+
+def publish(api, fetch_file, add, delete, evidence, identity, report_output=None):
     source, run_id, attempt, number, started_at, matrix_passed = identity
     info = api.dataset_info(REPO, token=False)
     if info.id != REPO or info.private is not False or info.gated is not False or not SHA.fullmatch(info.sha):
@@ -84,6 +109,12 @@ def publish(api, fetch_file, add, delete, evidence, identity):
         run = load_history([path], fetch)[0]
         if run["source_sha"] != source:
             raise ValueError("published run source mismatch")
+        if report_output is not None:
+            report = {
+                "schema_version": 1, "runs": load_history(state["history"], fetch),
+                "active_baselines": state["baselines"],
+            }
+            summary_report(api, add, files, info.sha, report, run, report_output)
         return run
     if state["history"]:
         previous_id, previous_attempt = map(int, RUN_PATH.fullmatch(state["history"][0]).groups())
@@ -107,8 +138,13 @@ def publish(api, fetch_file, add, delete, evidence, identity):
         parquet.parent.mkdir(parents=True)
         write_run(parquet, run)
         write_json(output / "baselines.json", manifest)
+        shutil.copyfile(AUDITS, output / "comparability.json")
         charts = dataset_charts(report)
         export_charts(charts, output)
+        for index in range(1, len(charts) + 1):
+            copy = output / f"reports/{run_id}-{attempt}" / image_path(index)
+            copy.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(output / image_path(index), copy)
         (output / "README.md").write_text(dataset_card(report, charts), encoding="utf-8")
         staged = {file.relative_to(output).as_posix(): file for file in output.rglob("*") if file.is_file()}
         operations = [add(path_in_repo=name, path_or_fileobj=file) for name, file in sorted(staged.items())]
@@ -119,6 +155,8 @@ def publish(api, fetch_file, add, delete, evidence, identity):
             commit_message=f"Publish Skippy nightly inference qualification {run['id']}",
         )
         print(f"Published {receipt.commit_url}", flush=True)
+        if report_output is not None:
+            summary_report(api, add, staged.keys(), receipt.oid, report, run, report_output)
     return run
 
 
@@ -126,16 +164,22 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("evidence", type=Path)
     args = parser.parse_args()
+    args.evidence.mkdir(parents=True, exist_ok=True)
     identity = admit(os.environ)
     if not os.environ.get("HF_TOKEN"):
         raise ValueError("HF_TOKEN is required for nightly publication")
     from huggingface_hub import CommitOperationAdd, CommitOperationDelete, HfApi, hf_hub_download
 
-    run = publish(HfApi(), hf_hub_download, CommitOperationAdd, CommitOperationDelete, args.evidence, identity)
-    report = {"schema_version": 1, "runs": [run]}
+    report_output = args.evidence / "publication-report.json"
+    run = publish(HfApi(), hf_hub_download, CommitOperationAdd, CommitOperationDelete,
+                  args.evidence, identity, report_output=report_output)
+    report = read_json(report_output)
     with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as stream:
-        stream.write(run_summary(report, run["id"]))
-    return 0 if run["outcome"] == "passed" else 1
+        stream.write(run_summary(report, run["id"], image_base_url=report["chart_base_url"]))
+    view = health_view(report, run["id"])
+    passed = (run["outcome"] == "passed" and not view["counts"].get("regressed")
+              and not view["errors"] and not view["issues"])
+    return 0 if passed else 1
 
 
 if __name__ == "__main__":

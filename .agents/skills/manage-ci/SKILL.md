@@ -103,6 +103,12 @@ contract; no downstream product's workflow topology applies here.
   the public report. Publication is required for their final success; the
   trigger type must not disable it. PR and release profiles keep their own
   qualification contracts.
+- Hugging Face and Actions share the measured inference-health report: changes
+  over time, current values, complete standalone/split chart coverage and 1%
+  tolerance. Reporting/admission-only edits must not reset unrelated benchmark
+  histories. Recipe changes start new series; audited historical equivalence
+  is explicit and configuration/workload-bound. Never fill missing data or
+  describe an unmeasured workload as a performance regression.
 - The protected inference results-comment job alone receives pull-requests write
   permission for PR comments, plus read-only contents/actions. It receives no
   native dispatch credential and never executes candidate code.

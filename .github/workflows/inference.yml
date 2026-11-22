@@ -205,6 +205,14 @@ jobs:
         run: |
           SKIPPY_PYTHON="$RUNNER_TEMP/inference-publication/bin/python" \
             just inference-publish-nightly target/ci-evidence/nightly-inference
+      - name: Retain the full inference health report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: inference-health-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/ci-evidence/nightly-inference/publication-report.json
+          if-no-files-found: warn
+          retention-days: 30
   summary:
     needs: [plan, qualification, nightly_publish]
     if: always()

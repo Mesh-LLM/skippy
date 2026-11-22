@@ -99,6 +99,6 @@ def nightly_run(root: Path, source, run_id, attempt, started_at, matrix_passed):
         "published": True, "configurations": configs,
         "note": (
             "AgentX values are means of two trial summaries. Request counts are combined. "
-            "The performance tolerance and improvement threshold are 5%."
+            "The performance tolerance and improvement threshold are 1%."
         ),
     }
