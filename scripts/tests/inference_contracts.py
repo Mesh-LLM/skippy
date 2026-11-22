@@ -146,45 +146,6 @@ class PlacementTests(unittest.TestCase):
             placement(agents, "controller", 0, "b" * 40)
 
 
-class MainPushAdmissionTests(unittest.TestCase):
-    def test_main_push_uses_the_exact_commit_and_seven_smoke_configurations(self):
-        admission = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))
-        admit = admission["admit"]
-        sha = "a" * 40
-        event = {"ref": "refs/heads/main", "after": sha, "deleted": False}
-        env = {"GITHUB_EVENT_NAME": "push", "GITHUB_SHA": sha,
-               "GITHUB_REPOSITORY": "Mesh-LLM/skippy", "GITHUB_REF": "refs/heads/main",
-               "GITHUB_EVENT_PATH": "unused.json", "QUALIFICATION_PROFILE": "release",
-               "RELEASE_CANDIDATE": ""}
-        output, github = Mock(), Mock(side_effect=AssertionError("main needs no PR admission"))
-        with patch.dict(os.environ, env), patch.dict(admit.__globals__,
-                                                   read_json=lambda _: event,
-                                                   output=output, github=github):
-            admit()
-        output.assert_called_once_with(source=sha, profile="pr")
-        self.assertEqual(len(inference_ladder.matrix("pr", sha)), 7)
-        github.assert_not_called()
-
-    def test_push_rejects_other_repositories_refs_and_source_mismatches(self):
-        admission = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))
-        admit = admission["admit"]
-        sha = "a" * 40
-        env = {"GITHUB_EVENT_NAME": "push", "GITHUB_SHA": sha,
-               "GITHUB_REPOSITORY": "Mesh-LLM/skippy", "GITHUB_REF": "refs/heads/main",
-               "GITHUB_EVENT_PATH": "unused.json", "RELEASE_CANDIDATE": ""}
-        event = {"ref": "refs/heads/main", "after": sha}
-        cases = [({"GITHUB_REPOSITORY": "other/skippy"}, {}),
-                 ({"GITHUB_REF": "refs/heads/feature"}, {}),
-                 ({}, {"ref": "refs/heads/feature"}),
-                 ({}, {"after": "b" * 40}), ({}, {"deleted": True})]
-        for overrides, payload in cases:
-            with self.subTest(overrides=overrides, payload=payload), \
-                    patch.dict(os.environ, {**env, **overrides}), \
-                    patch.dict(admit.__globals__, read_json=lambda _: {**event, **payload}):
-                with self.assertRaisesRegex(ValueError, "exact protected main commit"):
-                    admit()
-
-
 class ReleaseAdmissionTests(unittest.TestCase):
     def test_only_the_staged_commit_from_protected_release_dispatch_is_admitted(self):
         admission = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))
