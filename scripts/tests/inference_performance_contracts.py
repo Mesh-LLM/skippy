@@ -175,6 +175,12 @@ class ServerTests(unittest.TestCase):
         _, applied, _ = server_args(built, "", "/m.gguf", "org/m@rev", 8192, unpooled)
         self.assertEqual(applied["total_context"], 4 * 8192)
 
+    def test_llama_server_starts_at_trace_verbosity_and_records_it(self):
+        built = {"label": "reference", "kind": "llama-server", "binary": "/b/llama-server"}
+        args, applied, _ = server_args(built, "", "/m.gguf", "org/m@rev", 8192, self.server)
+        self.assertEqual(args[args.index("-lv") + 1], "4")
+        self.assertEqual(applied["log_verbosity"], 4)
+
 
 class ReportTests(unittest.TestCase):
     record = {"started_at": "2026-11-21T10:00:00Z", "arms": [{"label": "candidate", "sha": "a" * 40}]}

@@ -10,6 +10,9 @@ PORT = 9337
 REQUIRED = ("--startup-timeout-secs", "--bind-addr", "--model-id", "--ctx-size",
             "--n-gpu-layers", "--model-path")
 METAL = {"LLAMA_STAGE_BACKEND": "metal", "LLAMA_STAGE_LINK_MODE": "static"}
+# llama.cpp files its library's INFO lines under trace, and the offload line the
+# startup check reads is one of them.
+REFERENCE_VERBOSITY = 4
 
 
 def checkout(arm):
@@ -67,8 +70,9 @@ def server_args(built, help_text, model, coordinate, context, server):
     if built["kind"] == "llama-server":
         total = pool if pool is not None else context * lanes
         args = [built["binary"], "-m", str(model), "--host", "127.0.0.1", "--port", str(PORT),
-                "-ngl", "999", "-np", str(lanes), "-c", str(total), "-kvu", "--alias", coordinate]
-        return args, {"lanes": lanes, "total_context": total}, []
+                "-ngl", "999", "-np", str(lanes), "-c", str(total), "-kvu",
+                "-lv", str(REFERENCE_VERBOSITY), "--alias", coordinate]
+        return args, {"lanes": lanes, "total_context": total, "log_verbosity": REFERENCE_VERBOSITY}, []
     args = [built["binary"], "serve", "--startup-timeout-secs", "300", "--ctx-size", str(context),
             "--n-gpu-layers", "999", "--bind-addr", f"127.0.0.1:{PORT}", "--model-path", str(model),
             "--model-id", coordinate]

@@ -62,7 +62,9 @@ the pool existed, runs without it. Each sample records what was applied and
 what the arm did not support. All arms are probed before model measurements begin.
 An arm missing required endpoint/model/context/GPU or startup options fails explicitly
 as unsupported before any measured round; required options are never silently omitted. `llama-server` gets the same lanes and the same
-total context (`-np`, `-c`, `-kvu`).
+total context (`-np`, `-c`, `-kvu`). It also starts with `-lv 4`: at the pinned
+llama.cpp that is the lowest log verbosity that prints the GPU-offload line the
+startup check reads, and the sample records it as `log_verbosity`.
 
 ## Traces
 
