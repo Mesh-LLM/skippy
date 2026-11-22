@@ -40,12 +40,13 @@ test('all thirteen runtime packages match the planned matrix and depend on the c
     const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
     assert.match(body, /^    needs: \[plan, quality[\],]/m);
     assert.ok(body.includes(`runtime-id: ${row.id}\n`));
+    assert.ok(body.includes('ref: ${{ env.SKIPPY_CI_SOURCE_REF }}\n'), job);
     if (row.backend !== 'cpu') assert.ok(body.includes(`package_${row.host.replaceAll('-', '_')}_cpu`));
     assert.equal(body.includes("needs.changes.outputs.inference == 'true'"), prPackages.includes(job));
     const needsSeparateSmoke = releaseSmokes.includes(job.replace('package_', 'release_smoke_'));
     assert.equal(body.includes("release-device-smoke: 'true'"), needsSeparateSmoke);
     assert.equal(body.includes('smoke: artifact'), row.validation === 'artifact' || needsSeparateSmoke);
-    if (row.validation === 'artifact') assert.ok(body.includes(`runs-on: ${row.runner[0]}\n`));
+    if (row.validation === 'artifact') assert.ok(body.includes(row.runner[0]));
     if (row.host === 'windows-x86_64' && row.backend === 'cuda') {
       assert.ok(body.includes(`windows-cuda: '${row.toolkit}'\n`));
     }
@@ -54,6 +55,16 @@ test('all thirteen runtime packages match the planned matrix and depend on the c
     }
   }
   assert.doesNotThrow(() => gate(results({ full: true })));
+});
+
+test('release publication downloads the product archives before comparing the candidate receipt', () => {
+  const release = readFileSync(join(__dirname, '../workflows/release.yml'), 'utf8');
+  const publish = release.split('\n  publish:\n')[1].split('\n  documentation:\n')[0];
+  const download = publish.indexOf('pattern: release-product-*');
+  const inventory = publish.indexOf('just release-prepare-candidate');
+  assert.ok(download >= 0 && download < inventory);
+  assert.match(publish.slice(download, inventory), /path: release-artifacts/);
+  assert.match(publish, /cmp release-receipt\/release.json dist\/release\/release.json/);
 });
 
 test('only inference pull requests require the two package and smoke jobs', () => {
@@ -94,6 +105,78 @@ test('release validation requires the three other GPU smokes', () => {
 
 test('hosted CI cannot satisfy a native inference requirement', () => {
   assert.throws(() => gate(results({ hostedRequiresNative: true })), /require native hardware qualification on an isolated runner/);
+});
+
+test('the repository switch moves Linux and macOS hosted jobs to Depot and retains Windows toolchains', () => {
+  const workflows = ['ci', 'ci-images', 'ci-image-builds', 'docs', 'inference', 'llama-upgrade', 'pr-checks', 'release'];
+  for (const name of workflows) {
+    const yaml = readFileSync(join(__dirname, '../workflows', name + '.yml'), 'utf8');
+    const labels = [...yaml.matchAll(/^    runs-on: (.+)\n((?:      .+\n)*)/gm)]
+      .map(([, label, continuation]) => `${label} ${continuation.trim().replaceAll(/\s+/g, ' ')}`.trim());
+    assert.ok(labels.some(label => label.includes('SKIPPY_DEPOT_RUNNERS_ENABLED')), name);
+    for (const label of labels) {
+      if (name === 'llama-upgrade' && label === '${{ matrix.runner }}') continue;
+      if (name === 'ci' && label === 'windows-2022') continue;
+      assert.match(label, /vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true'.*depot-/, name);
+    }
+  }
+  for (const job of ['windows_toolchain_probe', ...packageJobs.filter(job => job.startsWith('package_windows_'))]) {
+    const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
+    assert.match(body, /^    runs-on: windows-2022$/m, job);
+  }
+});
+
+test('ordinary PRs call protected workflows with scoped cache access and read-only permissions', () => {
+  const workflows = { 'ci-pr': 'ci', 'ci-images-pr': 'ci', 'docs-pr': 'docs' };
+  for (const [caller, callee] of Object.entries(workflows)) {
+    const yaml = readFileSync(join(__dirname, '../workflows', caller + '.yml'), 'utf8');
+    assert.ok(yaml.includes(`uses: Mesh-LLM/skippy/.github/workflows/${callee}.yml@main`));
+    assert.match(yaml, caller === 'ci-pr' ? /^    cache-mode: read$/m : /^    cache-mode: none$/m);
+    assert.doesNotMatch(yaml, /runs-on:|secrets:|: write$/m);
+    const reusable = readFileSync(join(__dirname, '../workflows', callee + '.yml'), 'utf8');
+    assert.doesNotMatch(reusable, /^(?:    )+\w+: write$/m);
+  }
+});
+
+test('the protected image PR bridge routes only the image workflow', () => {
+  const bridge = workflow.split('\n  pr_image_builds:\n')[1].split('\n  changes:\n')[0];
+  const admission = bridge.match(/if: >-\n([\s\S]+?)\n    uses:/)[1];
+  const eligible = new Function('github', 'vars', 'startsWith', `return (${admission});`);
+  const event = {
+    repository: 'Mesh-LLM/skippy', event_name: 'pull_request',
+    workflow_ref: 'Mesh-LLM/skippy/.github/workflows/ci-images-pr.yml@refs/pull/136/merge',
+  };
+  const vars = { SKIPPY_DEPOT_RUNNERS_ENABLED: 'true' };
+  const startsWith = (value, prefix) => value.startsWith(prefix);
+  assert.equal(eligible(event, vars, startsWith), true);
+  assert.equal(eligible(event, {}, startsWith), false);
+  assert.equal(eligible({ ...event, workflow_ref: event.workflow_ref.replace('ci-images-pr', 'ci-pr') }, vars, startsWith), false);
+  assert.match(bridge, /uses: \.\/\.github\/workflows\/ci-image-builds\.yml/);
+});
+
+test('host CPU packages install Just on GitHub and Depot runners', () => {
+  for (const row of rows) {
+    const job = `package_${row.id.replaceAll('-', '_')}`;
+    const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
+    assert.equal(body.includes("setup-host: 'true'"), row.backend === 'cpu', job);
+  }
+  const action = readFileSync(join(__dirname, '../actions/ci-package/action.yml'), 'utf8');
+  assert.match(action, /uses: \.\/\.github\/actions\/setup\n      if: inputs.setup-host == 'true'/);
+});
+
+test('manual compiler image smoke can skip publication on either runner provider', () => {
+  const images = readFileSync(join(__dirname, '../workflows/ci-images.yml'), 'utf8');
+  const repository = 'Mesh-LLM/skippy';
+  const ref = 'refs/heads/main';
+  for (const kind of ['cpu', 'gpu']) {
+    const publish = images.split(`\n  ${kind}-publish:\n`)[1];
+    const publishPolicy = publish.match(/if: >-\n([\s\S]+?)\n    runs-on:/)[1];
+    const publishImage = new Function('github', 'inputs', `return (${publishPolicy});`);
+    assert.equal(publishImage({ repository, ref, event_name: 'workflow_dispatch' }, { build_only: true }), false);
+    assert.equal(publishImage({ repository, ref, event_name: 'workflow_dispatch' }, { build_only: false }), true);
+    assert.equal(publishImage({ repository, ref, event_name: 'push' }, {}), true);
+    assert.equal(publishImage({ repository, ref, event_name: 'pull_request' }, {}), false);
+  }
 });
 
 test('native CI trusts only an immutable same-repository PR from a writer', async () => {

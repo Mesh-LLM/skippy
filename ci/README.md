@@ -6,8 +6,8 @@ require the full workflow result independently
 of the check name. The single required status is `PR checks`, the
 aggregate of all applicable PR workflows, checks and statuses.
 
-`pr-checks.yml` evaluates that aggregate on a standard GitHub-hosted
-`ubuntu-24.04` runner, using protected-main code and no Rust setup, candidate
+`pr-checks.yml` evaluates that aggregate on the selected Ubuntu runner, using
+protected-main code and no Rust setup, candidate
 execution, model inputs or lab credentials. It re-evaluates on PR events and
 producer workflow starts/completions, including reruns. Failed, cancelled,
 timed-out and startup-failed runs fail the gate; queued/running or missing
@@ -73,8 +73,9 @@ just inference-render-report summary "$examples/examples.json" --run pr-pass
 
 The scheduled inference workflow runs the twelve nightly AgentX configurations
 and the seven PR-profile smoke configurations. The smoke runs use the same
-harness as labeled PRs and retain the actual split admission status. AgentX
-nightly split qualification still requires certified admission.
+harness as labeled PRs. PR smoke, nightly, and release qualification allow
+experimental split admission, retain the actual admission status, and require
+the full checks for their profile.
 
 The protected scheduled publisher reads the current public dataset revision,
 compares verified measurements directly with its saved baselines, and uploads
@@ -131,16 +132,74 @@ Windows users need the Microsoft Visual C++ x64 Redistributable and, for CUDA,
 a compatible NVIDIA driver. Linux ROCm users need a matching ROCm runtime with
 its libraries visible to the system loader.
 
-Linux x64 CUDA 12 and Linux ARM64 CUDA 12 and 13 run on GitHub-hosted Ubuntu
-in the corresponding compiler images. Tagged releases run device smoke on those
+Linux x64 CUDA 12 and Linux ARM64 CUDA 12 and 13 run on the selected Ubuntu
+runners in the corresponding compiler images. Tagged releases run device smoke on those
 exact archives. Linux x64 CUDA 13 and macOS Metal run device smoke on ephemeral
 JY runners. JY hardware jobs declare literal runner groups and labels. The full
 CI gate matches all package jobs to the plan and checks required device results.
 
+### Depot runners
+
+The repository Actions variable `SKIPPY_DEPOT_RUNNERS_ENABLED=true` selects
+Depot for Linux and macOS jobs that otherwise use GitHub-hosted runners.
+This includes PR validation and its aggregate, code and package CI, compiler images and
+publishing, documentation and deployment, release validation and publication,
+the inference controllers, and llama upgrade preparation and publication.
+Windows package and toolchain probe jobs retain GitHub-hosted `windows-2022`
+for the pinned HIP SDK and MSVC toolchain. Most
+Linux jobs use four-core Ubuntu 24.04 runners of the existing architecture.
+Graph Contracts and llama upgrade preparation use eight-core x64 runners. The
+macOS CPU package uses Depot's macOS 15 ARM64 runner. Device jobs use their
+specified JY groups. Clearing the variable or setting it to `false` restores
+GitHub-hosted placement and direct PR workflow routing for subsequent runs.
+[Depot runner labels](https://depot.dev/docs/github-actions/runner-types)
+
+The Depot runner group admits Skippy and uses exact protected workflow refs.
+Allow these entries alongside the existing approved workflows:
+
+```text
+Mesh-LLM/skippy/.github/workflows/ci.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/ci-images.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/ci-image-builds.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/docs.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/inference.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/pr-checks.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main
+```
+
+With Depot enabled, `ci-pr.yml`, `ci-images-pr.yml`, and `docs-pr.yml` retain
+GitHub's ordinary PR triggers and call their runner-owning workflows from
+protected `main` without forwarding secrets. The image dispatcher enters
+through `ci.yml`, which calls the read-only image builders at its protected
+revision. The same builders supply exact artifacts for the image publishers.
+The CI dispatcher requests `cache-mode: read` for the Actions cache. The image
+and docs dispatchers request `cache-mode: none`. All retain GitHub's fork-run
+approval policy.
+Same-repository PRs to main continue to use the protected `ci.yml` path for
+code and native admission. The PR controller expects the producer for the
+active route. Refresh affected open PRs with a new PR event after cutover so
+their selected workflows run against the current head.
+
+On Depot, sccache uses WebDAV with the job connection supplied by the Depot
+organization setting **Allow Actions jobs to automatically connect to Depot
+Cache**. sccache writes only when building the exact protected `main` commit
+on push, schedule, or manual dispatch with a write-capable job cache mode.
+PR and other branch builds use `SCCACHE_WEBDAV_RW_MODE=READ_ONLY`. Ordinary
+Depot jobs skip shared Cargo, model, native source, and npm caches. The
+GitHub-hosted jobs use sccache's Actions backend.
+[Depot sccache integration](https://depot.dev/docs/cache/integrations/sccache)
+
+After enabling the switch, verify full CI and `CI images` with
+`build_only=true`, then check one ordinary PR and one same-repository PR
+through the aggregate.
+
+### PR admission and quality
+
 Same-repository PRs to `main` use the workflow definition on protected `main`.
 The workflow verifies repository identity, the PR author's write access and the
 exact candidate SHA before running candidate code. The ordinary PR workflow
-runs approved forks on GitHub-hosted runners. Changes requiring native hardware
+runs approved forks on the selected ephemeral runner. Changes requiring native hardware
 stay blocked until an isolated native runner path is available.
 
 Restrict each Skippy lab runner group to the protected workflow references
@@ -153,7 +212,7 @@ Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main
 Mesh-LLM/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main
 ```
 
-The CPU-only `quality` job runs on GitHub-hosted `ubuntu-24.04` inside
+The CPU-only `quality` job runs on Ubuntu 24.04 inside
 `ghcr.io/mesh-llm/skippy-ci-cpu:latest` for lint, tests and FFI binding
 freshness. The image supplies the pinned Rust toolchain, Just, sccache,
 build-essential, mold and LLVM/Clang 22 development inputs. The job verifies
@@ -168,11 +227,12 @@ to avoid restoring archives made with hosted-VM home/workspace paths. Native
 source caches remain shared. Protected candidate admission precedes build-cache
 restoration and compiler-cache credential export.
 
-Full CI runs `just llama-check` on the ephemeral Linux JY `native-contracts`
-runner after the canary, in parallel with packaging. It checks Graph Contracts,
-patch regeneration, public headers and generated API docs. The gate requires
-both CTest batches to pass. The `native-contracts-evidence` artifact retains
-logs and patch reports.
+Full CI runs `just llama-check` in the same x64 CPU toolchain image after the
+canary, in parallel with packaging. It uses Depot Ubuntu 24.04 with four build
+workers when the repository switch is enabled, and GitHub-hosted Ubuntu 24.04
+with two build workers otherwise. It checks Graph Contracts, patch regeneration,
+public headers and generated API docs. The gate requires both CTest batches to
+pass. The `native-contracts-evidence` artifact retains logs and patch reports.
 
 `docs.yml` triggers directly for `docs-site/**` changes on PRs and pushes to
 `main`. It installs the lockfile, builds Nextra, generates the Pagefind index
@@ -348,12 +408,6 @@ only orchestrates these jobs, so the 6 GiB runner-container limit does not bound
 model execution. Split jobs reserve both Sparks atomically. This policy does not
 prove live JY configuration.
 
-Llama native contracts and upstream candidate generation use preprovisioned
-JY builders with LLVM/Clang 22 development and CMake packages, Ninja and lld.
-The contracts job accepts either 64-bit Linux architecture; candidate
-generation uses its Linux x86_64 lane. The same generator tools must be
-available on full family builders.
-
 Qwen3 dense smoke preparation is explicit: `just ci-model-fetch`
 resolves the immutable public model URL and verifies the family manifest's size
 and SHA-256. A runner-provided `SKIPPY_CI_MODEL` is verified without downloading.
@@ -436,10 +490,11 @@ theirs for retry and diagnosis.
 ## Llama upgrades
 
 `llama-upgrade.yml` runs from protected main. The controller resolves a release
-or explicit immutable upstream SHA and exports a digest-bound Git bundle. Both
-CI passes and both family passes restore the same candidate. The CPU, Metal and
-CUDA family jobs consume immutable offline model caches and retain per-pass
-evidence. They receive no GitHub write credential.
+or explicit immutable upstream SHA and exports a digest-bound Git bundle. It
+uses the x64 CPU toolchain image and a checksum-verified GitHub CLI on the
+selected Ubuntu runner. Both CI passes and both family passes restore the same
+candidate. The CPU, Metal and CUDA family jobs consume immutable offline model
+caches and retain per-pass evidence. They receive no GitHub write credential.
 
 Candidate preparation can be rehearsed before merge from a clean local PR
 checkout, with the native build prerequisites above and

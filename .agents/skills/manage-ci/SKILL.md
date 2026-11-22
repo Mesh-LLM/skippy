@@ -9,7 +9,7 @@ Read this file before inspecting or changing CI. This is the standalone Skippy
 contract; no downstream product's workflow topology applies here.
 
 - `.github/workflows/pr-checks.yml` owns the single intended required `PR checks`
-  aggregate on a standard GitHub-hosted Ubuntu runner. Protected-main code reads
+  aggregate on the repository's selected Ubuntu runner. Protected-main code reads
   workflow/check/status results without executing candidate code or using lab
   credentials. Failures/cancellations fail it; pending or missing applicable work
   stays pending; success/neutral/intentional skips pass. Producer starts and
@@ -72,11 +72,11 @@ contract; no downstream product's workflow topology applies here.
 - Ordinary tests are offline. Model admission is explicit and digest-bound.
   GPU qualification requires a real matching device; missing fixtures, devices,
   capacity, or evidence fail or queue, never become passing skips.
-- Split admission unit tests use explicit recipe-bound fixtures; a native source
-  change does not renew the bundled certification roster. PR split smoke opts
-  into experimental planning and retains the actual admission status. It still
-  requires stage/frontier validation and all GPU/response checks. Nightly and
-  release keep certified admission; PR smoke never renews release certificates.
+- Split admission unit tests use explicit recipe-bound fixtures. PR smoke,
+  nightly, and release split runs allow experimental planning and retain the
+  actual admission status. All require stage/frontier validation and the full
+  checks for their profile. Default CLI planning requires certified admission.
+  Roster renewal requires its own certification process.
 - Trusted same-repository PRs from repository collaborators may run as native
   JY jobs on persistent dedicated lab hardware, including DGX Sparks. Admission
   must verify the source repository and contributor's collaborator status using
