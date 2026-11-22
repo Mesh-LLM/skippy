@@ -50,11 +50,13 @@ class ProductContract(unittest.TestCase):
             "runtime": {"platform": {"os": "linux", "arch": "x86_64"},
                         "backend": {"kind": "cpu"}},
         })
+        if kwargs.get("overrides", {}).get("SKIPPY_NATIVE_RUNTIME_ARCHIVE", "1") != "0":
+            ci_artifacts.archive(native, native.with_suffix(".tar.gz"))
 
     def test_runtime_passes_directly_into_a_verifiable_final_archive(self):
         self.product.build_runtime(HOST, RUNTIME)
         ci_artifacts.verify(self.runtime_input, "runtime", HOST["target"], RUNTIME["id"])
-        self.assertFalse(list(Path("dist").rglob("runtime.tar.gz")))
+        self.assertFalse(list(Path("dist").rglob("*.tar.gz")))
         self.product.package(HOST, RUNTIME, self.host_input, self.runtime_input)
         # Packaging must not execute an unarchived CLI. Startup belongs to smoke.
         self.assertFalse(any(call.args[0][-1:] == ["--version"]

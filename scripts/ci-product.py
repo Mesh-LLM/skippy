@@ -79,6 +79,7 @@ def build_runtime(host, runtime):
     environment = {
         "LLAMA_STAGE_BACKEND": backend, "LLAMA_STAGE_BUILD_TESTS": "OFF",
         "LLAMA_STAGE_FULL_REPLAY": "OFF", "LLAMA_STAGE_UPSTREAM_TESTS": "OFF",
+        "SKIPPY_NATIVE_RUNTIME_ARCHIVE": "0",
     }
     arches = None
     if backend == "cuda":

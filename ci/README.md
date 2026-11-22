@@ -436,7 +436,10 @@ their roster. Release inventory uses Python
    `just ci-host`. Inference PR jobs build their two CLIs locally because they
    do not run the CPU package jobs.
 2. Each selected job calls `just ci-runtime` for its variant, retaining a
-   source-bound runtime directory with a verified file receipt. `just ci-package`
+   source-bound runtime directory with a verified file receipt. It sets
+   `SKIPPY_NATIVE_RUNTIME_ARCHIVE=0` to skip the native producer's standalone
+   archive too; ordinary `just release-runtime-build` keeps archiving by default.
+   `just ci-package`
    combines it with the shared CLI archive and compresses the final product once.
    Startup and inference checks run against the extracted final archive, and the
    job uploads that archive with its evidence.

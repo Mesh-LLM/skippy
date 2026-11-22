@@ -25,6 +25,7 @@ source "$SCRIPT_DIR/lib/cuda-toolkit.sh"
 BUILD=0
 KEEP_RUNPATH=0
 MODEL_PACKAGE_TOOL=1
+CREATE_ARCHIVE="${SKIPPY_NATIVE_RUNTIME_ARCHIVE:-1}"
 ID_SUFFIX=""
 OUT_DIR="$REPO_ROOT/dist/native-runtimes"
 BACKEND="${LLAMA_STAGE_BACKEND:-${SKIPPY_LLAMA_BACKEND:-cpu}}"
@@ -58,6 +59,7 @@ Environment:
   LLAMA_STAGE_BUILD_DIR
   SKIPPY_NATIVE_RUNTIME_TARGET
   SKIPPY_NATIVE_RUNTIME_MODEL_PACKAGE_TOOL (non-Windows test/packaging override)
+  SKIPPY_NATIVE_RUNTIME_ARCHIVE (1 by default; 0 retains only the runtime directory)
   SKIPPY_CUDA_VERSION / SKIPPY_CUDA_TOOLKIT_MAJOR (validated against the selected compiler)
   SKIPPY_CUDA_LICENSE_FILE (optional CUDA EULA/copyright file override)
   SKIPPY_ROCM_LICENSE_FILE (optional combined AMD/HIP component license override)
@@ -108,6 +110,11 @@ while [[ "$#" -gt 0 ]]; do
             ;;
     esac
 done
+
+case "$CREATE_ARCHIVE" in
+    0|1) ;;
+    *) echo "SKIPPY_NATIVE_RUNTIME_ARCHIVE must be 0 or 1" >&2; exit 1 ;;
+esac
 
 case "$BACKEND" in
     cpu|metal|cuda|cuda-blackwell|rocm|hip|vulkan) ;;
@@ -957,12 +964,13 @@ EOF
 fi
 
 mkdir -p "$OUT_DIR"
-archive="$OUT_DIR/$artifact_id.tar.gz"
-COPYFILE_DISABLE=1 tar -C "$OUT_DIR" -czf "$archive" "$artifact_id"
-archive_sha="$(sha256_file "$archive")"
-printf '%s  %s\n' "$archive_sha" "$(basename "$archive")" > "$archive.sha256"
-
 echo "packaged native runtime:"
 echo "  artifact: $artifact_id"
 echo "  primary:  $stage_dir/$primary_library"
-echo "  archive:  $archive"
+if [[ "$CREATE_ARCHIVE" == 1 ]]; then
+    archive="$OUT_DIR/$artifact_id.tar.gz"
+    COPYFILE_DISABLE=1 tar -C "$OUT_DIR" -czf "$archive" "$artifact_id"
+    archive_sha="$(sha256_file "$archive")"
+    printf '%s  %s\n' "$archive_sha" "$(basename "$archive")" > "$archive.sha256"
+    echo "  archive:  $archive"
+fi
