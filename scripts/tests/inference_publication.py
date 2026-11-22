@@ -152,13 +152,14 @@ class PublicationTests(unittest.TestCase):
             self.assertEqual(read_run(dataset.directory / "runs/24/1.parquet"), second)
             # Replaying an older run must embed its own immutable images, not
             # the latest card's charts or the newer run's measurements.
+            card_before = (dataset.directory / "README.md").read_bytes()
             self.assertEqual(release(SOURCE, "23", 1, first_stamp), first)
+            self.assertEqual((dataset.directory / "README.md").read_bytes(), card_before)
             replay = read_json(evidence / "publication-report.json")
             self.assertTrue(replay["chart_base_url"].endswith("/reports/23-1"))
             first_chart = dataset.directory / "reports/23-1/charts/qualification-1.png"
             second_chart = dataset.directory / "reports/24-1/charts/qualification-1.png"
             self.assertNotEqual(first_chart.read_bytes(), second_chart.read_bytes())
-            card_before = (dataset.directory / "README.md").read_bytes()
             first_chart.unlink()
             release(SOURCE, "23", 1, first_stamp)
             self.assertTrue((dataset.directory / "reports/23-1/charts/qualification-1.png").is_file())
