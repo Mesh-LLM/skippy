@@ -141,11 +141,21 @@ def wait(pilot, identifier, evidence, deadline):
 
 def download(pilot, run_id, name, path):
     """An artifact that is not JSON, streamed to `path`."""
-    request = Request(f"{ORIGIN}/v1/artifacts/{run_id}/raw/{quote(name, safe='')}",
-                      headers={"Authorization": "Bearer " + pilot.auth(),
-                               "User-Agent": "skippy-inference-ci/1.0"})
-    with pilot.opener.open(request, timeout=900) as response, path.open("wb") as stream:
-        shutil.copyfileobj(response, stream)
+    # Artifacts are namespaced by kind: raw/, log/ and trace/ files are served
+    # under their kind segment, and the raw route alone 404s the others.
+    last = None
+    for kind in ("raw", "log", "trace"):
+        request = Request(f"{ORIGIN}/v1/artifacts/{run_id}/{kind}/{quote(name, safe='')}",
+                          headers={"Authorization": "Bearer " + pilot.auth(),
+                                   "User-Agent": "skippy-inference-ci/1.0"})
+        try:
+            with pilot.opener.open(request, timeout=900) as response:
+                with path.open("wb") as stream:
+                    shutil.copyfileobj(response, stream)
+                return
+        except OSError as error:
+            last = error
+    raise last
 
 
 def collect(pilot, job, plan, label, evidence):
