@@ -1,4 +1,4 @@
-"""Check executable synthetic cases against the registry and upstream builders."""
+"""Validate existing graph contracts and report upstream coverage gaps."""
 
 import json
 import re
@@ -88,9 +88,6 @@ def coverage(root, source, report, changed_sources=()):
     architectures = factory_architectures((source / "src/llama-arch.cpp").read_text(),
                                           (source / "src/llama-model.cpp").read_text())
     uncovered = architectures - {case[0] for case in cases.values()}
-    new_uncovered = uncovered - set(policy["known_uncovered_architectures"])
-    if new_uncovered:
-        errors.append("upstream architectures need executable synthetic graph cases: " + ", ".join(sorted(new_uncovered)))
     mapping = json.loads((root / "ci/llama-canary/generated-family-map.json").read_text())["families"]
     covered_sources = {path for family, paths in mapping.items() if family in cases for path in paths}
     # New builders conventionally use the architecture name. Shared/aliased
@@ -114,17 +111,13 @@ def coverage(root, source, report, changed_sources=()):
     if not decoder_sources:
         errors.append("rewriter report contains no transformed decoder builders")
     missing = decoder_sources - covered_sources
-    new_builders = missing - set(policy["known_uncovered_builders"])
-    changed_missing = missing & set(changed_sources)
-    if new_builders or changed_missing:
-        errors.append("new or changed decoder builders need synthetic graph cases: " +
-                      ", ".join(sorted(new_builders | changed_missing)))
     return {
         "schema_version": 1, "upstream_sha": (root / PIN).read_text().strip(),
         "registry_cases": len(models), "executable_cases": len(cases),
         "upstream_architectures": sorted(architectures),
         "architectures_without_graph_case": sorted(uncovered),
         "decoder_builders_without_graph_case": sorted(missing),
+        "changed_decoder_builders_without_graph_case": sorted(missing & set(changed_sources)),
         "changed_model_sources": sorted(changed_sources), "errors": errors,
     }
 
@@ -132,6 +125,12 @@ def coverage(root, source, report, changed_sources=()):
 def check(root, source, report, output, changed_sources=()):
     result = coverage(root, source, report, changed_sources)
     write_json(output, result)
+    if result["architectures_without_graph_case"] or result["decoder_builders_without_graph_case"]:
+        print("Graph coverage gaps (informational): "
+              f'{len(result["architectures_without_graph_case"])} architectures, '
+              f'{len(result["decoder_builders_without_graph_case"])} decoder builders, '
+              f'{len(result["changed_decoder_builders_without_graph_case"])} changed uncovered builders. '
+              f"Report: {output}")
     if result["errors"]:
         raise ValueError("graph coverage failed:\n  " + "\n  ".join(result["errors"]))
     return result

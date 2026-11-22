@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reject synthetic graph roster drift and new untested architectures/builders."""
+"""Reject existing graph-contract regressions and report uncovered upstream models."""
 
 import argparse
 import json

@@ -498,16 +498,21 @@ against the executable native CTest definitions. Missing, duplicate and stale
 cases fail. Supplemental GLM cases must include both fixture generation and an
 executable graph check.
 
-`graph-coverage.json` records the pinned baseline's existing structural coverage
-gaps, special test modes and supplemental source mappings. This is a test
-coverage policy, not a runtime model allowlist. The checker reads the current
-upstream model factory and rewriter report, rejects newly uncovered architectures
-and decoder builders, and writes a report listing all remaining gaps. Upgrade
-preparation also compares model sources with the previous upstream pin; changed
-decoder builders without a synthetic case block preparation. New cases require
-no real model download. Changes that introduce additional metadata-dependent
-graph structures must extend the synthetic fixture variants during review;
-a passing default shape does not establish coverage of every variant.
+`graph-coverage.json` configures special modes and supplemental source mappings
+for existing regression tests. It contains no architecture coverage baseline or
+allowlist. The checker reads the current upstream model factory and rewriter
+report and records uncovered architectures and decoder builders. Upgrade
+preparation also records changed uncovered builders. All of these gaps are
+informational, including newly introduced architectures: missing a synthetic case
+alone does not fail an upgrade or invoke repair. CI logs summarize gap counts,
+and the retained report lists the names.
+
+Existing graph-contract regressions, malformed integration reports, patch/rewrite
+failures and compilation failures still block the upgrade and feed bounded
+repair. Add synthetic cases for distinct split mechanisms and concrete
+regressions as needed, rather than requiring a fixture for every upstream
+addition. Cases require no real model download; a passing default shape does
+not establish coverage of every metadata-dependent variant.
 
 The graph check runs during preparation and `just llama-check`. Its report is
 retained in CI artifacts, and preparation failures retain their graph report

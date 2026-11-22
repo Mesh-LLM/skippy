@@ -55,9 +55,10 @@ contract; no downstream product's workflow topology applies here.
   an immutable candidate and runs existing full CI once. Graph contracts and
   small synthetic execution tests remain the architectural regression gate.
   There is no additional live-model CPU, CUDA or Spark upgrade battery.
-  Registered synthetic cases must match their metadata and test modes; new
-  architectures/builders and changed uncovered decoder builders need executable
-  synthetic cases. The graph coverage report preserves existing gaps explicitly.
+  Registered synthetic cases must match their metadata and test modes. Uncovered
+  architectures/builders, including new and changed ones, are informational and
+  stay visible in the graph coverage report. Coverage gaps alone never fail an
+  upgrade; existing contract regressions and actual integration failures do.
   A bounded agent repair produces a fresh candidate and fresh full CI. Only the
   publisher receives scoped publication credentials. It can publish only the
   exact candidate selected by successful full CI. The four established inference

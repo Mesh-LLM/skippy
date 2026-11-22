@@ -14,17 +14,20 @@ stale rows fail. Offline automation tests reconstruct the same CTest table from
 the ordered patch queues and run this consistency check without native sources.
 
 The checker also inventories the current upstream model factory and transformed
-decoder builders. `graph-coverage.json` records existing uncovered architectures
-and builders explicitly. A new uncovered architecture or builder fails. During
-an upgrade, a changed uncovered decoder builder also requires an executable
-synthetic case. The report lists all gaps; passing the registered roster does
-not establish complete upstream coverage. Existing extra synthetic cases cover
-GLM-5.3 and GLM5-Next without adding real-weight fixtures.
+decoder builders. Its report lists architectures and builders without a graph
+case, including changed uncovered builders during an upgrade. These gaps are
+informational: adding or changing an uncovered architecture does not fail the
+upgrade. Existing graph-contract regressions and actual integration failures
+remain blocking. CI logs summarize the gaps and retain the detailed report.
 
-Metadata-dependent graph changes require corresponding synthetic variants.
-Existing cases exercise selected shapes, rather than every configuration of an
-architecture. The baseline records coverage gaps and is not a runtime model
-allowlist or a support designation.
+`graph-coverage.json` holds special test modes and supplemental source mappings
+for existing cases. There is no baseline of permitted uncovered architectures
+or builders to maintain. Existing extra synthetic cases cover GLM-5.3 and
+GLM5-Next without adding real-weight fixtures. Add cases for distinct split
+mechanisms or concrete regressions when they are useful; a case is not mandatory
+for every upstream architecture addition. Existing cases exercise selected
+shapes, rather than every configuration of an architecture, and grant no runtime
+support designation.
 
 Each metadata profile is built again into independent graph storage, and every
 cut must have identical slice, node, and parameter identities. The native model

@@ -333,13 +333,14 @@ class Upgrade(unittest.TestCase):
                 (checkout / "target/llama-regeneration").mkdir(parents=True, exist_ok=True)
             def coverage(checkout, _base):
                 output = checkout / "target/llama-regeneration/graph-coverage.json"
-                output.write_text('{"errors":["new graph variant"]}')
-                if checked.call_count == 1:
-                    raise ValueError("new graph variant")
+                errors = ["qwen3-dense: existing contract mismatch"] if checked.call_count == 1 else []
+                output.write_text(json.dumps({"errors": errors}))
+                if errors:
+                    raise ValueError(errors[0])
             def agent(checkout, diagnostics):
                 self.assertTrue((diagnostics / "graph-coverage.json").is_file())
                 (checkout / "llama_cpp/patches").mkdir(exist_ok=True)
-                (checkout / "llama_cpp/patches/repair.patch").write_text("synthetic variant fix\n")
+                (checkout / "llama_cpp/patches/repair.patch").write_text("existing contract fix\n")
             real = source.command
             def native(args, **kwargs):
                 return None if args[:1] == ["just"] else real(args, **kwargs)

@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lib.ci_artifacts import read_json, write_json
+from lib.ci_artifacts import read_json
 from lib.graph_contracts import MANIFEST, POLICY, TABLE, check, contract_cases, coverage, factory_architectures, registry_errors
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -65,7 +65,7 @@ class GraphCoverage(unittest.TestCase):
         source = root / "source"
         (source / TABLE).parent.mkdir(parents=True)
         (source / TABLE).write_text(self.table)
-        architectures = sorted(set(self.policy["known_uncovered_architectures"]) | {case[0] for case in self.cases.values()})
+        architectures = sorted({"uncovered-existing"} | {case[0] for case in self.cases.values()})
         self.factory(source, architectures)
         series = read_json(ROOT / "llama_cpp/patches/generated/series.json")
         report = {"builders": [{"file": path, "verdict": "transformable", "proof": {"execution_scope": "partitioned_decoder"}}
@@ -87,38 +87,63 @@ class GraphCoverage(unittest.TestCase):
             self.assertTrue(result["architectures_without_graph_case"])
             self.assertTrue(result["decoder_builders_without_graph_case"])
 
-    def test_new_architecture_requires_a_synthetic_case_without_real_weights(self):
+    def test_three_new_architectures_are_reported_without_blocking(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source, report, architectures = self.fixture(root)
-            self.factory(source, architectures + ["new-arch"])
-            report["builders"].append({"file": "src/models/new-arch.cpp", "verdict": "transformable",
-                                       "proof": {"execution_scope": "partitioned_decoder"}})
-            self.assertTrue(coverage(root, source, report)["errors"])
+            additions = ["new-arch-a", "new-arch-b", "new-arch-c"]
+            self.factory(source, architectures + additions)
+            for name in additions:
+                report["builders"].append({"file": f"src/models/{name}.cpp", "verdict": "transformable",
+                                           "proof": {"execution_scope": "partitioned_decoder"}})
+            result = check(root, source, report, root / "result.json")
+            self.assertEqual(result["errors"], [])
+            self.assertTrue(set(additions) <= set(result["architectures_without_graph_case"]))
+            self.assertTrue({f"src/models/{name}.cpp" for name in additions} <=
+                            set(result["decoder_builders_without_graph_case"]))
             with (source / TABLE).open("a") as stream:
-                stream.write("\nskippy_contract_case(new-probe new-arch 2 8 0 causal)\n")
-            self.assertEqual(coverage(root, source, report)["errors"], [])
+                stream.write("\nskippy_contract_case(new-probe new-arch-a 2 8 0 causal)\n")
+            result = coverage(root, source, report)
+            self.assertEqual(result["errors"], [])
+            self.assertNotIn("new-arch-a", result["architectures_without_graph_case"])
+            self.assertIn("new-arch-b", result["architectures_without_graph_case"])
 
-    def test_changed_uncovered_builder_requires_a_case_and_retains_diagnostics(self):
+    def test_changed_uncovered_builder_is_reported_without_blocking(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source, report, _ = self.fixture(root)
             result = coverage(root, source, report)
             changed = result["decoder_builders_without_graph_case"][0]
             output = root / "result.json"
-            with self.assertRaisesRegex(ValueError, "changed decoder builders"):
-                check(root, source, report, output, [changed])
-            self.assertIn(changed, read_json(output)["changed_model_sources"])
-            self.assertTrue(read_json(output)["errors"])
+            check(root, source, report, output, [changed])
+            result = read_json(output)
+            self.assertIn(changed, result["changed_model_sources"])
+            self.assertEqual(result["changed_decoder_builders_without_graph_case"], [changed])
+            self.assertEqual(result["errors"], [])
 
-    def test_new_builder_cannot_hide_behind_unchanged_architecture_inventory(self):
+    def test_new_builder_gap_is_reported_with_unchanged_architecture_inventory(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source, report, _ = self.fixture(root)
             report["builders"].append({"file": "src/models/untested-variant.cpp", "verdict": "transformable",
                                        "proof": {"execution_scope": "partitioned_decoder"}})
-            result = coverage(root, source, report)
-            self.assertTrue(any("untested-variant.cpp" in error for error in result["errors"]))
+            result = check(root, source, report, root / "result.json")
+            self.assertEqual(result["errors"], [])
+            self.assertIn("src/models/untested-variant.cpp", result["decoder_builders_without_graph_case"])
+
+    def test_uncovered_additions_do_not_hide_existing_contract_regressions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, report, architectures = self.fixture(root)
+            self.factory(source, architectures + ["new-arch"])
+            (source / TABLE).write_text(self.table.replace(
+                "skippy_contract_case(qwen3-dense qwen3 28 1024 0 causal)", ""))
+            output = root / "result.json"
+            with self.assertRaisesRegex(ValueError, "qwen3-dense"):
+                check(root, source, report, output)
+            result = read_json(output)
+            self.assertTrue(result["errors"])
+            self.assertIn("new-arch", result["architectures_without_graph_case"])
 
     def test_empty_rewriter_report_and_unknown_factory_enum_fail(self):
         with tempfile.TemporaryDirectory() as tmp:
