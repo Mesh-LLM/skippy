@@ -2,7 +2,7 @@
 
 **0 regressions · 1 improvements · 1 within tolerance · 0 first measurements**
 
-19 Nov 2026 14:00 UTC · Engine `bbbbbbbbbbbb` · nightly · **Tolerance: ±1%** · NVIDIA GB10 DGX Spark
+19 Nov 2026 14:00 UTC · Engine `bbbbbbbbbbbb` · nightly · Qualification: Passed · **Tolerance: ±1%** · NVIDIA GB10 DGX Spark
 
 1 measured configurations. Counts refer to performance metrics. First measurements establish new series and have no trend verdict.
 
@@ -35,8 +35,7 @@ Current values and signed changes against the saved reference, or the previous c
 
 ## Measurement notes
 
-Two trials per configuration. Throughput and latency values are means of trial summaries. Latency is the mean of trial p95 values, not a pooled p95. 0 requests were recorded in this run.
-
+Two trials per configuration. Throughput and latency values are means of trial summaries. Latency is the mean of trial p95 values, not a pooled p95.
 The ±1% rule expresses tolerance, not statistical significance. Comparisons preserve workload identity; a changed benchmark starts a new series.
 
 [Full results and history](https://huggingface.co/datasets/meshllm/skippy-inference-qualification/tree/main/runs)

@@ -101,8 +101,9 @@ def health_view(report, run_id=None):
               for config in target["configurations"] if config["outcome"] in {"failed", "cancelled"}]
     errors = [row["measured"] for key, row in current.items()
               if key[2] == "request_error_pct" and row["measured"] is not None and row["measured"] > 0]
-    requests = sum(row["measured"] for key, row in current.items()
-                   if key[2] == "requests" and row["measured"] is not None)
+    request_counts = [row["measured"] for key, row in current.items()
+                      if key[2] == "requests" and row["measured"] is not None]
+    requests = sum(request_counts) if request_counts else None
     error_samples = sum(key[2] == "request_error_pct" and row["measured"] is not None
                         for key, row in current.items())
     return {"run": target, "configurations": configurations, "metrics": metrics,

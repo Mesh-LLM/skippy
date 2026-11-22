@@ -2,7 +2,7 @@
 
 **0 regressions · 0 improvements · 0 within tolerance · 0 first measurements**
 
-24 Nov 2026 18:00 UTC · Engine `dddddddddddd` · pr · **Tolerance: ±1%**
+24 Nov 2026 18:00 UTC · Engine `dddddddddddd` · pr · Qualification: Skipped · **Tolerance: ±1%**
 
 0 measured configurations. Counts refer to performance metrics. First measurements establish new series and have no trend verdict.
 

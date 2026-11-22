@@ -55,6 +55,32 @@ class InferenceMarkdownTests(unittest.TestCase):
             self.assertNotIn("Recent measurements", text)
         self.assertEqual(card.split("**1 regressions", 1)[1], summary.split("**1 regressions", 1)[1])
 
+    def test_absent_request_counts_are_not_zero_and_run_outcome_stays_visible(self):
+        report = history()
+        report["runs"][-1]["outcome"] = "failed"
+        text = dataset_card(report)
+        self.assertIn("Qualification: Failed", text)
+        self.assertNotIn("requests were recorded", text)
+        config = report["runs"][-1]["configurations"][0]
+        config["metrics"].append({"metric": "requests", "workload": config["workload"], "measured": 0})
+        self.assertIn("0 requests were recorded", dataset_card(report))
+        config["metrics"][-1]["measured"] = 42
+        self.assertIn("42 requests were recorded", dataset_card(report))
+
+    def test_smoke_identity_includes_generation_payload_and_rate_arithmetic(self):
+        from unittest.mock import patch
+        from lib.inference_nightly_metrics import contract
+        row = {"mode": "standalone"}
+        before = contract("pr", row, "qwen35-4b", None)
+        original = Path.read_text
+        for target, old, new in (("inference_checks.py", '"seed": 42', '"seed": 43'),
+                                 ("inference_nightly_metrics.py", "tokens * 1000 / millis", "tokens * 2000 / millis")):
+            def changed(path, *args, **kwargs):
+                text = original(path, *args, **kwargs)
+                return text.replace(old, new) if path.name == target else text
+            with patch.object(Path, "read_text", changed):
+                self.assertNotEqual(before, contract("pr", row, "qwen35-4b", None))
+
     def test_figures_cover_all_models_and_all_three_metrics_including_split(self):
         figures = dataset_charts(history())
         self.assertEqual([figure.metric for figure in figures], ["output_tok_s", "ttft_p95_ms", "itl_p95_ms"])

@@ -2,7 +2,7 @@
 
 **0 regressions · 0 improvements · 2 within tolerance · 0 first measurements**
 
-24 Nov 2026 17:00 UTC · Engine `dddddddddddd` · pr · **Tolerance: ±1%** · NVIDIA GB10 DGX Spark
+24 Nov 2026 17:00 UTC · Engine `dddddddddddd` · pr · Qualification: Passed · **Tolerance: ±1%** · NVIDIA GB10 DGX Spark
 
 1 measured configurations. Counts refer to performance metrics. First measurements establish new series and have no trend verdict.
 
