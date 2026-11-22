@@ -14,6 +14,7 @@ from lib.ci_artifacts import digest, write_json
 from lib.ci_process import cancel_on_signal, command
 from lib.upgrade_regeneration import regenerate
 from lib.upgrade_repair import repair
+from lib.upgrade_preimages import seed_patch_preimages
 from lib.native_recipe import write_native_recipe
 from lib.graph_contracts import check_upgrade_coverage
 from lib.upgrade_resolution import latest, open_upgrade
@@ -80,11 +81,14 @@ def prepare(upstream, repair_bundle=None, diagnostics=None):
         (checkout / PIN).write_text(upstream + "\n", encoding="utf-8")
         try:
             try:
+                seed_patch_preimages(checkout, base_pin, root / "llama_cpp/patches")
                 regenerate(checkout)
                 check_upgrade_coverage(checkout, base_pin)
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
                 save_preparation_diagnostics(checkout, directory / "diagnostics")
                 if not os.environ.get("SKIPPY_UPGRADE_REPAIR_COMMAND"):
+                    print("Automatic repair did not run: configure SKIPPY_UPGRADE_REPAIR_COMMAND "
+                          "for an installed repair agent. Preparation diagnostics were retained.", file=sys.stderr)
                     raise
                 repair(checkout, directory / "diagnostics")
                 regenerate(checkout)
