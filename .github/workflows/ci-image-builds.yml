@@ -53,6 +53,7 @@ jobs:
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 45
     env:
+      SKIPPY_CI_IMAGE_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
       SOURCE_REVISION: ${{ github.sha }}
       SKIPPY_CI_CACHE_REF: ghcr.io/mesh-llm/skippy-ci-cpu:latest
     steps:
@@ -67,8 +68,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - run: just ci-image-build
-      - run: time just ci-image-smoke
+      - run: just --justfile ci/images.just --working-directory . ci-image-build
+      - run: time just --justfile ci/images.just --working-directory . ci-image-smoke
   gpu-build:
     name: Build and test ${{ matrix.backend }} image (${{ matrix.arch }})
     needs: matrix
@@ -81,6 +82,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.matrix.outputs.gpu) }}
     env:
+      SKIPPY_CI_IMAGE_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.backend }}-${{ matrix.arch }}
       SOURCE_REVISION: ${{ github.sha }}
       SKIPPY_CI_CACHE_REF: ghcr.io/mesh-llm/skippy-ci-${{ matrix.backend }}:${{ matrix.arch == 'arm64' && 'latest-arm64' || 'latest' }}
     steps:
@@ -105,6 +107,6 @@ jobs:
           ARCH: ${{ matrix.arch }}
           TOOLKIT_BASE: ${{ matrix.toolkit_base }}
           TOOLKIT_VERSION: ${{ matrix.toolkit_version }}
-        run: just ci-gpu-image-build "$BACKEND" "$TOOLKIT_BASE" "$TOOLKIT_VERSION" "$ARCH"
+        run: just --justfile ci/images.just --working-directory . ci-gpu-image-build "$BACKEND" "$TOOLKIT_BASE" "$TOOLKIT_VERSION" "$ARCH"
       - name: Smoke test image
-        run: time just ci-gpu-image-smoke '${{ matrix.backend }}' '${{ matrix.arch }}'
+        run: time just --justfile ci/images.just --working-directory . ci-gpu-image-smoke '${{ matrix.backend }}' '${{ matrix.arch }}'

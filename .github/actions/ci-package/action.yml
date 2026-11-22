@@ -16,6 +16,9 @@ inputs:
   smoke:
     description: Select inference or artifact smoke.
     default: inference
+  containerized:
+    description: Use the preinstalled toolchain in a Skippy compiler image.
+    default: 'false'
   compiler-image-digest:
     description: Digest used to start the compiler container, empty on native runners.
     default: ''
@@ -29,23 +32,30 @@ runs:
   using: composite
   steps:
     - uses: ./.github/actions/setup
-      if: inputs.setup-host == 'true' && inputs.compiler-image-digest == ''
+      if: inputs.setup-host == 'true'
       with:
         cache: 'false'
+    - name: Identify the compiler image
+      if: inputs.containerized == 'true'
+      shell: bash
+      run: |
+        image_id="$(cat /etc/skippy-ci-image-id)"
+        test -n "$image_id"
+        echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
     - uses: ./.github/actions/source
       with:
         artifact: ${{ inputs.candidate-artifact }}
         sha: ${{ inputs.candidate-sha }}
     - uses: ./.github/actions/cache
       with:
-        scope: package-${{ inputs.runtime-id }}-${{ inputs.compiler-image-digest || 'native' }}
+        scope: package-${{ inputs.runtime-id }}-${{ inputs.compiler-image-digest || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}
         download-scope: ${{ inputs.build-cli == 'true' && 'host' || 'tools' }}
         build-paths: |
           target/debug
           target/release
     - uses: ./.github/actions/sccache
       with:
-        scope: package-${{ inputs.runtime-id }}-${{ inputs.smoke == 'artifact' && 'release' || env.SKIPPY_CUDA_ARCHITECTURE_MODE }}
+        scope: package-${{ inputs.runtime-id }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}-${{ env.SKIPPY_CUDA_ARCHITECTURE_MODE }}
     - uses: ./.github/actions/native-source
     - name: Build and verify the platform CLI
       if: inputs.build-cli == 'true'

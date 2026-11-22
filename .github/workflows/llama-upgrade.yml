@@ -94,6 +94,12 @@ jobs:
           FORCE_CERTIFY: ${{ inputs.force_certify || false }}
           GH_TOKEN: ${{ github.token }}
         run: just automation-run upgrade resolve --upstream "$UPSTREAM_SHA" --force-certify "$FORCE_CERTIFY"
+      - name: Identify the CPU toolchain image
+        if: steps.resolve.outputs.certify == 'true'
+        run: |
+          image_id="$(cat /etc/skippy-ci-image-id)"
+          test -n "$image_id"
+          echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
       - uses: ./.github/actions/cache
         if: steps.resolve.outputs.certify == 'true'
         with:
@@ -103,7 +109,7 @@ jobs:
         id: compiler_cache
         if: steps.resolve.outputs.certify == 'true'
         with:
-          scope: upgrade-candidate-${{ runner.os }}-${{ runner.arch }}
+          scope: upgrade-candidate-${{ runner.os }}-${{ runner.arch }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
       - name: Prepare and freeze candidate
         id: prepare
         if: steps.resolve.outputs.certify == 'true'

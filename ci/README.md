@@ -26,8 +26,10 @@ hold a hosted runner open waiting for native hardware. Repository `GITHUB_TOKEN`
 status updates cannot recursively trigger the controller.
 
 `ci.yml` uses native paths to start on code or inference PRs and on code pushes
-to `main`. Once a PR run starts, a pinned `dorny/paths-filter` action reads
-`.github/path-filters.yml` to choose code and package jobs independently. It uses
+to `main`. Its protected `pull_request_target` path admits same-repository PRs
+from repository collaborators against any base branch; fork PRs stay on the
+isolated `pull_request` path. Once a PR run starts, a pinned `dorny/paths-filter`
+action reads `.github/path-filters.yml` to choose code and package jobs independently. It uses
 `some-with-excludes`, so a changed file must match an inclusion and no exclusion.
 Mixed PRs run every applicable check group.
 These are file-level rules. Inline tests in production files, shared Cargo
@@ -171,9 +173,7 @@ Cache**. sccache writes only when building the exact protected `main` commit
 on push, schedule, or manual dispatch with a write-capable job cache mode.
 PR and other branch builds use `SCCACHE_WEBDAV_RW_MODE=READ_ONLY`. Ordinary
 Depot jobs skip shared Cargo, model, native source, and npm caches. The
-GitHub-hosted jobs use sccache's Actions backend. Ordinary PR merge refs can
-save entries within their GitHub-managed PR cache scope; protected PR controllers
-remain read-only.
+GitHub-hosted jobs use sccache's Actions backend.
 [Depot sccache integration](https://depot.dev/docs/cache/integrations/sccache)
 
 After enabling the switch, verify full CI and `CI images` with
@@ -206,8 +206,9 @@ its tools and pulls the private image with its own `GITHUB_TOKEN` using
 `packages: read`.
 
 Cargo and CMake compilation use two workers on standard private-repository
-hosted runners; the larger Depot jobs use their configured four-worker limit. The plan pins compiler image tags to digests. Cargo snapshots use the selected
-digest, while compatible jobs share an sccache namespace across image publishes. Cargo downloads use separate container cache scopes
+hosted runners. The plan pins compiler image tags to digests. Cargo snapshots
+use the selected digest, and sccache uses `/etc/skippy-ci-image-id` to identify
+the compiler image. Cargo downloads use separate container cache scopes
 to avoid restoring archives made with hosted-VM home/workspace paths. Native
 source caches remain shared. Protected candidate admission precedes build-cache
 restoration and compiler-cache credential export.
@@ -406,7 +407,9 @@ artifact smoke is recorded separately from inference evidence.
 
 `just ci-plan` validates the target matrix with `jq`. The package and
 smoke commands use Python 3.9 or later. Release inventory uses Python
-3.11 or later for TOML parsing. Set `SKIPPY_PYTHON` to select the interpreter.
+3.11 or later for TOML parsing. With uv installed, Justfile recipes run Python
+on the interpreter `.python-version` names. Set `SKIPPY_PYTHON` to select
+another; the shell scripts read it too.
 
 1. Each platform's CPU job builds and verifies its CLI once using
    `just ci-host`. Inference PR jobs build their two CLIs locally because they

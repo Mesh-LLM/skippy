@@ -33,6 +33,13 @@ function gate(needs, release = false) {
   evaluate({ env: { CHECK_RESULTS: JSON.stringify(needs), RELEASE_SMOKE: String(release) } });
 }
 
+test('protected pull_request_target skips CI when trusted admission skips changes', () => {
+  const condition = section.match(/^    if: (.+)$/m)[1].replace('always()', 'true');
+  const shouldRun = new Function('needs', `return (${condition})`);
+  assert.equal(shouldRun({ changes: { result: 'skipped' } }), false);
+  assert.equal(shouldRun({ changes: { result: 'success' } }), true);
+});
+
 test('all eight runtime packages match the planned matrix and depend on the canary', () => {
   assert.equal(packageJobs.length, 8);
   assert.deepEqual(declared.filter(job => job.startsWith('package_')).sort(), packageJobs.sort());
@@ -181,15 +188,16 @@ test('image publication builds once while build-only and PR runs remain read-onl
   for (const kind of ['cpu', 'gpu']) {
     const publish = images.split(`\n  ${kind}-publish:\n`)[1].split(/\n  [\w-]+:\n/)[0];
     assert.match(publish, /packages: write/);
-    assert.ok(publish.indexOf('run: just ci-') < publish.indexOf('run: time just ci-'));
-    assert.ok(publish.indexOf('run: time just ci-') < publish.indexOf('docker image push'));
+    const build = publish.indexOf(`just --justfile ci/images.just --working-directory . ci-${kind === 'gpu' ? 'gpu-' : ''}image-build`);
+    const smoke = publish.indexOf(`time just --justfile ci/images.just --working-directory . ci-${kind === 'gpu' ? 'gpu-' : ''}image-smoke`);
+    const push = publish.indexOf('docker image push');
+    assert.ok(build >= 0 && build < smoke && smoke < push);
     assert.doesNotMatch(publish, /download-artifact|image load/);
   }
 });
 
-test('container consumers bind their caches to a digest without the removed image-ID file', () => {
+test('container consumers pin images and Cargo snapshots to the selected digest', () => {
   const upgrade = readFileSync(join(__dirname, '../workflows/llama-upgrade.yml'), 'utf8');
-  assert.doesNotMatch(workflow + upgrade, /\/etc\/skippy-ci-image-id/);
   const native = workflow.split('\n  native_contracts:\n')[1].split('\n  package_')[0];
   assert.match(native, /skippy-ci-cpu@\$\{\{ needs.plan.outputs.cpu_digest \}\}/);
   assert.match(native, /scope: native-contracts-\$\{\{ needs.plan.outputs.cpu_digest \}\}/);
@@ -197,18 +205,21 @@ test('container consumers bind their caches to a digest without the removed imag
   assert.match(upgrade, /scope: upgrade-candidate-\$\{\{ needs.image.outputs.digest \}\}/);
 });
 
-test('the root Justfile exposes the compiler image build and smoke commands', () => {
+test('both image recipe files expose the compiler image build and smoke commands', () => {
   const commands = [
     ['ci-image-build'], ['ci-image-smoke'],
     ['ci-gpu-image-build', 'cuda13', 'example:toolkit', '13.1.2', 'arm64'],
     ['ci-gpu-image-smoke', 'cuda13', 'arm64'],
   ];
-  for (const command of commands) {
-    const result = spawnSync('just', ['--dry-run', ...command], {
-      cwd: join(__dirname, '../..'), encoding: 'utf8',
-    });
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout + result.stderr, /docker /);
+  const imageJustfile = ['--justfile', 'ci/images.just', '--working-directory', '.'];
+  for (const justfile of [[], imageJustfile]) {
+    for (const command of commands) {
+      const result = spawnSync('just', [...justfile, '--dry-run', ...command], {
+        cwd: join(__dirname, '../..'), encoding: 'utf8',
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout + result.stderr, /docker /);
+    }
   }
 });
 
@@ -216,7 +227,11 @@ test('native CI trusts only an immutable same-repository PR from a writer', asyn
   const admission = workflow.split('      - name: Verify the same-repository PR author\n')[1].split('\n  plan:\n')[0];
   const script = admission.split('          script: |\n')[1];
   const evaluate = new Function('github', 'context', 'return (async () => {\n' + script + '\n})()');
-  const candidate = { head: { sha: 'a'.repeat(40), repo: { id: 42 } }, base: { ref: 'main' }, user: { login: 'maintainer' } };
+  const candidate = {
+    head: { sha: 'a'.repeat(40), repo: { id: 42 } },
+    base: { ref: 'codex/native-decode-port', repo: { id: 42 } },
+    user: { login: 'maintainer' },
+  };
   const assertAdmission = (pr, permission) => evaluate({ rest: { repos: {
     getCollaboratorPermissionLevel: async ({ username }) => {
       assert.equal(username, 'maintainer');
@@ -225,6 +240,7 @@ test('native CI trusts only an immutable same-repository PR from a writer', asyn
   } } }, { repo: {}, payload: { pull_request: pr, repository: { id: 42 } } });
   await assert.doesNotReject(() => assertAdmission(candidate, 'write'));
   await assert.rejects(() => assertAdmission(candidate, 'read'), /trusted PR author/);
+  await assert.rejects(() => assertAdmission({ ...candidate, base: { ...candidate.base, repo: { id: 43 } } }, 'admin'), /same-repository PR/);
   await assert.rejects(() => assertAdmission({ ...candidate, head: { ...candidate.head, repo: { id: 43 } } }, 'admin'), /same-repository PR/);
   await assert.rejects(() => assertAdmission({ ...candidate, head: { ...candidate.head, sha: 'main' } }, 'admin'), /immutable source/);
 });

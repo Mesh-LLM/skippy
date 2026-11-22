@@ -151,16 +151,17 @@ test('native CI and inference triggers match the internal route lists', () => {
   }
 });
 
-test('same-repository PRs to main wait for the protected CI producer', async () => {
-  const pr = { head: { sha, repo: { id: 42 } }, base: { ref: 'main', repo: { id: 42 } } };
+test('same-repository PRs to any base wait for the protected CI producer', async () => {
+  const pr = { head: { sha, repo: { id: 42 } }, base: { ref: 'codex/native-decode-port', repo: { id: 42 } } };
   const ordinary = run('ci.yml');
   const protectedCI = run('ci.yml', 3, { event: 'pull_request_target' });
   const inference = run('inference.yml', 2);
-  assert.equal((await evaluate({ pr, runs: [ordinary, inference] })).state, 'pending');
-  assert.equal((await evaluate({ pr, runs: [ordinary, inference, protectedCI] })).state, 'success');
+  assert.equal((await evaluate({ pr, depot: true, runs: [ordinary, inference] })).state, 'pending');
+  assert.equal((await evaluate({ pr, depot: true, runs: [ordinary, inference, protectedCI] })).state, 'success');
   const fork = { ...pr, head: { ...pr.head, repo: { id: 43 } } };
-  assert.equal((await evaluate({ pr: fork, runs: [protectedCI, inference] })).state, 'pending');
-  assert.equal((await evaluate({ pr: fork, runs: [ordinary, inference] })).state, 'success');
+  const forkCI = run('ci-pr.yml', 4);
+  assert.equal((await evaluate({ pr: fork, depot: true, runs: [protectedCI, inference] })).state, 'pending');
+  assert.equal((await evaluate({ pr: fork, depot: true, runs: [forkCI, inference] })).state, 'success');
 });
 
 test('Depot PR checks require each protected producer rather than its legacy run', async () => {

@@ -144,8 +144,12 @@ RUN --network=none image_probe_dir="$(mktemp -d)" \
        else echo "unsupported GPU backend: $BACKEND" >&2; exit 1; fi \
     && rm -rf "$image_probe_dir"
 
+USER root
+ARG SKIPPY_CI_IMAGE_ID=local
 ARG SOURCE_REVISION=local
 LABEL org.opencontainers.image.revision="${SOURCE_REVISION}"
+RUN test -n "$SKIPPY_CI_IMAGE_ID" \
+    && printf '%s\n' "$SKIPPY_CI_IMAGE_ID" > /etc/skippy-ci-image-id
 USER runner
 WORKDIR /workspace
 CMD ["bash"]

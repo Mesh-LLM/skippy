@@ -34,7 +34,6 @@ on:
       - '!**/docs/**'
       - '!docs-site/**'
   pull_request_target:
-    branches: [main]
     # Include the inference-only inputs as well as the code filter.
     paths:
       - 'crates/**'
@@ -240,9 +239,9 @@ jobs:
         with:
           script: |
             const { pull_request: pr, repository } = context.payload;
-            if (pr.base.ref !== 'main' || pr.head.repo?.id !== repository.id ||
+            if (pr.base.repo?.id !== repository.id || pr.head.repo?.id !== repository.id ||
                 !/^[a-f0-9]{40}$/.test(pr.head.sha)) {
-              throw new Error('Native CI requires a same-repository PR to main and an immutable source');
+              throw new Error('Native CI requires a same-repository PR and an immutable source');
             }
             const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
               ...context.repo, username: pr.user.login,
@@ -375,7 +374,7 @@ jobs:
           package-manager-cache: false
       - name: Test workflow result gates
         run: node --test .github/scripts/*.test.cjs
-      - name: Verify image toolchain
+      - name: Verify image toolchain and cache identity
         shell: bash
         run: |
           set -euo pipefail
@@ -389,6 +388,9 @@ jobs:
           "$SKIPPY_REWRITER_LLVM_PREFIX/bin/clang" --version
           test -r "$SKIPPY_REWRITER_LLVM_PREFIX/lib/cmake/llvm/LLVMConfig.cmake"
           test -r "$SKIPPY_REWRITER_LLVM_PREFIX/lib/cmake/clang/ClangConfig.cmake"
+          image_id="$(cat /etc/skippy-ci-image-id)"
+          test -n "$image_id"
+          echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
       - uses: ./.github/actions/cache
         with:
           scope: quality-${{ needs.plan.outputs.cpu_digest }}
@@ -398,7 +400,7 @@ jobs:
             skippy-api-rs/target/debug
       - uses: ./.github/actions/sccache
         with:
-          scope: quality-${{ runner.os }}-${{ runner.arch }}
+          scope: quality-${{ runner.os }}-${{ runner.arch }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
       - uses: ./.github/actions/native-source
       - run: just llama-prepare
       - run: just skippy-ffi-bindgen-check
@@ -457,13 +459,18 @@ jobs:
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
+      - name: Identify the CPU toolchain image
+        run: |
+          image_id="$(cat /etc/skippy-ci-image-id)"
+          test -n "$image_id"
+          echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
       - uses: ./.github/actions/cache
         with:
           scope: native-contracts-${{ needs.plan.outputs.cpu_digest }}
           download-scope: native-contracts
       - uses: ./.github/actions/sccache
         with:
-          scope: native-contracts-${{ runner.os }}-${{ runner.arch }}
+          scope: native-contracts-${{ runner.os }}-${{ runner.arch }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
       - uses: ./.github/actions/native-source
       - run: just llama-check
       - uses: ./.github/actions/report-sccache
@@ -580,6 +587,7 @@ jobs:
           runtime-id: linux-x86_64-cuda12
           host-id: linux-x86_64
           smoke: artifact
+          containerized: 'true'
           compiler-image-digest: ${{ needs.plan.outputs.cuda12_digest }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
@@ -676,6 +684,7 @@ jobs:
           runtime-id: linux-aarch64-cuda12
           host-id: linux-aarch64
           smoke: artifact
+          containerized: 'true'
           compiler-image-digest: ${{ needs.plan.outputs.cuda12_arm_digest }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
@@ -724,6 +733,7 @@ jobs:
           runtime-id: linux-aarch64-cuda13
           host-id: linux-aarch64
           smoke: artifact
+          containerized: 'true'
           compiler-image-digest: ${{ needs.plan.outputs.cuda13_arm_digest }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}

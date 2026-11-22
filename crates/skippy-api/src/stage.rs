@@ -1,6 +1,8 @@
 use crate::family_policy::family_policy_for_model_path;
 use anyhow::Result;
-use skippy_protocol::{FlashAttentionType, LoadMode, StageConfig, StageDevice, StageKvCacheConfig};
+use skippy_protocol::{
+    FlashAttentionType, LoadMode, SampleThreads, StageConfig, StageDevice, StageKvCacheConfig,
+};
 use std::path::PathBuf;
 
 /// Resolved source metadata supplied by the caller after verifying its model.
@@ -205,7 +207,7 @@ pub fn single_stage_config(
         kv_lazy_clear: None,
         kv_release_pages: None,
         kv_row_attention: None,
-        sample_threads: None,
+        sample_threads: SampleThreads::Auto,
         prefill_coalesce_max_ms: None,
         batch: Default::default(),
         cache_idle_slots: options.cache_idle_slots,

@@ -71,11 +71,6 @@ runs:
         namespace="skippy-v1-$SCCACHE_SCOPE-$recipe_digest"
         cache_mode=READ_ONLY
         case "${GITHUB_REF:-}:$GITHUB_EVENT_NAME" in
-          refs/pull/*/merge:pull_request)
-            # The Actions backend scopes writes to this PR ref. Depot keeps
-            # its protected-main-only shared cache write policy.
-            if [[ "$USE_DEPOT_CACHE" != true ]]; then cache_mode=READ_WRITE; fi
-            ;;
           refs/heads/main:push|refs/heads/main:schedule|refs/heads/main:workflow_dispatch)
             if [[ "${GITHUB_REF_PROTECTED:-false}" == true && "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]; then
               case "${SKIPPY_ACTIONS_CACHE_MODE:-write}" in
