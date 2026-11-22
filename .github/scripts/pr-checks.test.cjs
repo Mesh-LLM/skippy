@@ -133,16 +133,14 @@ test('native CI and inference triggers match the internal route lists', () => {
   const ci = readFileSync(join(__dirname, '../workflows/ci.yml'), 'utf8');
   const [prPaths, targetPaths, pushPaths] = ci.split(/^  (?:pull_request_target|push):\n/m);
   const spark = readFileSync(join(__dirname, '../workflows/inference.yml'), 'utf8');
+  assert.deepEqual(lists(pushPaths.split(/^  schedule:\n/m)[0]), code);
+  assert.deepEqual(lists(spark.split(/^  schedule:\n/m)[0]), inference);
   const ciOnly = ['.gi/templates.yaml', 'ci/inference-ladder.json',
     'ci/inference-artifacts.json', 'ci/inference-quality.json'];
   assert.ok(ciOnly.every(path => inference.includes(path)));
   const exclusion = code.findIndex(path => path.startsWith('!'));
   assert.deepEqual(lists(prPaths), [...code.slice(0, exclusion), ...ciOnly, ...code.slice(exclusion)]);
   assert.deepEqual(lists(targetPaths), lists(prPaths));
-  assert.deepEqual(lists(pushPaths.split(/^  schedule:\n/m)[0]), lists(prPaths));
-  const [sparkPR, sparkPush] = spark.split(/^  push:\n/m);
-  assert.deepEqual(lists(sparkPR), inference);
-  assert.deepEqual(lists(sparkPush.split(/^  schedule:\n/m)[0]), lists(prPaths));
   const depotPr = readFileSync(join(__dirname, '../workflows/ci-pr.yml'), 'utf8');
   assert.deepEqual(lists(depotPr), lists(prPaths));
   const includes = lists(prPaths).filter(path => !path.startsWith('!'));

@@ -1,7 +1,7 @@
 name: Inference qualification
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths:
       - 'crates/**'
       - 'skippy_api/src/**'
@@ -53,39 +53,6 @@ on:
       - '!crates/skippy-package-builder/**'
       - '!crates/skippy-quantize/**'
       - '!crates/skippy-correctness/**'
-  push:
-    branches: [main]
-    paths:
-      - 'crates/**'
-      - 'skippy-api-rs/**'
-      - 'skippy_api/**'
-      - 'llama_cpp/**'
-      - 'tools/**'
-      - 'scripts/**'
-      - '.cargo/**'
-      - '.github/actions/**'
-      - '.github/scripts/**'
-      - '.github/path-filters.yml'
-      - '.github/workflows/ci.yml'
-      - '.github/workflows/ci-pr.yml'
-      - '.github/workflows/inference.yml'
-      - '.github/workflows/llama-upgrade.yml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'rust-toolchain.toml'
-      - 'Justfile'
-      - 'ci/targets.json'
-      - 'ci/llama-canary/**'
-      - '.gi/templates.yaml'
-      - 'ci/inference-ladder.json'
-      - 'ci/inference-artifacts.json'
-      - 'ci/inference-quality.json'
-      - '!**/*.md'
-      - '!**/*.mdx'
-      - '!**/*.rst'
-      - '!**/*.adoc'
-      - '!**/docs/**'
-      - '!docs-site/**'
   schedule:
     - cron: '0 14 * * *'
   workflow_dispatch:
@@ -111,12 +78,7 @@ permissions:
   pull-requests: read
   statuses: write
 concurrency:
-  # Coalesce main pushes while the active qualification finishes. Other
-  # non-PR runs keep independent evidence and never replace each other.
-  group: >-
-    inference-${{ github.event.pull_request.number ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'main-push') ||
-      github.run_id }}-${{ github.event_name }}
+  group: inference-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
 jobs:
   plan:
@@ -138,7 +100,7 @@ jobs:
       # Candidate source is never checked out or executed by this workflow.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: ${{ (github.event_name == 'schedule' || github.event_name == 'push') && github.sha || 'main' }}
+          ref: ${{ github.event_name == 'schedule' && github.sha || 'main' }}
           persist-credentials: false
       - uses: ./.github/actions/setup
       - id: admission
@@ -170,7 +132,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: ${{ (github.event_name == 'schedule' || github.event_name == 'push') && github.sha || 'main' }}
+          ref: ${{ github.event_name == 'schedule' && github.sha || 'main' }}
           persist-credentials: false
       - uses: ./.github/actions/setup
       - name: Dispatch and await native Spark qualification
