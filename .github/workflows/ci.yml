@@ -395,17 +395,23 @@ jobs:
     name: Check llama.cpp Graph Contracts, patches, and API docs
     needs: [plan, quality]
     if: needs.plan.outputs.profile == 'full'
-    runs-on:
-      group: jy-rnr_vfnz8k5p4yrh334
-      labels: [self-hosted, skippy-ephemeral, Linux, native-contracts]
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-8' || 'ubuntu-24.04' }}
     timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-cpu:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
     env:
-      CMAKE_BUILD_PARALLEL_LEVEL: '4'
+      CARGO_BUILD_JOBS: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && '4' || '2' }}
+      CMAKE_BUILD_PARALLEL_LEVEL: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && '4' || '2' }}
       CTEST_PARALLEL_LEVEL: '2'
-      CC: /usr/lib/llvm-22/bin/clang
-      CXX: /usr/lib/llvm-22/bin/clang++
-      SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
-      LIBCLANG_PATH: /usr/lib/llvm-22/lib
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -415,13 +421,18 @@ jobs:
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
+      - name: Identify the CPU toolchain image
+        run: |
+          image_id="$(cat /etc/skippy-ci-image-id)"
+          test -n "$image_id"
+          echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
       - uses: ./.github/actions/cache
         with:
-          scope: native-contracts-llvm22-cpu
+          scope: native-contracts-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
           download-scope: native-contracts
       - uses: ./.github/actions/sccache
         with:
-          scope: native-contracts-${{ runner.os }}-${{ runner.arch }}-llvm22-cpu
+          scope: native-contracts-${{ runner.os }}-${{ runner.arch }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
       - uses: ./.github/actions/native-source
       - run: just llama-check
       - uses: ./.github/actions/report-sccache

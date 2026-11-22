@@ -127,8 +127,9 @@ The repository Actions variable `SKIPPY_DEPOT_RUNNERS_ENABLED=true` selects
 Depot for every job that otherwise uses a GitHub-hosted runner. This includes
 PR validation and its aggregate, code and package CI, compiler images and
 publishing, documentation and deployment, release validation and publication,
-the inference controllers, and the llama upgrade publisher. The Linux jobs
-use four-core Ubuntu 24.04 runners of the existing architecture, and the
+the inference controllers, and llama upgrade preparation and publication. Most
+Linux jobs use four-core Ubuntu 24.04 runners of the existing architecture.
+Graph Contracts and llama upgrade preparation use eight-core x64 runners. The
 macOS CPU package uses Depot's macOS 15 ARM64 runner. Device jobs use their
 specified JY groups. Clearing the variable or setting it to `false` restores
 GitHub-hosted placement and direct PR workflow routing for subsequent runs.
@@ -207,11 +208,12 @@ to avoid restoring archives made with hosted-VM home/workspace paths. Native
 source caches remain shared. Protected candidate admission precedes build-cache
 restoration and compiler-cache credential export.
 
-Full CI runs `just llama-check` on the ephemeral Linux JY `native-contracts`
-runner after the canary, in parallel with packaging. It checks Graph Contracts,
-patch regeneration, public headers and generated API docs. The gate requires
-both CTest batches to pass. The `native-contracts-evidence` artifact retains
-logs and patch reports.
+Full CI runs `just llama-check` in the same x64 CPU toolchain image after the
+canary, in parallel with packaging. It uses Depot Ubuntu 24.04 with four build
+workers when the repository switch is enabled, and GitHub-hosted Ubuntu 24.04
+with two build workers otherwise. It checks Graph Contracts, patch regeneration,
+public headers and generated API docs. The gate requires both CTest batches to
+pass. The `native-contracts-evidence` artifact retains logs and patch reports.
 
 `docs.yml` triggers directly for `docs-site/**` changes on PRs and pushes to
 `main`. It installs the lockfile, builds Nextra, generates the Pagefind index
@@ -387,12 +389,6 @@ only orchestrates these jobs, so the 6 GiB runner-container limit does not bound
 model execution. Split jobs reserve both Sparks atomically. This policy does not
 prove live JY configuration.
 
-Llama native contracts and upstream candidate generation use preprovisioned
-JY builders with LLVM/Clang 22 development and CMake packages, Ninja and lld.
-The contracts job accepts either 64-bit Linux architecture; candidate
-generation uses its Linux x86_64 lane. The same generator tools must be
-available on full family builders.
-
 Qwen3 dense smoke preparation is explicit: `just ci-model-fetch`
 resolves the immutable public model URL and verifies the family manifest's size
 and SHA-256. A runner-provided `SKIPPY_CI_MODEL` is verified without downloading.
@@ -473,10 +469,11 @@ theirs for retry and diagnosis.
 ## Llama upgrades
 
 `llama-upgrade.yml` runs from protected main. The controller resolves a release
-or explicit immutable upstream SHA and exports a digest-bound Git bundle. Both
-CI passes and both family passes restore the same candidate. The CPU, Metal and
-CUDA family jobs consume immutable offline model caches and retain per-pass
-evidence. They receive no GitHub write credential.
+or explicit immutable upstream SHA and exports a digest-bound Git bundle. It
+uses the x64 CPU toolchain image and a checksum-verified GitHub CLI on the
+selected Ubuntu runner. Both CI passes and both family passes restore the same
+candidate. The CPU, Metal and CUDA family jobs consume immutable offline model
+caches and retain per-pass evidence. They receive no GitHub write credential.
 
 Candidate preparation can be rehearsed before merge from a clean local PR
 checkout, with the native build prerequisites above and
