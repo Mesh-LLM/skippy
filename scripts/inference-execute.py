@@ -97,9 +97,10 @@ def wait_for(server, url, seconds, poll, check):
     raise RuntimeError("inference server or split leader timed out")
 
 
-def acknowledge_worker():
+def acknowledge_worker(port=9912):
     with socket.socket() as listener:
-        listener.bind(("0.0.0.0", 9912))
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("0.0.0.0", port))
         listener.listen(1)
         listener.settimeout(60)
         try:

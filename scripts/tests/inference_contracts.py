@@ -3,7 +3,10 @@
 import io
 import json
 import os
+import socket
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from runpy import run_path
 from tempfile import TemporaryDirectory
@@ -54,6 +57,36 @@ class BuildEntryPointTests(unittest.TestCase):
     def test_build_script_imports_before_starting_native_build(self):
         script = Path(__file__).resolve().parents[1] / "inference-build.py"
         run_path(str(script))
+
+
+class CompletionListenerTests(unittest.TestCase):
+    def test_completed_split_can_immediately_reuse_its_callback_port(self):
+        script = Path(__file__).resolve().parents[1] / "inference-execute.py"
+        acknowledge = run_path(str(script))["acknowledge_worker"]
+        with socket.socket() as reservation:
+            reservation.bind(("127.0.0.1", 0))
+            port = reservation.getsockname()[1]
+        for _ in range(2):
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                finished = pool.submit(acknowledge, port)
+                deadline = time.monotonic() + 3
+                while True:
+                    try:
+                        client = socket.create_connection(("127.0.0.1", port), timeout=1)
+                        break
+                    except ConnectionRefusedError:
+                        if finished.done():
+                            finished.result()
+                        if time.monotonic() >= deadline:
+                            self.fail("completion callback did not start")
+                        time.sleep(0.01)
+                with client:
+                    client.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+                    response = b""
+                    while chunk := client.recv(1024):
+                        response += chunk
+                finished.result(timeout=3)
+            self.assertTrue(response.endswith(b"qualification-complete"))
 
 
 class PilotRequestTests(unittest.TestCase):
