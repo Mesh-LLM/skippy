@@ -14,16 +14,17 @@ const packageJobs = rows.map(row => `package_${row.id.replaceAll('-', '_')}`);
 const prPackages = ['package_darwin_aarch64_metal', 'package_linux_x86_64_cuda13'];
 const releaseSmokes = ['release_smoke_linux_x86_64_cuda12', 'release_smoke_linux_aarch64_cuda12', 'release_smoke_linux_aarch64_cuda13'];
 
-function results({ code = true, inference = false, full = false, release = false, hostedRequiresNative = false } = {}) {
+function results({ code = true, inference = false, native = false, full = false, release = false, hostedRequiresNative = false } = {}) {
   const selected = code || inference;
   const required = ['changes'];
   if (selected) required.push('plan');
   if (code) required.push('quality');
   if (full) required.push('native_contracts', ...packageJobs);
   else if (inference) required.push(...prPackages);
+  if (native) required.push('native_contracts');
   if (release) required.push(...releaseSmokes);
   const needs = Object.fromEntries(declared.map(job => [job, { result: required.includes(job) ? 'success' : 'skipped' }]));
-  needs.changes.outputs = { code: String(code), inference: String(inference), hosted_requires_native: String(hostedRequiresNative) };
+  needs.changes.outputs = { code: String(code), inference: String(inference), native: String(native), hosted_requires_native: String(hostedRequiresNative) };
   if (selected) needs.plan.outputs = { profile: full ? 'full' : 'pr', runtimes: JSON.stringify({ include: rows }) };
   return needs;
 }
@@ -53,7 +54,7 @@ test('all eight runtime packages match the planned matrix and depend on the cana
   assert.doesNotThrow(() => gate(results({ full: true })));
 });
 
-test('only inference pull requests require the two package and smoke jobs', () => {
+test('inference PRs and selected main merges require the two package and smoke jobs', () => {
   for (const options of [{}, { code: false }, { inference: true }, { code: false, inference: true }]) {
     assert.doesNotThrow(() => gate(results(options)));
   }
@@ -66,6 +67,29 @@ test('only inference pull requests require the two package and smoke jobs', () =
   const unexpectedSmoke = results();
   unexpectedSmoke[prPackages[0]].result = 'success';
   assert.throws(() => gate(unexpectedSmoke), /must be skipped/);
+});
+
+test('targeted main validation requires device smokes and selected Graph Contracts', () => {
+  const needs = results({ inference: true, native: true });
+  assert.doesNotThrow(() => gate(needs));
+  for (const job of ['quality', 'native_contracts', ...prPackages]) {
+    for (const result of ['skipped', 'failure', 'cancelled', undefined]) {
+      const failed = structuredClone(needs);
+      if (result === undefined) delete failed[job];
+      else failed[job].result = result;
+      assert.throws(() => gate(failed), undefined, `${job}: ${result}`);
+    }
+  }
+  const missingSelection = structuredClone(needs);
+  delete missingSelection.changes.outputs.native;
+  assert.throws(() => gate(missingSelection), /Path selection failed/);
+  const nativeJob = workflow.split('\n  native_contracts:\n')[1].split('\n  package_')[0];
+  assert.match(nativeJob, /needs: \[plan, quality, changes\]/);
+  const expression = nativeJob.match(/^    if: (.+)$/m)[1];
+  const selected = new Function('needs', `return (${expression});`);
+  assert.equal(selected(needs), true);
+  assert.equal(selected(results()), false);
+  assert.equal(selected(results({ full: true })), true);
 });
 
 test('missing, skipped, failed and cancelled required work cannot pass full CI', () => {
