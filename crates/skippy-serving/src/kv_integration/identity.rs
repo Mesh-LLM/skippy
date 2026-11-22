@@ -31,7 +31,7 @@ impl KvStageIntegration {
             stage_index: config.stage_index,
             layer_start: config.layer_start,
             layer_end: config.layer_end,
-            prefix_hash: self.bind_model_content(prefix.prefix_hash.clone()),
+            prefix_hash: prefix.prefix_hash,
             session_id: base.session_id.clone(),
             token_start,
             token_count: prefix.token_count,
@@ -55,16 +55,9 @@ impl KvStageIntegration {
             .unwrap_or(namespace);
         PrefillKvIdentity {
             identity,
-            page_id: self.bind_model_content(prefix.page_id),
-            namespace: self.bind_model_content(namespace),
+            page_id: prefix.page_id,
+            namespace,
             token_ids: token_ids.to_vec(),
-        }
-    }
-
-    fn bind_model_content(&self, identity: String) -> String {
-        match self.loaded_model_content.as_ref() {
-            Some(proof) => proof.bind(&identity),
-            None => identity,
         }
     }
 

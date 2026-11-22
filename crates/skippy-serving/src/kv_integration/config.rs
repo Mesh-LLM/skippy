@@ -69,7 +69,6 @@ impl KvStageIntegration {
             config,
             model_state_kind,
             memory_cache,
-            None,
             || l3_manager_from_env(config),
             observer,
         )
@@ -89,7 +88,6 @@ impl KvStageIntegration {
             config,
             model_state_kind,
             memory_cache,
-            None,
             || Ok(manager),
             observer,
         )
@@ -99,9 +97,6 @@ impl KvStageIntegration {
         config: &StageConfig,
         model_state_kind: Option<ModelStateKind>,
         memory_cache: Option<skippy_runtime::MemoryCacheCapabilities>,
-        loaded_model_content: Option<
-            Arc<crate::runtime_state::model_content::VerifiedModelContent>,
-        >,
         manager: impl FnOnce() -> Result<Option<L3CacheManager>>,
         observer: Option<Arc<dyn KvLifecycleObserver>>,
     ) -> Result<Option<Self>> {
@@ -135,7 +130,10 @@ impl KvStageIntegration {
         };
         let payload_selection_reason = "loaded_graph_and_memory";
         let dense_without_recurrent = admitted.resident && !admitted.resident_checkpoint;
-        let l3_manager = if loaded_model_content.is_some() {
+        // Model resolution and package admission own content verification.
+        // Reuse their identity instead of reopening model files in the cache.
+        let l3_manager = if config.source_model_sha256.is_some() || config.manifest_sha256.is_some()
+        {
             manager()?
         } else {
             None
@@ -145,9 +143,7 @@ impl KvStageIntegration {
             .and_then(|_| durable_cache_payload(admitted));
         let l3 = l3_manager
             .zip(durable_payload)
-            .and_then(|(manager, payload)| {
-                l3_tier_for_manager(config, payload, manager, loaded_model_content.as_deref())
-            });
+            .and_then(|(manager, payload)| l3_tier_for_manager(config, payload, manager));
         let durable_payload = durable_payload.filter(|_| l3.is_some());
         if !admitted.resident && cache_config.l2_max_bytes > 0 && l3.is_none() {
             let _ = skippy_events::diagnostics::emit(
@@ -369,7 +365,6 @@ impl KvStageIntegration {
             durable_spill_tx,
         ));
         let integration = Self {
-            loaded_model_content,
             mode,
             payload,
             payload_selection_reason,
@@ -525,7 +520,6 @@ fn l3_tier_for_manager(
     config: &StageConfig,
     payload: StagePrefixCachePayload,
     manager: L3CacheManager,
-    content: Option<&crate::runtime_state::model_content::VerifiedModelContent>,
 ) -> Option<Arc<L3Tier>> {
     let identity = match durable_identity::read(config, l3_payload_kind(payload)) {
         Ok(identity) => identity,
@@ -544,11 +538,7 @@ fn l3_tier_for_manager(
     };
     let model_identity = numerical_model_identity_for_stage(config);
     let root = manager.root().display().to_string();
-    let tier = manager.tier_for_model(
-        model_identity,
-        bind_model_content(content, identity),
-        L3_SEGMENT_BYTES,
-    );
+    let tier = manager.tier_for_model(model_identity, identity, L3_SEGMENT_BYTES);
     // Warm state must never be invisible: say what the tier can restore the
     // moment the stage comes up.
     match tier.status() {
@@ -577,16 +567,6 @@ fn l3_tier_for_manager(
         }
     }
     Some(Arc::new(tier))
-}
-
-fn bind_model_content(
-    content: Option<&crate::runtime_state::model_content::VerifiedModelContent>,
-    identity: String,
-) -> String {
-    match content {
-        Some(proof) => proof.bind(&identity),
-        None => identity,
-    }
 }
 
 fn l3_payload_kind(payload: StagePrefixCachePayload) -> &'static str {

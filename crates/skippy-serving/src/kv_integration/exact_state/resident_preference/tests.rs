@@ -31,7 +31,7 @@ fn fixture(root: &Path) -> (KvStageIntegration, PrefillKvIdentity) {
         }),
         ..StageConfig::default()
     };
-    let kv = KvStageIntegration::from_test_model_with_l3_manager(
+    let kv = KvStageIntegration::from_loaded_model_with_l3_manager(
         &config,
         Some(ModelStateKind::Dense),
         Some(MemoryCacheCapabilities {

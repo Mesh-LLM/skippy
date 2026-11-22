@@ -51,19 +51,19 @@ without a key share the default namespace.
 Run and topology instance IDs do not fragment the namespace. Equivalent
 placements can reuse state when the numerical model and state layout match.
 
-Persistent reuse also binds its cache keys to verified bytes of the model inputs
-actually opened by the runtime, including every shard and any checkpoint,
-projector or importance matrix inputs. On Unix, serving captures strong file
-fingerprints before open and hashes on a scoped worker concurrently with model
-loading. Fingerprints must remain unchanged before hashing, after hashing, and
-after model open. Verification logs the byte count and elapsed time. Unix
-frontends reuse that strong fingerprint proof. Platforms without equivalent
-file identity and change-time evidence recheck bytes after load and at backend
-construction, retaining the pre-load hash instead of overlapping it with load;
-requests do not rehash weights. Declared model or
-manifest digests alone cannot authorize disk reuse. Integrations constructed
-from a raw stage configuration without loaded-content proof keep their native
-in-memory cache, but disable L3 and the L3-backed host tier.
+Persistent reuse uses the model identity supplied by model resolution and artifact
+admission: the source-model digest and, for packaged inputs, the manifest digest
+and package reference. The cache does not reopen or rehash model files, inspect
+filesystem timestamps, or create a second model identity. Changing admitted
+weights changes the existing cache keys. Configurations without a source-model
+or manifest digest keep their native in-memory cache but disable L3 and its
+host-RAM tier.
+
+Runtime compatibility remains part of the state key: native ABI, backend/device
+placement, layer range, KV layout, context shape, payload and storage codec must
+match before state can be reused. Run and topology instance labels do not change
+model identity. Cache entries written with the former loaded-content wrapper
+have different keys and are not reused; normal pruning can reclaim them.
 
 A saved native prefix remains usable after the originating session is freed.
 Eviction drops the cache's native attention references and recurrent checkpoint.
