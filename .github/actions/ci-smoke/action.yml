@@ -20,8 +20,6 @@ runs:
       if: inputs.download-package == 'true' && runner.environment == 'github-hosted'
       with:
         cache: 'false'
-      with:
-        cache: 'false'
     - uses: ./.github/actions/source
       if: inputs.download-package == 'true'
       with:

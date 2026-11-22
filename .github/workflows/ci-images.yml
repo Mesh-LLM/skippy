@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 45
     env:
       SOURCE_REVISION: ${{ github.sha }}
-      SKIPPY_CI_CACHE_REF: ghcr.io/general-inference/skippy-ci-cpu:latest
+      SKIPPY_CI_CACHE_REF: ghcr.io/mesh-llm/skippy-ci-cpu:latest
     steps:
       - &cpu_checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -67,7 +67,7 @@ jobs:
       packages: write
     env:
       SOURCE_REVISION: ${{ github.sha }}
-      SKIPPY_CI_CACHE_REF: ghcr.io/general-inference/skippy-ci-cpu:latest
+      SKIPPY_CI_CACHE_REF: ghcr.io/mesh-llm/skippy-ci-cpu:latest
     steps:
       - *cpu_checkout
       - *cpu_setup
@@ -126,7 +126,7 @@ jobs:
             toolkit_base: 'rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054'
     env:
       SOURCE_REVISION: ${{ github.sha }}
-      SKIPPY_CI_CACHE_REF: ghcr.io/general-inference/skippy-ci-${{ matrix.backend }}:${{ matrix.arch == 'arm64' && 'latest-arm64' || 'latest' }}
+      SKIPPY_CI_CACHE_REF: ghcr.io/mesh-llm/skippy-ci-${{ matrix.backend }}:${{ matrix.arch == 'arm64' && 'latest-arm64' || 'latest' }}
     steps:
       - &gpu_checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -180,7 +180,7 @@ jobs:
       matrix: *gpu-image-matrix
     env:
       SOURCE_REVISION: ${{ github.sha }}
-      SKIPPY_CI_CACHE_REF: ghcr.io/general-inference/skippy-ci-${{ matrix.backend }}:${{ matrix.arch == 'arm64' && 'latest-arm64' || 'latest' }}
+      SKIPPY_CI_CACHE_REF: ghcr.io/mesh-llm/skippy-ci-${{ matrix.backend }}:${{ matrix.arch == 'arm64' && 'latest-arm64' || 'latest' }}
     steps:
       - *gpu_checkout
       - *gpu_setup

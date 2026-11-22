@@ -231,7 +231,7 @@ jobs:
           set -euo pipefail
           resolve() {
             local manifest digest
-            manifest=$(docker buildx imagetools inspect "ghcr.io/general-inference/skippy-ci-$2")
+            manifest=$(docker buildx imagetools inspect "ghcr.io/mesh-llm/skippy-ci-$2")
             digest=$(awk '$1 == "Digest:" {print $2; exit}' <<< "$manifest")
             [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
             echo "$1=$digest" >> "$GITHUB_OUTPUT"
@@ -261,7 +261,7 @@ jobs:
       contents: read
       packages: read
     container:
-      image: ghcr.io/general-inference/skippy-ci-cpu@${{ needs.plan.outputs.cpu_digest }}
+      image: ghcr.io/mesh-llm/skippy-ci-cpu@${{ needs.plan.outputs.cpu_digest }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -468,7 +468,7 @@ jobs:
       contents: read
       packages: read
     container:
-      image: ghcr.io/general-inference/skippy-ci-cuda12@${{ needs.plan.outputs.cuda12_digest }}
+      image: ghcr.io/mesh-llm/skippy-ci-cuda12@${{ needs.plan.outputs.cuda12_digest }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -563,7 +563,7 @@ jobs:
       contents: read
       packages: read
     container:
-      image: ghcr.io/general-inference/skippy-ci-cuda12@${{ needs.plan.outputs.cuda12_arm_digest }}
+      image: ghcr.io/mesh-llm/skippy-ci-cuda12@${{ needs.plan.outputs.cuda12_arm_digest }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -611,7 +611,7 @@ jobs:
       contents: read
       packages: read
     container:
-      image: ghcr.io/general-inference/skippy-ci-cuda13@${{ needs.plan.outputs.cuda13_arm_digest }}
+      image: ghcr.io/mesh-llm/skippy-ci-cuda13@${{ needs.plan.outputs.cuda13_arm_digest }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
