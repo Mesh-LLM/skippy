@@ -64,11 +64,14 @@ class Selection(unittest.TestCase):
             root = Path(tmp)
             copied_inputs(root)
             selection = read_json(root / SELECTION)
-            selection["additional_families"] = ["lfm2", "qwen35"]
+            selection["additional_families"] = ["lfm2", "qwen35", "t5-encoder-decoder"]
             write_json(root / SELECTION, selection)
             models = selected_models(root, REGISTRY, "cuda")
             self.assertEqual(len(models), 9)
             self.assertEqual(sum(model["family"] == "qwen35" for model in models), 0)
+            self.assertTrue(all(model["class"] == "causal_generation" for model in models))
+            cpu = selected_models(root, REGISTRY, "cpu")
+            self.assertEqual(sum(model["family"] == "t5-encoder-decoder" for model in cpu), 1)
             selection["upstream_sha"] = SHA
             write_json(root / SELECTION, selection)
             with self.assertRaisesRegex(ValueError, "candidate upstream"):

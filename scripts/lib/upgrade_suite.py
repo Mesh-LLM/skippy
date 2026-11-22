@@ -34,6 +34,8 @@ def selected_models(root, models, backend, suite="routine"):
     by_name = {model["family"]: model for model in models}
     if set(names) - by_name.keys():
         raise ValueError("upgrade suite selects an unknown family")
+    if backend == "cuda":
+        names = [name for name in names if by_name[name]["class"] == "causal_generation"]
     if any(by_name[name]["class"] == "causal_generation" for name in policy["workload_families"]):
         raise ValueError("upgrade workload roster contains a causal model")
     artifacts = read_json(root / "ci/inference-artifacts.json")
