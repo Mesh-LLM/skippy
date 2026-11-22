@@ -5,16 +5,13 @@ import re
 import sys
 
 from .ci_artifacts import read_json
-from .inference_ladder import matrix
+from .inference_ladder import allowed_split_admissions, matrix
 from .inference_nightly_metrics import METRIC_NAMES, WORKLOADS, contract, metric_value
 from .inference_throughput import successful_run
 
 
 def admitted_workload(entry, certification):
-    allowed = {None} if entry["mode"] == "standalone" else {"certified"}
-    if entry["profile"] == "pr" and entry["mode"] == "split":
-        allowed.add("uncertified_override")
-    if certification not in allowed:
+    if certification not in allowed_split_admissions(entry["profile"], entry["mode"]):
         raise ValueError("invalid split admission")
     workload = WORKLOADS[entry["profile"]]
     if certification == "uncertified_override":

@@ -14,6 +14,13 @@ from .ci_process import capture
 ORIGIN = "https://pilot.jianyang.cloud"
 
 
+class PilotHTTPError(RuntimeError):
+    def __init__(self, path, status, detail):
+        super().__init__(f"JY HTTP {status}: {detail}")
+        self.path = path
+        self.status = status
+
+
 class RejectRedirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -43,7 +50,7 @@ class Pilot:
         except HTTPError as error:
             detail = (error.read(65536).decode("utf-8", errors="replace")
                       if not path.startswith("/v1/auth/") else f"{path} authentication request failed")
-            raise RuntimeError(f"JY HTTP {error.code}: {detail}") from None
+            raise PilotHTTPError(path, error.code, detail) from None
         if len(result) > 16 * 1024 * 1024:
             raise ValueError("JY response exceeded capture limit")
         return json.loads(result)

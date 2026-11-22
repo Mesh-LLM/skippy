@@ -89,7 +89,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request_target' ||
       contains(github.event.pull_request.labels.*.name, 'qualify')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 20
     outputs:
       source: ${{ steps.admission.outputs.source || github.event.pull_request.head.sha || github.sha }}
@@ -113,7 +113,7 @@ jobs:
         env:
           SOURCE_SHA: ${{ steps.admission.outputs.source }}
           PROFILE: ${{ steps.admission.outputs.profile }}
-          NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'general-inference/skippy' }}
+          NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'Mesh-LLM/skippy' }}
         run: |
           flags=()
           if [[ "$NIGHTLY_PUBLICATION" == true ]]; then flags+=(--include-smoke); fi
@@ -125,7 +125,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: ${{ matrix.profile == 'pr' && 100 || 360 }}
     env:
       EVIDENCE: target/ci-evidence/inference-${{ matrix.id }}
@@ -140,7 +140,7 @@ jobs:
           SOURCE_SHA: ${{ needs.plan.outputs.source }}
           PROFILE: ${{ matrix.profile }}
           CONFIGURATION: ${{ matrix.configuration }}
-          NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'general-inference/skippy' }}
+          NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'Mesh-LLM/skippy' }}
           JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
         run: |
           flags=()
@@ -166,9 +166,9 @@ jobs:
     needs: [plan, qualification]
     if: >-
       always() && !cancelled() && github.event_name == 'schedule' &&
-      github.repository == 'general-inference/skippy' && github.ref == 'refs/heads/main' &&
+      github.repository == 'Mesh-LLM/skippy' && github.ref == 'refs/heads/main' &&
       needs.plan.result == 'success'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -207,7 +207,7 @@ jobs:
   summary:
     needs: [plan, qualification, nightly_publish]
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: Publish the source-bound qualification result
@@ -246,7 +246,7 @@ jobs:
   report:
     needs: [plan, qualification, summary]
     if: always() && github.event_name == 'pull_request_target' && needs.plan.result == 'success'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       contents: read
