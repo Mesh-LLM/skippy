@@ -2,8 +2,10 @@
 
 import os
 import importlib.util
+import json
 import shlex
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,6 +21,32 @@ SHA = "a" * 40
 
 
 class Repair(unittest.TestCase):
+    def test_repair_inherits_job_model_access_without_publication_credentials(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sandbox = Path(tmp)
+            checkout = sandbox / "candidate"
+            checkout.mkdir()
+            self.checkout(checkout)
+            agent = sandbox / "agent.py"
+            agent.write_text(
+                "import os\nfrom pathlib import Path\n"
+                "assert os.environ.get('JIANYANG_GATEWAY_TOKEN') == 'fixture-model-access'\n"
+                "assert 'GITHUB_TOKEN' not in os.environ\n"
+                "assert 'GH_TOKEN' not in os.environ\n"
+                "assert 'JIANYANG_API_KEY' not in os.environ\n"
+                "assert 'PUBLISH_SECRET' not in os.environ\n"
+                "Path('llama_cpp/patches').mkdir()\n"
+                "Path('llama_cpp/patches/0001-fix.patch').write_text('repair fixture')\n")
+            with patch.dict(os.environ, {
+                "SKIPPY_UPGRADE_REPAIR_COMMAND": json.dumps([sys.executable, str(agent)]),
+                "JIANYANG_GATEWAY_TOKEN": "fixture-model-access",
+                "GITHUB_TOKEN": "fixture-github-access", "GH_TOKEN": "fixture-gh-access",
+                "JIANYANG_API_KEY": "fixture-control-plane-key",
+                "PUBLISH_SECRET": "fixture-publication-secret",
+            }):
+                repair(checkout, sandbox / "diagnostics")
+            self.assertEqual((checkout / "llama_cpp/patches/0001-fix.patch").read_text(), "repair fixture")
+
     def test_packaged_recipe_has_source_identity_without_an_architecture_roster(self):
         from lib.native_recipe import write_native_recipe
         with tempfile.TemporaryDirectory() as tmp:
