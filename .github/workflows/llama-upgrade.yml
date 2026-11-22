@@ -29,23 +29,24 @@ env:
 jobs:
   candidate:
     if: github.ref == 'refs/heads/main'
-    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-8' || 'ubuntu-24.04' }}
+    runs-on:
+      group: jy-rnr_vfnz8k5p4yrh334
+      labels: [self-hosted, jy-linux-docker, Linux, X64]
     timeout-minutes: 180
     permissions:
       contents: read
-      packages: read
       pull-requests: read
-    container:
-      image: ghcr.io/mesh-llm/skippy-ci-cpu:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: bash
     env:
-      CARGO_BUILD_JOBS: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && '4' || '2' }}
-      CMAKE_BUILD_PARALLEL_LEVEL: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && '4' || '2' }}
+      CARGO_BUILD_JOBS: '4'
+      CMAKE_BUILD_PARALLEL_LEVEL: '4'
+      SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
+      LIBCLANG_PATH: /usr/lib/llvm-22/lib
+      GOOSE_MODE: auto
+      GOOSE_DISABLE_SESSION_NAMING: 'true'
+      SKIPPY_UPGRADE_REPAIR_COMMAND: ${{ vars.SKIPPY_UPGRADE_REPAIR_COMMAND || '["goose","run","--no-session","--with-builtin","developer","--text"]' }}
     outputs:
       changed: ${{ steps.resolve.outputs.changed }}
       validate: ${{ steps.resolve.outputs.validate }}
@@ -56,6 +57,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
       - name: Install pinned GitHub CLI
         run: |
           bash scripts/install-gh.sh "$RUNNER_TEMP/skippy-gh"
@@ -67,28 +71,24 @@ jobs:
           FORCE_CHECK: ${{ inputs.force_check || false }}
           GH_TOKEN: ${{ github.token }}
         run: just automation-run upgrade resolve --upstream "$UPSTREAM_SHA" --force-check "$FORCE_CHECK"
-      - name: Identify the CPU toolchain image
+      - name: Check JY native tools and repair agent
         if: steps.resolve.outputs.validate == 'true'
-        run: |
-          image_id="$(cat /etc/skippy-ci-image-id)"
-          test -n "$image_id"
-          echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
+        run: just automation-run upgrade runner-check
       - uses: ./.github/actions/cache
         if: steps.resolve.outputs.validate == 'true'
         with:
-          scope: upgrade-candidate-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
+          scope: upgrade-candidate-jy-llvm22
           download-scope: upgrade-candidate
       - uses: ./.github/actions/sccache
         id: compiler_cache
         if: steps.resolve.outputs.validate == 'true'
         with:
-          scope: upgrade-candidate-${{ runner.os }}-${{ runner.arch }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
+          scope: upgrade-candidate-jy-${{ runner.os }}-${{ runner.arch }}-llvm22
       - name: Prepare and freeze candidate
         id: prepare
         if: steps.resolve.outputs.validate == 'true'
         env:
           UPSTREAM_SHA: ${{ steps.resolve.outputs.upstream_sha }}
-          SKIPPY_UPGRADE_REPAIR_COMMAND: ${{ vars.SKIPPY_UPGRADE_REPAIR_COMMAND }}
         run: just automation-run upgrade prepare "$UPSTREAM_SHA"
       - uses: ./.github/actions/report-sccache
         if: ${{ !cancelled() && steps.compiler_cache.outcome == 'success' }}
@@ -131,18 +131,14 @@ jobs:
   repair:
     permissions:
       contents: read
-      packages: read
       actions: read
     needs: [candidate, qualify]
     if: >-
       !cancelled() && needs.candidate.result == 'success' &&
       needs.candidate.outputs.validate == 'true' && needs.qualify.result == 'failure'
-    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-8' || 'ubuntu-24.04' }}
-    container:
-      image: ghcr.io/mesh-llm/skippy-ci-cpu:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+    runs-on:
+      group: jy-rnr_vfnz8k5p4yrh334
+      labels: [self-hosted, jy-linux-docker, Linux, X64]
     defaults:
       run:
         shell: bash
@@ -150,21 +146,35 @@ jobs:
     outputs:
       candidate_sha: ${{ steps.prepare.outputs.candidate_sha }}
     env:
-      CARGO_BUILD_JOBS: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && '4' || '2' }}
-      CMAKE_BUILD_PARALLEL_LEVEL: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && '4' || '2' }}
+      CARGO_BUILD_JOBS: '4'
+      CMAKE_BUILD_PARALLEL_LEVEL: '4'
+      SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
+      LIBCLANG_PATH: /usr/lib/llvm-22/lib
+      GOOSE_MODE: auto
+      GOOSE_DISABLE_SESSION_NAMING: 'true'
+      SKIPPY_UPGRADE_REPAIR_COMMAND: ${{ vars.SKIPPY_UPGRADE_REPAIR_COMMAND || '["goose","run","--no-session","--with-builtin","developer","--text"]' }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           fetch-depth: 0
           persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
       - name: Install pinned GitHub CLI
         run: |
           bash scripts/install-gh.sh "$RUNNER_TEMP/skippy-gh"
           echo "$RUNNER_TEMP/skippy-gh" >> "$GITHUB_PATH"
+      - name: Check JY native tools and repair agent
+        run: just automation-run upgrade runner-check
       - uses: ./.github/actions/cache
         with:
-          scope: upgrade-tools
+          scope: upgrade-candidate-jy-llvm22
           download-scope: upgrade-candidate
+      - uses: ./.github/actions/sccache
+        id: compiler_cache
+        with:
+          scope: upgrade-candidate-jy-${{ runner.os }}-${{ runner.arch }}-llvm22
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: llama-initial-candidate
@@ -181,10 +191,13 @@ jobs:
         id: prepare
         env:
           UPSTREAM_SHA: ${{ needs.candidate.outputs.upstream_sha }}
-          SKIPPY_UPGRADE_REPAIR_COMMAND: ${{ vars.SKIPPY_UPGRADE_REPAIR_COMMAND }}
         run: >-
           just automation-run upgrade prepare "$UPSTREAM_SHA"
           --repair-bundle target/llama-repair/candidate/candidate.bundle --diagnostics target/llama-repair/diagnostics
+      - uses: ./.github/actions/report-sccache
+        if: ${{ !cancelled() && steps.compiler_cache.outcome == 'success' }}
+        with:
+          artifact-prefix: llama-repaired-preparation
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: llama-repaired-candidate

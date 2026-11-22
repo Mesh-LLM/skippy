@@ -531,9 +531,15 @@ the upgrade workflow. The four established inference models retain their
 separate PR/manual/nightly/release policy in `inference.yml`.
 
 The successful path has one full CI pass. A failed candidate may receive one
-agent repair followed by full CI on a fresh candidate. Preparation uses the
-selected Ubuntu runner and CPU toolchain image, with checksum-verified GitHub
-CLI installation. The schedule stays disabled until unchanged-pin and changed-pin
+agent repair followed by full CI on a fresh candidate. Preparation and repair
+run directly on the native JY Linux runner in group
+`jy-rnr_vfnz8k5p4yrh334` with labels `self-hosted`, `jy-linux-docker`, `Linux`
+and `X64`. Goose and its provider authentication come from that runner. These
+jobs do not use the hosted CPU container, which would hide the runner
+installation. Just and GitHub CLI remain pinned; native prerequisites include
+LLVM/Clang 22 under `/usr/lib/llvm-22`. A preflight checks the repair executable
+and native tools before preparation. The schedule stays disabled until
+unchanged-pin and changed-pin
 acceptance pilots demonstrate preparation, repair, full CI and exact-source PR
 publication. Use `force_check=true` to check the unchanged pin without opening
 an upgrade PR; the previous `force_certify` and `suite` inputs are removed.
@@ -585,15 +591,25 @@ just automation-run upgrade resolve --upstream FULL_UPSTREAM_SHA --force-check f
 just automation-run upgrade prepare FULL_UPSTREAM_SHA
 ```
 
+Before changing revisions, preparation replays the protected current pin and
+its ordered patch queue into the disposable native Git repository. Later patches
+can reference file versions produced by earlier patches; a cold upstream clone
+does not contain those intermediate merge bases. Seeding them makes three-way
+replay possible. It does not resolve genuine upstream source conflicts or change
+the selected target pin. An unchanged-pin rehearsal needs no seeding.
+
 Preparation regenerates bindings and documentation and updates the portable
 native source-recipe identity used by embedding consumers. Split planning uses
 actual stage graphs, required tensors, activation boundaries and backend
 compatibility. There is no family certification or experimental bypass.
 
-Configure `SKIPPY_UPGRADE_REPAIR_COMMAND` as a repository variable containing a
-JSON argv array for an installed repair agent. The runner must already provide
-the agent and its authentication. Preparation can make one repair attempt when
-native regeneration fails. After a full CI failure, the controller collects
+On the JY workflow jobs, the default repair command is
+`goose run --no-session --with-builtin developer --text`, with the diagnostic
+prompt appended as one argument. `GOOSE_MODE=auto` keeps repair noninteractive and session naming is disabled. The JY runner must
+already provide Goose and its provider authentication. A repository variable
+`SKIPPY_UPGRADE_REPAIR_COMMAND` may override the command with a JSON argv array.
+The preflight verifies the selected executable without opening an agent session.
+Preparation can make one repair attempt when native regeneration fails. After a full CI failure, the controller collects
 failed job logs and CI artifacts, repairs the disposable candidate, and reruns
 the complete gate. Native patch queues, bindings and generated API documentation
 may change. Policy, workflow, fixture selection, upstream pin and commit-history

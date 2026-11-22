@@ -41,3 +41,19 @@ test('normal upgrades run once and repaired candidates get fresh qualification',
   for (const job of callers) assert.match(job, /profile: full/);
   assert.match(controller, /--validated-sha "\$VALIDATED_SHA"/);
 });
+
+test('candidate preparation and repair run with Goose on the native JY runner', () => {
+  const controller = workflow('llama-upgrade.yml');
+  for (const name of ['candidate', 'repair']) {
+    const job = jobs(controller).find(job => job.startsWith(`  ${name}:\n`));
+    assert.match(job, /group: jy-rnr_vfnz8k5p4yrh334/);
+    assert.match(job, /labels: \[self-hosted, jy-linux-docker, Linux, X64\]/);
+    assert.doesNotMatch(job, /depot-|ubuntu-24\.04|container:|\/etc\/skippy-ci-image-id/);
+    assert.match(job, /GOOSE_MODE: auto/);
+    assert.match(job, /run: just automation-run upgrade runner-check/);
+    const fallback = job.match(/SKIPPY_UPGRADE_REPAIR_COMMAND: .*\|\| '([^']+)'/);
+    assert.deepEqual(JSON.parse(fallback[1]),
+      ['goose', 'run', '--no-session', '--with-builtin', 'developer', '--text']);
+    assert.doesNotMatch(job, /SKIPPY_UPGRADE_REPAIR_COMMAND: \$\{\{ vars\.SKIPPY_UPGRADE_REPAIR_COMMAND \}\}/);
+  }
+});

@@ -208,7 +208,7 @@ class Upgrade(unittest.TestCase):
         cwd = os.getcwd()
         os.chdir(root)
         try:
-            with patch.object(source, "regenerate", regenerate), patch.object(source, "check_upgrade_coverage"), \
+            with patch.object(source, "seed_patch_preimages"), patch.object(source, "regenerate", regenerate), patch.object(source, "check_upgrade_coverage"), \
                     patch.object(source, "write_native_recipe"), patch.object(source, "command", native), \
                     patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("GITHUB_OUTPUT", None)
@@ -310,7 +310,7 @@ class Upgrade(unittest.TestCase):
             cwd = Path.cwd()
             try:
                 os.chdir(root)
-                with patch.object(source, "regenerate", regenerate), \
+                with patch.object(source, "seed_patch_preimages"), patch.object(source, "regenerate", regenerate), \
                      patch.object(source, "check_upgrade_coverage"), patch.object(source, "write_native_recipe"), \
                      patch.object(source, "repair", side_effect=agent) as repair_agent, \
                      patch.object(source, "command", side_effect=native), \
@@ -347,7 +347,7 @@ class Upgrade(unittest.TestCase):
             cwd = Path.cwd()
             try:
                 os.chdir(root)
-                with patch.object(source, "regenerate", side_effect=regenerate), \
+                with patch.object(source, "seed_patch_preimages"), patch.object(source, "regenerate", side_effect=regenerate), \
                      patch.object(source, "check_upgrade_coverage", side_effect=coverage) as checked, \
                      patch.object(source, "write_native_recipe"), \
                      patch.object(source, "repair", side_effect=agent) as repaired, \
