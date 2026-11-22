@@ -84,7 +84,9 @@ contract; no downstream product's workflow topology applies here.
   Both Linux x64 and ARM64 can prepare CPU candidates. Use the supplied GitHub
   CLI rather than installing a replacement in the workflow.
   The workflow defaults to noninteractive Goose and preflights its
-  native tools. Seed the protected current patch queue before replaying a new
+  native tools. Explicitly pass JY's job-scoped model gateway token to the
+  repair child; keep the shared build subprocess credential filter unchanged.
+  Seed the protected current patch queue before replaying a new
   upstream revision so cold repositories have intermediate merge-base blobs.
   A bounded agent repair produces a fresh candidate and fresh full CI. Only the
   publisher receives scoped publication credentials. It can publish only the

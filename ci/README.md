@@ -617,6 +617,10 @@ prompt appended as one argument. `GOOSE_MODE=auto` keeps repair noninteractive a
 already provide Goose and its provider authentication. A repository variable
 `SKIPPY_UPGRADE_REPAIR_COMMAND` may override the command with a JSON argv array.
 The preflight verifies the selected executable without opening an agent session.
+JY supplies the job-scoped `JIANYANG_GATEWAY_TOKEN` for model access. Repair
+explicitly passes it to the agent; the shared subprocess filter continues to
+remove credentials from build commands. GitHub and publication tokens are not
+passed to repair.
 Preparation can make one repair attempt when native regeneration fails. After a full CI failure, the controller collects
 failed job logs and CI artifacts, repairs the disposable candidate, and reruns
 the complete gate. Native patch queues, bindings and generated API documentation
