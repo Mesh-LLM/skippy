@@ -31,7 +31,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on:
       group: jy-rnr_vfnz8k5p4yrh334
-      labels: [self-hosted, jy-linux-docker, Linux, native-contracts]
+      labels: [self-hosted, jy-linux-docker, Linux]
     timeout-minutes: 180
     permissions:
       contents: read
@@ -60,10 +60,8 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           cache: 'false'
-      - name: Install pinned GitHub CLI
-        run: |
-          bash scripts/install-gh.sh "$RUNNER_TEMP/skippy-gh"
-          echo "$RUNNER_TEMP/skippy-gh" >> "$GITHUB_PATH"
+      - name: Check runner GitHub CLI
+        run: gh --version
       - name: Resolve immutable upstream source
         id: resolve
         env:
@@ -138,7 +136,7 @@ jobs:
       needs.candidate.outputs.validate == 'true' && needs.qualify.result == 'failure'
     runs-on:
       group: jy-rnr_vfnz8k5p4yrh334
-      labels: [self-hosted, jy-linux-docker, Linux, native-contracts]
+      labels: [self-hosted, jy-linux-docker, Linux]
     defaults:
       run:
         shell: bash
@@ -161,10 +159,8 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           cache: 'false'
-      - name: Install pinned GitHub CLI
-        run: |
-          bash scripts/install-gh.sh "$RUNNER_TEMP/skippy-gh"
-          echo "$RUNNER_TEMP/skippy-gh" >> "$GITHUB_PATH"
+      - name: Check runner GitHub CLI
+        run: gh --version
       - name: Check JY native tools and repair agent
         run: just automation-run upgrade runner-check
       - uses: ./.github/actions/cache
