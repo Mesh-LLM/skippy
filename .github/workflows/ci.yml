@@ -177,9 +177,25 @@ jobs:
       - id: scope
         run: echo "value=smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/sccache
+        env:
+          SCCACHE_LOG: sccache::server=debug
+          SCCACHE_ERROR_LOG: ${{ runner.temp }}/sccache-smoke.log
         with:
           scope: ${{ steps.scope.outputs.value }}
       - run: just --justfile ci/sccache-smoke.just run seed
+      - name: Report cache upload failure category
+        if: failure()
+        run: |
+          log="$RUNNER_TEMP/sccache-smoke.log"
+          if [[ -s "$log" ]]; then
+            # Emit known error categories only. The log can contain signed URLs.
+            grep -Ei -A 12 'error executing cache write|storage write check failed' "$log" |
+              grep -Eio -e 'status(:| code)? [1-5][0-9]{2}' \
+                -e 'create cache entry returns non-ok|finalize cache entry upload|invalid signed url|sas is missing|bucket or path is missing' \
+                -e 'signaturedoesnotmatch|invalidblock|unsupported media type|protobuf|permission.denied' \
+                -e 'connection refused|timed out|unexpected|notfound|conditionnotmatch|ratelimited' |
+              sort -fu || true
+          fi
   sccache_read:
     name: Verify Depot compiler cache hits and read-only misses
     needs: sccache_seed
