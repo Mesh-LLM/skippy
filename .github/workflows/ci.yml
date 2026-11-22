@@ -156,13 +156,13 @@ env:
   # reports nothing. The key is a public ingestion token, not a secret.
   SKIPPY_POSTHOG_KEY: ${{ inputs.artifact_scope == 'release' && vars.SKIPPY_POSTHOG_KEY || '' }}
 jobs:
+  # Inherit cache-mode so callers of this reusable workflow can cap their access.
   sccache_seed:
     name: Populate the Depot compiler cache
     if: >-
       github.workflow_ref == 'Mesh-LLM/skippy/.github/workflows/ci.yml@refs/heads/main' &&
       github.event_name == 'workflow_dispatch' && inputs.profile == 'sccache'
     runs-on: depot-ubuntu-24.04-4
-    cache-mode: write
     timeout-minutes: 10
     outputs:
       scope: ${{ steps.scope.outputs.value }}
@@ -184,7 +184,6 @@ jobs:
     name: Verify Depot compiler cache hits and read-only misses
     needs: sccache_seed
     runs-on: depot-ubuntu-24.04-4
-    cache-mode: read
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -197,6 +196,7 @@ jobs:
       - uses: ./.github/actions/sccache
         with:
           scope: ${{ needs.sccache_seed.outputs.scope }}
+          read-only: 'true'
       - run: just --justfile ci/sccache-smoke.just run read
   pr_image_builds:
     # Enter through a reusable already on main. GitHub resolves the outer

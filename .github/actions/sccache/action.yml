@@ -4,6 +4,9 @@ inputs:
   scope:
     description: Platform and backend identity for cache isolation.
     required: true
+  read-only:
+    description: Use the compiler cache in read-only mode even on protected main.
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -19,6 +22,7 @@ runs:
       shell: bash
       env:
         SCCACHE_SCOPE: ${{ inputs.scope }}
+        SCCACHE_READ_ONLY: ${{ inputs.read-only }}
       run: |
         set -euo pipefail
         version=0.19.0
@@ -67,7 +71,8 @@ runs:
         export SCCACHE_GHA_RW_MODE=READ_ONLY
         case "${GITHUB_REF:-}:$GITHUB_EVENT_NAME" in
           refs/heads/main:push|refs/heads/main:schedule|refs/heads/main:workflow_dispatch)
-            if [[ "${GITHUB_REF_PROTECTED:-false}" == true && "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]; then
+            if [[ "$SCCACHE_READ_ONLY" != true && "${GITHUB_REF_PROTECTED:-false}" == true &&
+                  "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]; then
               case "${SKIPPY_ACTIONS_CACHE_MODE:-write}" in
                 write|write-only) export SCCACHE_GHA_RW_MODE=READ_WRITE ;;
               esac

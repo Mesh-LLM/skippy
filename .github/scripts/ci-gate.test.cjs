@@ -115,15 +115,15 @@ test('ordinary PRs call protected workflows with scoped cache access and read-on
   }
 });
 
-test('Depot compiler cache smoke runs only on manual protected main and uses two cache modes', () => {
+test('Depot compiler cache smoke runs only on manual protected main and caps its reader', () => {
   const [seed, read] = workflow.split('\n  sccache_seed:\n')[1]
     .split('\n  pr_image_builds:\n')[0].split('\n  sccache_read:\n');
   assert.match(seed, /github\.workflow_ref == 'Mesh-LLM\/skippy\/\.github\/workflows\/ci\.yml@refs\/heads\/main'/);
   assert.match(seed, /github\.event_name == 'workflow_dispatch' && inputs\.profile == 'sccache'/);
-  assert.match(seed, /^    cache-mode: write$/m);
+  assert.doesNotMatch(seed + read, /^    cache-mode:/m);
   assert.match(read, /^    needs: sccache_seed$/m);
-  assert.match(read, /^    cache-mode: read$/m);
   assert.match(read, /needs\.sccache_seed\.outputs\.scope/);
+  assert.match(read, /read-only: 'true'/);
   const changes = workflow.split('\n  changes:\n')[1].split('\n  plan:\n')[0];
   assert.match(changes, /github\.event_name != 'workflow_dispatch' \|\| inputs\.profile != 'sccache'/);
 });
