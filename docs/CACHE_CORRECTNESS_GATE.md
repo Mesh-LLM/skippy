@@ -26,7 +26,13 @@ On x86_64 Linux with CUDA, point the same variables at the CUDA builds and use
 The test renders the same chat in both engines and compares the rendered prompt
 hash, exact prompt and generated token IDs, and output text. It compares the
 top five alternatives by token ID at each of eight decode checkpoints
-and allows an absolute difference of 0.05 for normalized log probabilities.
+and requires either an absolute normalized log-probability difference at most
+0.05 or an absolute probability difference at most 0.000001. The probability
+bound covers tiny alternatives: upstream itself can exceed the log-space bound
+on an exact cached repeat because prefill and single-token kernels differ.
+Generated token IDs, text, and the top-five alternative IDs must still match
+exactly. Report schema 10 records both bounds; independent verification rejects
+reports with different bounds.
 The reference server and Skippy expose these scores after normalization.
 The cold reference disables context checkpoint creation as well as prompt
 reuse so checkpoint boundaries cannot change its prefill batches.

@@ -12,7 +12,10 @@ use std::collections::BTreeMap;
 
 // Compare normalized logits from the unfiltered softmax at each decode step.
 const LOGPROB_TOLERANCE: f64 = 0.05;
-const SCHEMA_VERSION: u32 = 9;
+// Batch kernels can move tiny alternative probabilities by fractions of a
+// millionth while their log-space relative difference exceeds the bound above.
+const PROBABILITY_TOLERANCE: f64 = 1e-6;
+const SCHEMA_VERSION: u32 = 10;
 const SCENARIO: &str = "cross_tier_replay";
 const ABI: [u32; 3] = [
     skippy_runtime::ABI_VERSION_MAJOR,
@@ -38,6 +41,7 @@ pub(super) struct Report {
     llama_pin: String,
     skippy_abi: [u32; 3],
     logprob_abs_tolerance: f64,
+    probability_abs_tolerance: f64,
     context_tokens: u32,
     pub(super) model_sha256: Option<String>,
     pub(super) skippy_binary_sha256: Option<String>,
@@ -75,6 +79,7 @@ impl Report {
             llama_pin: LLAMA_PIN.trim().into(),
             skippy_abi: ABI,
             logprob_abs_tolerance: LOGPROB_TOLERANCE,
+            probability_abs_tolerance: PROBABILITY_TOLERANCE,
             context_tokens: CONTEXT_TOKENS,
             model_sha256: None,
             skippy_binary_sha256: None,
@@ -200,7 +205,8 @@ fn require_expected_identity(report: &Report) -> Result<()> {
             && report.llama_pin == LLAMA_PIN.trim()
             && report.skippy_abi == ABI
             && report.context_tokens == CONTEXT_TOKENS
-            && report.logprob_abs_tolerance == LOGPROB_TOLERANCE,
+            && report.logprob_abs_tolerance == LOGPROB_TOLERANCE
+            && report.probability_abs_tolerance == PROBABILITY_TOLERANCE,
         "correctness evidence does not match this qualification contract"
     );
     let pinned = Fixture::load(report.fixture.family)?;
@@ -626,7 +632,8 @@ fn compare_scores(left: &[TokenScore], right: &[TokenScore]) -> Result<()> {
     for (token_id, expected) in left {
         let actual = right[&token_id];
         ensure!(
-            (actual - expected).abs() <= LOGPROB_TOLERANCE,
+            (actual - expected).abs() <= LOGPROB_TOLERANCE
+                || (actual.exp() - expected.exp()).abs() <= PROBABILITY_TOLERANCE,
             "normalized logit for token {token_id} differs: expected {expected}, observed {actual}"
         );
     }
@@ -636,6 +643,27 @@ fn compare_scores(left: &[TokenScore], right: &[TokenScore]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn score_comparison_bounds_tiny_probability_drift_without_accepting_meaningful_shifts() {
+        let mut left = passing_report()
+            .cold
+            .unwrap()
+            .generation
+            .top_logprobs
+            .remove(0);
+        let mut right = left.clone();
+        left[4].logprob = Some(-11.689298629760742);
+        right[4].logprob = Some(-11.638525009155273);
+        compare_scores(&left, &right).unwrap();
+
+        left[4].logprob = Some(-2.470427989959717);
+        right[4].logprob = Some(-2.54160475730896);
+        assert!(compare_scores(&left, &right).is_err());
+        right[4] = left[4].clone();
+        right[4].id ^= 100;
+        assert!(compare_scores(&left, &right).is_err());
+    }
 
     fn passing_report() -> Report {
         let score = (0..TOP_K)
