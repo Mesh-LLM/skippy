@@ -3,8 +3,8 @@ set -euo pipefail
 
 phase="${1:?expected seed or read}"
 case "$phase" in
-  seed) mode=READ_WRITE; hits=0; writes=1 ;;
-  read) mode=READ_ONLY; hits=1; writes=0 ;;
+  seed) mode=READ_WRITE; hits=0; writes=1; allowed_write_errors=0 ;;
+  read) mode=READ_ONLY; hits=1; writes=0; allowed_write_errors=1 ;;
   *) echo "Unknown sccache smoke phase $phase" >&2; exit 1 ;;
 esac
 
@@ -38,6 +38,7 @@ stats=$("$SCCACHE" --show-stats --stats-format json | jq '{
   write_errors: .stats.cache_write_errors
 }')
 echo "$stats"
-jq -e --argjson hits "$hits" --argjson writes "$writes" \
+# sccache 0.19 counts rejecting a read-only store locally as a write error.
+jq -e --argjson hits "$hits" --argjson writes "$writes" --argjson allowed_write_errors "$allowed_write_errors" \
   '.remote and .hits == $hits and .misses == 1 and .writes == $writes
-   and .read_errors == 0 and .write_errors == 0' <<< "$stats" >/dev/null
+   and .read_errors == 0 and (.write_errors == 0 or .write_errors == $allowed_write_errors)' <<< "$stats" >/dev/null
