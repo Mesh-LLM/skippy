@@ -44,7 +44,7 @@ make that explicit rather than relying on tribal memory.
 dated artifact. It records correctness reports, state-handoff
 payload pressure, optional staged speculative corpus summaries, and a
 `capability-draft.json` that can inform explicit planner policy after review;
-see `docs/FAMILY_CERTIFY.md`.
+see `docs/FAMILY_QUALIFICATION.md`.
 
 ## Core Rule
 
@@ -184,14 +184,13 @@ physical decode hops whenever residency allows it.
 Family capability records let the planner evaluate exceptional split boundaries,
 sidebands, and state affinity. Callers can supply them from inspected model
 metadata; model-name inference remains advisory and does not certify a family.
-Default split serving is gated separately by the release-bound certification
-roster generated from `ci/llama-canary/family-certified.json`.
+Split serving validates the actual native stage plans and activation frontiers.
+`ci/llama-canary/model-fixtures.json` selects immutable qualification inputs.
 
 Special cases such as Gemma4 E4B shared-KV cuts, Gemma3n auxiliary sidebands,
 and recurrent-family owner affinity remain explicit capability constructors in
 `skippy-topology`. A model name alone does not upgrade an untested mobility
-policy to accepted; loaded-model metadata and certification evidence govern
-runtime admission.
+policy to accepted; loaded-model metadata and native graph contracts govern runtime admission.
 
 The important behavioral distinction is:
 

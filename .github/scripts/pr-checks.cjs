@@ -1,5 +1,6 @@
 // Protected-main controller. It reads candidate metadata but never executes it.
 const expectedWorkflows = require('./pr-trigger-paths.cjs');
+const validateAcceptance = require('./pr-acceptance.cjs');
 const workflowPath = run => run.path?.split('@')[0];
 const automaticPR = run => ['pull_request', 'pull_request_target'].includes(run.event);
 const accepted = new Set(['success', 'skipped', 'neutral']);
@@ -29,6 +30,7 @@ module.exports = async function aggregate({ github, context, core, depot = false
     });
     try {
       await status('pending', 'Checking all applicable PR workflows');
+      validateAcceptance(pr.body);
       const files = await github.paginate(github.rest.pulls.listFiles,
         { ...repo, pull_number: pr.number, per_page: 100 });
       if (files.length < pr.changed_files) {
@@ -76,9 +78,10 @@ module.exports = async function aggregate({ github, context, core, depot = false
         if (check.state === 'pending') pending = true;
         else if (check.state !== 'success') throw new Error(`${check.context}: ${check.state}`);
       }
-      // Re-read immediately before publishing: old events cannot green a new head.
+      // Re-read immediately before publishing: neither an old head nor body can green the PR.
       const { data: current } = await github.rest.pulls.get({ ...repo, pull_number: pr.number });
       if (current.state !== 'open' || current.head.sha !== source) continue;
+      validateAcceptance(current.body);
       if (pending || expected.size) {
         await status('pending', 'Waiting for applicable PR checks to finish');
       } else {

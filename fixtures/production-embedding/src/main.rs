@@ -17,7 +17,6 @@ struct Inputs {
     return_endpoint: SocketAddr,
     worker_endpoint: SocketAddr,
     device: Option<String>,
-    experimental_split: bool,
 }
 
 impl Inputs {
@@ -44,11 +43,6 @@ impl Inputs {
             .ok_or("supply the native device or '-' for CPU")?
             .into_string()
             .map_err(|_| "device must be UTF-8")?;
-        let experimental_split = match args.next().as_deref().and_then(|value| value.to_str()) {
-            Some("certified") => false,
-            Some("experimental") => true,
-            _ => return Err("supply certified or experimental split policy".into()),
-        };
         if args.next().is_some() {
             return Err("unexpected argument".into());
         }
@@ -59,7 +53,6 @@ impl Inputs {
             return_endpoint,
             worker_endpoint,
             device: (device != "-").then_some(device),
-            experimental_split,
         })
     }
 
@@ -77,8 +70,7 @@ impl Inputs {
             peer,
         )?
         .with_limits(512, 1, 32)
-        .with_startup_timeout(Duration::from_secs(90))
-        .allow_uncertified(self.experimental_split);
+        .with_startup_timeout(Duration::from_secs(90));
         Ok(match &self.device {
             Some(device) => options.with_backend_device(device, -1),
             None => options.with_backend_device("CPU", 0),

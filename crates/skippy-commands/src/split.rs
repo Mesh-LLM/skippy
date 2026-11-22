@@ -12,8 +12,6 @@ pub struct PlanSplitCommand {
     pub ctx_size: u32,
     pub lanes: u32,
     pub n_gpu_layers: i32,
-    /// Explicit experimental admission; defaults to the release-bound roster.
-    pub allow_uncertified_split: bool,
     /// New directory for stage configs and their admission descriptors; never overwritten.
     pub output_dir: PathBuf,
 }
@@ -72,10 +70,8 @@ pub fn run(args: PlanSplitCommand) -> Result<()> {
             ctx_size: args.ctx_size,
             lanes: args.lanes,
             n_gpu_layers: args.n_gpu_layers,
-            allow_uncertified_split: args.allow_uncertified_split,
         },
     )?;
-    let certification = plan.certification();
     let topology = plan.topology();
     let model_id = &topology.model_id;
     let identity = plan.identity();
@@ -93,12 +89,12 @@ pub fn run(args: PlanSplitCommand) -> Result<()> {
     std::fs::write(
         args.output_dir.join("admissions.json"),
         serde_json::to_vec_pretty(&serde_json::json!({
-            "certification": certification.as_str(),
+            "schema_version": 2,
             "stages": admissions.iter().map(admission_json).collect::<Vec<_>>()
         }))?,
     )?;
     crate::console::write_json(
-        &serde_json::json!({"certification":certification.as_str(),"run_id":run_id,"model_id":model_id,"output_dir":args.output_dir,"topology":topology,"source_sha256":identity.source_model_sha256}),
+        &serde_json::json!({"schema_version":2,"run_id":run_id,"model_id":model_id,"output_dir":args.output_dir,"topology":topology,"source_sha256":identity.source_model_sha256}),
     )
 }
 
@@ -140,7 +136,6 @@ mod tests {
             ctx_size: 512,
             lanes: 1,
             n_gpu_layers: 0,
-            allow_uncertified_split: false,
             output_dir: root.path().join("plan"),
         };
         assert!(
@@ -162,7 +157,6 @@ mod tests {
             ctx_size: 512,
             lanes: 1,
             n_gpu_layers: 0,
-            allow_uncertified_split: false,
             output_dir: root.path().join("plan"),
         };
         assert!(run(args).unwrap_err().to_string().contains("distinct"));

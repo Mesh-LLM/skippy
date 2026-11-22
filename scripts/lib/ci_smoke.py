@@ -47,7 +47,7 @@ def artifact_smoke(host, runtime, product_input):
 
 
 def model_digest(model):
-    manifest = artifacts.read_json(Path("ci/llama-canary/family-certified.json"))
+    manifest = artifacts.read_json(Path("ci/llama-canary/model-fixtures.json"))
     row = next((row for row in manifest["models"] if row["family"] == "qwen3-dense"), None)
     if row is None:
         raise ValueError("missing Qwen3 dense fixture")
@@ -163,5 +163,6 @@ def smoke(host, runtime, product_input):
                     raise RuntimeError(f"packaged server exited with status {server.returncode}")
         artifacts.write_json(output / "smoke.json", {
             "source": artifacts.source(), "variant": variant, "backend": backend,
+            "archive_sha256": artifacts.digest(product_input / f"skippy-{variant}.tar.gz"),
             "gpu_offload_required": gpu, "model_sha256": digest, "response": response,
         })
