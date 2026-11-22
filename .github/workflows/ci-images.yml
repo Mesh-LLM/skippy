@@ -1,10 +1,10 @@
 name: CI images
 on:
   pull_request:
-    paths: ['.github/workflows/ci-images.yml', '.github/workflows/ci-images-pr.yml', '.github/workflows/ci-image-builds.yml', 'ci/image-targets.json', 'ci/Dockerfile*', 'ci/targets.json', 'rust-toolchain.toml', 'Justfile']
+    paths: ['.github/workflows/ci-images.yml', '.github/workflows/ci-images-pr.yml', '.github/workflows/ci-image-builds.yml', 'ci/image-targets.json', 'ci/Dockerfile*', 'ci/targets.json', 'scripts/ci-preserve-cuda-license.sh', 'rust-toolchain.toml', 'Justfile']
   push:
     branches: [main]
-    paths: ['.github/workflows/ci-images.yml', '.github/workflows/ci-images-pr.yml', '.github/workflows/ci-image-builds.yml', 'ci/image-targets.json', 'ci/Dockerfile*', 'ci/targets.json', 'rust-toolchain.toml', 'Justfile']
+    paths: ['.github/workflows/ci-images.yml', '.github/workflows/ci-images-pr.yml', '.github/workflows/ci-image-builds.yml', 'ci/image-targets.json', 'ci/Dockerfile*', 'ci/targets.json', 'scripts/ci-preserve-cuda-license.sh', 'rust-toolchain.toml', 'Justfile']
   workflow_dispatch:
     inputs:
       build_only:
