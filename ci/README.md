@@ -534,13 +534,17 @@ separate PR/manual/nightly/release policy in `inference.yml`.
 The successful path has one full CI pass. A failed candidate may receive one
 agent repair followed by full CI on a fresh candidate. Preparation and repair
 run directly on the native JY Linux runner in group
-`jy-rnr_vfnz8k5p4yrh334` with labels `self-hosted`, `jy-linux-docker`, `Linux`
-and `native-contracts`. Both Linux x64 and ARM64 machines can prepare CPU
+`jy-rnr_vfnz8k5p4yrh334` with labels `self-hosted`, `jy-linux-docker` and `Linux`.
+The JY selection uses the Fleet-managed Linux container, whose baseline includes
+GitHub CLI, Goose and LLVM/Clang 22. Fleet containers publish standard Linux
+container labels; the selection's custom labels apply to its native listener.
+Both Linux x64 and ARM64 machines can prepare CPU
 candidates; compiler caches remain architecture-scoped. An x64-only selector
 can leave preparation queued while the pool's ARM64 machines are idle.
 Goose and its provider authentication come from that runner. These
 jobs do not use the hosted CPU container, which would hide the runner
-installation. Just and GitHub CLI remain pinned; native prerequisites include
+installation. Just remains pinned; GitHub CLI is checked with `gh --version`
+and used directly from the managed image. Native prerequisites include
 LLVM/Clang 22 under `/usr/lib/llvm-22`. A preflight checks the repair executable
 and native tools before preparation. The schedule stays disabled until
 unchanged-pin and changed-pin
