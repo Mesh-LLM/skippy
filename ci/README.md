@@ -287,6 +287,10 @@ each hosted runner only needs space for one toolkit. Both CUDA toolkits build
 on native x86_64 and ARM64 Ubuntu runners.
 Use `skippy-ci-cuda12:latest-arm64` and `skippy-ci-cuda13:latest-arm64` for
 Linux ARM64. The `latest` tags serve Linux x86_64. ROCm builds for Linux x86_64.
+Before pruning documentation, CUDA images retain the supplied toolkit's EULA
+or matching `cuda-cudart` package copyright at `/usr/local/cuda/EULA.txt`.
+Image builds and smoke checks require this file so runtime packaging can copy
+the original redistribution terms into `licenses/NVIDIA-CUDA-LICENSE.txt`.
 The images include Rust and native build tools and compile a small
 backend-specific kernel during the image build. PRs build,
 smoke, and stream each exact image into a gzip-compressed archive without

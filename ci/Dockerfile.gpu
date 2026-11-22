@@ -2,6 +2,10 @@
 ARG TOOLKIT_BASE=ubuntu:24.04
 FROM ${TOOLKIT_BASE} AS toolkit
 
+ARG BACKEND
+ARG TOOLKIT_VERSION
+COPY scripts/ci-preserve-cuda-license.sh /tmp/ci-preserve-cuda-license.sh
+
 # Drop vendor content CI never uses so consumers can pull the image onto
 # hosted runners with a 14 GB disk budget: profilers, docs, samples, the
 # compute sanitizer, and every static archive (builds link the shared
@@ -22,6 +26,9 @@ FROM ${TOOLKIT_BASE} AS toolkit
 # and hipcc link, and hipcc resolves them from the ROCm clang resource
 # directory, so deleting them breaks any device-host link.
 RUN set -eu \
+    && case "$BACKEND" in \
+         cuda12|cuda13) bash /tmp/ci-preserve-cuda-license.sh "$TOOLKIT_VERSION" ;; \
+       esac \
     && rm -rf \
       /usr/local/cuda/nsight-compute* \
       /usr/local/cuda/nsight-systems* \
@@ -37,14 +44,16 @@ RUN set -eu \
            find "$(readlink -f "$tree")" -name '*.a' ! -name 'libcudadevrt.a' ! -name 'libcudart_static.a' ! -name 'libclang_rt*' -type f -delete; \
          fi; \
        done \
-    && if [ -L /opt/rocm ]; then \
-         ln -sfn "$(readlink -f /opt/rocm)" /opt/rocm; \
-       fi
+    && for tree in /usr/local/cuda /usr/local/cuda-* /opt/rocm; do \
+         if [ -L "$tree" ]; then \
+           ln -sfn "$(readlink -f "$tree")" "$tree"; \
+         fi; \
+       done
 
-# ROCm resolves /opt/rocm through /etc/alternatives, which is not part of
-# the copied trees; the toolkit stage flattens that chain to a direct
-# symlink so the final image does not dangle. Copy the parent directories
-# so symlinks survive: the vendor trees use /usr/local/cuda ->
+# CUDA and ROCm resolve their toolkit aliases through /etc/alternatives,
+# which is not part of the copied trees; the toolkit stage flattens those
+# chains to direct symlinks so the final image does not dangle. Copy the
+# parent directories so symlinks survive: the vendor trees use /usr/local/cuda ->
 # /usr/local/cuda-<version> and the flattened /opt/rocm ->
 # /opt/rocm-<version>, and scripts call the versioned paths.
 FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8
