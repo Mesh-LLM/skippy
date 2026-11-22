@@ -61,7 +61,7 @@ just automation-run automation native-generator generate \
   --output target/generated-family-combined.patch \
   --shard-output-dir llama_cpp/patches/generated \
   --family-source-map ci/llama-canary/generated-family-map.json \
-  --family-manifest ci/llama-canary/family-certified.json
+  --family-manifest ci/llama-canary/model-fixtures.json
 ```
 
 The wrapper refuses a dirty or pre-transformed input tree, applies the

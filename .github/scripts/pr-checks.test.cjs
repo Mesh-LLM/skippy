@@ -148,6 +148,13 @@ test('native CI and inference triggers match their independent route lists', () 
         (trigger.endsWith('/**') && path.startsWith(trigger.slice(0, -2)))), `CI never triggers for ${path}`);
     }
   }
+  const mainIncludes = lists(pushPaths.split(/^  schedule:\n/m)[0]).filter(path => !path.startsWith('!'));
+  for (const name of ['packaging', 'native']) {
+    for (const path of route(name).filter(path => !path.startsWith('!'))) {
+      assert.ok(mainIncludes.some(trigger => trigger === path ||
+        (trigger.endsWith('/**') && path.startsWith(trigger.slice(0, -2)))), `Main CI never triggers for ${name}: ${path}`);
+    }
+  }
 });
 
 test('same-repository PRs to any base wait for the protected CI producer', async () => {

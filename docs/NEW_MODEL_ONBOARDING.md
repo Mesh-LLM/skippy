@@ -41,8 +41,8 @@ only a candidate until the evidence exists.
    is not promotion evidence: the live split must allocate 131,072 and complete
    a request with at least 120,000 prompt tokens plus a continuation.
 7. Promote only after the evidence maps cleanly to
-   `docs/FAMILY_STATUS.md` and the release-bound certification manifest
-   at `ci/llama-canary/family-certified.json`. Review any exceptional topology
+   `docs/FAMILY_STATUS.md` and the immutable qualification fixture registry
+   at `ci/llama-canary/model-fixtures.json`. Review any exceptional topology
    rules in `crates/skippy-topology`.
 
 ## Standard Checks

@@ -1,6 +1,6 @@
 # Skippy continuous integration
 
-`ci.yml` reports `CI` for automation, code checks and selected PR package smoke, and
+`ci.yml` reports `CI` for automation, code checks and selected PR/main package smoke, and
 `Full CI gate` for the complete package roster and Graph Contracts. Release callers
 require the full workflow result independently
 of the check name. The single required status is `PR checks`, the
@@ -40,7 +40,7 @@ and no exclusion. The routes are independent; mixed PRs run all applicable work.
 | `packages` | Linux ARM64 CUDA 13 and macOS ARM64 Metal builds and packaged inference on real devices, after automation and any applicable source checks pass. |
 | `inference` | The separate qualification workflow, using its native trigger list and the existing manual PR policy. |
 
-Runtime source and package/build/smoke inputs select device package smoke.
+On PRs, runtime source and package/build/smoke inputs select device package smoke.
 Qualification planning, dispatch, scoring, baselines and publication select
 qualification and offline automation without rebuilding packages. Renderers,
 charts, workflow controllers and standalone automation tests select only offline
@@ -57,9 +57,22 @@ unchanged. Keep new automation recipes there instead of editing the root file.
 `.gi/templates.yaml` selects qualification, while `.gi/agents/**` is excluded.
 
 PR routing changes take effect after the filters reach the PR's base commit.
-Main pushes keep conservative source checks, including after automation-only
-merges, so coalesced pushes cannot lose outstanding source validation. Scheduled,
-manual and reusable full validation retain all eight packages and Graph Contracts.
+Main pushes keep conservative source checks with the short CI profile, including
+when the latest push changes only automation. Inference, packaging or native
+changes select the same ARM64 CUDA 13 and Metal device smokes on the exact
+merged SHA; native changes additionally select Graph Contracts. Main-only
+`packaging` and `native` filters extend the PR package route without changing PR
+admission. Main still treats qualification execution/configuration as smoke
+inputs; the narrower package route applies to PRs.
+
+Main compares against the most recent verified successful ancestor main-push
+CI run, including changes from failed runs and pending runs replaced by
+concurrency coalescing. If prior coverage cannot be verified, require both
+device smokes and Graph Contracts. The gate rejects missing, skipped, failed
+or cancelled selected jobs. Exact promoted-release receipt reuse avoids
+repeating validated work. Scheduled, manual and reusable full validation
+retain all eight packages and Graph Contracts. Main merges do not start the
+separate Spark qualification ladder.
 
 The protected inference workflow has its own qualification paths, separate from
 package smoke. PR qualification is manual: it runs only when the PR carries the
@@ -495,47 +508,92 @@ theirs for retry and diagnosis.
 
 ## Llama upgrades
 
-`llama-upgrade.yml` runs from protected main. The controller resolves a release
-or explicit immutable upstream SHA and exports a digest-bound Git bundle. It
-uses the x64 CPU toolchain image and a checksum-verified GitHub CLI on the
-selected Ubuntu runner. Both CI passes and both family passes restore the same
-candidate. The CPU, Metal and CUDA family jobs consume immutable offline model
-caches and retain per-pass evidence. They receive no GitHub write credential.
+Issue [#12](https://github.com/Mesh-LLM/skippy/issues/12) tracks the simplified
+upgrade pipeline. `llama-upgrade.yml` runs from protected main. It resolves an
+immutable upstream SHA, prepares a digest-bound candidate bundle and calls
+existing full CI once. That includes the native graph contracts, small synthetic
+execution tests and existing package/device smoke. No additional real-model
+inference, CPU family sweep, CUDA split battery or Spark dispatch runs inside
+the upgrade workflow. The four established inference models retain their
+separate PR/manual/nightly/release policy in `inference.yml`.
 
-Candidate preparation can be rehearsed before merge from a clean local PR
-checkout, with the native build prerequisites above and
-`SKIPPY_REWRITER_LLVM_PREFIX` set:
+The successful path has one full CI pass. A failed candidate may receive one
+agent repair followed by full CI on a fresh candidate. Preparation uses the
+selected Ubuntu runner and CPU toolchain image, with checksum-verified GitHub
+CLI installation. The schedule stays disabled until unchanged-pin and changed-pin
+acceptance pilots demonstrate preparation, repair, full CI and exact-source PR
+publication. Use `force_check=true` to check the unchanged pin without opening
+an upgrade PR; the previous `force_certify` and `suite` inputs are removed.
+
+### Graph coverage
+
+`model-fixtures.json` remains an input to existing synthetic graph contracts and
+the normal small-model smoke. It grants no family support designation and no
+longer drives a real-model upgrade battery. The graph checker validates every
+registered architecture, trunk depth, activation width, MTP count and test mode
+against the executable native CTest definitions. Missing, duplicate and stale
+cases fail. Supplemental GLM cases must include both fixture generation and an
+executable graph check.
+
+`graph-coverage.json` configures special modes and supplemental source mappings
+for existing regression tests. It contains no architecture coverage baseline or
+allowlist. The checker reads the current upstream model factory and rewriter
+report and records uncovered architectures and decoder builders. Upgrade
+preparation also records changed uncovered builders. All of these gaps are
+informational, including newly introduced architectures: missing a synthetic case
+alone does not fail an upgrade or invoke repair. CI logs summarize gap counts,
+and the retained report lists the names.
+
+Existing graph-contract regressions, malformed integration reports, patch/rewrite
+failures and compilation failures still block the upgrade and feed bounded
+repair. Add synthetic cases for distinct split mechanisms and concrete
+regressions as needed, rather than requiring a fixture for every upstream
+addition. Cases require no real model download; a passing default shape does
+not establish coverage of every metadata-dependent variant.
+
+The graph check runs during preparation and `just llama-check`. Its report is
+retained in CI artifacts, and preparation failures retain their graph report
+alongside patch diagnostics. Ordinary offline automation tests reconstruct the
+actual CTest table from the ordered core/model-support patches and validate the
+registry without building llama.cpp or loading weights. Small synthetic numerical
+tests remain in the native suite; they exercise execution and state behavior
+that structural graph checks cannot prove.
+
+These checks do not establish a measured 90% split success rate or universal
+numerical correctness across upstream models, quantizations and backends.
+
+### Preparation, repair and publication
+
+Candidate preparation can be rehearsed from a clean checkout with the native
+prerequisites and `SKIPPY_REWRITER_LLVM_PREFIX` set.
 
 ```sh
-just automation-run upgrade resolve --upstream FULL_UPSTREAM_SHA --force-certify false
+just automation-run upgrade resolve --upstream FULL_UPSTREAM_SHA --force-check false
 just automation-run upgrade prepare FULL_UPSTREAM_SHA
 ```
 
-These commands do not push, merge, tag or publish. Preparation writes a candidate
-bundle only after regeneration and full patch replay succeed. It does not run
-family qualification. Core/model-support conflicts require a reviewed repair,
-not a wider automatic-update allowlist. Failed native preparation retains Git
-status, the source diff and the active failed patch (when available) under
-`target/llama-upgrade/diagnostics` before removing its temporary checkout; the
-workflow uploads that directory on failure. Local preparation does not bypass
-the protected-main admission checks for the full Actions pipeline.
+Preparation regenerates bindings and documentation and updates the portable
+native source-recipe identity used by embedding consumers. Split planning uses
+actual stage graphs, required tensors, activation boundaries and backend
+compatibility. There is no family certification or experimental bypass.
+
+Configure `SKIPPY_UPGRADE_REPAIR_COMMAND` as a repository variable containing a
+JSON argv array for an installed repair agent. The runner must already provide
+the agent and its authentication. Preparation can make one repair attempt when
+native regeneration fails. After a full CI failure, the controller collects
+failed job logs and CI artifacts, repairs the disposable candidate, and reruns
+the complete gate. Native patch queues, bindings and generated API documentation
+may change. Policy, workflow, fixture selection, upstream pin and commit-history
+changes by the agent are rejected. An unavailable agent or exhausted attempt
+fails the upgrade. An initial failed CI attempt remains visible as a failure in
+Actions even when the repaired candidate later passes and opens a PR.
 
 Only the publisher uses `SKIPPY_UPGRADE_APP_ID` and
-`SKIPPY_UPGRADE_APP_PRIVATE_KEY`, with repository-scoped Contents and Pull
-requests write permissions. It pushes only the verified candidate and opens a
-normal PR; it does not merge, tag or release. App authentication ensures the PR
-starts ordinary CI.
-
-The daily cron is intentionally disabled until the unchanged-pin and real
-changed-pin acceptance runs succeed. The controller/family migration must be
-completed and validated before enabling it; the retained shell battery must not
-be treated as working merely because its script is present. Missing native
-commands, regeneration, family receipts or publisher admission are hard failures.
-
-The retained family manifest includes dense, MoE, Next, VL, VL MoE and TTS Qwen3
-fixtures, plus the broader supported family roster. Preserve declared
-profile-specific oracles and all pinned sidecars. The OCR image's legacy filename
-and label are fixture compatibility data, not a downstream product dependency.
+`SKIPPY_UPGRADE_APP_PRIVATE_KEY`. Its Contents and Pull requests write permissions
+are scoped to this repository. It verifies the immutable bundle's source and
+requires its candidate SHA to match the one selected by the successful initial
+or repaired full CI job before pushing and opening the PR. No staging refs,
+upgrade-specific JY profiles or live-model receipts are needed.
 
 ## Bring-up evidence
 
@@ -544,7 +602,7 @@ rejects a failed row. Then exercise a canary and a dispatched prerelease. Verify
 all enabled bundles, private authenticated downloads, clean installation and
 CPU/Metal/CUDA serving.
 Exercise partial draft upload recovery and published-release overwrite refusal.
-Only after source regeneration, both full candidate passes and exact-commit PR
-publication work should the llama schedule be enabled.
+Enable the llama schedule only after source regeneration, full candidate CI,
+bounded repair and exact-commit PR publication work in acceptance pilots.
 
 No hosted/hardware capacity or secret configuration is implied by these files.

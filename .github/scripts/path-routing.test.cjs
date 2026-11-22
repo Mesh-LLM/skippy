@@ -120,7 +120,7 @@ test('CI selects package jobs independently of qualification and preserves full 
     assert.equal(decide('code', event, {}), true, event);
     assert.equal(decide('packages', event, {}), false, event);
   }
-  for (const name of ['automation', 'code', 'packages', 'hosted_requires_native']) {
+  for (const name of ['automation', 'code', 'packages', 'native', 'hosted_requires_native']) {
     assert.equal(decide(name, 'push', {}, true), false, name);
   }
 });

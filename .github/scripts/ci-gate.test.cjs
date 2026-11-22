@@ -14,7 +14,7 @@ const packageJobs = rows.map(row => `package_${row.id.replaceAll('-', '_')}`);
 const prPackages = ['package_darwin_aarch64_metal', 'package_linux_aarch64_cuda13'];
 const releaseSmokes = ['release_smoke_linux_x86_64_cuda12', 'release_smoke_linux_aarch64_cuda12', 'release_smoke_linux_x86_64_cuda13'];
 
-function results({ automation = true, code = true, packages = false, full = false, release = false, hostedRequiresNative = false } = {}) {
+function results({ automation = true, code = true, packages = false, native = false, full = false, release = false, hostedRequiresNative = false } = {}) {
   const selected = code || packages;
   const required = ['changes'];
   if (automation) required.push('automation');
@@ -22,9 +22,10 @@ function results({ automation = true, code = true, packages = false, full = fals
   if (code) required.push('quality');
   if (full) required.push('native_contracts', ...packageJobs);
   else if (packages) required.push(...prPackages);
+  if (native) required.push('native_contracts');
   if (release) required.push(...releaseSmokes);
   const needs = Object.fromEntries(declared.map(job => [job, { result: required.includes(job) ? 'success' : 'skipped' }]));
-  needs.changes.outputs = { automation: String(automation), code: String(code), packages: String(packages), hosted_requires_native: String(hostedRequiresNative) };
+  needs.changes.outputs = { automation: String(automation), code: String(code), packages: String(packages), native: String(native), hosted_requires_native: String(hostedRequiresNative) };
   if (selected) needs.plan.outputs = { profile: full ? 'full' : 'pr', runtimes: JSON.stringify({ include: rows }) };
   return needs;
 }
@@ -78,7 +79,7 @@ test('automation-only PRs require successful offline checks and skip all builds'
     else needs.automation.result = result;
     assert.throws(() => gate(needs), /automation/);
   }
-  for (const decision of ['automation', 'code', 'packages', 'hosted_requires_native']) {
+  for (const decision of ['automation', 'code', 'packages', 'native', 'hosted_requires_native']) {
     const needs = results({ code: false });
     delete needs.changes.outputs[decision];
     assert.throws(() => gate(needs), /Path selection/);
@@ -125,6 +126,29 @@ test('ARM64 owns routine CUDA device smoke and x64 retains exact release device 
   assert.match(release, /download-package: 'true'/);
 });
 
+test('targeted main validation requires device smokes and selected Graph Contracts', () => {
+  const needs = results({ packages: true, native: true });
+  assert.doesNotThrow(() => gate(needs));
+  for (const job of ['quality', 'native_contracts', ...prPackages]) {
+    for (const result of ['skipped', 'failure', 'cancelled', undefined]) {
+      const failed = structuredClone(needs);
+      if (result === undefined) delete failed[job];
+      else failed[job].result = result;
+      assert.throws(() => gate(failed), undefined, `${job}: ${result}`);
+    }
+  }
+  const missingSelection = structuredClone(needs);
+  delete missingSelection.changes.outputs.native;
+  assert.throws(() => gate(missingSelection), /Path selection failed/);
+  const nativeJob = workflow.split('\n  native_contracts:\n')[1].split('\n  package_')[0];
+  assert.match(nativeJob, /needs: \[plan, quality, changes\]/);
+  const expression = nativeJob.match(/^    if: (.+)$/m)[1];
+  const selected = new Function('needs', `return (${expression});`);
+  assert.equal(selected(needs), true);
+  assert.equal(selected(results()), false);
+  assert.equal(selected(results({ full: true })), true);
+});
+
 test('missing, skipped, failed and cancelled required work cannot pass full CI', () => {
   for (const job of ['changes', 'automation', 'plan', 'quality', 'native_contracts', ...packageJobs]) {
     for (const result of ['skipped', 'failure', 'cancelled', undefined]) {
@@ -158,7 +182,7 @@ test('the repository switch moves every hosted job to Depot', () => {
       .map(([, label, continuation]) => `${label} ${continuation.trim().replaceAll(/\s+/g, ' ')}`.trim());
     assert.ok(labels.some(label => label.includes('SKIPPY_DEPOT_RUNNERS_ENABLED')), name);
     for (const label of labels) {
-      if (name === 'llama-upgrade' && label === '${{ matrix.runner }}') continue;
+      if (name.startsWith('llama-upgrade') && label === '${{ matrix.runner }}') continue;
       assert.match(label, /vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true'.*depot-/, name);
     }
   }

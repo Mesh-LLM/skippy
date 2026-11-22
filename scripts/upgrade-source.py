@@ -2,6 +2,9 @@
 """Resolve and prepare source-pinned llama.cpp update candidates."""
 
 import argparse
+import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -10,8 +13,11 @@ from pathlib import Path
 from lib.ci_artifacts import digest, write_json
 from lib.ci_process import cancel_on_signal, command
 from lib.upgrade_regeneration import regenerate
+from lib.upgrade_repair import repair
+from lib.native_recipe import write_native_recipe
+from lib.graph_contracts import check_upgrade_coverage
 from lib.upgrade_resolution import latest, open_upgrade
-from lib.upgrade_source import ALLOWED, PIN, check_changes, clean_root, git, output, prepared_head, restore, validate_sha
+from lib.upgrade_source import ALLOWED, PIN, check_changes, clean_root, git, output, prepared_head, restore, restore_at, validate_sha
 
 
 def resolve(upstream, force):
@@ -22,12 +28,16 @@ def resolve(upstream, force):
         output("existing_pr", existing)
     output("upstream_sha", sha)
     output("changed", str(current != sha).lower())
-    output("certify", str(existing is None and (current != sha or force == "true")).lower())
+    output("validate", str(existing is None and (current != sha or force == "true")).lower())
 
 
 def save_preparation_diagnostics(checkout, destination):
     """Keep patch failures inspectable after the disposable checkout is removed."""
     source = checkout / ".deps/llama.cpp"
+    coverage = checkout / "target/llama-regeneration/graph-coverage.json"
+    if coverage.is_file():
+        destination.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(coverage, destination / coverage.name)
     if not (source / ".git").is_dir():
         return
     destination.mkdir(parents=True, exist_ok=True)
@@ -46,8 +56,10 @@ def save_preparation_diagnostics(checkout, destination):
         (destination / name).write_text(text + "\n", encoding="utf-8")
 
 
-def prepare(upstream):
+def prepare(upstream, repair_bundle=None, diagnostics=None):
     validate_sha(upstream)
+    if bool(repair_bundle) != bool(diagnostics):
+        raise ValueError("repair bundle and diagnostics are required together")
     root = clean_root()
     base = git(root, "rev-parse", "HEAD")
     directory = root / "target/llama-upgrade"
@@ -56,21 +68,40 @@ def prepare(upstream):
         checkout = Path(scratch) / "source"
         command(["git", "clone", "--no-hardlinks", "--no-checkout", str(root), str(checkout)], timeout=600)
         git(checkout, "checkout", "--detach", base)
+        if repair_bundle:
+            metadata = json.loads(repair_bundle.with_name("candidate.json").read_text())
+            if (metadata["base_sha"] != base or metadata["upstream_sha"] != upstream
+                    or digest(repair_bundle) != metadata["bundle_sha256"]):
+                raise ValueError("repair bundle does not match the protected base")
+            restore_at(checkout, repair_bundle.resolve(), metadata["candidate_sha"])
+            repair(checkout, diagnostics.resolve())
+            git(checkout, "reset", "--soft", base)
+        base_pin = git(root, "show", f"{base}:{PIN}")
         (checkout / PIN).write_text(upstream + "\n", encoding="utf-8")
         try:
-            regenerate(checkout)
+            try:
+                regenerate(checkout)
+                check_upgrade_coverage(checkout, base_pin)
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+                save_preparation_diagnostics(checkout, directory / "diagnostics")
+                if not os.environ.get("SKIPPY_UPGRADE_REPAIR_COMMAND"):
+                    raise
+                repair(checkout, directory / "diagnostics")
+                regenerate(checkout)
+                check_upgrade_coverage(checkout, base_pin)
             env = {"LLAMA_WORKDIR": str(checkout / ".deps/llama.cpp"),
                    "LLAMA_PIN_FILE": str(checkout / PIN), "LLAMA_PATCH_DIR": str(checkout / "llama_cpp/patches")}
             command(["just", "--justfile", str(checkout / "Justfile"), "llama-prepare"],
                     overrides=env, timeout=3600)
+            write_native_recipe(checkout)
         except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt):
             try:
                 save_preparation_diagnostics(checkout, directory / "diagnostics")
             except OSError as diagnostic_error:
                 print(f"could not retain preparation diagnostics: {diagnostic_error}", file=sys.stderr)
             raise
-        check_changes(checkout)
-        git(checkout, "add", "--", *ALLOWED)
+        check_changes(checkout, "HEAD")
+        git(checkout, "add", "--", *(path for path in ALLOWED if (checkout / path).exists()))
         timestamp = int(git(checkout, "show", "-s", "--format=%ct", base)) + 1
         env = {f"GIT_{role}_{key}": value for role in ("AUTHOR", "COMMITTER") for key, value in {
             "NAME": "Skippy llama updater", "EMAIL": "ci@skippy.local", "DATE": f"@{timestamp} +0000",
@@ -93,17 +124,20 @@ def main():
     actions = parser.add_subparsers(dest="action", required=True)
     action = actions.add_parser("resolve")
     action.add_argument("--upstream")
-    action.add_argument("--force-certify", choices=("true", "false"), default="false")
-    actions.add_parser("prepare").add_argument("upstream")
+    action.add_argument("--force-check", choices=("true", "false"), default="false")
+    action = actions.add_parser("prepare")
+    action.add_argument("upstream")
+    action.add_argument("--repair-bundle", type=Path)
+    action.add_argument("--diagnostics", type=Path)
     action = actions.add_parser("restore")
     action.add_argument("bundle", type=Path)
     action.add_argument("expected")
     actions.add_parser("prepared-source").add_argument("--root", required=True, type=Path)
     args = parser.parse_args()
     if args.action == "resolve":
-        resolve(args.upstream, args.force_certify)
+        resolve(args.upstream, args.force_check)
     elif args.action == "prepare":
-        prepare(args.upstream)
+        prepare(args.upstream, args.repair_bundle, args.diagnostics)
     elif args.action == "restore":
         restore(args.bundle, args.expected)
         output("candidate_sha", args.expected)

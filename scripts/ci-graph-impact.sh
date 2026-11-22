@@ -24,7 +24,7 @@ if [[ "$event" == "pull_request" ]] \
       llama_cpp/* | skippy_api/* | crates/skippy-ffi/* | ci/llama-canary/* | \
       scripts/build-llama.sh | scripts/prepare-llama.sh | \
       scripts/check-skippy-generated-family-patch.sh | scripts/check-skippy-public-headers.sh | \
-      scripts/family-certify.sh | scripts/skippy-workload-certify.sh | \
+      scripts/family-qualify.sh | scripts/skippy-workload-certify.sh | \
       scripts/generate-skippy-*.py | scripts/lib/rewriter_report.py | scripts/rewriter-report.py | \
       scripts/verify-skippy-family-generator-coverage.py | scripts/select-skippy-family-shards.py | \
       .github/workflows/llama-upgrade.yml | Cargo.toml | Cargo.lock | \
