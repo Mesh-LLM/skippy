@@ -7,6 +7,8 @@ export MACOSX_DEPLOYMENT_TARGET := if macos_target == "" { trim(read(justfile_di
 
 default: build
 
+import "ci/automation.just"
+
 docs-install:
     @npm ci --prefix docs-site
 
@@ -194,22 +196,6 @@ inference-compare evidence:
 process-supervision-test:
     @cargo test --locked -p process-supervision
 
-inference-contracts:
-    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_contracts.py
-    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_markdown.py
-    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_nightly.py
-
-inference-publication-test:
-    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_publication.py
-
-automation-contracts: inference-contracts
-    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/automation_contracts.py
-    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/release_contracts.py
-
-[positional-arguments]
-inference-render-report format input *options:
-    @"{{ automation_python }}" scripts/inference-render-report.py "$@"
-
 [positional-arguments]
 inference-dispatch profile source output="target/ci-evidence/inference" *configuration:
     @"{{ automation_python }}" scripts/inference-dispatch.py dispatch "$@"
@@ -290,10 +276,12 @@ ci-gpu-image-smoke backend arch="amd64":
       test "$SKIPPY_CI_BACKEND" = "{{ backend }}"
       case "$SKIPPY_CI_BACKEND" in
         cuda13)
+          test -s /usr/local/cuda/EULA.txt
           /usr/local/cuda-13.1/bin/nvcc --version | grep -F "release 13.1,"
           test -e /usr/local/cuda-13.1/lib64/libcudart.so
           ;;
         cuda12)
+          test -s /usr/local/cuda/EULA.txt
           /usr/local/cuda-12.9/bin/nvcc --version | grep -F "release 12.9,"
           test -e /usr/local/cuda-12.9/lib64/libcudart.so
           ;;

@@ -8,7 +8,8 @@ from .ci_process import command
 
 PIN = "llama_cpp/upstream.txt"
 WORKFLOW = "Mesh-LLM/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main"
-ALLOWED = (PIN, "llama_cpp/patches/generated", "crates/skippy-ffi/src/bindings", "docs/native-api.md")
+ALLOWED = (PIN, "llama_cpp/patches", "crates/skippy-ffi/src/bindings", "docs/native-api.md",
+           "crates/skippy-api/src/native-recipe.json")
 
 
 def validate_sha(sha):
@@ -45,8 +46,11 @@ def clean_root():
 def check_changes(root, *revisions):
     paths = command(["git", "-C", str(root), "diff", "--no-renames", "--name-only",
                      "-z", *revisions, "--"], capture_stdout=True).split("\0")
+    if len(revisions) <= 1:
+        paths += command(["git", "-C", str(root), "ls-files", "--others", "--exclude-standard", "-z"],
+                         capture_stdout=True).split("\0")
     for path in filter(None, paths):
-        if not (path in (ALLOWED[0], ALLOWED[3]) or path.startswith((ALLOWED[1] + "/", ALLOWED[2] + "/"))):
+        if not any(path == allowed or path.startswith(allowed + "/") for allowed in ALLOWED):
             raise ValueError(f"candidate modified a path outside the update allowlist: {path}")
 
 

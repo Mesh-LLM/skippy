@@ -333,7 +333,7 @@ and gates separately if those specific capabilities are to be advertised.
 Retain the broader supported-family roster and existing profile-specific tests
 when extracting the native engine. Passing Qwen3 alone must not preserve stale
 certification claims for other families after a pin change. Regenerate and
-validate `split-certified.json` against the exact candidate recipe, and require
+validate actual native stage admissions against the exact candidate recipe, and require
 the complete declared supported-family pass before promotion.
 
 Model preparation belongs to a separate verified cache population step; the
@@ -408,7 +408,7 @@ Primary source anchors in the current repository:
 - [Root workspace](../../Cargo.toml) and [Just build interface](../../Justfile).
 - [Automation dependencies](../../tools/xtask/Cargo.toml) and [Windows build owner](../../scripts/build-windows.ps1).
 - [Runtime catalog](../../crates/skippy-runtime-install/src/types.rs) and [remote model job](../../crates/skippy-model-package/src/scripts/split-model-job.sh).
-- [Family fixtures](../../ci/llama-canary/family-certified.json) and [upgrade orchestration](../../.github/workflows/llama-upgrade.yml).
+- [Family fixtures](../../ci/llama-canary/model-fixtures.json) and [upgrade orchestration](../../.github/workflows/llama-upgrade.yml).
 - [CLI packaging](../../scripts/package-cli-release.sh), [runtime packaging](../../scripts/package-native-runtime.sh), and [nested Rust workspace](../../skippy-api-rs/Cargo.toml).
 
 GitHub documents [reusable workflows](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows),

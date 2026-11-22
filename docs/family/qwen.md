@@ -1,6 +1,6 @@
 # Qwen family validation
 
-Use the maintained [family certification workflow](../FAMILY_CERTIFY.md) for
+Use the maintained [model qualification workflow](../FAMILY_QUALIFICATION.md) for
 model-family qualification and [split serving guide](../SKIPPY_SPLITS.md) for
 current deployment instructions.
 
