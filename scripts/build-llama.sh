@@ -548,6 +548,7 @@ if [[ "$LLAMA_STAGE_BUILD_TESTS" == "ON" ]]; then
     skippy-selected-logits
     skippy-noalloc-graph-planning
     skippy-recurrent-retention
+    skippy-recurrent-copy
     skippy-renamed-multishard-planning
     skippy-stage-slice-plan
     skippy-verify-rollback
