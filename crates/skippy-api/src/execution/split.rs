@@ -22,7 +22,6 @@ pub struct SplitOptions {
     model: ModelOptions,
     endpoints: [SocketAddr; 2],
     peer: StageCompatibility,
-    allow_uncertified: bool,
     startup_timeout: Duration,
 }
 
@@ -53,7 +52,6 @@ impl SplitOptions {
             model: ModelOptions::new(model_id, model_path, runtime)?,
             endpoints,
             peer: worker_compatibility,
-            allow_uncertified: false,
             startup_timeout: Duration::from_secs(900),
         })
     }
@@ -72,13 +70,6 @@ impl SplitOptions {
 
     pub fn with_backend_device(mut self, name: impl Into<String>, gpu_layers: i32) -> Self {
         self.model = self.model.with_backend_device(name, gpu_layers);
-        self
-    }
-
-    /// Explicitly permit an experimental split. Graph, recipe and frontier
-    /// checks still apply.
-    pub fn allow_uncertified(mut self, allow: bool) -> Self {
-        self.allow_uncertified = allow;
         self
     }
 

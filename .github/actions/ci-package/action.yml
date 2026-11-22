@@ -19,6 +19,9 @@ inputs:
   containerized:
     description: Use the preinstalled toolchain in a Skippy compiler image.
     default: 'false'
+  compiler-image-digest:
+    description: Digest used to start the compiler container, empty on native runners.
+    default: ''
   candidate-artifact:
     description: Immutable candidate source artifact.
     default: ''
@@ -45,7 +48,7 @@ runs:
         sha: ${{ inputs.candidate-sha }}
     - uses: ./.github/actions/cache
       with:
-        scope: package-${{ inputs.runtime-id }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}
+        scope: package-${{ inputs.runtime-id }}-${{ inputs.compiler-image-digest || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}
         download-scope: ${{ inputs.build-cli == 'true' && 'host' || 'tools' }}
         build-paths: |
           target/debug
@@ -103,7 +106,7 @@ runs:
     - name: Upload tested package
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
-        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-${{ inputs.smoke == 'artifact' && env.SKIPPY_ARTIFACT_SCOPE == 'release' && 'package' || 'product' }}-${{ inputs.runtime-id }}
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-product-${{ inputs.runtime-id }}
         path: dist/products/${{ inputs.runtime-id }}
         if-no-files-found: error
         compression-level: 0

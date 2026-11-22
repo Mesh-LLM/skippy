@@ -71,7 +71,7 @@ class InferenceMarkdownTests(unittest.TestCase):
         from unittest.mock import patch
         from lib.inference_nightly_metrics import contract
         row = {"mode": "standalone"}
-        before = contract("pr", row, "qwen35-4b", None)
+        before = contract("pr", row, "qwen35-4b")
         original = Path.read_text
         for target, old, new in (("inference_checks.py", '"seed": 42', '"seed": 43'),
                                  ("inference_nightly_metrics.py", "tokens * 1000 / millis", "tokens * 2000 / millis")):
@@ -79,7 +79,7 @@ class InferenceMarkdownTests(unittest.TestCase):
                 text = original(path, *args, **kwargs)
                 return text.replace(old, new) if path.name == target else text
             with patch.object(Path, "read_text", changed):
-                self.assertNotEqual(before, contract("pr", row, "qwen35-4b", None))
+                self.assertNotEqual(before, contract("pr", row, "qwen35-4b"))
 
     def test_figures_cover_all_models_and_all_three_metrics_including_split(self):
         figures = dataset_charts(history())
@@ -147,7 +147,7 @@ class InferenceMarkdownTests(unittest.TestCase):
 
     def test_history_aliases_are_explicit_and_scoped_to_configuration_and_workload(self):
         audit = json.loads(AUDITS.read_text())
-        self.assertEqual(len(audit["series"]), 20)
+        self.assertEqual(len(audit["series"]), 28)
         entry = audit["series"][0]
         args = entry["legacy_sha256"], entry["recipe_sha256"]
         self.assertTrue(contracts_match(entry["configuration"], entry["workload"], *args))
