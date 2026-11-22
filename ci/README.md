@@ -1,6 +1,6 @@
 # Skippy continuous integration
 
-`ci.yml` reports `CI` for PR code checks and opt-in PR package smoke, and
+`ci.yml` reports `CI` for code checks and inference PR package smoke, and
 `Full CI gate` for the complete package roster and Graph Contracts. Release callers
 require the full workflow result independently
 of the check name. The single required status is `PR checks`, the
@@ -29,23 +29,19 @@ status updates cannot recursively trigger the controller.
 to `main`. Its protected `pull_request_target` path admits same-repository PRs
 from repository collaborators against any base branch; fork PRs stay on the
 isolated `pull_request` path. Once a PR run starts, a pinned `dorny/paths-filter`
-action reads `.github/path-filters.yml` to choose code checks and opt-in package
-jobs. It uses
+action reads `.github/path-filters.yml` to choose code and package jobs independently. It uses
 `some-with-excludes`, so a changed file must match an inclusion and no exclusion.
 Mixed PRs run every applicable check group.
 These are file-level rules. Inline tests in production files, shared Cargo
 manifests/lockfiles, and any `Justfile` edit still count as changes to those files.
-For PR qualification, separate test files/directories and standalone tools are
-excluded from GPU qualification; `.gi/templates.yaml` is exact and
-`.gi/agents/**` is excluded.
+Separate test files/directories and standalone tools are excluded from GPU
+qualification; `.gi/templates.yaml` is exact and `.gi/agents/**` is excluded.
 
-Code or inference paths select Quality canary, which runs CI automation tests
-before formatting, Clippy, FFI, and Rust and C++ tests. Ordinary PRs run only
-this canary within CI. CI reads PR path rules from the base commit. PRs matching
-the inference filter may opt into Linux x64 CUDA 13 and macOS ARM64 Metal
-package/device smoke by adding the `qualify` label. Both jobs wait for Quality
-canary. Adding or removing the label re-evaluates protected PR qualification;
-forks still require isolated native execution when qualification is requested. Docs-only
+Code paths select Quality canary, which runs CI automation tests before
+formatting, Clippy, FFI, and Rust and C++ tests. CI reads PR path rules from the
+base commit. PRs matching the inference filter also require Linux x64 CUDA 13 and
+macOS ARM64 Metal packages to build and serve a short inference request on real
+hardware. Both jobs wait for Quality canary when code checks apply. Docs-only
 and metadata-only PRs do not start CI. The CI result gate rejects missing,
 failed or unexpectedly skipped results.
 
@@ -58,15 +54,6 @@ budget waits for placement instead of failing fast. Relevant PRs retain
 same-repository/collaborator admission, a fresh-head check and all seven GPU
 smoke configurations. The credentialed controller runs only protected source.
 Python admission verifies trust and source identity.
-
-Main code pushes automatically run full CI: Quality canary gates Graph Contracts
-and all eight package/smoke jobs. The separate inference workflow uses the same
-main-push paths and automatically runs all seven smoke configurations using the
-exact pushed commit. Its controller also checks out that immutable main SHA.
-The two workflows run independently; package builds wait for their own canary.
-Each workflow finishes its active main-push run and retains only the newest
-pending push. Manual, nightly and release qualification keep independent evidence.
-
 The syntax/dependency classifier and offline replay command have been removed.
 The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
 `gh` and `jq`; it needs no Rust setup or compilation. It checks receipt source,
@@ -115,9 +102,7 @@ Tagged releases and manual llama upgrades retain their explicit triggers. The
 `ci/Dockerfile*`, `ci/targets.json`, `rust-toolchain.toml` and `Justfile`.
 Protected inference and aggregate workflow changes take effect after they
 reach `main`.
-Main pushes, nightly, reusable candidate validation and tagged releases use the
-full CI profile. Main-push Spark qualification uses the seven-configuration `pr`
-smoke profile; nightly and release qualification retain the extended profiles.
+Nightly, reusable candidate validation and tagged releases use the full profile.
 Manual dispatch from protected main defaults to full. Both nightly workflows run
 at 14:00 UTC. Release validation uses the complete CUDA architecture lists from
 `targets.json`. Full runs may instead use the assigned GPU's native architecture
