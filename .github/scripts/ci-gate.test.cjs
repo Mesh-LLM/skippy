@@ -11,19 +11,20 @@ const declared = section.match(/    needs: \[([\s\S]+?)\]/)[1].split(',').map(s 
 const targets = JSON.parse(readFileSync(join(__dirname, '../../ci/targets.json'), 'utf8'));
 const rows = targets.runtimes.filter(row => row.enabled !== false && targets.enabled_hosts.includes(row.host));
 const packageJobs = rows.map(row => `package_${row.id.replaceAll('-', '_')}`);
-const prPackages = ['package_darwin_aarch64_metal', 'package_linux_x86_64_cuda13'];
-const releaseSmokes = ['release_smoke_linux_x86_64_cuda12', 'release_smoke_linux_aarch64_cuda12', 'release_smoke_linux_aarch64_cuda13'];
+const prPackages = ['package_darwin_aarch64_metal', 'package_linux_aarch64_cuda13'];
+const releaseSmokes = ['release_smoke_linux_x86_64_cuda12', 'release_smoke_linux_aarch64_cuda12', 'release_smoke_linux_x86_64_cuda13'];
 
-function results({ code = true, inference = false, full = false, release = false, hostedRequiresNative = false } = {}) {
-  const selected = code || inference;
+function results({ automation = true, code = true, packages = false, full = false, release = false, hostedRequiresNative = false } = {}) {
+  const selected = code || packages;
   const required = ['changes'];
+  if (automation) required.push('automation');
   if (selected) required.push('plan');
   if (code) required.push('quality');
   if (full) required.push('native_contracts', ...packageJobs);
-  else if (inference) required.push(...prPackages);
+  else if (packages) required.push(...prPackages);
   if (release) required.push(...releaseSmokes);
   const needs = Object.fromEntries(declared.map(job => [job, { result: required.includes(job) ? 'success' : 'skipped' }]));
-  needs.changes.outputs = { code: String(code), inference: String(inference), hosted_requires_native: String(hostedRequiresNative) };
+  needs.changes.outputs = { automation: String(automation), code: String(code), packages: String(packages), hosted_requires_native: String(hostedRequiresNative) };
   if (selected) needs.plan.outputs = { profile: full ? 'full' : 'pr', runtimes: JSON.stringify({ include: rows }) };
   return needs;
 }
@@ -48,16 +49,16 @@ test('all eight runtime packages match the planned matrix and depend on the cana
     assert.match(body, /^    needs: \[plan, quality[\],]/m);
     assert.ok(body.includes(`runtime-id: ${row.id}\n`));
     if (row.backend !== 'cpu') assert.ok(body.includes(`package_${row.host.replaceAll('-', '_')}_cpu`));
-    assert.equal(body.includes("needs.changes.outputs.inference == 'true'"), prPackages.includes(job));
+    assert.equal(body.includes("needs.changes.outputs.packages == 'true'"), prPackages.includes(job));
   }
   assert.doesNotThrow(() => gate(results({ full: true })));
 });
 
-test('only inference pull requests require the two package and smoke jobs', () => {
-  for (const options of [{}, { code: false }, { inference: true }, { code: false, inference: true }]) {
+test('only package-affecting pull requests require the two package and smoke jobs', () => {
+  for (const options of [{}, { code: false }, { packages: true }, { code: false, packages: true }]) {
     assert.doesNotThrow(() => gate(results(options)));
   }
-  const needs = results({ inference: true });
+  const needs = results({ packages: true });
   for (const job of prPackages) {
     const missingSmoke = structuredClone(needs);
     missingSmoke[job].result = 'skipped';
@@ -68,8 +69,64 @@ test('only inference pull requests require the two package and smoke jobs', () =
   assert.throws(() => gate(unexpectedSmoke), /must be skipped/);
 });
 
+test('automation-only PRs require successful offline checks and skip all builds', () => {
+  assert.doesNotThrow(() => gate(results({ code: false })));
+  assert.doesNotThrow(() => gate(results({ automation: false, code: false })));
+  for (const result of ['failure', 'cancelled', 'skipped', undefined]) {
+    const needs = results({ code: false });
+    if (result === undefined) delete needs.automation;
+    else needs.automation.result = result;
+    assert.throws(() => gate(needs), /automation/);
+  }
+  for (const decision of ['automation', 'code', 'packages', 'hosted_requires_native']) {
+    const needs = results({ code: false });
+    delete needs.changes.outputs[decision];
+    assert.throws(() => gate(needs), /Path selection/);
+  }
+});
+
+test('package smoke waits for automation and every applicable source check', () => {
+  for (const job of prPackages) {
+    const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
+    const condition = body.match(/    if: >-\n([\s\S]+?)\n    runs-on:/)[1]
+      .replace('${{', '').replace('}}', '');
+    const selected = new Function('needs', 'cancelled', `return (${condition})`);
+    for (const code of [false, true]) {
+      assert.equal(selected(results({ code, packages: true }), () => false), true);
+      for (const result of ['failure', 'cancelled', 'skipped']) {
+        const needs = results({ code, packages: true });
+        needs.automation.result = result;
+        assert.equal(selected(needs, () => false), false);
+      }
+      const needs = results({ code, packages: true });
+      needs.quality.result = code ? 'skipped' : 'failure';
+      assert.equal(selected(needs, () => false), false);
+    }
+    assert.equal(selected(results(), () => false), false);
+    assert.equal(selected(results({ full: true }), () => false), true);
+    assert.equal(selected(results({ packages: true }), () => true), false);
+  }
+});
+
+test('ARM64 owns routine CUDA device smoke and x64 retains exact release device smoke', () => {
+  const arm = workflow.split('\n  package_linux_aarch64_cuda13:\n')[1].split(/\n  \w+:\n/)[0];
+  const row = rows.find(row => row.id === 'linux-aarch64-cuda13');
+  assert.ok(arm.includes(`group: ${row.runner_group}`));
+  assert.ok(arm.includes(`labels: ${JSON.stringify(row.runner).replaceAll(',', ', ')}`));
+  assert.match(arm, /host-id: linux-aarch64\n/);
+  assert.match(arm, /build-cli:.*profile == 'pr'/);
+  assert.doesNotMatch(arm, /smoke: artifact/);
+  const x64 = workflow.split('\n  package_linux_x86_64_cuda13:\n')[1].split(/\n  \w+:\n/)[0];
+  assert.match(x64, /skippy-ci-cuda13:latest\n/);
+  assert.match(x64, /smoke: artifact\n/);
+  const release = workflow.split('\n  release_smoke_linux_x86_64_cuda13:\n')[1].split(/\n  \w+:\n/)[0];
+  assert.match(release, /needs: \[package_linux_x86_64_cuda13\]/);
+  assert.match(release, /runtime_id: linux-x86_64-cuda13\n/);
+  assert.match(release, /download-package: 'true'/);
+});
+
 test('missing, skipped, failed and cancelled required work cannot pass full CI', () => {
-  for (const job of ['changes', 'plan', 'quality', 'native_contracts', ...packageJobs]) {
+  for (const job of ['changes', 'automation', 'plan', 'quality', 'native_contracts', ...packageJobs]) {
     for (const result of ['skipped', 'failure', 'cancelled', undefined]) {
       const needs = results({ full: true });
       if (result === undefined) delete needs[job];
@@ -89,7 +146,7 @@ test('release validation requires the three other GPU smokes', () => {
   assert.throws(() => gate(results(), true), /requires full CI/);
 });
 
-test('hosted CI cannot satisfy a native inference requirement', () => {
+test('hosted CI cannot satisfy a native package requirement', () => {
   assert.throws(() => gate(results({ hostedRequiresNative: true })), /require native hardware qualification on an isolated runner/);
 });
 
@@ -161,7 +218,7 @@ test('manual compiler image smoke can skip publication on either runner provider
 });
 
 test('native CI trusts only an immutable same-repository PR from a writer', async () => {
-  const admission = workflow.split('      - name: Verify the same-repository PR author\n')[1].split('\n  plan:\n')[0];
+  const admission = workflow.split('      - name: Verify the same-repository PR author\n')[1].split('\n  automation:\n')[0];
   const script = admission.split('          script: |\n')[1];
   const evaluate = new Function('github', 'context', 'return (async () => {\n' + script + '\n})()');
   const candidate = {

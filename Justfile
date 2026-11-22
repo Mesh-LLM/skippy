@@ -7,6 +7,8 @@ export MACOSX_DEPLOYMENT_TARGET := if macos_target == "" { trim(read(justfile_di
 
 default: build
 
+import "ci/automation.just"
+
 docs-install:
     @npm ci --prefix docs-site
 
@@ -189,23 +191,6 @@ inference-plan profile source output="target/ci-evidence/inference-plan.json":
 
 process-supervision-test:
     @cargo test --locked -p process-supervision
-
-inference-contracts:
-    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_contracts.py
-    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_markdown.py
-    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_nightly.py
-
-inference-publication-test:
-    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_publication.py
-
-automation-contracts: inference-contracts
-    @"{{ automation_python }}" scripts/tests/ci_cuda_license.py
-    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/automation_contracts.py
-    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/release_contracts.py
-
-[positional-arguments]
-inference-render-report format input *options:
-    @"{{ automation_python }}" scripts/inference-render-report.py "$@"
 
 [positional-arguments]
 inference-dispatch profile source output="target/ci-evidence/inference" *configuration:

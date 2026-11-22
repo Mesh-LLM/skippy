@@ -19,23 +19,28 @@ contract; no downstream product's workflow topology applies here.
   the previous two required checks until then, and retain all review protections.
 
 - `.github/workflows/ci.yml` owns code checks and package builds. Declarative
-  native paths trigger CI on code or inference PRs and on code pushes to main.
-  Inside CI, declarative PR filters select code checks and require Linux x64
-  CUDA 13 and macOS ARM64 Metal package and device smoke on inference PRs.
-  The protected inference workflow uses the same inference paths in its native
+  native paths trigger CI on automation, code, package or qualification inputs.
+  Independent declarative PR filters select hosted offline automation, source
+  checks, and Linux ARM64 CUDA 13 plus macOS ARM64 Metal package/device smoke.
+  Qualification scripts and reporting do not select package builds. Reporting
+  and offline check recipes belong in `ci/automation.just`; root `Justfile` edits
+  remain conservative build inputs. Main pushes retain conservative source
+  checks so coalescing cannot lose outstanding validation. The protected
+  inference workflow uses its separate qualification paths in its native
   trigger for the seven Spark configurations. PR qualification is manual: the
   jobs run only when the PR carries the `qualify` label, while the workflow
   still triggers on path matches so an intentionally skipped run satisfies
   the `PR checks` aggregate; nightly, main pushes, and releases stay
   automatic. `PR checks` reads protected workflow trigger paths to determine
-  which runs it expects. Quality canary
-  runs CI automation tests before build checks and gates package jobs. Full CI
+  which runs it expects. Hosted offline
+  automation gates Quality canary and package jobs; Quality canary gates package
+  jobs whenever source checks apply. Full CI
   runs Graph Contracts in parallel with eight build, package and smoke jobs.
   Each CPU job supplies a shared platform CLI to its backend jobs. Routine CI
   uses two device jobs and checks the three remaining CUDA archives on hosted
   compiler-image runners.
-  Tagged releases add device smoke on those exact archives. The lightweight
-  CI gate checks the validated matrix and requires all applicable results.
+  Tagged releases add device smoke on those exact archives, including x64 CUDA 13.
+  The lightweight CI gate checks the validated matrix and requires all applicable results.
 - `.github/workflows/docs.yml` directly validates `docs-site/**` changes on PRs
   and deploys to beta on protected-main pushes. The protected PR aggregate
   expects this workflow when docs paths match. Tagged release validation calls

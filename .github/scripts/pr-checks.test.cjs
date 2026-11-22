@@ -126,27 +126,27 @@ test('native trigger patterns distinguish metadata, code-only, inference and mix
   }
 });
 
-test('native CI and inference triggers match the internal route lists', () => {
+test('native CI and inference triggers match their independent route lists', () => {
   const lists = text => [...text.matchAll(/^ {2,6}- '([^']+)'$/gm)].map(match => match[1]);
   const config = readFileSync(join(__dirname, '../path-filters.yml'), 'utf8');
-  const [code, inference] = config.split(/^inference:\n/m).map(lists);
+  const route = name => lists(config.match(new RegExp(`^${name}:\\n((?:  .+\\n)+)`, 'm'))[1]);
+  const automation = route('automation');
+  const inference = route('inference');
   const ci = readFileSync(join(__dirname, '../workflows/ci.yml'), 'utf8');
   const [prPaths, targetPaths, pushPaths] = ci.split(/^  (?:pull_request_target|push):\n/m);
   const spark = readFileSync(join(__dirname, '../workflows/inference.yml'), 'utf8');
-  assert.deepEqual(lists(pushPaths.split(/^  schedule:\n/m)[0]), code);
+  assert.deepEqual(lists(pushPaths.split(/^  schedule:\n/m)[0]), automation);
   assert.deepEqual(lists(spark.split(/^  schedule:\n/m)[0]), inference);
-  const ciOnly = ['.gi/templates.yaml', 'ci/inference-ladder.json',
-    'ci/inference-artifacts.json', 'ci/inference-quality.json'];
-  assert.ok(ciOnly.every(path => inference.includes(path)));
-  const exclusion = code.findIndex(path => path.startsWith('!'));
-  assert.deepEqual(lists(prPaths), [...code.slice(0, exclusion), ...ciOnly, ...code.slice(exclusion)]);
-  assert.deepEqual(lists(targetPaths), lists(prPaths));
+  assert.deepEqual(lists(prPaths), automation);
+  assert.deepEqual(lists(targetPaths), automation);
   const depotPr = readFileSync(join(__dirname, '../workflows/ci-pr.yml'), 'utf8');
-  assert.deepEqual(lists(depotPr), lists(prPaths));
-  const includes = lists(prPaths).filter(path => !path.startsWith('!'));
-  for (const path of inference.filter(path => !path.startsWith('!'))) {
-    assert.ok(includes.some(trigger => trigger === path ||
-      (trigger.endsWith('/**') && path.startsWith(trigger.slice(0, -2)))), `CI never triggers for ${path}`);
+  assert.deepEqual(lists(depotPr), automation);
+  const includes = automation.filter(path => !path.startsWith('!'));
+  for (const group of ['code', 'packages', 'inference']) {
+    for (const path of route(group).filter(path => !path.startsWith('!'))) {
+      assert.ok(includes.some(trigger => trigger === path ||
+        (trigger.endsWith('/**') && path.startsWith(trigger.slice(0, -2)))), `CI never triggers for ${path}`);
+    }
   }
 });
 
