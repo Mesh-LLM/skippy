@@ -1,5 +1,5 @@
 use super::{
-    Family,
+    EXPECTED_CODE, Family,
     evidence::{Candidate, Report, Status, compare, validate_l1_replay, validate_miss},
     messages, user_content,
 };
@@ -26,23 +26,31 @@ impl Case {
     pub(super) fn messages(self) -> Value {
         if self == Self::DivergentTail {
             return json!([{"role": "user", "content": user_content(
-                "Continue this descending sequence, starting immediately with 4: 8, 7, 6, 5,"
+                "The Harbor access code is 1618. Return the Harbor access code as a JSON object with the integer field code."
             )}]);
         }
         let Value::Array(mut history) = messages() else {
             unreachable!("qualification seed is a message array");
         };
         history.extend([
-            json!({"role": "assistant", "content": "5, 6, 7, 8"}),
-            json!({"role": "user", "content": "Continue from the last number. Start immediately with 9 and list the next numbers separated by commas."}),
+            json!({"role": "assistant", "content": format!("{{\"code\":{EXPECTED_CODE}}}")}),
+            json!({"role": "user", "content": "The Harbor access code has changed to 3141. Return the new code as a JSON object with the integer field code."}),
         ]);
         if self == Self::SecondFollowUp {
             history.extend([
-                json!({"role": "assistant", "content": "9, 10, 11, 12"}),
-                json!({"role": "user", "content": "Continue the same sequence. Start immediately with 13 and list the next numbers separated by commas."}),
+                json!({"role": "assistant", "content": "{\"code\":3141}"}),
+                json!({"role": "user", "content": "The Harbor access code has changed to 2718. Return the new code as a JSON object with the integer field code."}),
             ]);
         }
         Value::Array(history)
+    }
+
+    fn code(self) -> i64 {
+        match self {
+            Self::FirstFollowUp => 3141,
+            Self::SecondFollowUp => 2718,
+            Self::DivergentTail => 1618,
+        }
     }
 
     fn label(self) -> &'static str {
@@ -63,7 +71,8 @@ pub(super) struct Observation {
 #[derive(Serialize)]
 pub(super) struct ResultRow {
     pub(super) status: Status,
-    expected_matched_tokens: Option<u32>,
+    minimum_matched_tokens: Option<u32>,
+    maximum_matched_tokens: Option<u32>,
     pub(super) errors: Vec<String>,
 }
 
@@ -77,11 +86,12 @@ pub(super) fn validate(report: &Report) -> BTreeMap<Case, ResultRow> {
 fn validate_case(report: &Report, case: Case) -> ResultRow {
     let mut row = ResultRow {
         status: Status::Fail,
-        expected_matched_tokens: None,
+        minimum_matched_tokens: None,
+        maximum_matched_tokens: None,
         errors: Vec::new(),
     };
     let observations = case_observations(report, case);
-    let (reference, observed, source) = match observations {
+    let (observed, source) = match observations {
         Ok(observations) => observations,
         Err(error) => {
             row.errors.push(format!("{}: {error:#}", case.label()));
@@ -92,12 +102,12 @@ fn validate_case(report: &Report, case: Case) -> ResultRow {
     let accounting = validate_accounting(case, family, observed, source, &mut row);
     for (check, outcome) in [
         (
-            "cold Skippy against pinned llama.cpp",
-            compare(reference, &observed.cold.generation),
-        ),
-        (
-            "warm Skippy against cold Skippy",
-            compare(&observed.cold.generation, &observed.warm.generation),
+            "known answer and prompt identity",
+            compare(
+                &observed.cold.generation,
+                &observed.warm.generation,
+                case.code(),
+            ),
         ),
         ("token accounting", accounting),
     ] {
@@ -112,15 +122,7 @@ fn validate_case(report: &Report, case: Case) -> ResultRow {
     row
 }
 
-fn case_observations(
-    report: &Report,
-    case: Case,
-) -> Result<(&super::evidence::Generation, &Observation, &Candidate)> {
-    let reference = report
-        .reference
-        .as_ref()
-        .and_then(|reference| reference.conversations.get(&case))
-        .context("missing llama.cpp conversation result")?;
+fn case_observations(report: &Report, case: Case) -> Result<(&Observation, &Candidate)> {
     let observed = report
         .conversations
         .get(&case)
@@ -133,7 +135,7 @@ fn case_observations(
             .map(|case| &case.warm),
     }
     .context("missing previously seeded conversation")?;
-    Ok((reference, observed, source))
+    Ok((observed, source))
 }
 
 fn validate_accounting(
@@ -160,30 +162,40 @@ fn validate_accounting(
             "follow-up did not grow the prompt"
         ),
     }
-    let matched = expected_match(family, source, prompt)?;
-    row.expected_matched_tokens = Some(matched);
-    if matched == 0 {
+    let (minimum, maximum) = expected_match(family, source, prompt)?;
+    row.minimum_matched_tokens = Some(minimum);
+    row.maximum_matched_tokens = Some(maximum);
+    if maximum == 0 {
         ensure!(
             case == Case::DivergentTail,
             "follow-up did not preserve a reusable checkpoint"
         );
         validate_miss(prompt_tokens, &observation.warm)
     } else {
-        validate_l1_replay(family, prompt_tokens, matched, &observation.warm)
+        let restored = observation.warm.cache.matched_tokens;
+        ensure!(
+            restored >= minimum && restored <= maximum,
+            "restored prefix {restored} lies outside the retained {minimum}..={maximum} tokens"
+        );
+        validate_l1_replay(family, prompt_tokens, restored, &observation.warm)
     }
 }
 
-fn expected_match(family: Family, source: &Candidate, prompt: &[i32]) -> Result<u32> {
+fn expected_match(family: Family, source: &Candidate, prompt: &[i32]) -> Result<(u32, u32)> {
     let source_prompt = source.generation.prompt_ids.as_slice();
     let maximum = family.prefill_tokens(u32::try_from(prompt.len())?) as usize;
     let prompt = &prompt[..maximum];
     match family {
         Family::DenseAttention | Family::AttentionMoe => {
             let previous_prefill = source_prompt.len().saturating_sub(1);
-            Ok(u32::try_from(common_prefix(
-                prompt,
-                &source_prompt[..previous_prefill],
-            ))?)
+            let minimum = common_prefix(prompt, &source_prompt[..previous_prefill]);
+            // The native checkpoint also retains prompt + decoded generated
+            // tokens; the newest sampled token has not been decoded yet.
+            let mut retained = source_prompt.to_vec();
+            let generated = &source.generation.generated_ids;
+            retained.extend_from_slice(&generated[..generated.len().saturating_sub(1)]);
+            let maximum = common_prefix(prompt, &retained);
+            Ok((u32::try_from(minimum)?, u32::try_from(maximum)?))
         }
         Family::HybridDense | Family::HybridMoe => {
             let checkpoint = source
@@ -192,11 +204,12 @@ fn expected_match(family: Family, source: &Candidate, prompt: &[i32]) -> Result<
             let prefix = source_prompt
                 .get(..checkpoint as usize)
                 .context("invalid recurrent chat checkpoint")?;
-            Ok(if prompt.starts_with(prefix) {
+            let matched = if prompt.starts_with(prefix) {
                 checkpoint
             } else {
                 0
-            })
+            };
+            Ok((matched, matched))
         }
     }
 }
@@ -217,4 +230,24 @@ fn conversation_keeps_the_seed_for_follow_ups_and_changes_the_divergent_tail() {
     assert_eq!(&Case::SecondFollowUp.messages()[0], original);
     assert_ne!(&Case::DivergentTail.messages()[0], original);
     assert_eq!(Case::SecondFollowUp.messages().as_array().unwrap().len(), 5);
+}
+
+#[test]
+fn attention_accounting_includes_decoded_generated_tokens() {
+    let source: Candidate = serde_json::from_value(json!({
+        "generation": {"prompt_sha256":"prompt", "prompt_ids":[1,2,3,4],
+            "generated_ids":[5,6,7], "content":"{\"code\":1729}", "top_logprobs":[]},
+        "chat_checkpoint_tokens":null,
+        "cache":{"status":"miss", "hit_kind":null,"restore_source":null,"payload_kind":null,
+            "prompt_tokens":4,"cached_tokens":0,"matched_tokens":0,"suffix_tokens":4}
+    }))
+    .unwrap();
+    assert_eq!(
+        expected_match(Family::AttentionMoe, &source, &[1, 2, 3, 4, 5, 6, 7, 8]).unwrap(),
+        (3, 6)
+    );
+    assert_eq!(
+        expected_match(Family::DenseAttention, &source, &[1, 2, 9, 8]).unwrap(),
+        (2, 2)
+    );
 }

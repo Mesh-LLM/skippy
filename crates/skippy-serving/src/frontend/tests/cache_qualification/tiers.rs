@@ -39,7 +39,7 @@ pub(super) fn observe(
 
     let seed = observations.seed.insert(runner.generate(request)?);
     observations.evictions.push(evict_l1(&runner, &cache)?);
-    let checkpoint = published_checkpoint(&manager, seed)?;
+    let checkpoint = published_checkpoint(family, &manager, seed)?;
     observations.checkpoint_tokens = Some(checkpoint);
     let pack_name = published_pack_name(directory, &cache, checkpoint)?;
 
@@ -67,17 +67,16 @@ pub(super) fn observe(
     Ok(pack_name)
 }
 
-pub(super) fn published_checkpoint(manager: &L3CacheManager, seed: &Candidate) -> Result<u32> {
-    let prefill = seed
-        .generation
-        .prompt_ids
-        .len()
-        .checked_sub(1)
-        .context("empty prompt")?;
+pub(super) fn published_checkpoint(
+    family: Family,
+    manager: &L3CacheManager,
+    seed: &Candidate,
+) -> Result<u32> {
+    let prefill = family.prefill_tokens(u32::try_from(seed.generation.prompt_ids.len())?);
     let tokens = seed
         .chat_checkpoint_tokens
         .map(u64::from)
-        .unwrap_or(prefill as u64);
+        .unwrap_or(u64::from(prefill));
     wait_for_checkpoint(manager, tokens)?;
     Ok(u32::try_from(tokens)?)
 }

@@ -1,21 +1,19 @@
 # Cache correctness gate
 
-## GPU cold reference and cross-tier replay
+## GPU behavior and cross-tier reuse
 
 Run the explicit qualification case on arm64 macOS with the pinned
 [Qwen3-4B Q4_K_M GGUF](https://huggingface.co/unsloth/Qwen3-4B-GGUF/blob/22c9fc8a8c7700b76a1789366280a6a5a1ad1120/Qwen3-4B-Q4_K_M.gguf).
 The [fixture manifest](../crates/skippy-model-artifact/src/kv_fixtures/models.json)
 pins the GGUF and embedded chat template for each KV architecture case. Set `SKIPPY_CACHE_QUAL_FAMILY`
 to `dense-attention` (the default), `hybrid-dense`, `attention-moe`, or
-`hybrid-moe`, and supply the matching GGUF. Use `llama-server` built
-from the exact upstream commit in `llama_cpp/upstream.txt` and a Skippy native
-build from the repository's pinned recipe. Build both executables for the
-same backend.
+`hybrid-moe`, and supply the matching GGUF and a Skippy native build from the
+repository's pinned recipe. A matching GPU and all fixture inputs are required;
+missing inputs never become passing skips.
 
 ```sh
 LLAMA_STAGE_BUILD_DIR=/absolute/skippy-metal-build \
 SKIPPY_CACHE_QUAL_MODEL=/absolute/Qwen3-4B-Q4_K_M.gguf \
-SKIPPY_CACHE_QUAL_LLAMA_SERVER=/absolute/pinned-llama-server \
 SKIPPY_CACHE_QUAL_REPORT_DIR=/absolute/fresh-report-directory \
 just cache-correctness-metal
 ```
@@ -23,19 +21,26 @@ just cache-correctness-metal
 On ARM64 or x86_64 Linux with CUDA, point the same variables at the CUDA builds and use
 `just cache-correctness-cuda`.
 
-The test renders the same chat in both engines and compares the rendered prompt
-hash, exact prompt and generated token IDs, and output text. It compares the
-top five alternatives by token ID at each of eight decode checkpoints
-and requires either an absolute normalized log-probability difference at most
-0.05 or an absolute probability difference at most 0.000001. The probability
-bound covers tiny alternatives: upstream itself can exceed the log-space bound
-on an exact cached repeat because prefill and single-token kernels differ.
-Generated token IDs, text, and the top-five alternative IDs must still match
-exactly. Report schema 10 records both bounds; independent verification rejects
-reports with different bounds.
-The reference server and Skippy expose these scores after normalization.
-The cold reference disables context checkpoint creation as well as prompt
-reuse so checkpoint boundaries cannot change its prefill batches.
+The gate checks request identity, actual cache restoration, avoided prefill,
+and known answers. Each base/replay request must return the JSON object
+`{"code":1729}`. Conversation extensions change the requested code to 3141
+and then 2718; a changed tail requests 1618. The grammar constrains the shape
+but does not supply or force the answer. Wrong values, malformed/truncated JSON,
+and missing native generation evidence fail the gate. Equivalent JSON whitespace
+or tokenization is allowed; free-form wording is not a correctness oracle.
+
+Report schema **11**, contract `behavior_and_reuse_v1`, separates this gate from
+the previous numerical contract. Raw generated tokens and top-five scores remain
+in the report for diagnosis. Exact alternative-token rankings and numerical
+score differences do not determine qualification. Old reports cannot qualify
+under the new contract.
+
+An optional `SKIPPY_CACHE_QUAL_LLAMA_SERVER` captures pinned upstream observations
+on the same backend as diagnostics. It is not built or required by ordinary KV
+qualification or package CI. If supplied, its version and executable digest are
+retained; startup/computation failures are recorded in `reference_error` and do
+not establish or invalidate Skippy KV behavior. Native operator/parity regressions
+belong in the existing native contract tests.
 
 The cache-disabled Skippy result qualifies the cold baseline. An attention
 model must hit its native resident prefix in L1. A hybrid model must restore
@@ -44,15 +49,17 @@ suffix. Every replay checks the reported token accounting against the
 selected prefix.
 
 The L1 test also replays two successive conversation extensions and a changed
-tail after a common prefix. Each request runs cold in llama.cpp and Skippy, then
-warm through Skippy. The validator derives the expected resident prefix from
-the actual tokens. A recurrent checkpoint is reusable only when the full
-checkpoint remains a prefix of the rendered prompt. Each conversation case
+tail after a common prefix. Each request runs cold and warm through Skippy.
+The validator derives retained-prefix bounds from the actual prompt plus
+previously decoded generated tokens, excluding the last sample that has not
+been decoded. Valid extra reuse is accepted; claims beyond retained history
+or inconsistent suffix accounting fail. A recurrent checkpoint is reusable only
+when the full checkpoint remains a prefix of the rendered prompt. Each conversation case
 reports its own outcome and token accounting.
 
 The suite also exercises schema-constrained JSON, a forced named tool call,
-and retrieval from the beginning of a prompt of at least 4,096 tokens. Both
-engines use an 8,192-token context. The structured cases compare completed
+and retrieval from the beginning of a prompt of at least 4,096 tokens. Skippy
+uses an 8,192-token context. The structured cases compare completed
 objects or tool names and arguments against a known answer. Each case uses
 its own trusted Skippy scope and reports cold, seed, and warm cache usage.
 
@@ -63,17 +70,16 @@ reopens the disk cache with empty in-memory tiers and must hit L3. While that
 process owns the store, a contender must be denied access, generate the cold
 result using in-memory caching, and leave the committed pack intact. The test
 kills the owner and requires a fresh process to discard an interrupted write
-and restore the committed checkpoint. Every restore must match the cold
-output and account for the remaining suffix prefill. A request from a
+and restore the committed checkpoint. Every restore must produce the
+known answer and account for the remaining suffix prefill. A request from a
 different trusted execution scope must miss, and truncating the disk object
 must produce a detected corruption and a successful cold recompute.
 
-Both engines must show layer offload on the selected GPU backend. The fresh
+Skippy must show layer offload on the selected GPU backend. The fresh
 directory retains `result.json` with the outcome, fixture and executable
 identities, and token evidence alongside the native logs. The report records
-each output mismatch independently, including the cold comparison against
-upstream llama.cpp and the cache replays against cold Skippy. Missing
-prerequisites or telemetry fail qualification. Ordinary Rust tests run the
+each wrong answer, identity mismatch and invalid cache observation independently.
+Missing prerequisites or telemetry fail qualification. Ordinary Rust tests run the
 evidence validator offline.
 
 Each GPU cell also primes L1, L2, and L3 with an explicit chat
@@ -83,8 +89,9 @@ and leave the disk-payload read counter unchanged. The cell JSON retains
 the observed state for offline verification.
 
 Recheck a retained report without loading a model, starting a server, or
-requiring a GPU. The verifier checks the fixture, pinned reference version,
-qualification settings, and recorded binary hashes. It recomputes the result
+requiring a GPU. The verifier checks the fixture, behavioral contract,
+qualification settings, and recorded test binary hash. Optional reference
+provenance is checked when present. It recomputes the result
 from the captured outputs and cache observations.
 
 ```sh
@@ -96,7 +103,6 @@ just cache-correctness-verify metal /absolute/report-directory/result.json
 ```sh
 SKIPPY_CACHE_QUAL_FIXTURE_DIR=/absolute/read-only-model-directory \
 LLAMA_STAGE_BUILD_DIR=/absolute/skippy-metal-build \
-SKIPPY_CACHE_QUAL_LLAMA_SERVER=/absolute/pinned-llama-server \
 just cache-correctness-matrix metal /absolute/fresh-report-directory
 ```
 
@@ -105,8 +111,10 @@ GGUF filename from the manifest and writes a `batch-result.json` with four
 independent outcomes and SHA-256 digests of the retained cell reports. Missing
 inputs produce explicit failures. A model failure leaves its diagnostics in
 place and the other models still run.
-Use `--build` to build omitted inputs with Just. The reference build extracts
-the exact upstream Git tree from the prepared llama.cpp checkout.
+Use `--build` to build the omitted native runtime with Just. It does not build
+an upstream reference. Build a reference explicitly with
+`just cache-correctness-reference SOURCE BUILD PIN` when investigating numerical
+or native execution differences.
 
 To verify a retained matrix, pass the source SHA selected for admission:
 
@@ -126,7 +134,7 @@ cold, warm L1, and L3 restart outputs and checks that the selected cache tier
 actually restored the expected tokens. Full CI, including nightly, release and
 llama upgrade validation, runs all four cases on Metal and Linux ARM64 CUDA 13
 on Spark. Each backend runs its models in sequence with separate cache roots
-and reports. Full runs build the pinned upstream reference only on a cache miss.
+and reports. Qualification does not build an upstream reference.
 
 The Rust test harness loads the verified runtime from the same source-bound
 package used for device smoke. It uses `hf download` at each pinned revision

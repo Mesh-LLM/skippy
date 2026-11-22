@@ -1,5 +1,5 @@
 use super::{
-    Backend, CandidateRunner, Family, Fixture, StageConfig,
+    Backend, CandidateRunner, EXPECTED_CODE, Family, Fixture, StageConfig,
     evidence::{Candidate, compare, validate_durable_replay, validate_miss},
     generation_request, messages, required_path, stage_config, tiers,
 };
@@ -10,8 +10,9 @@ use serde_json::json;
 use std::{env, fs, path::Path};
 
 const BODY: &str = concat!(
-    "{% for message in messages %}{{ message.content }}{% endfor %}",
-    "{% if add_generation_prompt %}Assistant: {% endif %}"
+    "{% for message in messages %}",
+    "{{ '<|im_start|>' + message.role + '\n' + message.content + '<|im_end|>\n' }}",
+    "{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
 );
 
 #[derive(Default, Deserialize, Serialize)]
@@ -39,7 +40,8 @@ impl Observation {
         let checkpoint = self.checkpoint.context("missing template checkpoint")?;
         let prompt_tokens = u32::try_from(cold.generation.prompt_ids.len())?;
         validate_miss(prompt_tokens, seed).context("original template seed")?;
-        compare(&cold.generation, &seed.generation).context("original template seed")?;
+        compare(&cold.generation, &seed.generation, EXPECTED_CODE)
+            .context("original template seed")?;
         ensure!(
             self.restored.len() == 3,
             "incomplete template restore sequence"
@@ -47,7 +49,7 @@ impl Observation {
         for (source, replay) in ["l3", "l3", "l2"].into_iter().zip(&self.restored) {
             validate_durable_replay(prompt_tokens, replay, source, checkpoint)
                 .with_context(|| format!("original template {source} restore"))?;
-            compare(&cold.generation, &replay.generation)
+            compare(&cold.generation, &replay.generation, EXPECTED_CODE)
                 .with_context(|| format!("original template {source} output"))?;
         }
         let revised = self
@@ -55,7 +57,8 @@ impl Observation {
             .as_ref()
             .context("missing revised template observation")?;
         validate_miss(prompt_tokens, revised).context("revised template prefill")?;
-        compare(&cold.generation, &revised.generation).context("revised template output")?;
+        compare(&cold.generation, &revised.generation, EXPECTED_CODE)
+            .context("revised template output")?;
         ensure!(
             self.revised_disk_payload_bytes == Some(0),
             "a changed renderer read a stale disk payload"
@@ -130,7 +133,7 @@ fn observe(
     let cache = runner.enable_cache(Some(manager.clone()))?;
     let seed = observation.seed.insert(runner.generate(original)?);
     tiers::evict_l1(&runner, &cache)?;
-    observation.checkpoint = Some(tiers::published_checkpoint(&manager, seed)?);
+    observation.checkpoint = Some(tiers::published_checkpoint(runner.family, &manager, seed)?);
     for attempt in 0..3 {
         if attempt > 0 {
             tiers::evict_l1(&runner, &cache)?;

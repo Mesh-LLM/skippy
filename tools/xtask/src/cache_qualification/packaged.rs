@@ -15,6 +15,7 @@ pub(super) fn run(variant: &str, profile: &str, input: &Path, output: &Path) -> 
     let (backend, full) = match (variant, profile) {
         ("darwin-aarch64-metal", "short") => (Backend::Metal, false),
         ("linux-x86_64-cuda13", "short") => (Backend::Cuda, false),
+        ("linux-aarch64-cuda13", "short") => (Backend::CudaArm64, false),
         ("darwin-aarch64-metal", "full") => (Backend::Metal, true),
         ("linux-aarch64-cuda13", "full") => (Backend::CudaArm64, true),
         _ => return Err(format!("unsupported KV profile {profile:?} for {variant:?}").into()),
@@ -76,7 +77,9 @@ pub(super) fn run(variant: &str, profile: &str, input: &Path, output: &Path) -> 
         )?;
         let report: Report =
             serde_json::from_slice(&fs::read(report_dir.join("smoke-result.json"))?)?;
-        if report.status != Status::Pass
+        if report.schema_version != 11
+            || report.qualification_contract != "behavior_and_reuse_v1"
+            || report.status != Status::Pass
             || report.backend != backend.profile()
             || report.fixture != *model
         {
@@ -89,7 +92,7 @@ pub(super) fn run(variant: &str, profile: &str, input: &Path, output: &Path) -> 
 
     let inputs = Inputs {
         fixtures: Fixtures::HuggingFace,
-        reference: prepare::packaged_reference(backend)?,
+        reference: prepare::diagnostic_reference()?,
         runner: TestRunner::Packaged { binary, runtime },
     };
     let cells = fixtures

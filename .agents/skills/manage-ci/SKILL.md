@@ -45,6 +45,9 @@ contract; no downstream product's workflow topology applies here.
   compiler-image runners. A dedicated KV path filter selects short cache checks
   in the Metal and ARM64 CUDA 13 device jobs. Full CI qualifies all four KV
   fixtures in those same device jobs using their exact packaged runtimes.
+  KV qualification gates known answers, identity/isolation and observed reuse;
+  token/score traces and optional upstream observations are diagnostics. It does
+  not require a separately built upstream server or numerical equivalence.
   Tagged releases add device smoke on those exact archives, including x64 CUDA 13.
   The lightweight CI gate checks the validated matrix and requires all applicable results.
 - `.github/workflows/docs.yml` directly validates `docs-site/**` changes on PRs

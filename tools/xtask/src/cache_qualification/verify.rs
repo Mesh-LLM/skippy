@@ -96,12 +96,13 @@ fn validate_report_binaries(report: &super::Report) -> DynResult<()> {
         .as_deref()
         .filter(|hash| valid_sha256(hash))
         .ok_or("missing correctness test executable digest")?;
-    report
+    if report
         .reference
         .as_ref()
-        .map(|reference| reference.binary_sha256.as_str())
-        .filter(|hash| valid_sha256(hash))
-        .ok_or("missing correctness reference executable digest")?;
+        .is_some_and(|reference| !valid_sha256(&reference.binary_sha256))
+    {
+        return Err("invalid diagnostic reference executable digest".into());
+    }
     Ok(())
 }
 
@@ -164,10 +165,11 @@ mod tests {
     use crate::cache_qualification::Cell;
 
     #[test]
-    fn offline_verification_requires_both_executable_digests() {
+    fn offline_verification_requires_the_test_digest_and_valid_optional_diagnostics() {
         let model = KvFixtureManifest::bundled().unwrap().models.remove(0);
         let mut report = super::super::Report {
-            schema_version: 10,
+            schema_version: 11,
+            qualification_contract: "behavior_and_reuse_v1".into(),
             status: Status::Pass,
             backend: Backend::Metal.profile().into(),
             model_sha256: Some(model.sha256.clone()),
@@ -186,7 +188,7 @@ mod tests {
         assert!(validate_report_binaries(&report).is_err());
         report.skippy_binary_sha256 = Some("a".repeat(64));
         report.reference = None;
-        assert!(validate_report_binaries(&report).is_err());
+        assert!(validate_report_binaries(&report).is_ok());
     }
 
     #[test]

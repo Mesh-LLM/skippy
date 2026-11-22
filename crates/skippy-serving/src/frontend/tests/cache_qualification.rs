@@ -44,7 +44,8 @@ use evidence::{CacheObservation, Candidate, Generation, Report, Status, TokenSco
 use fixture::{Family, Fixture};
 
 const LLAMA_PIN: &str = include_str!("../../../../../llama_cpp/upstream.txt");
-const MAX_TOKENS: u32 = 8;
+const MAX_TOKENS: u32 = 32;
+const EXPECTED_CODE: i64 = 1729;
 const TOP_K: u32 = 5;
 const CONTEXT_TOKENS: u32 = 8192;
 const BATCH_TOKENS: u32 = 512;
@@ -63,7 +64,7 @@ fn verify_report() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires the pinned llama-server, an admitted model and actual qualification hardware"]
+#[ignore = "requires an admitted model and actual qualification hardware"]
 async fn cross_tier() -> Result<()> {
     let directory = required_path("SKIPPY_CACHE_QUAL_REPORT_DIR")?;
     fs::create_dir(&directory)
@@ -102,8 +103,12 @@ async fn qualify(directory: &Path, report: &mut Report) -> Result<()> {
     let request = generation_request(&fixture, &messages)?;
     // Run the two engines sequentially so the reference cannot change the
     // candidate's device resource budget.
-    report.reference =
-        Some(reference::observe(backend, directory, &model, &fixture, &messages).await?);
+    if env::var_os("SKIPPY_CACHE_QUAL_LLAMA_SERVER").is_some() {
+        match reference::observe(backend, directory, &model, &fixture, &messages).await {
+            Ok(reference) => report.reference = Some(reference),
+            Err(error) => report.reference_error = Some(format!("{error:#}")),
+        }
+    }
     let config = stage_config(&fixture, &model, &model_sha256)?;
     let native_log = directory.join("skippy-native.log");
     skippy_runtime::redirect_native_logs_to_file(&native_log)?;
@@ -130,14 +135,14 @@ async fn qualify(directory: &Path, report: &mut Report) -> Result<()> {
 
 fn messages() -> Value {
     json!([{"role":"user","content": user_content(
-        "Continue this sequence, starting immediately with 5: 1, 2, 3, 4,"
+        "The Harbor access code is 1729. Return only a JSON object with the integer field code containing the Harbor access code. Do not use Markdown fences or commentary."
     )}])
 }
 
 fn user_content(question: &str) -> String {
     format!(
         "{}\n\n{question}",
-        include_str!("../../../tests/fixtures/skippy-cache-prompt-input.txt")
+        include_str!("../../../tests/fixtures/skippy-kv-qualification-context.txt")
     )
 }
 
@@ -150,7 +155,12 @@ fn generation_request(fixture: &Fixture, messages: &Value) -> Result<GenerationR
         "max_tokens": MAX_TOKENS,
         "logprobs": true,
         "top_logprobs": TOP_K,
-        "reasoning_effort": "none"
+        "reasoning_effort": "none",
+        "response_format": {"type": "json_schema", "json_schema": {
+            "name": "cache_answer", "strict": true,
+            "schema": {"type": "object", "properties": {"code": {"type": "integer"}},
+                "required": ["code"], "additionalProperties": false}
+        }}
     }))?
     .into())
 }

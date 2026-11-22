@@ -88,7 +88,7 @@ pub(crate) fn read_manifest(body: &str) -> DynResult<KvFixtureManifest> {
 
 struct Inputs {
     fixtures: Fixtures,
-    reference: PathBuf,
+    reference: Option<PathBuf>,
     runner: TestRunner,
 }
 
@@ -118,12 +118,7 @@ impl Fixtures {
 }
 
 impl Inputs {
-    fn load(
-        backend: Backend,
-        output: &Path,
-        prepare_builds: bool,
-        download: bool,
-    ) -> DynResult<Self> {
+    fn load(backend: Backend, prepare_builds: bool, download: bool) -> DynResult<Self> {
         let fixtures = if download {
             Fixtures::HuggingFace
         } else {
@@ -132,18 +127,15 @@ impl Inputs {
                 Path::is_dir,
             )?)
         };
-        let builds = if prepare_builds {
-            prepare::build(backend, output)?
+        let native_build = if prepare_builds {
+            prepare::build_native(backend)?
         } else {
-            prepare::Builds {
-                reference: existing_input("SKIPPY_CACHE_QUAL_LLAMA_SERVER", Path::is_file)?,
-                native_build: existing_input("LLAMA_STAGE_BUILD_DIR", Path::is_dir)?,
-            }
+            existing_input("LLAMA_STAGE_BUILD_DIR", Path::is_dir)?
         };
         Ok(Self {
             fixtures,
-            reference: builds.reference,
-            runner: TestRunner::Cargo(builds.native_build),
+            reference: prepare::diagnostic_reference()?,
+            runner: TestRunner::Cargo(native_build),
         })
     }
 }
@@ -166,6 +158,7 @@ enum Status {
 #[derive(Deserialize)]
 struct Report {
     schema_version: u32,
+    qualification_contract: String,
     status: Status,
     backend: String,
     fixture: KvFixture,
@@ -236,7 +229,7 @@ pub fn run(args: &[String]) -> DynResult<()> {
     let manifest_bytes = fs::read_to_string(MANIFEST)?;
     let manifest = read_manifest(&manifest_bytes)?;
     let start = verify::Source::capture(&output)?;
-    let inputs = Inputs::load(backend, &output, prepare_builds, download);
+    let inputs = Inputs::load(backend, prepare_builds, download);
     let cells = manifest
         .models
         .iter()
@@ -301,14 +294,16 @@ fn run_cell(backend: Backend, output: &Path, model: &KvFixture, inputs: &Inputs)
             fixture.to_string_lossy().into_owned(),
         ),
         (
-            "SKIPPY_CACHE_QUAL_LLAMA_SERVER",
-            inputs.reference.to_string_lossy().into_owned(),
-        ),
-        (
             "SKIPPY_CACHE_QUAL_REPORT_DIR",
             directory.to_string_lossy().into_owned(),
         ),
     ];
+    if let Some(reference) = &inputs.reference {
+        environment.push((
+            "SKIPPY_CACHE_QUAL_LLAMA_SERVER",
+            reference.to_string_lossy().into_owned(),
+        ));
+    }
     let result = match &inputs.runner {
         TestRunner::Cargo(native_build) => {
             environment.push((
@@ -359,7 +354,8 @@ fn assess_report(
             return Err("qualification exited without a result report".into());
         }
     };
-    if report.schema_version != 10
+    if report.schema_version != 11
+        || report.qualification_contract != "behavior_and_reuse_v1"
         || report.backend != backend.profile()
         || report.fixture != *model
     {

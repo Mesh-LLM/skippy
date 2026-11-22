@@ -41,8 +41,9 @@ and no exclusion. The routes are independent; mixed PRs run all applicable work.
 | `inference` | The separate qualification workflow, using its native trigger list and the existing manual PR policy. |
 
 The `kv` filter also selects the Metal and Linux ARM64 CUDA 13 package jobs.
-Each selected short run checks one dense fixture for cold and warm output,
-L1 reuse, and L3 restoration in a fresh process. Full profiles run all four
+Each selected short run checks one dense fixture for known JSON answers,
+L1 reuse, and L3 restoration in a fresh process. Numerical traces are diagnostic; the gate
+requires correct answers, identity/isolation and actual reuse. Full profiles run all four
 fixtures in those same jobs after device smoke, against the exact packaged
 runtime. PRs read base-revision filters, falling back conservatively to code
 selection before the KV filter lands. Main uses its last verified covered

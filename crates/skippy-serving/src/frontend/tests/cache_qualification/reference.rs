@@ -202,7 +202,7 @@ async fn observe_generation(
         "/apply-template",
         json!({
             "messages": messages,
-            "chat_template_kwargs": {"enable_thinking": false}
+            "chat_template_kwargs": {"enable_thinking": false, "preserve_reasoning": false}
         }),
     )
     .await?;

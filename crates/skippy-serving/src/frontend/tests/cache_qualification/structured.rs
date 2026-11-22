@@ -220,20 +220,16 @@ async fn observe(
 
 pub(super) fn validate(
     family: Family,
-    reference: &BTreeMap<Case, Attempt>,
     observed: &BTreeMap<Case, Observation>,
 ) -> BTreeMap<Case, ResultRow> {
     Case::ALL
         .into_iter()
         .map(|case| {
             let result = (|| -> Result<Vec<String>> {
-                let reference = reference
-                    .get(&case)
-                    .context("missing llama.cpp structured response")?;
                 let observed = observed
                     .get(&case)
                     .context("missing Skippy structured responses")?;
-                Ok(validate_attempts(case, family, reference, observed))
+                Ok(validate_attempts(case, family, observed))
             })();
             let errors = result.unwrap_or_else(|error| vec![format!("{error:#}")]);
             let status = if errors.is_empty() {
@@ -246,14 +242,8 @@ pub(super) fn validate(
         .collect()
 }
 
-fn validate_attempts(
-    case: Case,
-    family: Family,
-    reference: &Attempt,
-    observed: &Observation,
-) -> Vec<String> {
+fn validate_attempts(case: Case, family: Family, observed: &Observation) -> Vec<String> {
     [
-        ("llama.cpp cold", reference, false, false),
         ("Skippy cold", &observed.cold, true, false),
         ("Skippy seed", &observed.seed, true, false),
         ("Skippy warm", &observed.warm, true, true),

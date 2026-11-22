@@ -1,6 +1,6 @@
 use super::{
-    Backend, CandidateRunner, Family, Fixture, Report, Status, evidence, file_sha256,
-    generation_request, messages, ownership, required_path, stage_config, tiers,
+    Backend, CandidateRunner, EXPECTED_CODE, Family, Fixture, Report, Status, evidence,
+    file_sha256, generation_request, messages, ownership, required_path, stage_config, tiers,
 };
 use anyhow::{Context, Result, ensure};
 use serde_json::json;
@@ -52,6 +52,7 @@ async fn observe(directory: &Path, report: &mut Report) -> Result<()> {
         tiers::drain_workers(&cache)?;
         tiers::evict_l1(&runner, &cache)?;
         tiers::published_checkpoint(
+            family,
             &manager,
             report.seed.as_ref().context("missing cache seed")?,
         )
@@ -75,8 +76,8 @@ async fn observe(directory: &Path, report: &mut Report) -> Result<()> {
         .as_ref()
         .context("missing L1 replay")?
         .generation;
-    evidence::compare(cold, seed).context("seed output")?;
-    evidence::compare(cold, warm).context("L1 output")?;
+    evidence::compare(cold, seed, EXPECTED_CODE).context("seed output")?;
+    evidence::compare(cold, warm, EXPECTED_CODE).context("L1 output")?;
 
     let restarted = ownership::reopen(directory, config, family, backend).await?;
     ensure!(
@@ -89,7 +90,7 @@ async fn observe(directory: &Path, report: &mut Report) -> Result<()> {
         "l3",
         checkpoint,
     )?;
-    evidence::compare(cold, &restarted.replay.generation).context("L3 output")?;
+    evidence::compare(cold, &restarted.replay.generation, EXPECTED_CODE).context("L3 output")?;
     ensure!(
         file_sha256(&model)? == digest,
         "fixture changed during the run"

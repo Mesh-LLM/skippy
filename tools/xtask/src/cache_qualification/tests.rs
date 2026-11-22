@@ -14,7 +14,8 @@ fn a_passing_child_cannot_hide_missing_or_mismatched_evidence() {
     let model = &manifest.models[0];
     assert!(assess_report(Backend::Metal, model, Ok(()), None).is_err());
     let report = |status, backend: &str| Report {
-        schema_version: 10,
+        schema_version: 11,
+        qualification_contract: "behavior_and_reuse_v1".into(),
         status,
         backend: backend.into(),
         fixture: KvFixtureManifest::bundled().unwrap().models.remove(0),
@@ -69,6 +70,12 @@ fn a_passing_child_cannot_hide_missing_or_mismatched_evidence() {
     let mut missing_template = report(Status::Pass, metal);
     missing_template.template_result = None;
     assert!(assess_report(Backend::Metal, model, Ok(()), Some(Ok(missing_template))).is_err());
+    let mut old_contract = report(Status::Pass, metal);
+    old_contract.schema_version = 10;
+    assert!(assess_report(Backend::Metal, model, Ok(()), Some(Ok(old_contract))).is_err());
+    let mut wrong_contract = report(Status::Pass, metal);
+    wrong_contract.qualification_contract = "numerical_v10".into();
+    assert!(assess_report(Backend::Metal, model, Ok(()), Some(Ok(wrong_contract))).is_err());
     let mut stale = report(Status::Pass, metal);
     stale.fixture.revision = "e".repeat(40);
     assert!(assess_report(Backend::Metal, model, Ok(()), Some(Ok(stale))).is_err());
