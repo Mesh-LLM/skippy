@@ -360,6 +360,7 @@ impl IterationScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frontend::iteration_scheduler::RuntimeOperationKind;
     use skippy_scheduler::StageCacheAffinity;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc;
@@ -368,6 +369,7 @@ mod tests {
     fn operation(selected: &mpsc::Sender<&'static str>, label: &'static str) -> RuntimeOperation {
         let selected = selected.clone();
         RuntimeOperation {
+            kind: RuntimeOperationKind::Mutation,
             label,
             control: None,
             run: Box::new(move |_| {

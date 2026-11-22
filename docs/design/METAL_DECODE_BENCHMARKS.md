@@ -5,14 +5,14 @@ the matched vanilla comparison is complete as a fixed-budget observation, with o
 
 ## Matched comparison
 
-The confirmed table compares Skippy main and the candidate PR; the separate three-way table below includes vanilla llama.cpp.
+The tables below are historical comparisons of the explicitly pinned snapshots, not measurements of the current PR against its immediate base. The separate three-way table includes vanilla llama.cpp.
 Vanilla uses the same llama.cpp upstream pin, not the Skippy native patch queue.
 An empty hardware/model cell is unmeasured, never an inferred number.
 
 Hardware: one 256 GB Apple M3 Ultra, macOS 26.7.1. Skippy main is
 `fbc3349cd406786e43f6579590c9a12b0cd49c05`. The measured candidate snapshot is
-`c2055c4a3bb20f601f0074e6fe06a7c85efef01d`; its product source matches this
-PR, with subsequent evidence/documentation edits only. Both use llama.cpp
+`c2055c4a3bb20f601f0074e6fe06a7c85efef01d`. The current PR has subsequent
+engine and scheduler changes; these rates must not be attributed to its current head. Both use llama.cpp
 `8954f194837d2ec4d5f67f20c81b84abe63883ba`. The candidate includes the earlier
 Mesh-hosted/Jared native work and subsequent engine changes, ported into the
 standalone repository. These numbers do not isolate each contributor's changes.
@@ -222,3 +222,33 @@ campaign on a separate hardware/compiler cohort, not a serving-table update.
 The candidate remains excluded from this PR: the kernel win did not produce a
 native decode gain. Pins and audit hashes are in
 [`metal-decode-q8-pair-rejected.json`](evidence/metal-decode-q8-pair-rejected.json).
+
+## Review follow-up: scheduler and rollback movement
+
+The follow-up to Jared's review starts from PR head `1ebce5e`. It removes
+empty verification waits, interrupts direct gathering for ready speculative work,
+uses the configured batch policy's decode wait capped at 300 microseconds for
+shared gathering, and types draft operations independently of diagnostic labels.
+Native rollback relocation now skips identity rows and uses backend-to-backend
+copies for non-overlapping groups. Aliased groups still gather before scattering;
+`native.recurrent_rollback_copy` records their `host_staging_bytes` and duration.
+Synthetic CPU/Metal copy checks and peer rollback tests establish correctness,
+not serving TPS. No replacement headline is established by these changes alone.
+
+### Metal qualification boundaries
+
+The retained defaults are deliberately distinct from capability eligibility.
+`GGML_METAL_ROUTED_U32=1` / `GGML_METAL_ROUTED_U32_R4=1` can now exercise safe,
+bounded geometry on M3 Ultra; the normal defaults are unchanged. Host greedy
+can be tested on any shared-buffer device with `GGML_METAL_HOST_GREEDY=1`;
+private buffers remain ineligible. `GGML_METAL_ROUTED_ROWS=1` tests the narrow
+Q4_1 rule on Apple families 7–9 and the general rule on Apple10 and newer;
+`0` disables the diagnostic row tuning. Normal row defaults stay unchanged.
+
+The retained evidence does not establish that M4 u32 or M5 Max R4 are slower;
+those defaults remain unpromoted pending qualification. This report contains no
+retained cross-chip host-greedy comparison beyond the M5 Max qualification, nor
+an attributable broad Q4_K row-rule comparison on M1 Ultra/M4. The M3 Ultra
+historical tables did not exercise the old chip-gated host-greedy/routed paths.
+Do not infer those patches' gains from the combined tables. Broader defaults
+require new per-device numerical and matched serving results.

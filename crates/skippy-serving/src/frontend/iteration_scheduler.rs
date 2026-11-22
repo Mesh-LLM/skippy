@@ -192,7 +192,14 @@ fn ensure_direct_iteration_active(
 type RuntimeOperationFn = Box<dyn FnOnce(&Arc<Mutex<RuntimeState>>) -> Duration + Send>;
 type RuntimeSetupOutcome = (Vec<String>, Vec<(String, InferenceError)>);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RuntimeOperationKind {
+    Mutation,
+    Draft,
+}
+
 struct RuntimeOperation {
+    kind: RuntimeOperationKind,
     label: &'static str,
     control: Option<CacheRuntimeContext>,
     run: RuntimeOperationFn,
@@ -275,6 +282,7 @@ where
     let enqueued_at = Instant::now();
     let origin = trace_context::current_frame();
     let operation = RuntimeOperation {
+        kind: RuntimeOperationKind::Mutation,
         label,
         control: None,
         run: Box::new(move |runtime: &Arc<Mutex<RuntimeState>>| {
@@ -328,6 +336,7 @@ where
     let worker_control = control.clone();
     let origin = trace_context::current_frame();
     let runtime_operation = RuntimeOperation {
+        kind: RuntimeOperationKind::Mutation,
         label,
         control: Some(control.clone()),
         run: Box::new(move |runtime: &Arc<Mutex<RuntimeState>>| {
@@ -1046,6 +1055,11 @@ impl SchedulerWorker {
             if !cache_fill_wave_pending && coalesce_direct && !self.coalesce_direct_iterations() {
                 return;
             }
+            // A speculative command received during direct gathering must run
+            // before another direct batch or interval can delay its lane.
+            if !self.drafts.is_empty() || !self.verifications.is_empty() {
+                continue;
+            }
             self.run_work_turn();
             if !self.wait_iteration_interval() {
                 return;
@@ -1073,7 +1087,7 @@ impl SchedulerWorker {
             SchedulerCommand::ExecuteRuntime(operation) => {
                 // Draft proposals do not change target positions. Other
                 // mutations remain barriers after admitted verification.
-                if operation.label != "dflash-propose" {
+                if operation.kind == RuntimeOperationKind::Mutation {
                     while !self.drafts.is_empty() {
                         self.run_draft_batch();
                     }
