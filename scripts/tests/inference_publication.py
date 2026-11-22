@@ -55,10 +55,22 @@ class Dataset:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_bytes(source.read_bytes())
         self.directory = target
-        return SimpleNamespace(commit_url=f"https://example.invalid/{self.sha}")
+        return SimpleNamespace(commit_url=f"https://example.invalid/{self.sha}", oid=self.sha)
 
 
 class PublicationTests(unittest.TestCase):
+    def test_three_headline_figures_export_as_pngs_with_all_configurations(self):
+        from inference_markdown import history
+        from lib.inference_charts import dataset_charts, image_path
+        from lib.inference_png import export_charts
+        charts = dataset_charts(history())
+        self.assertEqual(len(charts), 3)
+        self.assertTrue(all(len(chart.panels) == 2 for chart in charts))
+        with TemporaryDirectory() as directory:
+            export_charts(charts, Path(directory))
+            for index in range(1, 4):
+                self.assertEqual((Path(directory) / image_path(index)).read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
+
     def test_failed_run_is_published_and_does_not_replace_saved_baseline(self):
         publish = run_path(str(PR_PATH))["publish"]
         with TemporaryDirectory() as directory, patch("lib.inference_nightly_results.print", create=True):
@@ -67,20 +79,27 @@ class PublicationTests(unittest.TestCase):
             evidence = root / "evidence"
 
             def release(source, run_id, number, started_at):
+                evidence.mkdir(exist_ok=True)
                 return publish(dataset, dataset.download, dict, dict, evidence,
-                               (source, run_id, "1", number, started_at, False))
+                               (source, run_id, "1", number, started_at, False),
+                               report_output=evidence / "publication-report.json")
 
             first_stamp = "2026-11-21T00:00:00Z"
             smoke_receipt(evidence, SOURCE, "23")
             first = release(SOURCE, "23", 1, first_stamp)
             self.assertEqual(first["outcome"], "failed")
             self.assertEqual(dataset.version, 2)
+            first_report = read_json(evidence / "publication-report.json")
+            self.assertEqual(first_report["chart_base_url"],
+                             "https://huggingface.co/datasets/meshllm/skippy-inference-qualification/resolve/"
+                             + dataset.sha + "/reports/23-1")
             initial = read_json(dataset.directory / "baselines.json")
             self.assertEqual(len(initial["baselines"]), 2)
             self.assertEqual(read_run(dataset.directory / "runs/23/1.parquet"), first)
             self.assertTrue((dataset.directory / "charts/qualification-1.png").is_file())
             self.assertEqual(release(SOURCE, "23", 1, first_stamp), first)
             self.assertEqual(dataset.version, 2)
+            self.assertEqual(read_json(evidence / "publication-report.json")["runs"], [first])
 
             second_stamp = "2026-11-22T00:00:00Z"
             other_source = "b" * 40
@@ -91,12 +110,31 @@ class PublicationTests(unittest.TestCase):
             current = read_json(dataset.directory / "baselines.json")
             self.assertEqual(current["baselines"], initial["baselines"])
             self.assertEqual(current["history"], ["runs/24/1.parquet", "runs/23/1.parquet"])
+            report = read_json(evidence / "publication-report.json")
+            self.assertEqual([run["id"] for run in report["runs"]], ["24-1", "23-1"])
+            from lib.inference_markdown import run_summary
+            summary = run_summary(report, second["id"], image_base_url=report["chart_base_url"])
+            self.assertIn(report["chart_base_url"] + "/charts/qualification-1.png", summary)
+            self.assertIn("-10.00%", summary)
             card = (dataset.directory / "README.md").read_text(encoding="utf-8")
-            self.assertIn("## Latest results", card)
-            self.assertIn("| -10.00% | Regression |", card)
+            self.assertIn("## Latest numbers", card)
+            self.assertIn("-10.00% · Regressed", card)
             self.assertIn("## Performance over time", card)
             self.assertNotIn("job_fixture", card)
             self.assertEqual(read_run(dataset.directory / "runs/24/1.parquet"), second)
+            # Replaying an older run must embed its own immutable images, not
+            # the latest card's charts or the newer run's measurements.
+            self.assertEqual(release(SOURCE, "23", 1, first_stamp), first)
+            replay = read_json(evidence / "publication-report.json")
+            self.assertTrue(replay["chart_base_url"].endswith("/reports/23-1"))
+            first_chart = dataset.directory / "reports/23-1/charts/qualification-1.png"
+            second_chart = dataset.directory / "reports/24-1/charts/qualification-1.png"
+            self.assertNotEqual(first_chart.read_bytes(), second_chart.read_bytes())
+            card_before = (dataset.directory / "README.md").read_bytes()
+            first_chart.unlink()
+            release(SOURCE, "23", 1, first_stamp)
+            self.assertTrue((dataset.directory / "reports/23-1/charts/qualification-1.png").is_file())
+            self.assertEqual((dataset.directory / "README.md").read_bytes(), card_before)
             with self.assertRaisesRegex(ValueError, "older nightly"):
                 release(SOURCE, "22", 1, first_stamp)
 

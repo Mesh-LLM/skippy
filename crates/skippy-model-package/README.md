@@ -22,7 +22,7 @@ See the [model onboarding guide](../../docs/NEW_MODEL_ONBOARDING.md) for a
 dry-run example. The binary defaults to dry-run; `--confirm` submits jobs and
 can incur Hugging Face Jobs charges.
 
-Source-build jobs clone the private `general-inference/skippy` repository at
+Source-build jobs clone `Mesh-LLM/skippy` at
 `--skippy-ref`. Submission requires `SKIPPY_GITHUB_TOKEN` with read-only access
 to that repository in addition to the Hugging Face token. The credential is
 sent as a job secret, omitted from dry-run specs, used through Git's credential

@@ -1,15 +1,17 @@
 """Offline checks for inference planning and protected placement."""
 
 import io
+import json
 import os
 import unittest
 from pathlib import Path
 from runpy import run_path
+from tempfile import TemporaryDirectory
 from urllib.error import HTTPError
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from lib import inference_ladder
-from lib.jy_qualification import Pilot, placement
+from lib import inference_ladder, inference_throughput
+from lib.jy_qualification import Pilot, PilotHTTPError, placement
 
 
 class LadderTests(unittest.TestCase):
@@ -67,6 +69,65 @@ class PilotRequestTests(unittest.TestCase):
                 pilot.request("POST", "/v1/auth/login", {})
 
 
+class ThroughputTests(unittest.TestCase):
+    run_id = "run_test"
+    prefix = f"/v1/artifacts/{run_id}/raw/"
+
+    def test_late_artifact_produces_throughput_receipt(self):
+        sha = "a" * 40
+        model = "qwen35-4b"
+        row = {"id": model + "-standalone", "mode": "standalone"}
+        job = {"id": "job_test", "repo_rev": sha, "status": "succeeded",
+               "runs": [{"id": self.run_id, "status": "succeeded"}]}
+        qualification = {"source_sha": sha, "model": model, "mode": "standalone",
+                         "profile": "pr", "status": "passed"}
+        cases = json.loads(Path("ci/inference-quality.json").read_text())
+        response = {"timings": {"prompt_n": 3, "prompt_ms": 2, "predicted_n": 1, "predicted_ms": 3},
+                    "usage": {"prompt_tokens_details": {"cached_tokens": 1}}}
+        samples = [{"case": case, "response": response, "passed": True} for case in cases]
+        quality_path = self.prefix + "quality.json"
+        missing = HTTPError("https://pilot.jianyang.cloud" + quality_path, 404, "Not Found", {},
+                            io.BytesIO(b'{"error":"not_found","message":"artifact not found"}'))
+        pilot = Pilot()
+        replies = [io.BytesIO(json.dumps(qualification).encode()), missing,
+                   io.BytesIO(json.dumps(samples).encode())]
+        with TemporaryDirectory() as directory, patch.object(pilot, "auth", return_value="test"), \
+                patch.object(pilot.opener, "open", side_effect=replies) as send, \
+                patch.object(inference_throughput.time, "sleep") as sleep:
+            output = Path(directory)
+            inference_throughput.collect(pilot, job, row, sha, output, model)
+            receipt = json.loads((output / (row["id"] + "-throughput.json")).read_text())
+
+        self.assertEqual(receipt["run_id"], self.run_id)
+        self.assertEqual(receipt["requests"], len(cases))
+        self.assertEqual(receipt["prefill_tokens"], 2 * len(cases))
+        self.assertEqual(receipt["decode_ms"], 3 * len(cases))
+        self.assertEqual([call.args[0].selector for call in send.call_args_list],
+                         [self.prefix + "qualification.json", quality_path, quality_path])
+        sleep.assert_called_once_with(inference_throughput.ARTIFACT_RETRY_DELAY)
+
+    def test_persistent_404_stops_and_names_the_artifact(self):
+        path = self.prefix + "qualification.json"
+        pilot = Mock(spec=Pilot)
+        pilot.api.side_effect = PilotHTTPError(path, 404, "artifact not found")
+        with patch.object(inference_throughput.time, "sleep") as sleep:
+            with self.assertRaisesRegex(RuntimeError, r"run_test/qualification\.json: JY HTTP 404"):
+                inference_throughput.fetch_artifact(pilot, self.run_id, "qualification.json")
+        self.assertEqual(pilot.api.call_count, inference_throughput.ARTIFACT_RETRIES + 1)
+        self.assertEqual(sleep.call_count, inference_throughput.ARTIFACT_RETRIES)
+
+    def test_other_http_errors_are_not_retried(self):
+        for path, status in [(self.prefix + "quality.json", 403), ("/v1/auth/login", 404)]:
+            with self.subTest(path=path, status=status):
+                pilot = Mock(spec=Pilot)
+                pilot.api.side_effect = PilotHTTPError(path, status, "request failed")
+                with patch.object(inference_throughput.time, "sleep") as sleep:
+                    with self.assertRaisesRegex(RuntimeError, rf"run_test/quality\.json: JY HTTP {status}"):
+                        inference_throughput.fetch_artifact(pilot, self.run_id, "quality.json")
+                pilot.api.assert_called_once_with("GET", self.prefix + "quality.json")
+                sleep.assert_not_called()
+
+
 class PlacementTests(unittest.TestCase):
     def test_two_distinct_hosts_on_one_network(self):
         def agent(name, network, runs):
@@ -93,7 +154,7 @@ class ReleaseAdmissionTests(unittest.TestCase):
         env = {
             "GITHUB_EVENT_NAME": "workflow_dispatch",
             "GITHUB_REF": "refs/heads/main",
-            "GITHUB_WORKFLOW_REF": "general-inference/skippy/.github/workflows/release.yml@refs/heads/main",
+            "GITHUB_WORKFLOW_REF": "Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main",
             "GITHUB_RUN_ID": "123",
             "GITHUB_SHA": base,
         }

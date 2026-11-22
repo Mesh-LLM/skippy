@@ -1,76 +1,52 @@
 # Inference qualification
 
-**Passed** · pr profile · `3f34c26a1811` · 2026-11-21 03:57 UTC · Run [main-smoke-recorded](https://github.com/general-inference/skippy/actions/runs/44863668933)
+**0 regressions · 0 improvements · 0 within tolerance · 12 first measurements**
 
-Recorded main workflow dispatch. All seven configurations passed. Six timing receipts were available. No comparison baseline was published for this run.
+21 Nov 2026 03:57 UTC · Engine `3f34c26a1811` · pr · **Tolerance: ±1%** · NVIDIA GB10 DGX Spark
 
-## Performance charts
+6 measured configurations. Counts refer to performance metrics. First measurements establish new series and have no trend verdict.
 
-Smoke test (v1). Slate = measurement without a verdict.
+## Performance over time
 
-```mermaid
----
-config:
-  xyChart:
-    width: 760
-    height: 341
-  themeVariables:
-    xyChart:
-      plotColorPalette: "#537489"
----
-xychart-beta horizontal
-    title "Prefill throughput"
-    x-axis ["Qwen3-Coder-30B-A3B (2 Sparks) — 260.23", "Qwen3-Coder-30B-A3B (1 Spark) — 216.07", "Qwen3.5-4B (1 Spark) — 612.17", "Qwen3.6-35B-A3B (1 Spark) — 251.8", "Qwen3.8-Flash-Next (2 Sparks) — 40.59", "Qwen3.8-Flash-Next (1 Spark) — 89.28"]
-    y-axis "tok/s" 0 --> 690
-    bar [260.23, 216.07, 612.17, 251.8, 40.59, 89.28]
-```
+Each panel shows one measured model and Spark configuration. The dashed line is the current comparison reference; the shaded band is ±1%. Blue circles are within tolerance, green triangles indicate improvements, red triangles indicate regressions, and grey squares mark first measurements. Missing measurements leave gaps. Dates are UTC.
 
-Smoke test (v1). Slate = measurement without a verdict.
+### Prefill throughput
 
-```mermaid
----
-config:
-  xyChart:
-    width: 760
-    height: 341
-  themeVariables:
-    xyChart:
-      plotColorPalette: "#537489"
----
-xychart-beta horizontal
-    title "Decode throughput"
-    x-axis ["Qwen3-Coder-30B-A3B (2 Sparks) — 29.38", "Qwen3-Coder-30B-A3B (1 Spark) — 62.64", "Qwen3.5-4B (1 Spark) — 63.32", "Qwen3.6-35B-A3B (1 Spark) — 60.44", "Qwen3.8-Flash-Next (2 Sparks) — 13.1", "Qwen3.8-Flash-Next (1 Spark) — 28.88"]
-    y-axis "tok/s" 0 --> 71
-    bar [29.38, 62.64, 63.32, 60.44, 13.1, 28.88]
-```
+Higher is better.
 
-## Lab outcomes
+![Prefill throughput over time for every measured configuration](summaries/main-smoke-recorded/charts/qualification-1.png)
 
-| Configuration | Qualification | Evidence |
+### Decode throughput
+
+Higher is better.
+
+![Decode throughput over time for every measured configuration](summaries/main-smoke-recorded/charts/qualification-2.png)
+
+## Latest numbers
+
+Current values and signed changes against the saved reference, or the previous comparable measurement when no saved reference exists. Higher throughput and lower latency are better.
+
+### One Spark
+
+| Model | Prefill throughput (tok/s) | Decode throughput (tok/s) |
 | --- | --- | --- |
-| Qwen3-Coder-30B-A3B (2 Sparks) | Passed | [Lab record](https://pilot.jianyang.cloud/jobs/job_xx9qwgvp1jm5680) |
-| Qwen3-Coder-30B-A3B (1 Spark) | Passed | [Lab record](https://pilot.jianyang.cloud/jobs/job_ewb6q82wjhx38pn) |
-| Qwen3.5-4B (1 Spark) | Passed | [Lab record](https://pilot.jianyang.cloud/jobs/job_70j3kjgwf1y934c) |
-| Qwen3.6-35B-A3B (2 Sparks) | Passed | [Lab record](https://pilot.jianyang.cloud/jobs/job_fwj351fp396t44t) |
-| Qwen3.6-35B-A3B (1 Spark) | Passed | [Lab record](https://pilot.jianyang.cloud/jobs/job_2324qg3fnx0pgbh) |
-| Qwen3.8-Flash-Next (2 Sparks) | Passed | [Lab record](https://pilot.jianyang.cloud/jobs/job_ssq2mwkdbamy36a) |
-| Qwen3.8-Flash-Next (1 Spark) | Passed | [Lab record](https://pilot.jianyang.cloud/jobs/job_yh8wtjtb4hkztha) |
+| Qwen3-Coder-30B-A3B (1 Spark) | 216.07 (New series) | 62.64 (New series) |
+| Qwen3.5-4B (1 Spark) | 612.17 (New series) | 63.32 (New series) |
+| Qwen3.6-35B-A3B (1 Spark) | 251.80 (New series) | 60.44 (New series) |
+| Qwen3.8-Flash-Next (1 Spark) | 89.28 (New series) | 28.88 (New series) |
 
-## Smoke test (v1)
+### Two Sparks
 
-| Configuration | Metric | This run | Saved baseline | Baseline commit | Change vs saved | Comparison |
-| --- | --- | --- | --- | --- | --- | --- |
-| Qwen3-Coder-30B-A3B (2 Sparks) | Prefill throughput | 260.23 tok/s | — | — | — | No matching baseline |
-| Qwen3-Coder-30B-A3B (2 Sparks) | Decode throughput | 29.38 tok/s | — | — | — | No matching baseline |
-| Qwen3-Coder-30B-A3B (1 Spark) | Prefill throughput | 216.07 tok/s | — | — | — | No matching baseline |
-| Qwen3-Coder-30B-A3B (1 Spark) | Decode throughput | 62.64 tok/s | — | — | — | No matching baseline |
-| Qwen3.5-4B (1 Spark) | Prefill throughput | 612.17 tok/s | — | — | — | No matching baseline |
-| Qwen3.5-4B (1 Spark) | Decode throughput | 63.32 tok/s | — | — | — | No matching baseline |
-| Qwen3.6-35B-A3B (2 Sparks) | Prefill throughput | — | — | — | — | Measurement unavailable · Timing receipt unavailable in GitHub Actions |
-| Qwen3.6-35B-A3B (2 Sparks) | Decode throughput | — | — | — | — | Measurement unavailable · Timing receipt unavailable in GitHub Actions |
-| Qwen3.6-35B-A3B (1 Spark) | Prefill throughput | 251.8 tok/s | — | — | — | No matching baseline |
-| Qwen3.6-35B-A3B (1 Spark) | Decode throughput | 60.44 tok/s | — | — | — | No matching baseline |
-| Qwen3.8-Flash-Next (2 Sparks) | Prefill throughput | 40.59 tok/s | — | — | — | No matching baseline |
-| Qwen3.8-Flash-Next (2 Sparks) | Decode throughput | 13.1 tok/s | — | — | — | No matching baseline |
-| Qwen3.8-Flash-Next (1 Spark) | Prefill throughput | 89.28 tok/s | — | — | — | No matching baseline |
-| Qwen3.8-Flash-Next (1 Spark) | Decode throughput | 28.88 tok/s | — | — | — | No matching baseline |
+| Model | Prefill throughput (tok/s) | Decode throughput (tok/s) |
+| --- | --- | --- |
+| Qwen3-Coder-30B-A3B (2 Sparks) | 260.23 (New series) | 29.38 (New series) |
+| Qwen3.8-Flash-Next (2 Sparks) | 40.59 (New series) | 13.10 (New series) |
+
+
+## Measurement notes
+
+Smoke throughput uses scored request token totals divided by measured phase time. It is a different workload from nightly AgentX.
+
+The ±1% rule expresses tolerance, not statistical significance. Comparisons preserve workload identity; a changed benchmark starts a new series.
+
+[Source run](https://github.com/Mesh-LLM/skippy/actions/runs/44863668933)

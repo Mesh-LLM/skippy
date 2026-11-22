@@ -17,7 +17,7 @@ tree has a different path. Authors, author/committer dates, messages, merge
 ancestry, and file history were retained.
 
 Only rewritten `main` is published. Original monorepo refs, tags, reflogs, and
-unreachable objects must not be transferred to `general-inference/skippy`.
+unreachable objects must not be transferred to `Mesh-LLM/skippy`.
 Standalone build, CI, release, and documentation work is committed after the
 rewritten tip so it remains distinct from imported history.
 

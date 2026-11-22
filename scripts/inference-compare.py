@@ -2,6 +2,8 @@
 """Compare verified qualification artifacts with the saved public baseline."""
 
 import argparse
+import base64
+from functools import cache
 import json
 import os
 from pathlib import Path
@@ -12,7 +14,8 @@ from urllib.request import urlopen
 
 from lib.inference_baselines import DATASET, DIRECTION, SHA, apply_baselines, baseline_index, prior_state
 from lib.inference_markdown import HF_DATASET, run_summary, utc
-from lib.inference_nightly_metrics import HARNESS
+from lib.inference_nightly_metrics import benchmark_definition
+from lib.inference_comparability import benchmark_functions
 from lib.inference_nightly_results import qualification_run
 
 
@@ -33,27 +36,45 @@ def published_baselines(read=public_json):
     return (revision if state["history"] else None), state["baselines"]
 
 
-def same_harness(profile, source, repository):
-    # Receipt fingerprints come from the protected controller. Check that the
-    # native candidate ran the same benchmark inputs before using those hashes.
+@cache
+def source_text(source, path, repository):
+    if not SHA.fullmatch(source):
+        raise ValueError("invalid benchmark source SHA")
+    local = subprocess.run(["git", "show", f"{source}:{path}"], capture_output=True, text=True)
+    if local.returncode == 0:
+        return local.stdout
+    value = json.loads(subprocess.check_output(
+        ["gh", "api", f"repos/{repository}/contents/{path}?ref={source}"], timeout=30,
+    ))
+    if value["encoding"] != "base64" or value["size"] > 4 * 1024 * 1024:
+        raise ValueError("unsupported benchmark source content")
+    return base64.b64decode(value["content"]).decode("utf-8")
+
+
+def same_harness(profile, source, repository, configuration=None):
+    # Candidate text is parsed as data; it is never imported or executed by
+    # the credentialed controller. Compare each configuration's effective
+    # benchmark, so split admission edits cannot reset standalone history.
     controller = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     if source == controller:
         return True
-    paths = (*HARNESS, "ci/inference-artifacts.json")
-    paths += (("scripts/lib/inference_throughput.py",) if profile == "pr"
-              else ("ci/inference-corpus.json", "ci/aiperf-requirements.lock"))
-    listing = subprocess.check_output(["git", "ls-tree", "HEAD", "--", *paths], text=True)
-    expected = {}
-    for line in listing.splitlines():
-        entry, path = line.split("\t", 1)
-        expected[path] = entry.split()[2]
-    tree = json.loads(subprocess.check_output(
-        ["gh", "api", f"repos/{repository}/git/trees/{source}?recursive=1"], timeout=30,
-    ))
-    if tree["truncated"] or set(expected) != set(paths):
-        raise ValueError("benchmark source inputs could not be verified")
-    candidate = {entry["path"]: entry["sha"] for entry in tree["tree"] if entry["type"] == "blob"}
-    return all(candidate.get(path) == sha for path, sha in expected.items())
+    configuration = configuration or "standalone"
+    mode = "split" if configuration.endswith("-split") else "standalone"
+    backend = "metal" if configuration.startswith("metal-") else "cuda"
+    functions, files = benchmark_definition(profile, mode, backend)
+    read = lambda sha, path: source_text(sha, path, repository)
+    for path, names in functions.items():
+        if benchmark_functions(path, names, source=read(source, path)) != benchmark_functions(
+            path, names, source=read(controller, path),
+        ):
+            return False
+    for path in files:
+        if read(source, path) != read(controller, path):
+            return False
+    candidate = json.loads(read(source, "ci/inference-artifacts.json"))
+    protected = json.loads(read(controller, "ci/inference-artifacts.json"))
+    model = configuration.removeprefix("metal-").removesuffix("-" + mode)
+    return candidate.get(model) == protected.get(model) and model in candidate
 
 
 def compare(run, repository, *, load=published_baselines, compatible=same_harness):
@@ -62,18 +83,25 @@ def compare(run, repository, *, load=published_baselines, compatible=same_harnes
     if revision:
         run["baseline_revision"] = revision
     if not revision:
-        run["note"] = "Baseline comparison unavailable. The first nightly has yet to publish a baseline."
-    elif saved and not compatible(run["profile"], run["source_sha"], repository):
-        run["note"] = "Baseline comparison unavailable for this run because its benchmark inputs changed."
+        run["comparison_notice"] = "No saved baseline exists yet; measured values establish new series."
     else:
+        run["configurations"] = [dict(config) for config in run["configurations"]]
+        for config in run["configurations"]:
+            config["benchmark_compatible"] = compatible(
+                run["profile"], run["source_sha"], repository, config["id"],
+            )
+        changed = sum(config["benchmark_compatible"] is False for config in run["configurations"])
         run, _ = apply_baselines(run, saved, read_only=True)
         rows = [row for config in run["configurations"] for row in config["metrics"]
                 if row["metric"] in DIRECTION and row["measured"] is not None]
         matched = sum("reference" in row for row in rows)
-        run["note"] = (
-            f"{matched} of {len(rows)} measured performance metrics had a matching published baseline. "
-            "A change beyond 5% in the unfavorable direction fails qualification."
+        run["comparison_notice"] = (
+            f"{matched} of {len(rows)} measured performance metrics have a matching published baseline. "
+            "An unfavorable change beyond 1% fails qualification."
         )
+        if changed:
+            run["comparison_notice"] += f" {changed} configurations have changed benchmark inputs and start new series."
+    run["note"] = run["comparison_notice"]
     if run["profile"] == "nightly":
         run["note"] += " AgentX values are means of two trial summaries. Request counts are combined."
     return run
@@ -101,8 +129,9 @@ def main():
         print(f"Cannot read or verify the published baseline: {error}", file=sys.stderr)
         run["outcome"] = "failed"
         run["note"] = "Baseline comparison failed. See the comparison step log for details."
+        run["comparison_error"] = run["note"]
     with Path(environment["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as stream:
-        stream.write(run_summary({"schema_version": 1, "runs": [run]}, run["id"]))
+        stream.write(run_summary({"schema_version": 1, "runs": [run]}, run["id"], chart_format="mermaid"))
     return 0 if run["outcome"] == "passed" else 1
 
 

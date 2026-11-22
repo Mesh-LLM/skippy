@@ -6,8 +6,8 @@ require the full workflow result independently
 of the check name. The single required status is `PR checks`, the
 aggregate of all applicable PR workflows, checks and statuses.
 
-`pr-checks.yml` evaluates that aggregate on a standard GitHub-hosted
-`ubuntu-24.04` runner, using protected-main code and no Rust setup, candidate
+`pr-checks.yml` evaluates that aggregate on the selected Ubuntu runner, using
+protected-main code and no Rust setup, candidate
 execution, model inputs or lab credentials. It re-evaluates on PR events and
 producer workflow starts/completions, including reruns. Failed, cancelled,
 timed-out and startup-failed runs fail the gate; queued/running or missing
@@ -26,8 +26,10 @@ hold a hosted runner open waiting for native hardware. Repository `GITHUB_TOKEN`
 status updates cannot recursively trigger the controller.
 
 `ci.yml` uses native paths to start on code or inference PRs and on code pushes
-to `main`. Once a PR run starts, a pinned `dorny/paths-filter` action reads
-`.github/path-filters.yml` to choose code and package jobs independently. It uses
+to `main`. Its protected `pull_request_target` path admits same-repository PRs
+from repository collaborators against any base branch; fork PRs stay on the
+isolated `pull_request` path. Once a PR run starts, a pinned `dorny/paths-filter`
+action reads `.github/path-filters.yml` to choose code and package jobs independently. It uses
 `some-with-excludes`, so a changed file must match an inclusion and no exclusion.
 Mixed PRs run every applicable check group.
 These are file-level rules. Inline tests in production files, shared Cargo
@@ -58,10 +60,14 @@ The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
 configuration and native-attempt identity, updates only its bot-owned comment,
 and refuses to replace results for a newer commit or workflow attempt.
 
-The shared report renderer takes normalized qualification JSON. It renders
-Mermaid charts for Actions summaries and saves the Hugging Face card’s PNG
-charts in `charts/` beside its README. PNG export uses the reporting
-requirements. The Actions summary renderer uses the Python standard library.
+The shared health renderer takes normalized qualification JSON. Hugging Face
+cards and Actions summaries show the same regression-first summary, complete
+trend panels for every measured configuration, and compact latest values.
+Output throughput, first-token latency and token-gap latency are charted for
+both standalone and split runs. Unmeasured workloads do not become result rows.
+PNG export uses the reporting requirements. Actions embeds public PNGs pinned
+to the exact dataset commit, and retains the complete normalized report as an
+artifact. Formatting Markdown alone uses the Python standard library.
 
 ```sh
 examples=docs/design/inference-qualification-examples
@@ -71,30 +77,41 @@ uv run --python 3.12 --with-requirements ci/inference-report-requirements.txt \
 just inference-render-report summary "$examples/examples.json" --run pr-pass
 ```
 
-The scheduled inference workflow runs the twelve nightly AgentX configurations
-and the seven PR-profile smoke configurations. The smoke runs use the same
-harness as labeled PRs and retain the actual split admission status. AgentX
-nightly split qualification still requires certified admission.
+Scheduled and manually dispatched nightly inference runs on protected main run
+the twelve AgentX configurations and the seven PR-profile smoke configurations.
+The smoke runs use the same
+harness as labeled PRs. PR smoke, nightly, and release qualification allow
+experimental split admission, retain the actual admission status, and require
+the full checks for their profile.
 
-The protected scheduled publisher reads the current public dataset revision,
+The protected nightly publisher reads the current public dataset revision,
 compares verified measurements directly with its saved baselines, and uploads
 aggregate Parquet results, the baseline manifest, and the generated card in
 one revision-checked commit to
 [the public qualification dataset](https://huggingface.co/datasets/meshllm/skippy-inference-qualification).
-The initial tolerance and promotion threshold are 5% per performance metric.
+The tolerance and promotion threshold are 1% per performance metric.
 A changed benchmark recipe seeds its own reference. Passing measurements are
 recorded while the saved reference remains in force until a new source exceeds
 the improvement threshold. Regressions and incomplete evidence fail nightly
 after publication and preserve the affected baseline.
 
-The scheduled publisher uses the existing `HF_TOKEN` Actions secret. It needs
+Trend comparisons use the saved reference, with the previous comparable
+measurement as fallback when no saved reference exists. A benchmark change
+starts a new series; gaps remain gaps. Recipe identities bind measured model
+inputs, mode, admission, corpus, client lock and the benchmark functions, rather
+than hashing whole controller/reporting files. `ci/inference-comparability.json`
+records the explicit, configuration/workload-scoped audit of the legacy
+standalone history and the transition to recipe version 2. It changes no saved
+measurements. The 1% rule expresses tolerance, not statistical significance.
+
+The nightly publisher uses the existing `HF_TOKEN` Actions secret. It needs
 write access to this Hugging Face dataset. Only the publisher step receives
 the token. Public receipts contain aggregate results, source and workload
 identities, and verdicts. Native logs, lab receipts, and native access
 credentials stay in their existing systems.
 
-Labeled PRs and existing manual runs of the `pr` and `nightly` profiles use
-the same metric receipts and 5% tolerance to compare with the public dataset.
+Labeled PRs and manual smoke runs use
+the same metric receipts and 1% tolerance to compare with the public dataset.
 They read a pinned dataset revision anonymously and publish a chart and table
 to the Actions summary. A regression, incomplete required lab evidence, or a
 failure to read or verify the published baseline fails qualification. The
@@ -103,6 +120,12 @@ the first nightly publication and when benchmark inputs change. The longer
 `release` workload continues to use its lab qualification result because the
 dataset has no comparable release workload. A merge to `main` adds no
 qualification run.
+
+Dispatch `inference.yml` on `main` with `profile=nightly` to run the same
+nineteen-configuration matrix, collect public measurements, and publish the
+report as a scheduled run. Both triggers require publication to succeed for
+the final qualification status to pass. Manual PR and release profiles retain
+their own qualification contracts.
 
 Scheduled, manual and reusable full/candidate validation bypass path selection.
 Tagged releases and manual llama upgrades retain their explicit triggers. The
@@ -121,19 +144,91 @@ produced by the protected-main llama upgrade workflow.
 `targets.json` defines four hosts and eleven runtimes. Three hosts and eight
 runtimes are active. Windows qualification and publication are deferred. After
 the quality and automation canary, each CPU job builds, packages and tests its
-runtime on GitHub-hosted `ubuntu-24.04`, `ubuntu-24.04-arm` or `macos-15`. Each
+runtime on the selected Ubuntu x64, Ubuntu ARM64, or macOS ARM64 runner. Each
 also produces the shared CLI for its platform. Linux x64 builds the shared CLI
 on Ubuntu 24.04 for compatibility with the CUDA toolchain images. Each backend
 job waits for its matching CPU job only. Linux x64 CUDA 12 and Linux ARM64
-CUDA 12 and 13 run on GitHub-hosted Ubuntu in the corresponding compiler images
+CUDA 12 and 13 run on Ubuntu in the corresponding compiler images
 and check the packaged CLI and runtime artifact without a device. Linux x64
 CUDA 13 and macOS Metal run device smoke on ephemeral JY runners. Tagged
 releases add device smoke for the other three CUDA packages using their exact
 archives. JY hardware jobs declare literal runner groups and labels. The full
 CI gate matches all package jobs to the plan and checks required device results.
 
-The CPU-only `quality` job runs on GitHub-hosted `ubuntu-24.04` inside
-`ghcr.io/general-inference/skippy-ci-cpu:latest` for lint, tests and FFI binding
+### Depot runners
+
+The repository Actions variable `SKIPPY_DEPOT_RUNNERS_ENABLED=true` selects
+Depot for every job that otherwise uses a GitHub-hosted runner. This includes
+PR validation and its aggregate, code and package CI, compiler images and
+publishing, documentation and deployment, release validation and publication,
+the inference controllers, and llama upgrade preparation and publication. Most
+Linux jobs use four-core Ubuntu 24.04 runners of the existing architecture.
+Graph Contracts and llama upgrade preparation use eight-core x64 runners. The
+macOS CPU package uses Depot's macOS 15 ARM64 runner. Device jobs use their
+specified JY groups. Clearing the variable or setting it to `false` restores
+GitHub-hosted placement and direct PR workflow routing for subsequent runs.
+[Depot runner labels](https://depot.dev/docs/github-actions/runner-types)
+
+The Depot runner group admits Skippy and uses exact protected workflow refs.
+Allow these entries alongside the existing approved workflows:
+
+```text
+Mesh-LLM/skippy/.github/workflows/ci.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/ci-images.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/ci-image-builds.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/docs.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/inference.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/pr-checks.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main
+```
+
+With Depot enabled, `ci-pr.yml`, `ci-images-pr.yml`, and `docs-pr.yml` retain
+GitHub's ordinary PR triggers and call their runner-owning workflows from
+protected `main` without forwarding secrets. The image dispatcher enters
+through `ci.yml`, which calls the read-only image builders at its protected
+revision. The same builders supply exact artifacts for the image publishers.
+The CI dispatcher requests `cache-mode: read` for the Actions cache. The image
+and docs dispatchers request `cache-mode: none`. All retain GitHub's fork-run
+approval policy.
+Same-repository PRs to main continue to use the protected `ci.yml` path for
+code and native admission. The PR controller expects the producer for the
+active route. Refresh affected open PRs with a new PR event after cutover so
+their selected workflows run against the current head.
+
+On Depot, sccache uses WebDAV with the job connection supplied by the Depot
+organization setting **Allow Actions jobs to automatically connect to Depot
+Cache**. sccache writes only when building the exact protected `main` commit
+on push, schedule, or manual dispatch with a write-capable job cache mode.
+PR and other branch builds use `SCCACHE_WEBDAV_RW_MODE=READ_ONLY`. Ordinary
+Depot jobs skip shared Cargo, model, native source, and npm caches. The
+GitHub-hosted jobs use sccache's Actions backend.
+[Depot sccache integration](https://depot.dev/docs/cache/integrations/sccache)
+
+After enabling the switch, verify full CI and `CI images` with
+`build_only=true`, then check one ordinary PR and one same-repository PR
+through the aggregate.
+
+### PR admission and quality
+
+Same-repository PRs to `main` use the workflow definition on protected `main`.
+The workflow verifies repository identity, the PR author's write access and the
+exact candidate SHA before running candidate code. The ordinary PR workflow
+runs approved forks on the selected ephemeral runner. Changes requiring native hardware
+stay blocked until an isolated native runner path is available.
+
+Restrict each Skippy lab runner group to the protected workflow references
+below before enabling public fork builds. Validate a same-repository PR and a
+release canary after applying the restrictions.
+
+```text
+Mesh-LLM/skippy/.github/workflows/ci.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main
+Mesh-LLM/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main
+```
+
+The CPU-only `quality` job runs on Ubuntu 24.04 inside
+`ghcr.io/mesh-llm/skippy-ci-cpu:latest` for lint, tests and FFI binding
 freshness. The image supplies the pinned Rust toolchain, Just, sccache,
 build-essential, mold and LLVM/Clang 22 development inputs. The job verifies
 its tools and pulls the private image with its own `GITHUB_TOKEN` using
@@ -147,11 +242,12 @@ to avoid restoring archives made with hosted-VM home/workspace paths. Native
 source caches remain shared. Protected candidate admission precedes build-cache
 restoration and compiler-cache credential export.
 
-Full CI runs `just llama-check` on the ephemeral Linux JY `native-contracts`
-runner after the canary, in parallel with packaging. It checks Graph Contracts,
-patch regeneration, public headers and generated API docs. The gate requires
-both CTest batches to pass. The `native-contracts-evidence` artifact retains
-logs and patch reports.
+Full CI runs `just llama-check` in the same x64 CPU toolchain image after the
+canary, in parallel with packaging. It uses Depot Ubuntu 24.04 with four build
+workers when the repository switch is enabled, and GitHub-hosted Ubuntu 24.04
+with two build workers otherwise. It checks Graph Contracts, patch regeneration,
+public headers and generated API docs. The gate requires both CTest batches to
+pass. The `native-contracts-evidence` artifact retains logs and patch reports.
 
 `docs.yml` triggers directly for `docs-site/**` changes on PRs and pushes to
 `main`. It installs the lockfile, builds Nextra, generates the Pagefind index
@@ -179,7 +275,7 @@ receive this secret.
 ### CPU dependency image
 
 `ci/Dockerfile` builds the x86_64 CPU dependency image
-`ghcr.io/general-inference/skippy-ci-cpu:latest`. It includes **build-essential
+`ghcr.io/mesh-llm/skippy-ci-cpu:latest`. It includes **build-essential
 and mold**, LLVM/Clang 22 development packages (including `libclang-cpp22-dev`),
 libc++/libc++abi 22, OpenMP and sanitizers, Rust/Clippy/rustfmt
 from `rust-toolchain.toml`, Just, sccache, CMake, Ninja, Python, jq, OpenSSH client tools and
@@ -214,9 +310,9 @@ keys. Private same-repository pulls use `GITHUB_TOKEN` with `packages: read`.
 ### CUDA and ROCm compiler images
 
 The `CI images` workflow also builds
-`ghcr.io/general-inference/skippy-ci-cuda12`,
-`ghcr.io/general-inference/skippy-ci-cuda13`, and
-`ghcr.io/general-inference/skippy-ci-rocm` from digest-pinned vendor development
+`ghcr.io/mesh-llm/skippy-ci-cuda12`,
+`ghcr.io/mesh-llm/skippy-ci-cuda13`, and
+`ghcr.io/mesh-llm/skippy-ci-rocm` from digest-pinned vendor development
 images. CUDA 12.9.2 and 13.1.2 use separate images, matching `targets.json`, so
 each hosted runner only needs space for one toolkit. Both CUDA toolkits build
 on native x86_64 and ARM64 Ubuntu runners.
@@ -327,12 +423,6 @@ only orchestrates these jobs, so the 6 GiB runner-container limit does not bound
 model execution. Split jobs reserve both Sparks atomically. This policy does not
 prove live JY configuration.
 
-Llama native contracts and upstream candidate generation use preprovisioned
-JY builders with LLVM/Clang 22 development and CMake packages, Ninja and lld.
-The contracts job accepts either 64-bit Linux architecture; candidate
-generation uses its Linux x86_64 lane. The same generator tools must be
-available on full family builders.
-
 Qwen3 dense smoke preparation is explicit: `just ci-model-fetch`
 resolves the immutable public model URL and verifies the family manifest's size
 and SHA-256. A runner-provided `SKIPPY_CI_MODEL` is verified without downloading.
@@ -350,7 +440,9 @@ artifact smoke is recorded separately from inference evidence.
 
 `just ci-plan` validates the target matrix with `jq`. The package and
 smoke commands use Python 3.9 or later. Release inventory uses Python
-3.11 or later for TOML parsing. Set `SKIPPY_PYTHON` to select the interpreter.
+3.11 or later for TOML parsing. With uv installed, Justfile recipes run Python
+on the interpreter `.python-version` names. Set `SKIPPY_PYTHON` to select
+another; the shell scripts read it too.
 
 1. Each platform's CPU job builds and verifies its CLI once using
    `just ci-host`. Inference PR jobs build their two CLIs locally because they
@@ -413,10 +505,29 @@ theirs for retry and diagnosis.
 ## Llama upgrades
 
 `llama-upgrade.yml` runs from protected main. The controller resolves a release
-or explicit immutable upstream SHA and exports a digest-bound Git bundle. Both
-CI passes and both family passes restore the same candidate. The CPU, Metal and
-CUDA family jobs consume immutable offline model caches and retain per-pass
-evidence. They receive no GitHub write credential.
+or explicit immutable upstream SHA and exports a digest-bound Git bundle. It
+uses the x64 CPU toolchain image and a checksum-verified GitHub CLI on the
+selected Ubuntu runner. Both CI passes and both family passes restore the same
+candidate. The CPU, Metal and CUDA family jobs consume immutable offline model
+caches and retain per-pass evidence. They receive no GitHub write credential.
+
+Candidate preparation can be rehearsed before merge from a clean local PR
+checkout, with the native build prerequisites above and
+`SKIPPY_REWRITER_LLVM_PREFIX` set:
+
+```sh
+just automation-run upgrade resolve --upstream FULL_UPSTREAM_SHA --force-certify false
+just automation-run upgrade prepare FULL_UPSTREAM_SHA
+```
+
+These commands do not push, merge, tag or publish. Preparation writes a candidate
+bundle only after regeneration and full patch replay succeed. It does not run
+family qualification. Core/model-support conflicts require a reviewed repair,
+not a wider automatic-update allowlist. Failed native preparation retains Git
+status, the source diff and the active failed patch (when available) under
+`target/llama-upgrade/diagnostics` before removing its temporary checkout; the
+workflow uploads that directory on failure. Local preparation does not bypass
+the protected-main admission checks for the full Actions pipeline.
 
 Only the publisher uses `SKIPPY_UPGRADE_APP_ID` and
 `SKIPPY_UPGRADE_APP_PRIVATE_KEY`, with repository-scoped Contents and Pull

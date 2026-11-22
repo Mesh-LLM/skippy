@@ -9,7 +9,7 @@ Read this file before inspecting or changing CI. This is the standalone Skippy
 contract; no downstream product's workflow topology applies here.
 
 - `.github/workflows/pr-checks.yml` owns the single intended required `PR checks`
-  aggregate on a standard GitHub-hosted Ubuntu runner. Protected-main code reads
+  aggregate on the repository's selected Ubuntu runner. Protected-main code reads
   workflow/check/status results without executing candidate code or using lab
   credentials. Failures/cancellations fail it; pending or missing applicable work
   stays pending; success/neutral/intentional skips pass. Producer starts and
@@ -70,11 +70,11 @@ contract; no downstream product's workflow topology applies here.
 - Ordinary tests are offline. Model admission is explicit and digest-bound.
   GPU qualification requires a real matching device; missing fixtures, devices,
   capacity, or evidence fail or queue, never become passing skips.
-- Split admission unit tests use explicit recipe-bound fixtures; a native source
-  change does not renew the bundled certification roster. PR split smoke opts
-  into experimental planning and retains the actual admission status. It still
-  requires stage/frontier validation and all GPU/response checks. Nightly and
-  release keep certified admission; PR smoke never renews release certificates.
+- Split admission unit tests use explicit recipe-bound fixtures. PR smoke,
+  nightly, and release split runs allow experimental planning and retain the
+  actual admission status. All require stage/frontier validation and the full
+  checks for their profile. Default CLI planning requires certified admission.
+  Roster renewal requires its own certification process.
 - Trusted same-repository PRs from repository collaborators may run as native
   JY jobs on persistent dedicated lab hardware, including DGX Sparks. Admission
   must verify the source repository and contributor's collaborator status using
@@ -98,6 +98,17 @@ contract; no downstream product's workflow topology applies here.
   Only release controller jobs may write the candidate refs. Release promotion
   and upgrade publication each use a scoped App credential. Do not expose
   publisher secrets to builds.
+- Scheduled and manually dispatched nightly runs of the protected inference
+  workflow use the same full matrix, collect public measurements and publish
+  the public report. Publication is required for their final success; the
+  trigger type must not disable it. PR and release profiles keep their own
+  qualification contracts.
+- Hugging Face and Actions share the measured inference-health report: changes
+  over time, current values, complete standalone/split chart coverage and 1%
+  tolerance. Reporting/admission-only edits must not reset unrelated benchmark
+  histories. Recipe changes start new series; audited historical equivalence
+  is explicit and configuration/workload-bound. Never fill missing data or
+  describe an unmeasured workload as a performance regression.
 - The protected inference results-comment job alone receives pull-requests write
   permission for PR comments, plus read-only contents/actions. It receives no
   native dispatch credential and never executes candidate code.

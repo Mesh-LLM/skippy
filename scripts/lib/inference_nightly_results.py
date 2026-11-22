@@ -5,16 +5,13 @@ import re
 import sys
 
 from .ci_artifacts import read_json
-from .inference_ladder import matrix
+from .inference_ladder import allowed_split_admissions, matrix
 from .inference_nightly_metrics import METRIC_NAMES, WORKLOADS, contract, metric_value
 from .inference_throughput import successful_run
 
 
 def admitted_workload(entry, certification):
-    allowed = {None} if entry["mode"] == "standalone" else {"certified"}
-    if entry["profile"] == "pr" and entry["mode"] == "split":
-        allowed.add("uncertified_override")
-    if certification not in allowed:
+    if certification not in allowed_split_admissions(entry["profile"], entry["mode"]):
         raise ValueError("invalid split admission")
     workload = WORKLOADS[entry["profile"]]
     if certification == "uncertified_override":
@@ -74,7 +71,7 @@ def failure_outcome(directory, entry, sha):
     return "incomplete"
 
 
-def read_configuration(root, entry, sha, run_id, attempt, *, reuse_prior):
+def read_configuration(root, entry, sha, run_id, attempt, *, reuse_prior=True):
     prefix = f'inference-{entry["id"]}-{run_id}-'
     directory = root / f"{prefix}{attempt}"
     if reuse_prior and not directory.is_dir():
@@ -101,7 +98,7 @@ def qualification_run(root: Path, profile, source, run_id, attempt, started_at, 
     if profile not in METRIC_NAMES or (published and profile != "nightly"):
         raise ValueError("unsupported inference measurement profile")
     configs = [
-        read_configuration(root, entry, source, run_id, attempt, reuse_prior=not published)
+        read_configuration(root, entry, source, run_id, attempt, reuse_prior=True)
         for entry in matrix(profile, source, include_smoke=published)
     ]
     passed = matrix_passed and all(config["outcome"] == "passed" for config in configs)
@@ -111,7 +108,7 @@ def qualification_run(root: Path, profile, source, run_id, attempt, started_at, 
         "published": published, "configurations": configs,
         "note": (
             "AgentX values are means of two trial summaries. Request counts are combined. "
-            "The performance tolerance and improvement threshold are 5%."
+            "The performance tolerance and improvement threshold are 1%."
         ),
     }
 

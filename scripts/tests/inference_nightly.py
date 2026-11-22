@@ -1,5 +1,7 @@
 """Offline contracts for collecting and comparing nightly inference metrics."""
 
+import json
+import os
 from pathlib import Path
 from runpy import run_path
 from tempfile import TemporaryDirectory
@@ -8,10 +10,12 @@ from unittest.mock import Mock, patch
 
 from lib.ci_artifacts import write_json
 from lib.inference_baselines import apply_baselines, classify
+from lib.inference_inputs import input_hashes
 from lib.inference_ladder import matrix
 from lib.inference_markdown import run_summary
-from lib.inference_nightly_metrics import agentx_metrics, await_artifacts, contract
-from lib.inference_nightly_results import nightly_run, qualification_run
+from lib.inference_nightly_metrics import agentx_metrics, await_artifacts, collect_nightly, contract
+from lib.inference_nightly_results import nightly_run, qualification_run, read_configuration
+from lib.inference_publication_policy import publication_allowed
 
 
 SOURCE = "a" * 40
@@ -57,6 +61,55 @@ def smoke_receipt(root, sha, run_id, configuration="qwen35-4b-standalone", value
 
 
 class NightlyTests(unittest.TestCase):
+    def test_split_planning_preserves_experimental_admission_in_all_profiles(self):
+        prepare_split = run_path(str(PR_PATH.with_name("inference-execute.py")))["prepare_split"]
+        peers = json.dumps([{"role": "leader", "host": "192.0.2.1", "node": "leader"},
+                            {"role": "worker", "host": "192.0.2.2", "node": "worker"}])
+
+        def plan_split(args, *, timeout):
+            plan_dir = Path(args[args.index("--output-dir") + 1])
+            plan_dir.mkdir()
+            write_json(plan_dir / "admissions.json", {"certification": "uncertified_override"})
+            write_json(plan_dir / "stage-1.json", {})
+
+        for profile in ("pr", "nightly", "release"):
+            with self.subTest(profile=profile), TemporaryDirectory() as temporary:
+                command = Mock(side_effect=plan_split)
+                with patch.dict(prepare_split.__globals__, command=command), patch.dict(
+                    os.environ, JIANYANG_PEERS=peers,
+                ):
+                    args = (Path("model.gguf"), "test-model", profile, 65536, Path(temporary), True)
+                    self.assertEqual(prepare_split(*args)[2], "uncertified_override")
+                self.assertIn("--allow-uncertified-split", command.call_args.args[0])
+
+    def test_nightly_split_reports_experimental_admission_after_valid_agentx_trials(self):
+        key = "qwen38-27b"
+        configuration = f"{key}-split"
+        entry = next(row for row in matrix("nightly", SOURCE) if row["id"] == configuration)
+        job = {"id": "job_leader", "repo_rev": SOURCE, "status": "succeeded", "formation_id": "frm_fixture",
+               "runs": [{"id": "run_fixture", "status": "succeeded"}]}
+        qualification = {"source_sha": SOURCE, "model": key, "mode": "split", "profile": "nightly",
+                         "status": "passed", "artifact_manifest_sha256": input_hashes()["model_manifest_sha256"],
+                         "gpu": "NVIDIA GB10", "split_certification": "uncertified_override"}
+        formation = {"id": "frm_fixture", "status": "succeeded",
+                     "members": [{"role": "leader", "job_id": "job_leader", "status": "succeeded"},
+                                 {"role": "worker", "job_id": "job_worker", "status": "succeeded"}]}
+        pilot = Mock()
+        pilot.api.side_effect = [qualification, trial(20, 1200, 70), trial(22, 1000, 60)]
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / f"inference-{configuration}-23-1"
+            directory.mkdir()
+            collect_nightly(pilot, job, entry, SOURCE, directory, key, "nightly")
+            write_json(directory / f"{configuration}-job.json", job)
+            write_json(directory / f"{configuration}-formation.json", formation)
+            result = read_configuration(root, entry, SOURCE, "23", "1")
+            self.assertEqual(result["outcome"], "passed")
+            self.assertEqual(result["workload"], "DGX Spark AgentX nightly v1 (experimental split)")
+            self.assertEqual(result["metrics"][0]["measured"], 21)
+            self.assertNotEqual(result["metrics"][0]["contract_sha256"],
+                                contract("nightly", entry, key, "certified"))
+
     def test_matrix_preserves_existing_profiles_and_uses_pr_smoke(self):
         ordinary = matrix("nightly", SOURCE)
         both = matrix("nightly", SOURCE, include_smoke=True)
@@ -70,10 +123,15 @@ class NightlyTests(unittest.TestCase):
             matrix("release", SOURCE, include_smoke=True)
 
     def test_metric_direction_and_exact_tolerance(self):
-        self.assertEqual(classify("decode_tok_s", 95, 100), "passed")
-        self.assertEqual(classify("decode_tok_s", 94.99, 100), "regressed")
-        self.assertEqual(classify("ttft_p95_ms", 105.01, 100), "regressed")
-        self.assertEqual(classify("ttft_p95_ms", 94, 100), "improved")
+        self.assertEqual(classify("decode_tok_s", 99, 100), "passed")
+        self.assertEqual(classify("decode_tok_s", 98.99, 100), "regressed")
+        self.assertEqual(classify("ttft_p95_ms", 101.01, 100), "regressed")
+        self.assertEqual(classify("ttft_p95_ms", 98, 100), "improved")
+        self.assertEqual(classify("decode_tok_s", 101, 100), "passed")
+        self.assertEqual(classify("decode_tok_s", 101.01, 100), "improved")
+        self.assertEqual(classify("ttft_p95_ms", 99, 100), "passed")
+        self.assertEqual(classify("ttft_p95_ms", 98.99, 100), "improved")
+        self.assertEqual(classify("ttft_p95_ms", 101, 100), "passed")
 
     def test_promotes_independent_improvement_and_never_walks_baseline_down(self):
         metrics = [
@@ -89,9 +147,9 @@ class NightlyTests(unittest.TestCase):
                                     "configurations": [config]}, saved)
 
         _, seeded = run(1, SOURCE, [100, 100], [])
-        _, passing = run(2, "b" * 40, [97, 97], seeded)
+        _, passing = run(2, "b" * 40, [99, 99], seeded)
         self.assertEqual(passing[0]["value"], 100)
-        self.assertEqual(passing[0]["latest_passing"]["value"], 97)
+        self.assertEqual(passing[0]["latest_passing"]["value"], 99)
         failed, next_baselines = run(3, "d" * 40, [94, 110], passing)
         self.assertEqual(failed["outcome"], "failed")
         self.assertEqual({item["metric"]: item["value"] for item in next_baselines},
@@ -139,25 +197,83 @@ class NightlyTests(unittest.TestCase):
             wrong_source = nightly_run(root, "b" * 40, "23", "1", report["started_at"], True)
             self.assertTrue(all(config["outcome"] != "passed" for config in wrong_source["configurations"]))
 
-    def test_only_exact_protected_schedule_can_publish(self):
+    def test_scheduled_and_manual_nightly_require_the_same_protected_controller(self):
         admit = run_path(str(PR_PATH))["admit"]
         environment = {
-            "GITHUB_EVENT_NAME": "schedule", "GITHUB_REPOSITORY": "general-inference/skippy",
+            "GITHUB_EVENT_NAME": "schedule", "GITHUB_REPOSITORY": "Mesh-LLM/skippy",
             "GITHUB_REF": "refs/heads/main",
-            "GITHUB_WORKFLOW_REF": "general-inference/skippy/.github/workflows/inference.yml@refs/heads/main",
+            "GITHUB_WORKFLOW_REF": "Mesh-LLM/skippy/.github/workflows/inference.yml@refs/heads/main",
             "GITHUB_WORKFLOW_SHA": SOURCE, "GITHUB_SHA": SOURCE, "SOURCE_SHA": SOURCE,
             "GITHUB_RUN_ID": "23", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_RUN_NUMBER": "34",
             "RUN_STARTED_AT": "2026-11-21T00:00:00Z", "MATRIX_RESULT": "failure",
+            "QUALIFICATION_PROFILE": "nightly",
         }
-        self.assertEqual(admit(environment), (SOURCE, "23", "1", 34, environment["RUN_STARTED_AT"], False))
-        for name in ("pull_request_target", "workflow_dispatch", "push", "workflow_call"):
-            with self.assertRaisesRegex(ValueError, "only scheduled"):
+        for name in ("schedule", "workflow_dispatch"):
+            with self.subTest(event=name):
+                candidate = {**environment, "GITHUB_EVENT_NAME": name}
+                self.assertTrue(publication_allowed(candidate, "nightly"))
+                self.assertEqual(admit(candidate),
+                                 (SOURCE, "23", "1", 34, environment["RUN_STARTED_AT"], False))
+        for name in ("pull_request_target", "pull_request", "push", "workflow_call"):
+            with self.assertRaisesRegex(ValueError, "only nightly"):
                 admit({**environment, "GITHUB_EVENT_NAME": name})
+        for field, value in (
+            ("GITHUB_REPOSITORY", "someone/skippy"),
+            ("GITHUB_REF", "refs/heads/topic"),
+            ("GITHUB_WORKFLOW_REF", "Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main"),
+            ("GITHUB_WORKFLOW_SHA", "b" * 40),
+            ("QUALIFICATION_PROFILE", "pr"),
+            ("QUALIFICATION_PROFILE", "release"),
+        ):
+            with self.subTest(field=field, value=value), self.assertRaisesRegex(ValueError, "only nightly"):
+                admit({**environment, field: value})
         with self.assertRaisesRegex(ValueError, "must match"):
             admit({**environment, "SOURCE_SHA": "b" * 40})
 
+    def test_publication_admission_controls_manual_matrix_and_collection(self):
+        admit = run_path(str(PR_PATH.with_name("inference-plan.py")))["admit"]
+        with TemporaryDirectory() as temporary:
+            event, output = (Path(temporary) / name for name in ("event.json", "output"))
+            write_json(event, {})
+            environment = {
+                "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REPOSITORY": "Mesh-LLM/skippy",
+                "GITHUB_REF": "refs/heads/main",
+                "GITHUB_WORKFLOW_REF": "Mesh-LLM/skippy/.github/workflows/inference.yml@refs/heads/main",
+                "GITHUB_WORKFLOW_SHA": SOURCE, "GITHUB_SHA": SOURCE,
+                "GITHUB_EVENT_PATH": str(event), "GITHUB_OUTPUT": str(output),
+                "QUALIFICATION_PROFILE": "nightly",
+            }
+            for profile in ("nightly", "pr", "release"):
+                output.write_text("")
+                with patch.dict(os.environ, {**environment, "QUALIFICATION_PROFILE": profile}, clear=True):
+                    admit()
+                values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+                publish = values["publication"] == "true"
+                self.assertEqual(publish, profile == "nightly")
+                rows = matrix(values["profile"], values["source"], include_smoke=publish)
+                self.assertEqual(len(rows), {"nightly": 19, "pr": 7, "release": 12}[profile])
+
 
 class ComparisonTests(unittest.TestCase):
+    def test_candidate_benchmark_comparison_ignores_reporting_and_unrelated_split_changes(self):
+        import ast
+        compare_harness = COMPARISON["same_harness"]
+        protected, candidate = "a" * 40, "b" * 40
+        source = Path("scripts/inference-execute.py").read_text()
+        tree = ast.parse(source)
+        split = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "prepare_split")
+        split.body.insert(0, ast.Expr(value=ast.Constant(value="changed split admission")))
+        changed = ast.unparse(tree)
+
+        def read(sha, path, repository):
+            return changed if sha == candidate and path == "scripts/inference-execute.py" else Path(path).read_text()
+
+        with patch.dict(compare_harness.__globals__, source_text=read), patch(
+            "subprocess.check_output", return_value=protected + "\n",
+        ):
+            self.assertTrue(compare_harness("nightly", candidate, "Mesh-LLM/skippy", "qwen35-4b-standalone"))
+            self.assertFalse(compare_harness("nightly", candidate, "Mesh-LLM/skippy", "qwen38-27b-split"))
+
     def test_public_baseline_is_loaded_at_an_immutable_revision(self):
         data = COMPARISON["DATASET"]
         revision = "c" * 40
@@ -178,7 +294,7 @@ class ComparisonTests(unittest.TestCase):
 
     def test_pr_comparison_reuses_verified_receipts_and_cannot_publish_a_baseline(self):
         candidate = "b" * 40
-        repo = "general-inference/skippy"
+        repo = "Mesh-LLM/skippy"
         revision = "c" * 40
         stamp = "2026-11-21T00:00:00Z"
         with TemporaryDirectory() as temporary:
@@ -202,15 +318,15 @@ class ComparisonTests(unittest.TestCase):
         self.assertEqual({row["verdict"] for row in observations}, {"regressed", "improved", "passed"})
         self.assertFalse(any("baseline_update" in row for row in observations))
         self.assertTrue(all(row["value"] == 100 and "latest_passing" not in row for row in saved))
-        report = run_summary({"schema_version": 1, "runs": [compared]}, compared["id"])
-        for expected in ("**Failed**", "```mermaid", "Red = regression", "Green = improvement",
-                         "94 tok/s", "-6.00%", f"/blob/{revision}/baselines.json"):
+        report = run_summary({"schema_version": 1, "runs": [compared]}, compared["id"], chart_format="mermaid")
+        for expected in ("6 regressions", "```mermaid", "Regressed", "Improved",
+                         "94.00 tok/s", "-6.00%", f"/blob/{revision}/baselines.json"):
             self.assertIn(expected, report)
         changed = COMPARISON["compare"](run, repo, load=lambda: (revision, saved), compatible=Mock(return_value=False))
         self.assertEqual(changed["outcome"], "passed")
-        self.assertIn("benchmark inputs changed", changed["note"])
+        self.assertIn("changed benchmark inputs", changed["note"])
         first = COMPARISON["compare"](run, repo, load=lambda: (None, []))
-        self.assertIn("first nightly", first["note"])
+        self.assertIn("No saved baseline", first["note"])
         self.assertNotIn("baseline_revision", first)
 
 
