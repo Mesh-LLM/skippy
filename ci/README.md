@@ -26,8 +26,10 @@ hold a hosted runner open waiting for native hardware. Repository `GITHUB_TOKEN`
 status updates cannot recursively trigger the controller.
 
 `ci.yml` uses native paths to start on code or inference PRs and on code pushes
-to `main`. Once a PR run starts, a pinned `dorny/paths-filter` action reads
-`.github/path-filters.yml` to choose code and package jobs independently. It uses
+to `main`. Its protected `pull_request_target` path admits same-repository PRs
+from repository collaborators against any base branch; fork PRs stay on the
+isolated `pull_request` path. Once a PR run starts, a pinned `dorny/paths-filter`
+action reads `.github/path-filters.yml` to choose code and package jobs independently. It uses
 `some-with-excludes`, so a changed file must match an inclusion and no exclusion.
 Mixed PRs run every applicable check group.
 These are file-level rules. Inline tests in production files, shared Cargo
