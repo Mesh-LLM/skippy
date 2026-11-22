@@ -46,6 +46,10 @@ Use `.github/PULL_REQUEST_TEMPLATE.md` for PR descriptions, including when
 creating a PR through an agent or CLI. Replace prompts with evidence from the
 final diff; do not submit an empty template or only a list of changed files.
 Keep descriptions current when the scope changes.
+The required `PR checks` gate rejects missing or incomplete acceptance criteria.
+Retain the template's standard criteria and check them only when satisfied;
+additional criteria in that section must also be complete. Editing the PR
+description re-evaluates the gate. Checkboxes do not replace CI or review.
 
 - Give the PR a clear title describing the resulting capability or fix. Lead
   the description with the original problem and what users or maintainers can

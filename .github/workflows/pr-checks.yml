@@ -1,7 +1,7 @@
 name: PR checks
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
   workflow_run:
     workflows: [CI, CI PR, Documentation, Documentation PR, CI images, CI images PR, Inference qualification]
     types: [in_progress, completed]

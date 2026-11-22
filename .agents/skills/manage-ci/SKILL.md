@@ -17,6 +17,13 @@ contract; no downstream product's workflow topology applies here.
   producer workflows to its event list. Activate the one-check branch rule only
   after the controller reaches main and its real aggregate is verified; preserve
   the previous two required checks until then, and retain all review protections.
+  Acceptance criteria are also required: the live PR description must contain
+  one `## Acceptance criteria` section with every task checked, including the
+  standard tasks from the protected-main PR template. Missing, empty, duplicate,
+  or incomplete sections fail. Comments and code examples are not evidence.
+  Description edits re-evaluate the gate; re-read the live body before publishing
+  success. This validates contributor declarations, not the truth of those
+  declarations; retain CI and review requirements.
 
 - `.github/workflows/ci.yml` owns code checks and package builds. Declarative
   native paths trigger CI on automation, code, package or qualification inputs.

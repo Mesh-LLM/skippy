@@ -21,6 +21,19 @@ matching producers keep it pending even before GitHub schedules their runs.
 New PR producers must also be added to the `workflow_run` trigger list so their
 reruns re-evaluate the aggregate.
 
+The same required status validates the live PR description's
+`## Acceptance criteria` section. It requires exactly one nonempty checklist,
+all standard criteria from the protected-main PR template, and every task in
+that section to be checked (`[x]` or `[X]`). Removing a standard criterion does
+not satisfy it. Comments, fenced examples, blockquotes, and indented code do not
+supply criteria. Additional tasks, including nested tasks, must be complete.
+Failures identify the missing or incomplete criterion in the status and log.
+PR description edits trigger a new evaluation, and the controller re-reads the
+live description before publishing success. These are contributor declarations;
+passing checkboxes do not establish test results or replace CI and review.
+This gate takes effect once the controller reaches `main`, and then applies
+to existing open PRs at their next evaluation as well as new PRs.
+
 The controller reports pending and exits while producers work; it does not
 hold a hosted runner open waiting for native hardware. Repository `GITHUB_TOKEN`
 status updates cannot recursively trigger the controller.
