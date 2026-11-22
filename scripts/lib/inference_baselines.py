@@ -6,7 +6,7 @@ import re
 
 from .inference_nightly_metrics import metric_value
 
-TOLERANCE = Decimal("0.05")
+TOLERANCE = Decimal("0.01")
 DIRECTION = {
     "prefill_tok_s": 1, "decode_tok_s": 1, "output_tok_s": 1,
     "ttft_p95_ms": -1, "itl_p95_ms": -1,

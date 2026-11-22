@@ -123,7 +123,7 @@ compares verified measurements directly with its saved baselines, and uploads
 aggregate Parquet results, the baseline manifest, and the generated card in
 one revision-checked commit to
 [the public qualification dataset](https://huggingface.co/datasets/meshllm/skippy-inference-qualification).
-The initial tolerance and promotion threshold are 5% per performance metric.
+The tolerance and promotion threshold are 1% per performance metric.
 A changed benchmark recipe seeds its own reference. Passing measurements are
 recorded while the saved reference remains in force until a new source exceeds
 the improvement threshold. Regressions and incomplete evidence fail nightly
