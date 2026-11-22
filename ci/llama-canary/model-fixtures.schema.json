@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Mesh-LLM/skippy/blob/main/ci/llama-canary/family-certified.schema.json",
-  "title": "Skippy supported-family certification policy",
+  "$id": "https://github.com/Mesh-LLM/skippy/blob/main/ci/llama-canary/model-fixtures.schema.json",
+  "title": "Skippy model qualification fixture registry",
   "$comment": "The schema validates transport shape and workload/profile separation. The supported-family qualification scripts enforce the admitted lane roster and verify pinned files.",
   "type": "object",
   "additionalProperties": false,
@@ -42,9 +42,8 @@
     "profile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "oracle", "required_lanes"],
+      "required": ["oracle", "required_lanes"],
       "properties": {
-        "status": {"enum": ["certified", "provisional"]},
         "oracle": {"enum": ["local-monolithic", "independent-trace", "none"]},
         "required_lanes": {
           "type": "array",

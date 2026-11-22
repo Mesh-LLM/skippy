@@ -1,6 +1,6 @@
-# Family Certification Runbook
+# Model Qualification Runbook
 
-Use this runbook to certify a model family for the stage-split runtime. Keep it
+Use this runbook to measure a specific model configuration on the stage-split runtime. Keep it
 operator-facing; the customer-facing support matrix lives elsewhere.
 
 Current supported families, recommended artifacts, and shipping settings live in
@@ -10,9 +10,10 @@ For a new model that is not already in the support matrix, start with
 `docs/NEW_MODEL_ONBOARDING.md` before adding reviewed family policy or a
 customer-facing support row.
 
-## What Certified Means
+## Qualification Evidence
 
-A family is certified when the current recommended artifact has evidence for:
+A qualification run records the artifact, native recipe, backend, stage ranges and
+results for each executed lane. Its evidence covers that tested configuration.
 
 | Lane | Required Evidence |
 | --- | --- |
@@ -34,14 +35,14 @@ prompt tokens, and generate a continuation without a stage failure, KV-slot
 failure, or context truncation. Record the KV types, lane count, stage ranges,
 and per-stage cache allocation with that result.
 
-## Certification Command
+## Qualification Command
 
 Use the repo harness. Pass the model id whenever the target comes from
 Hugging Face so the run can be tied to an immutable model artifact and reviewed
-for the certification manifest.
+for the fixture registry.
 
 ```bash
-just family-certify FAMILY /path/to/model.gguf \
+bash scripts/family-qualify.sh --family FAMILY --target-model /path/to/model.gguf \
   --model-id org/repo:selector \
   --layer-end N \
   --split-layer K \
@@ -68,7 +69,7 @@ For a validated two-stage-only topology, pass one split in `--splits`. The
 N-gram modes do not require a neural draft model:
 
 ```bash
-just family-certify FAMILY /path/to/model.gguf \
+bash scripts/family-qualify.sh --family FAMILY --target-model /path/to/model.gguf \
   ... \
   --draft-model /path/to/draft.gguf
 ```
@@ -76,7 +77,7 @@ just family-certify FAMILY /path/to/model.gguf \
 Neural draft modes require a separate compatible draft model:
 
 ```bash
-just family-certify FAMILY /path/to/target.gguf \
+bash scripts/family-qualify.sh --family FAMILY --target-model /path/to/target.gguf \
   ... \
   --draft-model /path/to/draft.gguf \
   --draft-model /path/to/draft.gguf
@@ -90,17 +91,17 @@ pass.
 
 ## Large Model Lifecycle
 
-Large-family certification must keep full-model and staged-server residency
+Large-model qualification must keep full-model and staged-server residency
 separate unless the combined resident set has been intentionally budgeted.
 
 | Phase | Resident Model Data | Teardown Rule |
 | --- | --- | --- |
 | Full correctness lanes | Source GGUF opened by `skippy-correctness`. | The full `StageModel` is dropped before staged prompt/spec starts. |
 | Stage materialization | Source GGUF is read by `skippy-package-builder` to write stage artifacts. | The package tool exits before prompt stages launch. |
-| Staged prompt/spec | Stage artifacts and optional draft model served through stage-0 OpenAI. | The owning certification harness stops stage and metrics children before returning; corpus modes run one at a time. |
+| Staged prompt/spec | Stage artifacts and optional draft model served through stage-0 OpenAI. | The owning qualification harness stops stage and metrics children before returning; corpus modes run one at a time. |
 
 Using the target as its own draft is allowed only when it is useful and the
-combined staged target plus draft memory fits. It is not a default certification
+combined staged target plus draft memory fits. It is not a default qualification
 shortcut.
 
 ## Promotion Checklist
@@ -111,9 +112,9 @@ After a meaningful run:
    what a customer can run and with which settings.
 2. Review any exceptional topology rules in `crates/skippy-topology`
    against the inspected model metadata. Update
-   `ci/llama-canary/family-certified.json` and regenerate the release-bound
-   `skippy-api` certification roster when the evidence supports default splits.
-3. Keep raw run directories under `target/family-certify/...`; do not paste
+   `ci/llama-canary/model-fixtures.json` with immutable qualification fixtures. Runtime split admission validates the
+   actual native stage plans and activation frontiers.
+3. Keep raw run directories under `target/family-qualify/...`; do not paste
    running logs into the docs.
 
 ## Output Files
@@ -121,7 +122,7 @@ After a meaningful run:
 Certification runs are written under:
 
 ```text
-target/family-certify/<run-id>/<family>/<model-slug>/
+target/family-qualify/<run-id>/<family>/<model-slug>/
 ```
 
 Important files:
@@ -158,11 +159,11 @@ those owners.
 
 ## Verification
 
-Run focused checks after changing certification docs, planner records, or the
+Run focused checks after changing qualification docs, planner records, or the
 prompt/spec lifecycle:
 
 ```bash
-bash -n scripts/family-certify.sh
+bash -n scripts/family-qualify.sh
 cargo fmt --check -p skippy-topology -p skippy-package-builder -p skippy-cli -p skippy-commands
 cargo test -p skippy-topology
 LLAMA_STAGE_BUILD_DIR=.deps/llama-stage.cpp/build-stage-abi-static \

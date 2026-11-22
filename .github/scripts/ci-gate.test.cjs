@@ -125,7 +125,7 @@ test('the repository switch moves every hosted job to Depot', () => {
       .map(([, label, continuation]) => `${label} ${continuation.trim().replaceAll(/\s+/g, ' ')}`.trim());
     assert.ok(labels.some(label => label.includes('SKIPPY_DEPOT_RUNNERS_ENABLED')), name);
     for (const label of labels) {
-      if (name === 'llama-upgrade' && label === '${{ matrix.runner }}') continue;
+      if (name.startsWith('llama-upgrade') && label === '${{ matrix.runner }}') continue;
       assert.match(label, /vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true'.*depot-/, name);
     }
   }

@@ -19,14 +19,17 @@ case "${1:-}:${2:-}:${3:-}:${4:-}" in
     automation:native-generator:contracts:coverage)
         shift 4
         exec "$python" "$script_dir/verify-skippy-family-generator-coverage.py" "$@" ;;
+    automation:native-generator:contracts:graph)
+        shift 4
+        exec "$python" "$script_dir/graph-contract-coverage.py" "$@" ;;
     automation:native-generator:contracts:select-shards)
         shift 4
         exec "$python" "$script_dir/select-skippy-family-shards.py" "$@" ;;
     automation:native-generator:contracts:--help)
-        echo 'usage: automation native-generator contracts {api-doc|coverage|select-shards}'
+        echo 'usage: automation native-generator contracts {api-doc|coverage|graph|select-shards}'
         exit 0 ;;
     automation:native-generator:contracts:*)
-        echo 'usage: automation native-generator contracts {api-doc|coverage|select-shards}' >&2
+        echo 'usage: automation native-generator contracts {api-doc|coverage|graph|select-shards}' >&2
         exit 2 ;;
 esac
 
@@ -49,7 +52,7 @@ case "${1:-}:${2:-}" in
     automation:workload-tts-oracle)
         shift 2
         exec "$python" "$script_dir/skippy-tts-oracle.py" "$@" ;;
-    upgrade:certify|upgrade:publish)
+    upgrade:publish|upgrade:diagnostics)
         action="$2"
         shift 2
         exec "$python" "$script_dir/upgrade-$action.py" "$@" ;;

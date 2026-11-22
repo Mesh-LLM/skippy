@@ -34,8 +34,8 @@ contract; no downstream product's workflow topology applies here.
   jobs run only when the PR carries the `qualify` label, while the workflow
   still triggers on path matches so an intentionally skipped run satisfies
   the `PR checks` aggregate; nightly and releases stay automatic. Main pushes
-  do not start the Spark ladder. `PR checks` reads protected workflow trigger paths to determine
-  which runs it expects. Quality canary
+  do not start the Spark ladder. `PR checks` reads protected workflow trigger
+  paths to determine which runs it expects. Quality canary
   runs CI automation tests before build checks and gates package jobs. Full CI
   runs Graph Contracts in parallel with eight build, package and smoke jobs.
   Each CPU job supplies a shared platform CLI to its backend jobs. Routine CI
@@ -59,8 +59,17 @@ contract; no downstream product's workflow topology applies here.
   its tag together. It cannot move an existing tag or publish an incomplete
   artifact matrix. Canary runs leave main, tags, and publication untouched.
 - `.github/workflows/llama-upgrade.yml` keeps control on protected main, prepares
-  an immutable candidate, certifies it, independently repeats certification,
-  and opens an ordinary PR. Failed or incomplete qualification cannot publish.
+  an immutable candidate and runs existing full CI once. Graph contracts and
+  small synthetic execution tests remain the architectural regression gate.
+  There is no additional live-model CPU, CUDA or Spark upgrade battery.
+  Registered synthetic cases must match their metadata and test modes. Uncovered
+  architectures/builders, including new and changed ones, are informational and
+  stay visible in the graph coverage report. Coverage gaps alone never fail an
+  upgrade; existing contract regressions and actual integration failures do.
+  A bounded agent repair produces a fresh candidate and fresh full CI. Only the
+  publisher receives scoped publication credentials. It can publish only the
+  exact candidate selected by successful full CI. The four established inference
+  models retain their separate PR/manual/nightly/release workflow.
 - `ci/targets.json` owns four host definitions and eleven runtime definitions.
   `enabled_hosts` selects the active CI and release roster. Windows is temporarily
   deferred; the active roster has three hosts and eight runtimes. Do not publish
@@ -77,11 +86,11 @@ contract; no downstream product's workflow topology applies here.
 - Ordinary tests are offline. Model admission is explicit and digest-bound.
   GPU qualification requires a real matching device; missing fixtures, devices,
   capacity, or evidence fail or queue, never become passing skips.
-- Split admission unit tests use explicit recipe-bound fixtures. PR smoke,
-  nightly, and release split runs allow experimental planning and retain the
-  actual admission status. All require stage/frontier validation and the full
-  checks for their profile. Default CLI planning requires certified admission.
-  Roster renewal requires its own certification process.
+- Split admission is established by actual native stage plans, tensor closures,
+  activation frontiers, artifact identities and backend compatibility. Qualification
+  records exact tested configurations. There is no architecture certification
+  allowlist or experimental bypass. PR, nightly, release and upgrade use the same
+  native admission requirements.
 - Trusted same-repository PRs from repository collaborators may run as native
   JY jobs on persistent dedicated lab hardware, including DGX Sparks. Admission
   must verify the source repository and contributor's collaborator status using

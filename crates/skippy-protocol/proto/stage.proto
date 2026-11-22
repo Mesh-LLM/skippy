@@ -104,15 +104,14 @@ message LoadStage {
   StageActivationCodec activation_codec = 49;
   StageActivationCodecPolicy activation_codec_policy = 50;
   repeated StageTopologyStage topology_stages = 51;
-  optional string split_certification = 52;
   // Planned by the coordinator because the stage that owns the output
   // layers is a different process - on a mesh split a different machine -
   // from the one the operator configured, and rebalancing can move it.
-  optional bool last_stage_decode_batch = 53;
+  optional bool last_stage_decode_batch = 52;
   // A DFlash draft on the final stage of this split. Stages that own one of
   // its target layers capture that layer's input and forward it with their
   // activations; the final stage drafts. Older stages ignore it.
-  optional StageDFlashPlan dflash = 54;
+  optional StageDFlashPlan dflash = 53;
 }
 
 message StageDFlashPlan {
@@ -283,20 +282,19 @@ message StageStatus {
     StageAdmissionIdle idle = 34;
     StageAdmissionAdmitted admitted = 35;
   }
-  optional string split_certification = 36;
   // Cumulative runtime compute-busy time on this stage and the operations it
   // covers, for auto-balance split placement. Zero when not reported.
-  uint64 compute_busy_nanos = 37;
-  uint64 compute_operations = 38;
+  uint64 compute_busy_nanos = 36;
+  uint64 compute_operations = 37;
   // Serial decode steps run on this stage, as its compute meter counts them.
   // Zero from older stages.
-  uint64 compute_decode_tokens = 40;
+  uint64 compute_decode_tokens = 38;
   // Token positions run in speculative verify windows on this stage, as its
   // compute meter counts them. Zero from older stages.
-  uint64 compute_verify_tokens = 41;
+  uint64 compute_verify_tokens = 39;
   // Set by a split final stage that attached its DFlash draft. Unset when the
   // stage drafts nothing, and from older stages.
-  optional StageDFlashDraftStatus dflash_draft = 39;
+  optional StageDFlashDraftStatus dflash_draft = 40;
 }
 
 message StageDFlashDraftStatus {

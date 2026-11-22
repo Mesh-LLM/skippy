@@ -12,7 +12,7 @@ the exact selected artifacts, not every variant of each architecture.
 | MiMo2 | 48 | 3 | [e528cbf](https://huggingface.co/bartowski/MiMo-V2.5-GGUF/tree/e528cbf4b6197dd642b393acc069fb1cd529e085) |
 
 The source of artifact paths and immutable identities is
-[`family-certified.json`](family-certified.json), generated from the model
+[`model-fixtures.json`](model-fixtures.json), generated from the model
 registry. MTP tensors can occur in a later shard than the model metadata; the
 existing native artifact scan reads every shard. A search of all 89 pinned
 repository file listings found no separately named MTP/NextN/assistant sidecar.
