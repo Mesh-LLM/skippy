@@ -409,7 +409,9 @@ artifact smoke is recorded separately from inference evidence.
 
 `just ci-plan` validates the target matrix with `jq`. The package and
 smoke commands use Python 3.9 or later. Release inventory uses Python
-3.11 or later for TOML parsing. Set `SKIPPY_PYTHON` to select the interpreter.
+3.11 or later for TOML parsing. With uv installed, Justfile recipes run Python
+on the interpreter `.python-version` names. Set `SKIPPY_PYTHON` to select
+another; the shell scripts read it too.
 
 1. Each platform's CPU job builds and verifies its CLI once using
    `just ci-host`. Inference PR jobs build their two CLIs locally because they
