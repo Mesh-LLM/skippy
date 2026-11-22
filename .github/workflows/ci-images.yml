@@ -76,7 +76,7 @@ jobs:
       - name: Publish immutable build and latest
         run: |
           set -euo pipefail
-          image=ghcr.io/general-inference/skippy-ci-cpu
+          image=ghcr.io/mesh-llm/skippy-ci-cpu
           build_tag="build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           docker image tag skippy-ci-cpu:build "$image:$build_tag"
           docker image push "$image:$build_tag"
@@ -203,7 +203,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          image="ghcr.io/general-inference/skippy-ci-$BACKEND"
+          image="ghcr.io/mesh-llm/skippy-ci-$BACKEND"
           build_tag="build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           latest_tag=latest
           if [[ "$ARCH" == arm64 ]]; then
