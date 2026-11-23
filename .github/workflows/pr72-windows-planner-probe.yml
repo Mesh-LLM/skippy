@@ -1,0 +1,50 @@
+name: PR 72 Windows planner probe
+on:
+  push:
+    branches: [rehearsal/pr-72-windows-probe-213b993]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    env:
+      SKIPPY_CI_PROFILE: full
+      SKIPPY_PYTHON: python
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: 213b9930b1c4fa08c63b2d1b5debef1251df6c8a
+          persist-credentials: false
+      - name: Select Git Bash
+        shell: pwsh
+        run: |
+          $gitRoot = Split-Path (Split-Path (Get-Command git.exe).Source)
+          Join-Path $gitRoot 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Enable MSVC
+        shell: pwsh
+        run: ./scripts/enable-msvc-dev-env.ps1
+      - name: Compare Windows shell resolution
+        shell: bash
+        run: |
+          command -v bash
+          command -v jq
+          export PYTHONPATH=scripts
+          python - <<'PY'
+          import shutil
+          import subprocess
+          from lib.ci_process import capture
+
+          bash = shutil.which("bash")
+          print(f"Git Bash on PATH: {bash}")
+          for executable in ("bash", bash):
+              for rest in (("--version",), ("scripts/ci-plan.sh",)):
+                  args = [executable, *rest]
+                  result = subprocess.run(args, capture_output=True, timeout=30)
+                  print(f"{args}: exit={result.returncode} stdout={result.stdout[:260]!r} stderr={result.stderr[:500]!r}")
+              try:
+                  plan = capture([executable, "scripts/ci-plan.sh"])
+                  print(f"Job wrapper planner passed: {plan[:100]}")
+              except Exception as failure:
+                  print(f"Job wrapper planner failed: {failure!r}")
+          PY
