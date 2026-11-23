@@ -617,10 +617,13 @@ prompt appended as one argument. `GOOSE_MODE=auto` keeps repair noninteractive a
 already provide Goose and its provider authentication. A repository variable
 `SKIPPY_UPGRADE_REPAIR_COMMAND` may override the command with a JSON argv array.
 The preflight verifies the selected executable without opening an agent session.
-JY supplies the job-scoped `JIANYANG_GATEWAY_TOKEN` for model access. Repair
-explicitly passes it to the agent; the shared subprocess filter continues to
-remove credentials from build commands. GitHub and publication tokens are not
-passed to repair.
+Build, generation and repair subprocesses inherit the job environment, including
+Goose configuration, JY's job-scoped `JIANYANG_GATEWAY_TOKEN`, GitHub Actions
+command-file paths and the `ACTIONS_RUNTIME_TOKEN` used by sccache. Explicit
+per-command overrides take precedence. Credentials are scoped by workflow jobs;
+publication credentials are supplied only to the publisher. The packaged CLI
+startup check explicitly clears library-loader overrides to verify that the
+package works without host library paths.
 
 The agent subprocess has an 11h30 limit (41,400 seconds), and both preparation
 and repair jobs have a 23h50 limit (1,430 minutes). These match

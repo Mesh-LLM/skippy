@@ -28,13 +28,9 @@ def repair(checkout, diagnostics):
     generated = {path: (checkout / path).read_bytes() if (checkout / path).exists() else None
                  for path in ("crates/skippy-api/src/native-recipe.json",)}
     pin = (checkout / "llama_cpp/upstream.txt").read_bytes()
-    # Child builds lose credentials by default. Goose needs this job's model
-    # gateway token; keep that exception local to repair, not the shared filter.
-    gateway_token = os.environ.get("JIANYANG_GATEWAY_TOKEN")
-    model_access = {"JIANYANG_GATEWAY_TOKEN": gateway_token} if gateway_token else {}
     # Match Mesh's 11h30 coding budget. The workflow's 23h50 job cap also
     # covers setup, regeneration and candidate export; full CI runs separately.
-    command([*argv, prompt], cwd=checkout, timeout=41400, overrides=model_access)
+    command([*argv, prompt], cwd=checkout, timeout=41400)
     if git(checkout, "rev-parse", "HEAD") != before or (checkout / "llama_cpp/upstream.txt").read_bytes() != pin:
         raise ValueError("repair changed the candidate history or selected upstream pin")
     check_changes(checkout, "HEAD")

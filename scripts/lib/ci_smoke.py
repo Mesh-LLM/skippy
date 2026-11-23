@@ -24,7 +24,7 @@ def verify_product(host, runtime, product_input, product):
     for key in ("LD_LIBRARY_PATH", "LD_PRELOAD", "DYLD_LIBRARY_PATH",
                 "DYLD_FALLBACK_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES"):
         env.pop(key, None)
-    command([str(binary), "--version"], timeout=60, cwd=product, overrides=env, clean_env=False)
+    command([str(binary), "--version"], timeout=60, cwd=product, overrides=env, inherit_env=False)
     return binary
 
 

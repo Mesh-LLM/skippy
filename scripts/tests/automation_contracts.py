@@ -10,6 +10,7 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from lib import ci_artifacts, ci_smoke
@@ -75,6 +76,7 @@ class Artifacts(unittest.TestCase):
             self.assertEqual(Path(startup.args[0][0]).parent, startup.kwargs["cwd"].resolve())
             self.assertNotIn("LD_LIBRARY_PATH", startup.kwargs["overrides"])
             self.assertNotIn("DYLD_LIBRARY_PATH", startup.kwargs["overrides"])
+            self.assertFalse(startup.kwargs["inherit_env"])
             self.assertIn("verify-runtime-package", native_verify.args[0])
             self.assertEqual(ci_artifacts.read_json(report), {
                 "source": "a" * 40, "variant": variant, "backend": "cuda",
@@ -126,6 +128,14 @@ class Artifacts(unittest.TestCase):
 
 
 class Generator(unittest.TestCase):
+    def test_generator_commands_inherit_job_environment(self):
+        generator = module("generate-skippy-family-patch")
+        args = SimpleNamespace(timeout=10, max_diff_bytes=1024)
+        with patch.dict(os.environ, ACTIONS_RUNTIME_TOKEN="fixture-cache-access"):
+            output = generator.run(args, [sys.executable, "-c",
+                "import os; print(os.environ['ACTIONS_RUNTIME_TOKEN'])"], cwd=ROOT, capture=True)
+        self.assertEqual(output.strip(), "fixture-cache-access")
+
     def test_patch_mail_bytes_match_frozen_fixture(self):
         generator = module("generate-skippy-family-patch")
         fixture = FIXTURES / "rewriter-patch"

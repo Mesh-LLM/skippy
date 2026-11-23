@@ -10,6 +10,7 @@ inference-publication-test:
 
 automation-contracts: inference-contracts
     @"{{ automation_python }}" scripts/tests/ci_cuda_license.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_process_environment.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/automation_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/graph_contracts.py
