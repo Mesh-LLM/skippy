@@ -621,6 +621,14 @@ JY supplies the job-scoped `JIANYANG_GATEWAY_TOKEN` for model access. Repair
 explicitly passes it to the agent; the shared subprocess filter continues to
 remove credentials from build commands. GitHub and publication tokens are not
 passed to repair.
+
+The agent subprocess has an 11h30 limit (41,400 seconds), and both preparation
+and repair jobs have a 23h50 limit (1,430 minutes). These match
+[Mesh's upgrade budgets](https://github.com/Mesh-LLM/mesh-llm/blob/5be31fba855d3c9724ddc24a62f181036149338d/.github/workflows/llama-canary-family-pass.yml#L164).
+The job deadline includes setup, regeneration and candidate export. Mesh also
+allocates a separate 12-hour verification window inside its build job; Skippy
+runs full CI in separate jobs after the candidate is frozen.
+
 Preparation can make one repair attempt when native regeneration fails. After a full CI failure, the controller collects
 failed job logs and CI artifacts, repairs the disposable candidate, and reruns
 the complete gate. Native patch queues, bindings and generated API documentation

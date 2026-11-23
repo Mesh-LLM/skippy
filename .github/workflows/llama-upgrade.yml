@@ -32,7 +32,7 @@ jobs:
     runs-on:
       group: jy-rnr_vfnz8k5p4yrh334
       labels: [self-hosted, jy-linux-docker, Linux]
-    timeout-minutes: 180
+    timeout-minutes: 1430
     permissions:
       contents: read
       pull-requests: read
@@ -140,7 +140,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    timeout-minutes: 180
+    timeout-minutes: 1430
     outputs:
       candidate_sha: ${{ steps.prepare.outputs.candidate_sha }}
     env:
