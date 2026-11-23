@@ -14,7 +14,7 @@ env:
   SKIPPY_REQUIRE_SCCACHE: '1'
   SKIPPY_CI_PROFILE: full
   SKIPPY_CUDA_ARCHITECTURE_MODE: release
-  SKIPPY_CI_SOURCE_REF: 17c072781d6bc7c4bfacb69c06a28432b01ec31e
+  SKIPPY_CI_SOURCE_REF: 08a478ee328b7fb93def604a1d82492529fad6c2
   SKIPPY_ARTIFACT_SCOPE: release
 jobs:
   plan:
@@ -111,9 +111,24 @@ jobs:
           smoke: artifact
           containerized: 'true'
           compiler-image-digest: ${{ needs.plan.outputs.rocm_digest }}
+  windows_cleanup:
+    name: Verify Windows job cleanup with a detached child
+    needs: plan
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - name: Run Windows process cleanup contracts
+        shell: pwsh
+        env:
+          PYTHONPATH: scripts
+        run: python scripts/tests/ci_process_contracts.py
   package_windows_x86_64_cpu:
     name: Build and verify archive · Windows x64 CPU
-    needs: [plan]
+    needs: [plan, windows_cleanup]
     if: needs.plan.outputs.profile == 'full'
     runs-on: windows-2022
     timeout-minutes: 240
