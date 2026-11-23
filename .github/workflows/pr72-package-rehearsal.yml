@@ -20,7 +20,7 @@ jobs:
   plan:
     name: Admit exact PR head and resolve the ROCm compiler image
     if: github.repository == 'Mesh-LLM/skippy' && github.ref == 'refs/heads/rehearsal/pr-72-213b993'
-    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -64,7 +64,7 @@ jobs:
     needs: [plan]
     if: needs.plan.outputs.profile == 'full'
     # The shared CLI must also run in the Ubuntu 24.04 CUDA toolchain images.
-    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 240
     env:
       SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
@@ -84,7 +84,7 @@ jobs:
     name: Build and verify archive · Linux x64 ROCm
     needs: [plan, package_linux_x86_64_cpu]
     if: needs.plan.outputs.profile == 'full'
-    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read
@@ -194,7 +194,7 @@ jobs:
   prepare:
     name: Prepare five real archives with production verification
     needs: [package_linux_x86_64_rocm, package_windows_x86_64_cpu, package_windows_x86_64_cuda12, package_windows_x86_64_cuda13, package_windows_x86_64_rocm]
-    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -238,7 +238,7 @@ jobs:
   verify:
     name: Download and verify exact assets against independent receipt
     needs: prepare
-    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
