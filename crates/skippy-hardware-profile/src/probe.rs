@@ -14,6 +14,8 @@ use std::time::{Duration, Instant};
 
 mod child;
 use child::ProbeChild;
+#[cfg(windows)]
+mod owner_job;
 
 #[cfg(test)]
 mod tests;
@@ -94,7 +96,15 @@ impl ProbeScope {
         }
         let spawned = wrapped.spawn();
         *command = wrapped.into_command();
-        state.child = Some(ProbeChild::new(spawned?));
+        let spawned = spawned?;
+        // A probe that could outlive this process would hold its callers' pipes
+        // open after it exits, so it does not run at all.
+        #[cfg(windows)]
+        if let Err(error) = owner_job::adopt(spawned.as_ref()) {
+            ProbeChild::new(spawned).stop()?;
+            return Err(error);
+        }
+        state.child = Some(ProbeChild::new(spawned));
         let deadline = Instant::now() + Duration::from_secs(120);
         let status = loop {
             if state.cancelled {
