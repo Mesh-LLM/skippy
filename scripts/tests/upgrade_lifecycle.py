@@ -173,6 +173,24 @@ class Lifecycle(unittest.TestCase):
             with tarfile.open(saved / 'outer/untracked.tar.gz') as archive:
                 self.assertEqual(archive.extractfile('llama_cpp/patches/repair.patch').read(), b'retained repair')
 
+    def test_missing_native_base_captures_full_tracked_tree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkout = fixture(root)
+            native = checkout / '.deps/llama.cpp'
+            native.mkdir(parents=True)
+            git(native, 'init', '--initial-branch=main')
+            (native / 'native.cpp').write_text('complete source\n')
+            commit(native, 'native work with unavailable upstream')
+            saved = checkpoint(checkout, root / 'recovery', 'missing-base')
+            manifest = json.loads((saved / 'manifest.json').read_text())
+            self.assertTrue(manifest['native']['full_tracked_tree'])
+            restored = root / 'restored'
+            restored.mkdir()
+            git(restored, 'init', '--initial-branch=main')
+            git(restored, 'apply', str(saved / 'native/tracked.patch'))
+            self.assertEqual((restored / 'native.cpp').read_text(), 'complete source\n')
+
     def test_time_windows_bound_commands_and_recovery_survives_expiry(self):
         with time_budget(0):
             with self.assertRaises(subprocess.TimeoutExpired):
