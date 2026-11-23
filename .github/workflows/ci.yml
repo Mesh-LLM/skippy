@@ -1,7 +1,6 @@
 name: CI
 on:
   pull_request:
-    # Include the inference-only inputs as well as the code filter.
     paths:
       - 'crates/**'
       - 'skippy-api-rs/**'
@@ -13,20 +12,15 @@ on:
       - '.github/actions/**'
       - '.github/scripts/**'
       - '.github/path-filters.yml'
-      - '.github/workflows/ci.yml'
-      - '.github/workflows/ci-pr.yml'
-      - '.github/workflows/inference.yml'
-      - '.github/workflows/llama-upgrade.yml'
+      - '.github/actionlint.yaml'
+      - '.github/workflows/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'rust-toolchain.toml'
       - 'Justfile'
-      - 'ci/targets.json'
-      - 'ci/llama-canary/**'
+      - '.python-version'
+      - 'ci/**'
       - '.gi/templates.yaml'
-      - 'ci/inference-ladder.json'
-      - 'ci/inference-artifacts.json'
-      - 'ci/inference-quality.json'
       - '!**/*.md'
       - '!**/*.mdx'
       - '!**/*.rst'
@@ -34,7 +28,6 @@ on:
       - '!**/docs/**'
       - '!docs-site/**'
   pull_request_target:
-    # Include the inference-only inputs as well as the code filter.
     paths:
       - 'crates/**'
       - 'skippy-api-rs/**'
@@ -46,20 +39,15 @@ on:
       - '.github/actions/**'
       - '.github/scripts/**'
       - '.github/path-filters.yml'
-      - '.github/workflows/ci.yml'
-      - '.github/workflows/ci-pr.yml'
-      - '.github/workflows/inference.yml'
-      - '.github/workflows/llama-upgrade.yml'
+      - '.github/actionlint.yaml'
+      - '.github/workflows/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'rust-toolchain.toml'
       - 'Justfile'
-      - 'ci/targets.json'
-      - 'ci/llama-canary/**'
+      - '.python-version'
+      - 'ci/**'
       - '.gi/templates.yaml'
-      - 'ci/inference-ladder.json'
-      - 'ci/inference-artifacts.json'
-      - 'ci/inference-quality.json'
       - '!**/*.md'
       - '!**/*.mdx'
       - '!**/*.rst'
@@ -79,16 +67,15 @@ on:
       - '.github/actions/**'
       - '.github/scripts/**'
       - '.github/path-filters.yml'
-      - '.github/workflows/ci.yml'
-      - '.github/workflows/ci-pr.yml'
-      - '.github/workflows/inference.yml'
-      - '.github/workflows/llama-upgrade.yml'
+      - '.github/actionlint.yaml'
+      - '.github/workflows/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'rust-toolchain.toml'
       - 'Justfile'
-      - 'ci/targets.json'
-      - 'ci/llama-canary/**'
+      - '.python-version'
+      - 'ci/**'
+      - '.gi/templates.yaml'
       - '!**/*.md'
       - '!**/*.mdx'
       - '!**/*.rst'
@@ -156,6 +143,9 @@ env:
   SKIPPY_POSTHOG_KEY: ${{ inputs.artifact_scope == 'release' && vars.SKIPPY_POSTHOG_KEY || '' }}
 jobs:
   pr_image_builds:
+    permissions:
+      contents: read
+      packages: read
     # Enter through a reusable already on main. GitHub resolves the outer
     # caller's ref even when its job is skipped during the cutover PR.
     if: >-
@@ -179,9 +169,11 @@ jobs:
       pull-requests: read
       actions: read
     outputs:
-      code: ${{ steps.release.outputs.verified != 'true' && (!github.event.pull_request || steps.paths.outputs.code == 'true' || (github.event_name == 'pull_request' && steps.paths.outputs.inference == 'true')) }}
-      inference: ${{ github.event_name == 'pull_request_target' && steps.paths.outputs.inference == 'true' }}
-      hosted_requires_native: ${{ github.event_name == 'pull_request' && steps.paths.outputs.inference == 'true' }}
+      automation: ${{ steps.release.outputs.verified != 'true' && (!github.event.pull_request || steps.paths.outputs.automation == 'true') }}
+      code: ${{ steps.release.outputs.verified != 'true' && (!github.event.pull_request || steps.paths.outputs.code == 'true' || (github.event_name == 'pull_request' && steps.paths.outputs.packages == 'true')) }}
+      packages: ${{ steps.release.outputs.verified != 'true' && ((github.event_name == 'pull_request_target' && steps.paths.outputs.packages == 'true') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && (steps.main_base.outputs.force == 'true' || steps.paths.outputs.packages == 'true' || steps.paths.outputs.inference == 'true' || steps.paths.outputs.packaging == 'true' || steps.paths.outputs.native == 'true'))) }}
+      native: ${{ steps.release.outputs.verified != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' && (steps.main_base.outputs.force == 'true' || steps.paths.outputs.native == 'true') }}
+      hosted_requires_native: ${{ github.event_name == 'pull_request' && steps.paths.outputs.packages == 'true' }}
     steps:
       - name: Reject custom candidate inputs on pull requests
         if: >-
@@ -220,14 +212,24 @@ jobs:
               core.warning(`Release validation could not be verified. Running ordinary CI. ${error.message}`);
             }
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        if: github.event.pull_request != null
+        if: github.event.pull_request != null || (github.event_name == 'push' && steps.release.outputs.verified != 'true')
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          fetch-depth: ${{ github.event_name == 'push' && '0' || '1' }}
           persist-credentials: false
+      - name: Find the last covered main commit
+        id: main_base
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.release.outputs.verified != 'true'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            await require('./.github/scripts/main-ci-base.cjs')({ github, context, core });
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: paths
-        if: github.event.pull_request != null
+        if: github.event.pull_request != null || (github.event_name == 'push' && steps.release.outputs.verified != 'true' && steps.main_base.outputs.force != 'true')
         with:
+          base: ${{ steps.main_base.outputs.base }}
+          ref: ${{ github.sha }}
           predicate-quantifier: some-with-excludes
           filters: .github/path-filters.yml
       - name: Verify the same-repository PR author
@@ -246,16 +248,51 @@ jobs:
             if (!['write', 'maintain', 'admin'].includes(data.permission)) {
               throw new Error('Native CI requires a trusted PR author with repository write access');
             }
+  automation:
+    name: Automation checks
+    needs: changes
+    if: needs.changes.outputs.automation == 'true'
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 15
+    env:
+      SKIPPY_PYTHON: python3
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - uses: ./.github/actions/source
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.0'
+          package-manager-cache: false
+      - name: Install reporting test dependencies
+        run: just ci-automation-setup "$RUNNER_TEMP/skippy-automation"
+      - run: just ci-automation
   plan:
     name: Validate build targets
     needs: changes
-    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.inference == 'true'
+    permissions:
+      contents: read
+      packages: read
+    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.packages == 'true'
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 20
     env:
       SKIPPY_CI_PROFILE: ${{ github.event.pull_request && 'pr' || inputs.profile || (github.event_name == 'schedule' && 'full' || 'pr') }}
     outputs:
       profile: ${{ steps.plan.outputs.profile }}
+      cpu_digest: ${{ steps.images.outputs.cpu }}
+      cuda12_digest: ${{ steps.images.outputs.cuda12 }}
+      cuda12_arm_digest: ${{ steps.images.outputs.cuda12_arm }}
+      cuda13_digest: ${{ steps.images.outputs.cuda13 }}
+      rocm_digest: ${{ steps.images.outputs.rocm }}
       runtimes: ${{ steps.plan.outputs.runtimes }}
       registry-owner: ${{ steps.registry.outputs.owner }}
     steps:
@@ -289,10 +326,44 @@ jobs:
           sha: ${{ inputs.candidate_sha }}
       - id: plan
         run: just ci-plan
+      - name: Authenticate compiler image lookup
+        if: needs.changes.outputs.code == 'true' || steps.plan.outputs.profile == 'full'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve compiler image digests
+        id: images
+        if: needs.changes.outputs.code == 'true' || steps.plan.outputs.profile == 'full'
+        shell: bash
+        env:
+          REGISTRY_OWNER: ${{ steps.registry.outputs.owner }}
+          PROFILE: ${{ steps.plan.outputs.profile }}
+        run: |
+          set -euo pipefail
+          resolve() {
+            local manifest digest
+            manifest=$(docker buildx imagetools inspect "ghcr.io/$REGISTRY_OWNER/skippy-ci-$2")
+            digest=$(awk '$1 == "Digest:" {print $2; exit}' <<< "$manifest")
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            echo "$1=$digest" >> "$GITHUB_OUTPUT"
+          }
+          resolve cpu cpu:latest
+          if [[ "$PROFILE" == full ]]; then
+            resolve cuda12 cuda12:latest
+            resolve cuda12_arm cuda12:latest-arm64
+            resolve cuda13 cuda13:latest
+            resolve rocm rocm:latest
+          fi
   quality:
     name: Quality canary
-    needs: [changes, plan]
-    if: needs.changes.outputs.code == 'true'
+    needs: [changes, plan, automation]
+    if: >-
+      !cancelled() && needs.changes.result == 'success' &&
+      needs.plan.result == 'success' && needs.changes.outputs.code == 'true' &&
+      (needs.automation.result == 'success' ||
+       (needs.changes.outputs.automation == 'false' && needs.automation.result == 'skipped'))
     env:
       CARGO_BUILD_JOBS: '2'
       CMAKE_BUILD_PARALLEL_LEVEL: '2'
@@ -308,7 +379,7 @@ jobs:
       contents: read
       packages: read
     container:
-      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-cpu:latest
+      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-cpu@${{ needs.plan.outputs.cpu_digest }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -326,15 +397,6 @@ jobs:
         with:
           artifact: ${{ inputs.candidate_artifact }}
           sha: ${{ inputs.candidate_sha }}
-      - run: just automation-contracts
-      - name: Test inference results reporting
-        run: bash scripts/tests/inference-report.sh
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: '22.23.0'
-          package-manager-cache: false
-      - name: Test workflow result gates
-        run: node --test .github/scripts/*.test.cjs
       - name: Verify image toolchain and cache identity
         shell: bash
         run: |
@@ -354,7 +416,7 @@ jobs:
           echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
       - uses: ./.github/actions/cache
         with:
-          scope: quality-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
+          scope: quality-${{ needs.plan.outputs.cpu_digest }}
           download-scope: quality-container
           build-paths: |
             target/debug
@@ -392,15 +454,15 @@ jobs:
           retention-days: 7
   native_contracts:
     name: Check llama.cpp Graph Contracts, patches, and API docs
-    needs: [plan, quality]
-    if: needs.plan.outputs.profile == 'full'
+    needs: [plan, quality, changes]
+    if: needs.plan.outputs.profile == 'full' || needs.changes.outputs.native == 'true'
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-8' || 'ubuntu-24.04' }}
     timeout-minutes: 180
     permissions:
       contents: read
       packages: read
     container:
-      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-cpu:latest
+      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-cpu@${{ needs.plan.outputs.cpu_digest }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -427,7 +489,7 @@ jobs:
           echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
       - uses: ./.github/actions/cache
         with:
-          scope: native-contracts-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY }}
+          scope: native-contracts-${{ needs.plan.outputs.cpu_digest }}
           download-scope: native-contracts
       - uses: ./.github/actions/sccache
         with:
@@ -444,6 +506,7 @@ jobs:
             target/ci-evidence/sccache-build.json
             target/skippy-stage-rewriter-check/*.log
             target/skippy-stage-rewriter-check/report*
+            target/skippy-stage-rewriter-check/graph-coverage.json
             target/skippy-stage-rewriter-check/patch-drift.diff
             target/skippy-stage-rewriter-check/changed-family-selection.json
             target/skippy-stage-rewriter-check/generated-family-shards/**
@@ -475,13 +538,13 @@ jobs:
           candidate-sha: ${{ inputs.candidate_sha }}
   package_darwin_aarch64_metal:
     name: Build, package, and smoke · macOS ARM64 Metal
-    needs: [plan, quality, package_darwin_aarch64_cpu, changes]
+    needs: [plan, quality, package_darwin_aarch64_cpu, changes, automation]
     if: >-
-      ${{ !cancelled() && needs.plan.result == 'success' &&
+      ${{ !cancelled() && needs.plan.result == 'success' && needs.automation.result == 'success' &&
       ((needs.changes.outputs.code == 'true' && needs.quality.result == 'success') ||
       (needs.changes.outputs.code == 'false' && needs.quality.result == 'skipped')) &&
       ((needs.plan.outputs.profile == 'full' && needs.package_darwin_aarch64_cpu.result == 'success') ||
-      (needs.plan.outputs.profile == 'pr' && needs.changes.outputs.inference == 'true')) }}
+      (needs.plan.outputs.profile == 'pr' && needs.changes.outputs.packages == 'true')) }}
     runs-on:
       group: jy-rnr_h7x5s2yx9gtkz3c
       labels: ["self-hosted", "skippy-ephemeral", "macOS", "ARM64", "metal"]
@@ -531,7 +594,7 @@ jobs:
       contents: read
       packages: read
     container:
-      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-cuda12:latest
+      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-cuda12@${{ needs.plan.outputs.cuda12_digest }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -548,8 +611,8 @@ jobs:
           runtime-id: linux-x86_64-cuda12
           host-id: linux-x86_64
           smoke: artifact
-          release-device-smoke: 'true'
           containerized: 'true'
+          compiler-image-digest: ${{ needs.plan.outputs.cuda12_digest }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
   release_smoke_linux_x86_64_cuda12:
@@ -573,16 +636,17 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   package_linux_x86_64_cuda13:
     name: Build, package, and smoke · Linux x64 CUDA 13
-    needs: [plan, quality, package_linux_x86_64_cpu, changes]
-    if: >-
-      ${{ !cancelled() && needs.plan.result == 'success' &&
-      ((needs.changes.outputs.code == 'true' && needs.quality.result == 'success') ||
-      (needs.changes.outputs.code == 'false' && needs.quality.result == 'skipped')) &&
-      ((needs.plan.outputs.profile == 'full' && needs.package_linux_x86_64_cpu.result == 'success') ||
-      (needs.plan.outputs.profile == 'pr' && needs.changes.outputs.inference == 'true')) }}
-    runs-on:
-      group: jy-rnr_p0zx3thw895vrka
-      labels: ["self-hosted", "skippy-ephemeral", "Linux", "X64", "runtime-image", "cuda13"]
+    needs: [plan, quality, package_linux_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-cuda13@${{ needs.plan.outputs.cuda13_digest }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     timeout-minutes: 240
     env:
       SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
@@ -595,7 +659,9 @@ jobs:
         with:
           runtime-id: linux-x86_64-cuda13
           host-id: linux-x86_64
-          build-cli: ${{ needs.plan.outputs.profile == 'pr' }}
+          smoke: artifact
+          containerized: 'true'
+          compiler-image-digest: ${{ needs.plan.outputs.cuda13_digest }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
   package_linux_x86_64_rocm:
@@ -607,7 +673,7 @@ jobs:
       contents: read
       packages: read
     container:
-      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-rocm:latest
+      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-rocm@${{ needs.plan.outputs.rocm_digest }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -628,6 +694,7 @@ jobs:
           host-id: linux-x86_64
           smoke: artifact
           containerized: 'true'
+          compiler-image-digest: ${{ needs.plan.outputs.rocm_digest }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
   package_linux_aarch64_cpu:
@@ -660,7 +727,7 @@ jobs:
       contents: read
       packages: read
     container:
-      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-cuda12:latest-arm64
+      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-cuda12@${{ needs.plan.outputs.cuda12_arm_digest }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -677,8 +744,8 @@ jobs:
           runtime-id: linux-aarch64-cuda12
           host-id: linux-aarch64
           smoke: artifact
-          release-device-smoke: 'true'
           containerized: 'true'
+          compiler-image-digest: ${{ needs.plan.outputs.cuda12_arm_digest }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
   release_smoke_linux_aarch64_cuda12:
@@ -702,17 +769,16 @@ jobs:
           candidate_sha: ${{ inputs.candidate_sha }}
   package_linux_aarch64_cuda13:
     name: Build, package, and smoke · Linux ARM64 CUDA 13
-    needs: [plan, quality, package_linux_aarch64_cpu]
-    if: needs.plan.outputs.profile == 'full'
-    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-arm-4' || 'ubuntu-24.04-arm' }}
-    permissions:
-      contents: read
-      packages: read
-    container:
-      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-cuda13:latest-arm64
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+    needs: [plan, quality, package_linux_aarch64_cpu, changes, automation]
+    if: >-
+      ${{ !cancelled() && needs.plan.result == 'success' && needs.automation.result == 'success' &&
+      ((needs.changes.outputs.code == 'true' && needs.quality.result == 'success') ||
+      (needs.changes.outputs.code == 'false' && needs.quality.result == 'skipped')) &&
+      ((needs.plan.outputs.profile == 'full' && needs.package_linux_aarch64_cpu.result == 'success') ||
+      (needs.plan.outputs.profile == 'pr' && needs.changes.outputs.packages == 'true')) }}
+    runs-on:
+      group: jy-rnr_8gvzbe9b9d79y0k
+      labels: ["self-hosted", "skippy-ephemeral", "Linux", "ARM64", "runtime-image", "cuda13"]
     timeout-minutes: 240
     env:
       SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
@@ -725,18 +791,16 @@ jobs:
         with:
           runtime-id: linux-aarch64-cuda13
           host-id: linux-aarch64
-          smoke: artifact
-          release-device-smoke: 'true'
-          containerized: 'true'
+          build-cli: ${{ needs.plan.outputs.profile == 'pr' }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
-  release_smoke_linux_aarch64_cuda13:
-    name: Release GPU smoke · Linux ARM64 CUDA 13
-    needs: [package_linux_aarch64_cuda13]
+  release_smoke_linux_x86_64_cuda13:
+    name: Release GPU smoke · Linux x64 CUDA 13
+    needs: [package_linux_x86_64_cuda13]
     if: inputs.artifact_scope == 'release'
     runs-on:
-      group: jy-rnr_8gvzbe9b9d79y0k
-      labels: ["self-hosted", "skippy-ephemeral", "Linux", "ARM64", "runtime-image", "cuda13"]
+      group: jy-rnr_p0zx3thw895vrka
+      labels: ["self-hosted", "skippy-ephemeral", "Linux", "X64", "runtime-image", "cuda13"]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -745,7 +809,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/ci-smoke
         with:
-          runtime_id: linux-aarch64-cuda13
+          runtime_id: linux-x86_64-cuda13
           download-package: 'true'
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
@@ -840,12 +904,12 @@ jobs:
   gate:
     name: ${{ needs.plan.outputs.profile == 'full' && 'Full CI gate' || (github.event_name == 'pull_request_target' && 'Same-repository CI' || 'CI') }}
     needs: [
-      changes, plan, quality, native_contracts,
+      changes, automation, plan, quality, native_contracts,
       package_darwin_aarch64_cpu, package_darwin_aarch64_metal,
       package_linux_x86_64_cpu, package_linux_x86_64_cuda12, package_linux_x86_64_cuda13, package_linux_x86_64_rocm,
       package_linux_aarch64_cpu, package_linux_aarch64_cuda12, package_linux_aarch64_cuda13,
       package_windows_x86_64_cpu, package_windows_x86_64_cuda12, package_windows_x86_64_cuda13, package_windows_x86_64_rocm,
-      release_smoke_linux_x86_64_cuda12, release_smoke_linux_aarch64_cuda12, release_smoke_linux_aarch64_cuda13
+      release_smoke_linux_x86_64_cuda12, release_smoke_linux_aarch64_cuda12, release_smoke_linux_x86_64_cuda13
     ]
     if: always() && needs.changes.result != 'skipped'
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
@@ -860,22 +924,25 @@ jobs:
             const needs = JSON.parse(process.env.CHECK_RESULTS);
             const paths = needs.changes?.outputs;
             if (needs.changes?.result !== 'success' ||
+                !['true', 'false'].includes(paths?.automation) ||
                 !['true', 'false'].includes(paths?.code) ||
-                !['true', 'false'].includes(paths?.inference) ||
+                !['true', 'false'].includes(paths?.packages) ||
+                !['true', 'false'].includes(paths?.native) ||
                 !['true', 'false'].includes(paths?.hosted_requires_native)) {
               throw new Error('Path selection failed or did not report all decisions');
             }
-            const inference = paths.inference === 'true';
+            const packages = paths.packages === 'true';
+            const automation = paths.automation === 'true';
             const code = paths.code === 'true';
-            const selected = code || inference;
+            const selected = code || packages;
             const profile = needs.plan?.outputs?.profile;
             if (selected && !['pr', 'full'].includes(profile)) throw new Error('Missing or invalid CI profile');
             const full = selected && profile === 'full';
             const release = process.env.RELEASE_SMOKE === 'true';
             if (release && !full) throw new Error('Release validation requires full CI');
 
-            const prPackages = ['package_darwin_aarch64_metal', 'package_linux_x86_64_cuda13'];
-            const releaseSmokes = ['release_smoke_linux_x86_64_cuda12', 'release_smoke_linux_aarch64_cuda12', 'release_smoke_linux_aarch64_cuda13'];
+            const prPackages = ['package_darwin_aarch64_metal', 'package_linux_aarch64_cuda13'];
+            const releaseSmokes = ['release_smoke_linux_x86_64_cuda12', 'release_smoke_linux_aarch64_cuda12', 'release_smoke_linux_x86_64_cuda13'];
             const packageJobs = Object.keys(needs).filter(job => job.startsWith('package_'));
             if (selected) {
               const rows = JSON.parse(needs.plan.outputs.runtimes).include;
@@ -894,11 +961,12 @@ jobs:
                 throw new Error(`${job} must be ${expected}; got ${needs[job]?.result}`);
               }
             };
+            requireResult('automation', automation);
             requireResult('plan', selected);
             requireResult('quality', code);
-            requireResult('native_contracts', full);
+            requireResult('native_contracts', full || paths.native === 'true');
             for (const job of prPackages) if (!packageJobs.includes(job)) throw new Error(`Missing package job ${job}`);
-            for (const job of packageJobs) requireResult(job, full || (inference && prPackages.includes(job)));
+            for (const job of packageJobs) requireResult(job, full || (packages && prPackages.includes(job)));
             for (const job of releaseSmokes) requireResult(job, release);
             if (paths.hosted_requires_native === 'true') {
               throw new Error('These changes require native hardware qualification on an isolated runner');

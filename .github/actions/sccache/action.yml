@@ -105,6 +105,11 @@ runs:
           backend=Actions
         fi
         echo "sccache $backend cache mode: $cache_mode"
+        if [[ "${RUNNER_NAME:-}" == jy-*-linux && "$SCCACHE_SCOPE" == package-linux-x86_64-cuda13-* ]]; then
+          printf 'sccache directory: %s\n' "${SCCACHE_DIR:-<unset>}"
+          [[ "${SCCACHE_DIR:-}" == /home/runner/.cache/sccache/actions-runner ]]
+          findmnt --noheadings --output TARGET --mountpoint /home/runner/.cache/sccache
+        fi
         "$sccache_path" --stop-server >/dev/null 2>&1 || true
         "$sccache_path" --start-server
         "$sccache_path" --zero-stats

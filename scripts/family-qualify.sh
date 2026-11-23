@@ -12,14 +12,14 @@ BIN_DIR="${FAMILY_BATTERY_BIN_DIR:-$ROOT/target/debug}"
 
 usage() {
   cat >&2 <<'EOF'
-usage: scripts/family-certify.sh --family FAMILY --target-model TARGET_GGUF [options] [-- prompt flags...]
+usage: scripts/family-qualify.sh --family FAMILY --target-model TARGET_GGUF [options] [-- prompt flags...]
 
-Runs a reproducible family certification pass and writes reports under
-target/family-certify/<run-id>/<family>/<model-slug>/.
+Runs a reproducible model qualification pass and writes reports under
+target/family-qualify/<run-id>/<family>/<model-slug>/.
 
 Required:
   --family FAMILY             model family label, for example qwen3-dense or gemma2
-  --target-model GGUF         target GGUF to certify
+  --target-model GGUF         target GGUF to qualify
 
 Identity options:
   --model-id ID               public model coordinate, for example org/repo:Q4_K_M;
@@ -64,14 +64,14 @@ Speculative options:
   --borrow-resident-hits      borrow resident KV sessions for ResidentKv hits
   --cache-decoded-result-hits reuse decoded-result hits where supported
   --recurrent-ranges CSV      recurrent ranges, for example 0..12,16..24
-  --recurrent-all             mark the whole certified layer range recurrent
+  --recurrent-all             mark the whole tested layer range recurrent
 
 Output options:
-  --cert-root DIR             output root; default: target/family-certify
+  --output-root DIR             output root; default: target/family-qualify
   --run-id ID                 output run id; default: timestamp
   -h, --help                  show this help
 
-Arguments after -- are currently ignored by the standalone certification adapter.
+Arguments after -- are currently ignored by the standalone qualification adapter.
 EOF
 }
 
@@ -105,7 +105,7 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || $# -eq 0 ]]; then
   exit 2
 fi
 if ! command -v jq >/dev/null 2>&1; then
-  echo "jq is required for family certification manifests" >&2
+  echo "jq is required for model qualification manifests" >&2
   exit 1
 fi
 
@@ -142,7 +142,7 @@ BORROW_RESIDENT_HITS=0
 CACHE_DECODED_RESULT_HITS=0
 RECURRENT_RANGES=""
 RECURRENT_ALL=0
-CERT_ROOT="target/family-certify"
+OUTPUT_ROOT="target/family-qualify"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
 EXTRA_ARGS=()
 
@@ -181,7 +181,7 @@ while [[ $# -gt 0 ]]; do
     --cache-decoded-result-hits) CACHE_DECODED_RESULT_HITS=1; shift ;;
     --recurrent-ranges) RECURRENT_RANGES="$2"; shift 2 ;;
     --recurrent-all) RECURRENT_ALL=1; shift ;;
-    --cert-root) CERT_ROOT="$2"; shift 2 ;;
+    --output-root) OUTPUT_ROOT="$2"; shift 2 ;;
     --run-id) RUN_ID="$2"; shift 2 ;;
     --) shift; EXTRA_ARGS=("$@"); break ;;
     -h|--help) usage; exit 2 ;;
@@ -215,10 +215,10 @@ else
   DRAFT_MODEL_PATH=""
 fi
 
-CERT_ROOT_PATH="$(abs_path "$CERT_ROOT")"
+OUTPUT_ROOT_PATH="$(abs_path "$OUTPUT_ROOT")"
 MODEL_SLUG="$(slugify "$(basename "$TARGET_MODEL_PATH" .gguf)")"
 FAMILY_SLUG="$(slugify "$FAMILY")"
-OUT_DIR="$CERT_ROOT_PATH/$RUN_ID/$FAMILY_SLUG/$MODEL_SLUG"
+OUT_DIR="$OUTPUT_ROOT_PATH/$RUN_ID/$FAMILY_SLUG/$MODEL_SLUG"
 LOG_DIR="$OUT_DIR/logs"
 REPORT_DIR="$OUT_DIR/reports"
 COMMANDS_JSONL="$OUT_DIR/commands.jsonl"
@@ -409,7 +409,7 @@ if [[ -n "$STARTUP_TIMEOUT_SECS" ]]; then
   correctness_common+=(--startup-timeout-secs "$STARTUP_TIMEOUT_SECS")
 fi
 
-echo "family certification"
+echo "model qualification"
 echo "  family: $FAMILY"
 echo "  model_id: $DISPLAY_MODEL_ID"
 echo "  target: $TARGET_MODEL_PATH"
@@ -540,7 +540,7 @@ TARGET_MODEL_IDENTITY_JSON="$(model_identity_json "$DISPLAY_MODEL_ID" "$TARGET_M
 
 jq -n \
   --arg schema_version "1" \
-  --arg generated_by "scripts/family-certify.sh" \
+  --arg generated_by "scripts/family-qualify.sh" \
   --arg family "$FAMILY" \
   --arg family_id "$(family_id "$FAMILY")" \
   --arg model_id "$DISPLAY_MODEL_ID" \
@@ -784,7 +784,7 @@ if (( REQUIRE_LANES != 0 )); then
       "$COMMANDS_JSONL"
   )"
   if (( ${#SKIPPED_LANES[@]} > 0 )); then
-    echo "promised certification lanes were skipped (missing required inputs):" >&2
+    echo "required qualification lanes were skipped (missing required inputs):" >&2
     printf '  %s\n' "${SKIPPED_LANES[@]}" >&2
     exit 1
   fi

@@ -1,6 +1,6 @@
 # Skippy continuous integration
 
-`ci.yml` reports `CI` for code checks and inference PR package smoke, and
+`ci.yml` reports `CI` for automation, code checks and selected PR/main package smoke, and
 `Full CI gate` for the complete package roster and Graph Contracts. Release callers
 require the full workflow result independently
 of the check name. The single required status is `PR checks`, the
@@ -21,34 +21,76 @@ matching producers keep it pending even before GitHub schedules their runs.
 New PR producers must also be added to the `workflow_run` trigger list so their
 reruns re-evaluate the aggregate.
 
+The same required status validates the live PR description's
+`## Acceptance criteria` section. It requires exactly one nonempty checklist,
+all standard criteria from the protected-main PR template, and every task in
+that section to be checked (`[x]` or `[X]`). Removing a standard criterion does
+not satisfy it. Comments, fenced examples, blockquotes, and indented code do not
+supply criteria. Additional tasks, including nested tasks, must be complete.
+Failures identify the missing or incomplete criterion in the status and log.
+PR description edits trigger a new evaluation, and the controller re-reads the
+live description before publishing success. These are contributor declarations;
+passing checkboxes do not establish test results or replace CI and review.
+This gate takes effect once the controller reaches `main`, and then applies
+to existing open PRs at their next evaluation as well as new PRs.
+
 The controller reports pending and exits while producers work; it does not
 hold a hosted runner open waiting for native hardware. Repository `GITHUB_TOKEN`
 status updates cannot recursively trigger the controller.
 
-`ci.yml` uses native paths to start on code or inference PRs and on code pushes
-to `main`. Its protected `pull_request_target` path admits same-repository PRs
-from repository collaborators against any base branch; fork PRs stay on the
-isolated `pull_request` path. Once a PR run starts, a pinned `dorny/paths-filter`
-action reads `.github/path-filters.yml` to choose code and package jobs independently. It uses
-`some-with-excludes`, so a changed file must match an inclusion and no exclusion.
-Mixed PRs run every applicable check group.
-These are file-level rules. Inline tests in production files, shared Cargo
-manifests/lockfiles, and any `Justfile` edit still count as changes to those files.
-Separate test files/directories and standalone tools are excluded from GPU
-qualification; `.gi/templates.yaml` is exact and `.gi/agents/**` is excluded.
+`ci.yml` uses native paths to start on automation, code, package or qualification
+inputs on PRs and pushes to `main`. Its protected `pull_request_target` path
+admits same-repository PRs from repository collaborators against any base
+branch; fork PRs stay on the isolated `pull_request` path. A pinned
+`dorny/paths-filter` action reads `.github/path-filters.yml` from the PR base
+commit using `some-with-excludes`: each changed file must match an inclusion
+and no exclusion. The routes are independent; mixed PRs run all applicable work.
 
-Code paths select Quality canary, which runs CI automation tests before
-formatting, Clippy, FFI, and Rust and C++ tests. CI reads PR path rules from the
-base commit. PRs matching the inference filter also require Linux x64 CUDA 13 and
-macOS ARM64 Metal packages to build and serve a short inference request on real
-hardware. Both jobs wait for Quality canary when code checks apply. Docs-only
-and metadata-only PRs do not start CI. The CI result gate rejects missing,
-failed or unexpectedly skipped results.
+| Route | Selected work |
+| --- | --- |
+| `automation` | Hosted offline Python, Node and shell contracts, including report/publication tests. No Rust setup, native source, compiler image or model inputs. |
+| `code` | Quality canary: formatting, Clippy, FFI, Rust and C++ tests, after automation passes. |
+| `packages` | Linux ARM64 CUDA 13 and macOS ARM64 Metal builds and packaged inference on real devices, after automation and any applicable source checks pass. |
+| `inference` | The separate qualification workflow, using its native trigger list and the existing manual PR policy. |
 
-The protected inference workflow uses native `pull_request_target` path filters
-for the same inference inputs. PR qualification is manual: it runs only when
-the PR carries the `qualify` label, and the workflow still triggers on path
-matches so the intentionally skipped run satisfies the `PR checks` aggregate.
+On PRs, runtime source and package/build/smoke inputs select device package smoke.
+Qualification planning, dispatch, scoring, baselines and publication select
+qualification and offline automation without rebuilding packages. Renderers,
+charts, workflow controllers and standalone automation tests select only offline
+automation. Unknown scripts retain conservative code checks. Separate Rust
+source test files select code checks without device smoke. Docs-only and
+metadata-only PRs do not start CI. The gate requires successful selected jobs
+and rejects missing, failed, cancelled or unexpectedly skipped results.
+
+These are file-level rules: inline tests in production files, shared Cargo
+manifests/lockfiles, and any root `Justfile` edit remain build inputs. Reporting
+and offline automation recipes live in the imported `ci/automation.just`;
+editing those recipes selects only automation. Public Just command names are
+unchanged. Keep new automation recipes there instead of editing the root file.
+`.gi/templates.yaml` selects qualification, while `.gi/agents/**` is excluded.
+
+PR routing changes take effect after the filters reach the PR's base commit.
+Main pushes keep conservative source checks with the short CI profile, including
+when the latest push changes only automation. Inference, packaging or native
+changes select the same ARM64 CUDA 13 and Metal device smokes on the exact
+merged SHA; native changes additionally select Graph Contracts. Main-only
+`packaging` and `native` filters extend the PR package route without changing PR
+admission. Main still treats qualification execution/configuration as smoke
+inputs; the narrower package route applies to PRs.
+
+Main compares against the most recent verified successful ancestor main-push
+CI run, including changes from failed runs and pending runs replaced by
+concurrency coalescing. If prior coverage cannot be verified, require both
+device smokes and Graph Contracts. The gate rejects missing, skipped, failed
+or cancelled selected jobs. Exact promoted-release receipt reuse avoids
+repeating validated work. Scheduled, manual and reusable full validation
+require all thirteen packages and Graph Contracts. Main merges do not start the
+separate Spark qualification ladder.
+
+The protected inference workflow has its own qualification paths, separate from
+package smoke. PR qualification is manual: it runs only when the PR carries the
+`qualify` label. The workflow still triggers on matching paths so its intentional
+skip satisfies the `PR checks` aggregate. The label does not control package smoke.
 Manual qualification may queue behind another PR's atomic Spark pair; the PR
 budget waits for placement instead of failing fast. Relevant PRs retain
 same-repository/collaborator admission, a fresh-head check and all seven GPU
@@ -99,46 +141,41 @@ credentials stay in their existing systems.
 Scheduled, manual and reusable full/candidate validation bypass path selection.
 Tagged releases and manual llama upgrades retain their explicit triggers. The
 `CI images` workflow retains its native paths for its workflow,
-`ci/Dockerfile*`, `ci/targets.json`, `rust-toolchain.toml` and `Justfile`.
+`ci/Dockerfile*`, `ci/targets.json`, `scripts/ci-preserve-cuda-license.sh`,
+`rust-toolchain.toml` and `ci/images.just`.
 Protected inference and aggregate workflow changes take effect after they
 reach `main`.
 Nightly, reusable candidate validation and tagged releases use the full profile.
 Manual dispatch from protected main defaults to full. Both nightly workflows run
 at 14:00 UTC. Release validation uses the complete CUDA architecture lists from
 `targets.json`. Full runs may instead use the assigned GPU's native architecture
-for the Linux x64 CUDA 13 device job. Compiler-only CUDA builds always use the
+for the Linux ARM64 CUDA 13 device job. Compiler-only CUDA builds always use the
 manifest architecture lists. The only source override is the immutable bundle
 produced by the protected-main llama upgrade workflow.
 
-`targets.json` defines four hosts and thirteen active runtimes. After the quality
-and automation canary, each hosted CPU job produces one shared CLI for its
-platform. Each backend job uses the CLI from its matching CPU job. Linux x64
-builds the shared CLI on Ubuntu 24.04 for compatibility with the GPU toolchain
-images.
-
-Full CI and tagged releases build and verify the Windows x64 CPU, CUDA 12,
-CUDA 13, and ROCm 7.2.0 archives on `windows-2022` and the Linux x64 ROCm
-archive in the published ROCm compiler image. These five targets have
-`validation: artifact` in `targets.json`. Their checks cover archive integrity,
-native binary imports and CLI startup. Inference qualification is pending for
-these targets. Windows CUDA jobs provision the toolkit from NVIDIA's versioned,
-checksum-verified component archives; the Windows ROCm job silently installs
-the checksum-verified HIP SDK installer
-`AMD-Software-PRO-Edition-26.Q3-Win11-For-HIP.exe` and verifies its compilers,
-import libraries, and rocBLAS/hipBLASLt kernels before building. Windows runs
-on the Server 2022 image deliberately: the HIP SDK's clang 21 cannot compile
-HIP sources against the VS 2026 image's MSVC 14.52 `cmath` (device math
-overloads collide), while the Server 2022 image's MSVC 14.44 toolset compiles
-cleanly.
-Windows users need the Microsoft Visual C++ x64 Redistributable and, for CUDA,
-a compatible NVIDIA driver. Linux ROCm users need a matching ROCm runtime with
-its libraries visible to the system loader.
-
-Linux x64 CUDA 12 and Linux ARM64 CUDA 12 and 13 run on the selected Ubuntu
-runners in the corresponding compiler images. Tagged releases run device smoke on those
-exact archives. Linux x64 CUDA 13 and macOS Metal run device smoke on ephemeral
-JY runners. JY hardware jobs declare literal runner groups and labels. The full
+`targets.json` defines four hosts and thirteen active runtimes. After the
+automation checks and Quality canary, each CPU job builds and verifies its
+runtime and the shared CLI for that platform. Linux x64 builds its shared CLI
+on Ubuntu 24.04 for compatibility with the compiler images. Each backend
+job waits for its matching CPU job. Linux x64 CUDA 12 and 13 and Linux ARM64
+CUDA 12 run on Ubuntu in the corresponding compiler images and check the
+packaged CLI and runtime artifact without a device. Linux ARM64 CUDA 13 and
+macOS Metal run device smoke on ephemeral JY runners. Tagged
+releases add device smoke for the other three CUDA packages using their exact
+archives. JY hardware jobs declare literal runner groups and labels. The routine
+CUDA device job uses the existing ARM64 CUDA 13 runner group to use the larger
+Spark pool; x64 CUDA 13 device coverage remains required for releases. The full
 CI gate matches all package jobs to the plan and checks required device results.
+
+Full CI and releases also require archive checks for Windows x64 CPU, CUDA 12,
+CUDA 13 and ROCm 7.2.0, and Linux x64 ROCm 7.2.4. The Windows jobs use
+`windows-2022` for the pinned HIP SDK and compatible MSVC toolset. CUDA
+components and the HIP SDK are downloaded from checksum-pinned inputs. The
+Linux ROCm job uses the published compiler image resolved to a digest.
+Windows users need the Microsoft Visual C++ x64 Redistributable and, for CUDA,
+a compatible NVIDIA driver. Linux ROCm users need a matching ROCm runtime
+visible to the system loader. Inference qualification is pending for these
+five variants.
 
 ### Depot runners
 
@@ -146,11 +183,10 @@ The repository Actions variable `SKIPPY_DEPOT_RUNNERS_ENABLED=true` selects
 Depot for Linux and macOS jobs that otherwise use GitHub-hosted runners.
 This includes PR validation and its aggregate, code and package CI, compiler images and
 publishing, documentation and deployment, release validation and publication,
-the inference controllers, and llama upgrade preparation and publication.
-Windows package jobs retain GitHub-hosted `windows-2022`
-for the pinned HIP SDK and MSVC toolchain. Most
+the inference controllers, and llama upgrade publication. Most
 Linux jobs use four-core Ubuntu 24.04 runners of the existing architecture.
-Graph Contracts and llama upgrade preparation use eight-core x64 runners. The
+Graph Contracts uses eight-core x64 runners. Llama upgrade preparation and repair
+use the JY native-contracts pool on Linux x64 or ARM64. The
 macOS CPU package uses Depot's macOS 15 ARM64 runner. Device jobs use their
 specified JY groups. Clearing the variable or setting it to `false` restores
 GitHub-hosted placement and direct PR workflow routing for subsequent runs.
@@ -174,7 +210,9 @@ With Depot enabled, `ci-pr.yml`, `ci-images-pr.yml`, and `docs-pr.yml` retain
 GitHub's ordinary PR triggers and call their runner-owning workflows from
 protected `main` without forwarding secrets. The image dispatcher enters
 through `ci.yml`, which calls the read-only image builders at its protected
-revision. The same builders supply exact artifacts for the image publishers.
+revision. The read-only builders smoke images without exporting archives. Protected-main
+publishers build, smoke, verify and push on one runner, using the same recipes
+and the validated compiler image matrix.
 The CI dispatcher requests `cache-mode: read` for the Actions cache. The image
 and docs dispatchers request `cache-mode: none`. All retain GitHub's fork-run
 approval policy.
@@ -221,10 +259,10 @@ build-essential, mold and LLVM/Clang 22 development inputs. The job verifies
 its tools and pulls the private image with its own `GITHUB_TOKEN` using
 `packages: read`.
 
-Cargo and CMake compilation use two workers to fit standard private-repository
-hosted capacity. Cargo build snapshots and
-sccache include `/etc/skippy-ci-image-id`, so updates to `latest` use a new
-compiled-output namespace. Cargo downloads use separate container cache scopes
+Cargo and CMake compilation use two workers on standard private-repository
+hosted runners. The plan pins compiler image tags to digests. Cargo snapshots
+use the selected digest, and sccache uses `/etc/skippy-ci-image-id` to identify
+the compiler image. Cargo downloads use separate container cache scopes
 to avoid restoring archives made with hosted-VM home/workspace paths. Native
 source caches remain shared. Protected candidate admission precedes build-cache
 restoration and compiler-cache credential export.
@@ -285,14 +323,11 @@ with a fresh `/github/home` mount, as used by GitHub container jobs.
 
 The `.github/workflows/ci-images.yml` workflow is named `CI images` and builds
 and tests relevant PRs. Main pushes and manual main dispatches publish the exact
-tested CPU and GPU images in separate jobs with package-write permission. Each
-publisher verifies its tested artifact and metadata, then pushes immutable build
-tags and `latest` without rebuilding or running the image. Run manual refreshes
+tested CPU and GPU images from the runner that built and smoked each image.
+The publisher verifies image metadata before pushing the build and latest tags. Run manual refreshes
 with `gh workflow run ci-images.yml --ref main` after the workflow lands.
 
-This PR only bootstraps the image; consumer adoption follows after publication.
-Future consumers use `latest` and include `/etc/skippy-ci-image-id` in build-cache
-keys. Private same-repository pulls use `GITHUB_TOKEN` with `packages: read`.
+Container jobs pull the compiler image by its planned digest. Private same-repository pulls use `GITHUB_TOKEN` with `packages: read`.
 
 ### CUDA and ROCm compiler images
 
@@ -305,12 +340,15 @@ each hosted runner only needs space for one toolkit. Both CUDA toolkits build
 on native x86_64 and ARM64 Ubuntu runners.
 Use `skippy-ci-cuda12:latest-arm64` and `skippy-ci-cuda13:latest-arm64` for
 Linux ARM64. The `latest` tags serve Linux x86_64. ROCm builds for Linux x86_64.
+Before pruning documentation, CUDA images retain the supplied toolkit's EULA
+or matching `cuda-cudart` package copyright at `/usr/local/cuda/EULA.txt`.
+Image builds and smoke checks require this file so runtime packaging can copy
+the original redistribution terms into `licenses/NVIDIA-CUDA-LICENSE.txt`.
 The images include Rust and native build tools and compile a small
-backend-specific kernel during the image build. PRs build,
-smoke, and stream each exact image into a gzip-compressed archive without
-publication credentials. Protected-main publication loads those same
-artifacts, checks their image IDs, platforms, source revisions, backend and
-toolkit labels, then pushes immutable build tags and the corresponding latest
+backend-specific kernel during the image build. PRs build and smoke each image without exporting archives or receiving
+publication credentials. Protected-main publication builds and smokes each
+image on its publishing runner, checks its platform, source revision, backend
+and toolkit labels, then pushes immutable build tags and the corresponding latest
 tags. ARM64 build tags also end in `-arm64`.
 
 The kernel compiler probes and container smoke establish compiler/toolkit image
@@ -426,33 +464,28 @@ artifact smoke is recorded separately from inference evidence.
 ## Artifact flow
 
 `just ci-plan` validates the target matrix with `jq`. The package and
-smoke commands use Python 3.9 or later. The PR plan includes the eight
-inference-validated runtimes; the five archive-only targets appear only in the
-full plan. Both profiles validate the complete source manifest before selecting
-their roster. Release inventory uses Python
-3.11 or later for TOML parsing. Set `SKIPPY_PYTHON` to select the interpreter.
+smoke commands use Python 3.9 or later. Release inventory uses Python
+3.11 or later for TOML parsing. With uv installed, Justfile recipes run Python
+on the interpreter `.python-version` names. Set `SKIPPY_PYTHON` to select
+another. The shell scripts read it too. Both profiles validate the full
+manifest. The short plan includes the eight inference-validated runtime rows,
+and the full plan adds the five archive-only rows.
 
 1. Each platform's CPU job builds and verifies its CLI once using
    `just ci-host`. Inference PR jobs build their two CLIs locally because they
    do not run the CPU package jobs.
-2. Each selected job calls `just ci-runtime` for its variant, retaining a
-   source-bound runtime directory with a verified file receipt. It sets
-   `SKIPPY_NATIVE_RUNTIME_ARCHIVE=0` to skip the native producer's standalone
-   archive too; ordinary `just release-runtime-build` keeps archiving by default.
-   `just ci-package`
-   combines it with the shared CLI archive and compresses the final product once.
-   Startup and inference checks run against the extracted final archive, and the
-   job uploads that archive with its evidence.
-3. Release-only device jobs download the three Linux CUDA archives built on
-   compiler-only runners, run inference smoke, and upload the same archives with
-   device evidence under `release-product-*`. Windows and ROCm already upload
-   their final archives with SHA-256-bound artifact smoke evidence. The publisher
-   requires all thirteen variants and the evidence declared by each target. The
-   release notes identify the targets with pending inference qualification.
-4. Release verification prepares the complete release directory once and
-   transfers those exact assets to the publisher. The publisher verifies their
-   hashes and catalog against the independent candidate receipt before promotion;
-   it does not unpack the products or reconstruct the inventory again.
+2. Each selected job calls `just ci-runtime` to retain the source-bound
+   runtime directory and file receipt. `just ci-package` combines it with the
+   shared CLI and compresses the final product. Smoke runs against the extracted
+   archive. Standalone `just release-runtime-build` still archives by default.
+3. Release-only device jobs download the exact compiler-only CUDA archives,
+   run inference, and upload `release-device-evidence-*`. Release verification
+   checks each result against the SHA-256 of the corresponding product archive.
+   The five Windows and ROCm variants supply archive smoke evidence.
+4. Release verification prepares the complete asset directory once. The publisher
+   checks its roster, hashes, and catalog against the separately transferred
+   candidate receipt before promotion. Release notes identify the five variants
+   awaiting inference qualification.
 5. The hosted CI gate reads the dependency results and the validated plan
    without checkout or Rust setup. Required work must pass and unselected work
    must report a skip.
@@ -503,47 +536,130 @@ theirs for retry and diagnosis.
 
 ## Llama upgrades
 
-`llama-upgrade.yml` runs from protected main. The controller resolves a release
-or explicit immutable upstream SHA and exports a digest-bound Git bundle. It
-uses the x64 CPU toolchain image and a checksum-verified GitHub CLI on the
-selected Ubuntu runner. Both CI passes and both family passes restore the same
-candidate. The CPU, Metal and CUDA family jobs consume immutable offline model
-caches and retain per-pass evidence. They receive no GitHub write credential.
+Issue [#12](https://github.com/Mesh-LLM/skippy/issues/12) tracks the simplified
+upgrade pipeline. `llama-upgrade.yml` runs from protected main. It resolves an
+immutable upstream SHA, prepares a digest-bound candidate bundle and calls
+existing full CI once. That includes the native graph contracts, small synthetic
+execution tests and existing package/device smoke. No additional real-model
+inference, CPU family sweep, CUDA split battery or Spark dispatch runs inside
+the upgrade workflow. The four established inference models retain their
+separate PR/manual/nightly/release policy in `inference.yml`.
 
-Candidate preparation can be rehearsed before merge from a clean local PR
-checkout, with the native build prerequisites above and
-`SKIPPY_REWRITER_LLVM_PREFIX` set:
+The successful path has one full CI pass. A failed candidate may receive one
+agent repair followed by full CI on a fresh candidate. Preparation and repair
+run directly on the native JY Linux runner in group
+`jy-rnr_vfnz8k5p4yrh334` with labels `self-hosted`, `jy-linux-docker` and `Linux`.
+The JY selection uses the Fleet-managed Linux container, whose baseline includes
+GitHub CLI, Goose and LLVM/Clang 22. Fleet containers publish standard Linux
+container labels; the selection's custom labels apply to its native listener.
+Both Linux x64 and ARM64 machines can prepare CPU
+candidates; compiler caches remain architecture-scoped. An x64-only selector
+can leave preparation queued while the pool's ARM64 machines are idle.
+Goose and its provider authentication come from that runner. These
+jobs do not use the hosted CPU container, which would hide the runner
+installation. Just remains pinned; GitHub CLI is checked with `gh --version`
+and used directly from the managed image. Native prerequisites include
+LLVM/Clang 22 under `/usr/lib/llvm-22`. A preflight checks the repair executable
+and native tools before preparation. The schedule stays disabled until
+unchanged-pin and changed-pin
+acceptance pilots demonstrate preparation, repair, full CI and exact-source PR
+publication. Use `force_check=true` to check the unchanged pin without opening
+an upgrade PR; the previous `force_certify` and `suite` inputs are removed.
+
+### Graph coverage
+
+`model-fixtures.json` remains an input to existing synthetic graph contracts and
+the normal small-model smoke. It grants no family support designation and no
+longer drives a real-model upgrade battery. The graph checker validates every
+registered architecture, trunk depth, activation width, MTP count and test mode
+against the executable native CTest definitions. Missing, duplicate and stale
+cases fail. Supplemental GLM cases must include both fixture generation and an
+executable graph check.
+
+`graph-coverage.json` configures special modes and supplemental source mappings
+for existing regression tests. It contains no architecture coverage baseline or
+allowlist. The checker reads the current upstream model factory and rewriter
+report and records uncovered architectures and decoder builders. Upgrade
+preparation also records changed uncovered builders. All of these gaps are
+informational, including newly introduced architectures: missing a synthetic case
+alone does not fail an upgrade or invoke repair. CI logs summarize gap counts,
+and the retained report lists the names.
+
+Existing graph-contract regressions, malformed integration reports, patch/rewrite
+failures and compilation failures still block the upgrade and feed bounded
+repair. Add synthetic cases for distinct split mechanisms and concrete
+regressions as needed, rather than requiring a fixture for every upstream
+addition. Cases require no real model download; a passing default shape does
+not establish coverage of every metadata-dependent variant.
+
+The graph check runs during preparation and `just llama-check`. Its report is
+retained in CI artifacts, and preparation failures retain their graph report
+alongside patch diagnostics. Ordinary offline automation tests reconstruct the
+actual CTest table from the ordered core/model-support patches and validate the
+registry without building llama.cpp or loading weights. Small synthetic numerical
+tests remain in the native suite; they exercise execution and state behavior
+that structural graph checks cannot prove.
+
+These checks do not establish a measured 90% split success rate or universal
+numerical correctness across upstream models, quantizations and backends.
+
+### Preparation, repair and publication
+
+Candidate preparation can be rehearsed from a clean checkout with the native
+prerequisites and `SKIPPY_REWRITER_LLVM_PREFIX` set.
 
 ```sh
-just automation-run upgrade resolve --upstream FULL_UPSTREAM_SHA --force-certify false
+just automation-run upgrade resolve --upstream FULL_UPSTREAM_SHA --force-check false
 just automation-run upgrade prepare FULL_UPSTREAM_SHA
 ```
 
-These commands do not push, merge, tag or publish. Preparation writes a candidate
-bundle only after regeneration and full patch replay succeed. It does not run
-family qualification. Core/model-support conflicts require a reviewed repair,
-not a wider automatic-update allowlist. Failed native preparation retains Git
-status, the source diff and the active failed patch (when available) under
-`target/llama-upgrade/diagnostics` before removing its temporary checkout; the
-workflow uploads that directory on failure. Local preparation does not bypass
-the protected-main admission checks for the full Actions pipeline.
+Before changing revisions, preparation replays the protected current pin and
+its ordered patch queue into the disposable native Git repository. Later patches
+can reference file versions produced by earlier patches; a cold upstream clone
+does not contain those intermediate merge bases. Seeding them makes three-way
+replay possible. It does not resolve genuine upstream source conflicts or change
+the selected target pin. An unchanged-pin rehearsal needs no seeding.
+
+Preparation regenerates bindings and documentation and updates the portable
+native source-recipe identity used by embedding consumers. Split planning uses
+actual stage graphs, required tensors, activation boundaries and backend
+compatibility. There is no family certification or experimental bypass.
+
+On the JY workflow jobs, the default repair command is
+`goose run --no-session --with-builtin developer --text`, with the diagnostic
+prompt appended as one argument. `GOOSE_MODE=auto` keeps repair noninteractive and session naming is disabled. The JY runner must
+already provide Goose and its provider authentication. A repository variable
+`SKIPPY_UPGRADE_REPAIR_COMMAND` may override the command with a JSON argv array.
+The preflight verifies the selected executable without opening an agent session.
+Build, generation and repair subprocesses inherit the job environment, including
+Goose configuration, JY's job-scoped `JIANYANG_GATEWAY_TOKEN`, GitHub Actions
+command-file paths and the `ACTIONS_RUNTIME_TOKEN` used by sccache. Explicit
+per-command overrides take precedence. Credentials are scoped by workflow jobs;
+publication credentials are supplied only to the publisher. The packaged CLI
+startup check explicitly clears library-loader overrides to verify that the
+package works without host library paths.
+
+The agent subprocess has an 11h30 limit (41,400 seconds), and both preparation
+and repair jobs have a 23h50 limit (1,430 minutes). These match
+[Mesh's upgrade budgets](https://github.com/Mesh-LLM/mesh-llm/blob/5be31fba855d3c9724ddc24a62f181036149338d/.github/workflows/llama-canary-family-pass.yml#L164).
+The job deadline includes setup, regeneration and candidate export. Mesh also
+allocates a separate 12-hour verification window inside its build job; Skippy
+runs full CI in separate jobs after the candidate is frozen.
+
+Preparation can make one repair attempt when native regeneration fails. After a full CI failure, the controller collects
+failed job logs and CI artifacts, repairs the disposable candidate, and reruns
+the complete gate. Native patch queues, bindings and generated API documentation
+may change. Policy, workflow, fixture selection, upstream pin and commit-history
+changes by the agent are rejected. An unavailable agent or exhausted attempt
+fails the upgrade. An initial failed CI attempt remains visible as a failure in
+Actions even when the repaired candidate later passes and opens a PR.
 
 Only the publisher uses `SKIPPY_UPGRADE_APP_ID` and
-`SKIPPY_UPGRADE_APP_PRIVATE_KEY`, with repository-scoped Contents and Pull
-requests write permissions. It pushes only the verified candidate and opens a
-normal PR; it does not merge, tag or release. App authentication ensures the PR
-starts ordinary CI.
-
-The daily cron is intentionally disabled until the unchanged-pin and real
-changed-pin acceptance runs succeed. The controller/family migration must be
-completed and validated before enabling it; the retained shell battery must not
-be treated as working merely because its script is present. Missing native
-commands, regeneration, family receipts or publisher admission are hard failures.
-
-The retained family manifest includes dense, MoE, Next, VL, VL MoE and TTS Qwen3
-fixtures, plus the broader supported family roster. Preserve declared
-profile-specific oracles and all pinned sidecars. The OCR image's legacy filename
-and label are fixture compatibility data, not a downstream product dependency.
+`SKIPPY_UPGRADE_APP_PRIVATE_KEY`. Its Contents and Pull requests write permissions
+are scoped to this repository. It verifies the immutable bundle's source and
+requires its candidate SHA to match the one selected by the successful initial
+or repaired full CI job before pushing and opening the PR. No staging refs,
+upgrade-specific JY profiles or live-model receipts are needed.
 
 ## Bring-up evidence
 
@@ -552,7 +668,7 @@ rejects a failed row. Then exercise a canary and a dispatched prerelease. Verify
 all enabled bundles, private authenticated downloads, clean installation and
 CPU/Metal/CUDA serving.
 Exercise partial draft upload recovery and published-release overwrite refusal.
-Only after source regeneration, both full candidate passes and exact-commit PR
-publication work should the llama schedule be enabled.
+Enable the llama schedule only after source regeneration, full candidate CI,
+bounded repair and exact-commit PR publication work in acceptance pilots.
 
 No hosted/hardware capacity or secret configuration is implied by these files.

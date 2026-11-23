@@ -196,16 +196,12 @@ limit for cleanup and evidence retention.
 
 ## Split admission
 
-PR smoke, nightly, and release split qualification pass
-`plan-split --allow-uncertified-split` and retain `split-admissions.json` from each
-member. `qualification.json` records the planner's actual `certified` or
-`uncertified_override` admission. All profiles require native stage/frontier
-admission, GPU offload, and deterministic scored responses. Nightly and release
-also require chain parity, state handoff, and both AgentX trials. The nightly
-report labels override measurements as experimental split. Default CLI
-planning requires the exact certified recipe. Admission unit tests use explicit
-fixtures and test rejection of stale upstream, patch digest, ABI and schema
-identities independently of that roster.
+All profiles use ordinary `plan-split` native admission. Both formation members
+retain `split-admissions.json`, containing the native stage descriptors and
+activation frontiers. `qualification.json` binds their canonical digest to the
+source, model, backend and mode. Missing or malformed native evidence fails
+qualification. Nightly also requires chain parity, state handoff and both AgentX
+trials. Qualification describes the exact configuration tested by that run.
 
 ## PR results comment
 
@@ -221,6 +217,18 @@ divided by total server-reported phase seconds, rather than an average of reques
 rates. Prefill counts prompt tokens minus cached tokens; decode counts generated
 tokens. These very short samples include startup/warmup effects and do not
 establish sustained throughput or a controlled speedup comparison.
+
+The comment also shows each phase's percentage change and main TPS against the
+latest successful `main` inference workflow run, with its run, attempt and commit
+linked. It reuses the matching PR-profile smoke artifacts, including those
+produced alongside nightly AgentX by the nightly publisher. This is distinct
+from the saved performance baseline in the public dataset, which can be older.
+Comparison requires unchanged harness/model/template inputs, matching serving
+host class and equal phase token counts. The reporter checks Git tree metadata
+without executing candidate code. AgentX receipts never substitute for smoke.
+Missing, expired or incompatible evidence shows `Unavailable`; it does not
+search older runs or change qualification verdicts. Physical machine placement
+and runtime conditions can differ, so these are descriptive smoke deltas.
 
 The protected controller retrieves `qualification.json` and `quality.json` from
 the successful native attempt and writes a numeric, per-configuration throughput

@@ -55,5 +55,9 @@ hardware/backend, and evidence. Label estimates explicitly.
 
 ## Acceptance criteria
 
+<!-- Required by PR checks: retain both standard criteria and check each only
+when satisfied. Additional criteria in this section must also be checked.
+Record validation evidence or explain why checks do not apply above. -->
+
 - [ ] I ran the relevant local checks, or explained why they do not apply.
 - [ ] I agree to license my contributions under the Apache License, Version 2.0.

@@ -18,9 +18,13 @@ Clippy limits. Extract separable responsibilities from oversized files.
 
 Keep `llama_cpp/upstream.txt` and the ordered core, model-support, and generated
 patch queues authoritative. ABI declarations, Rust bindings/version constants,
-generated documentation, and recipe-bound certification must remain consistent.
+generated documentation, and native source-recipe identities must remain consistent.
 Model-specific behavior belongs in model builders, not family-name branches in
 shared stage machinery. Keep stage parity, state handoff, and graph contracts.
+
+Read `.agents/skills/strong-types/SKILL.md` before giving a value in `crates/`
+a type in place of a sentinel or a bare count. `skippy_api/AGENTS.md` and
+`skippy_api/TYPE-RULES.md` hold the same rules for the C++ facade and the bridge.
 
 Read `.agents/skills/manage-ci/SKILL.md` before CI work. PR and main use the same
 CI implementation; tagged releases reuse it. Builds have no publication secrets.
@@ -42,6 +46,10 @@ Use `.github/PULL_REQUEST_TEMPLATE.md` for PR descriptions, including when
 creating a PR through an agent or CLI. Replace prompts with evidence from the
 final diff; do not submit an empty template or only a list of changed files.
 Keep descriptions current when the scope changes.
+The required `PR checks` gate rejects missing or incomplete acceptance criteria.
+Retain the template's standard criteria and check them only when satisfied;
+additional criteria in that section must also be complete. Editing the PR
+description re-evaluates the gate. Checkboxes do not replace CI or review.
 
 - Give the PR a clear title describing the resulting capability or fix. Lead
   the description with the original problem and what users or maintainers can

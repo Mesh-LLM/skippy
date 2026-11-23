@@ -24,6 +24,32 @@ def release_script():
     return module
 
 
+class SmokeEvidenceContract(unittest.TestCase):
+    def test_remote_smoke_binds_to_the_original_archive(self):
+        release = release_script()
+        variant = "linux-x86_64-cuda12"
+        source = "a" * 40
+        digest = "b" * 64
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            embedded = root / f"release-product-{variant}" / "evidence"
+            embedded.mkdir(parents=True)
+            report = {"source": source, "variant": variant, "backend": "cuda", "archive_sha256": digest}
+            release.artifacts.write_json(embedded / "smoke.json", report)
+            release.verify_smoke(root, variant, source, "cuda", digest)
+            (embedded / "artifact-smoke.json").touch()
+            with self.assertRaises(FileNotFoundError):
+                release.verify_smoke(root, variant, source, "cuda", digest)
+            detached = root / f"release-device-evidence-{variant}"
+            detached.mkdir()
+            release.artifacts.write_json(detached / "smoke.json", report)
+            release.verify_smoke(root, variant, source, "cuda", digest)
+            for key in report:
+                release.artifacts.write_json(detached / "smoke.json", {**report, key: "different"})
+                with self.assertRaises(ValueError):
+                    release.verify_smoke(root, variant, source, "cuda", digest)
+
+
 class RuntimeCatalogContract(unittest.TestCase):
     """The catalog a host downloads names each release archive exactly once."""
 

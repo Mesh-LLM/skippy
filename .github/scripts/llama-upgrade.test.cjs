@@ -9,7 +9,7 @@ const permissions = text => [...text.matchAll(/^    permissions:\n((?:      [\w-
   .flatMap(match => [...match[1].matchAll(/^      ([\w-]+): (\w+)$/gm)]
     .map(([, name, access]) => [name, access]));
 
-test('both llama upgrade CI calls grant the read permissions requested by reusable CI', () => {
+test('both reusable upgrade CI calls grant the read permissions requested by reusable CI', () => {
   // GitHub rejects the entire workflow before any job starts if a callee
   // requests a permission omitted from its caller's explicit permission map.
   const required = permissions(workflow('ci.yml'));
@@ -24,5 +24,47 @@ test('both llama upgrade CI calls grant the read permissions requested by reusab
       assert.equal(granted[name], access, `${job.split('\n')[0].trim()} lacks ${name}: ${access}`);
     }
     assert.ok(Object.values(granted).every(access => access === 'read'));
+  }
+});
+
+
+test('normal upgrades run once and repaired candidates get fresh qualification', () => {
+  const controller = workflow('llama-upgrade.yml');
+  assert.doesNotMatch(controller, /independent_ci:|independent_families:/);
+  assert.match(controller, /needs\.qualify\.result == 'failure'/);
+  assert.match(controller, /candidate_artifact: llama-repaired-candidate/);
+  assert.match(controller, /--repair-bundle target\/llama-repair\/candidate\/candidate.bundle/);
+  assert.match(controller, /needs\.requalify\.result == 'success'/);
+  assert.doesNotMatch(controller, /family-256g|upgrade certify|upgrade dgx|JIANYANG_INFERENCE_SSH_KEY|suite:/);
+  const callers = jobs(controller).filter(job => job.includes('uses: ./.github/workflows/ci.yml'));
+  assert.equal(callers.length, 2);
+  for (const job of callers) assert.match(job, /profile: full/);
+  assert.match(controller, /--validated-sha "\$VALIDATED_SHA"/);
+});
+
+test('candidate preparation and repair run with Goose on the native JY runner', () => {
+  const controller = workflow('llama-upgrade.yml');
+  for (const name of ['candidate', 'repair']) {
+    const job = jobs(controller).find(job => job.startsWith(`  ${name}:\n`));
+    assert.match(job, /group: jy-rnr_vfnz8k5p4yrh334/);
+    const requested = job.match(/labels: \[([^\]]+)\]/)[1].split(',').map(label => label.trim().toLowerCase());
+    assert.ok(requested.includes('jy-linux-docker'));
+    // The pool has both architectures. Requiring X64 stranded preparation
+    // while its only x64 machine served another pool and ARM64 hosts were idle.
+    for (const arch of ['X64', 'ARM64']) {
+      // Fleet Linux containers publish standard labels, not the pool's custom labels.
+      const available = new Set(['self-hosted', 'jy-linux-docker', 'Linux', arch]
+        .map(label => label.toLowerCase()));
+      assert.ok(requested.every(label => available.has(label)), `${name} excludes ${arch} JY capacity`);
+    }
+    assert.doesNotMatch(job, /depot-|ubuntu-24\.04|container:|\/etc\/skippy-ci-image-id/);
+    assert.match(job, /run: gh --version/);
+    assert.doesNotMatch(job, /install-gh|skippy-gh|gh_.*linux_amd64/);
+    assert.match(job, /GOOSE_MODE: auto/);
+    assert.match(job, /run: just automation-run upgrade runner-check/);
+    const fallback = job.match(/SKIPPY_UPGRADE_REPAIR_COMMAND: .*\|\| '([^']+)'/);
+    assert.deepEqual(JSON.parse(fallback[1]),
+      ['goose', 'run', '--no-session', '--with-builtin', 'developer', '--text']);
+    assert.doesNotMatch(job, /SKIPPY_UPGRADE_REPAIR_COMMAND: \$\{\{ vars\.SKIPPY_UPGRADE_REPAIR_COMMAND \}\}/);
   }
 });

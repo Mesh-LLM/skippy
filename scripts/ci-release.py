@@ -54,19 +54,6 @@ def validate(tag):
     return source
 
 
-def verify_package_evidence(directory, runtime, source, archive_digest):
-    variant, backend = runtime["id"], runtime["backend"]
-    artifact_only = runtime["validation"] == "artifact"
-    name = "artifact-smoke" if artifact_only else "smoke"
-    evidence = artifacts.read_json(directory / f"evidence/{name}.json")
-    if (
-        (evidence.get("source"), evidence.get("variant"), evidence.get("backend"))
-        != (source, variant, backend)
-        or (artifact_only and evidence.get("archive_sha256") != archive_digest)
-    ):
-        raise ValueError(f"missing or mismatched {name} evidence for {variant}")
-
-
 def prepare(tag, input_dir):
     inventory(tag, input_dir, validate(tag))
 
@@ -110,6 +97,20 @@ def verify_catalog(value, tag, archives):
         raise ValueError("runtime catalog does not match the release archives")
 
 
+def verify_smoke(input_dir, variant, source, backend, archive_sha256, *, artifact_only=False):
+    evidence_dir = input_dir / f"release-product-{variant}" / "evidence"
+    if not artifact_only and (evidence_dir / "artifact-smoke.json").is_file():
+        evidence_dir = input_dir / f"release-device-evidence-{variant}"
+    report = "artifact-smoke.json" if artifact_only else "smoke.json"
+    evidence = artifacts.read_json(evidence_dir / report)
+    if (evidence.get("source"), evidence.get("variant"), evidence.get("backend")) != (
+        source, variant, backend
+    ):
+        raise ValueError(f"missing or mismatched {report.removesuffix('.json')} evidence for {variant}")
+    if evidence.get("archive_sha256") != archive_sha256:
+        raise ValueError(f"smoke evidence does not match release archive for {variant}")
+
+
 def inventory(tag, input_dir, source):
     hosts, runtimes = targets()
     output = Path("dist/release")
@@ -133,7 +134,8 @@ def inventory(tag, input_dir, source):
             file = stage / f"skippy-{tag}-{variant}.tar.gz"
             shutil.copyfile(directory / f"skippy-{variant}.tar.gz", file)
             assets[file.name] = artifacts.digest(file)
-            verify_package_evidence(directory, runtime, source, assets[file.name])
+            verify_smoke(input_dir, variant, source, runtime["backend"], assets[file.name],
+                         artifact_only=runtime["validation"] == "artifact")
             artifacts.write_checksum(file)
             entries.append(catalog_entry(native["runtime"], tag, file.name, assets[file.name]))
         runtime_catalog = stage / CATALOG

@@ -11,19 +11,14 @@ from contextlib import contextmanager
 
 
 def environment(overrides=None):
-    result = {
-        key: value for key, value in os.environ.items()
-        if not any(word in key for word in ("TOKEN", "SECRET", "PASSWORD"))
-        and key not in {"GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_PATH", "GITHUB_STEP_SUMMARY",
-                        "JIANYANG_API_KEY", "JIANYANG_INFERENCE_SSH_KEY"}
-    }
+    result = os.environ.copy()
     result.update(overrides or {})
     return result
 
 
 def start(args, overrides=None, **streams):
-    clean_env = streams.pop("clean_env", True)
-    env = environment(overrides) if clean_env else overrides
+    inherit_env = streams.pop("inherit_env", True)
+    env = environment(overrides) if inherit_env else overrides
     if os.name == "nt":
         from .windows_job import JobProcess
         return JobProcess(args, env=env, **streams)
@@ -154,9 +149,9 @@ def captured(child, deadline, limit):
 
 
 def command(args, timeout=180, overrides=None, capture_stdout=False, cwd=None, *,
-            limit=16 * 1024 * 1024, raw=False, clean_env=True, stdout=None, stderr=None):
+            limit=16 * 1024 * 1024, raw=False, inherit_env=True, stdout=None, stderr=None):
     deadline = time.monotonic() + timeout
-    with start(args, overrides, cwd=cwd, clean_env=clean_env,
+    with start(args, overrides, cwd=cwd, inherit_env=inherit_env,
                stdout=subprocess.PIPE if capture_stdout else stdout, stderr=stderr) as child:
         try:
             output = captured(child, deadline, limit) if capture_stdout else None
