@@ -171,7 +171,6 @@ impl SplitOptions {
             upstream: (index == 1).then(|| peer(0)),
             downstream: (index == 0).then(|| peer(1)),
             admission,
-            max_request_tier: None,
         }
     }
 }
