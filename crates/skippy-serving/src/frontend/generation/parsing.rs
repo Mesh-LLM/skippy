@@ -241,7 +241,8 @@ pub(in crate::frontend) fn generation_response_from_generated_text(
             }],
             output.usage(),
             output.timings(),
-        );
+        )
+        .with_receipt(output.receipt.clone());
     }
 
     let mut response = GenerationResponse::new_with_reason(
@@ -250,7 +251,8 @@ pub(in crate::frontend) fn generation_response_from_generated_text(
         output.usage(),
         output.finish_reason,
     )
-    .with_timings(output.timings());
+    .with_timings(output.timings())
+    .with_receipt(output.receipt.clone());
     if let Some(choice) = response.choices.first_mut() {
         choice.logprobs = chat_logprobs(output);
     }
@@ -289,7 +291,8 @@ pub(in crate::frontend) fn completion_response_from_generated_text(
         output.usage(),
         output.finish_reason,
     )
-    .with_timings(output.timings());
+    .with_timings(output.timings())
+    .with_receipt(output.receipt.clone());
     if let Some(choice) = response.choices.first_mut() {
         choice.logprobs = completion_logprobs(output);
     }

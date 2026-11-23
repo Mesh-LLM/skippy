@@ -5324,6 +5324,7 @@ dependencies = [
  "anyhow",
  "clap",
  "dirs",
+ "hex",
  "reqwest 0.13.5",
  "serde",
  "serde_json",
@@ -5340,6 +5341,7 @@ dependencies = [
  "skippy-model-hf",
  "skippy-native-runtime",
  "skippy-protocol",
+ "skippy-receipt-audit",
  "skippy-runtime",
  "skippy-runtime-install",
  "skippy-serving",
@@ -5359,6 +5361,7 @@ dependencies = [
  "crossterm",
  "futures",
  "hex",
+ "rand 0.10.4",
  "ratatui",
  "reqwest 0.13.5",
  "rustyline",
@@ -5377,6 +5380,8 @@ dependencies = [
  "skippy-model-resolver",
  "skippy-package-format",
  "skippy-protocol",
+ "skippy-receipt-audit",
+ "skippy-receipts",
  "skippy-runtime-install",
  "skippy-topology",
  "tabwriter",
@@ -5514,6 +5519,7 @@ dependencies = [
  "base64 0.22.1",
  "futures-core",
  "futures-util",
+ "hex",
  "http-body",
  "http-body-util",
  "serde",
@@ -5702,6 +5708,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "skippy-receipt-audit"
+version = "0.80.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "rand 0.10.4",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "skippy-model-artifact",
+ "skippy-model-hf",
+ "skippy-model-ref",
+ "skippy-receipts",
+ "skippy-runtime",
+ "tempfile",
+]
+
+[[package]]
 name = "skippy-receipts"
 version = "0.80.0"
 dependencies = [
@@ -5783,9 +5808,13 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "blake3",
+ "ed25519-dalek",
  "futures-util",
+ "hex",
  "libc",
  "opentelemetry-proto",
+ "rand 0.10.4",
+ "reqwest 0.13.5",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -5798,6 +5827,7 @@ dependencies = [
  "skippy-model-artifact",
  "skippy-package-format",
  "skippy-protocol",
+ "skippy-receipts",
  "skippy-runtime",
  "skippy-scheduler",
  "skippy-tokenizer",

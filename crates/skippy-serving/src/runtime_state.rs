@@ -26,7 +26,9 @@ mod lane_lifecycle;
 pub mod lifecycle;
 pub(crate) mod model_content;
 pub mod panic_recovery;
+mod receipt_turns;
 mod resident_prefix;
+pub use receipt_turns::SessionTurn;
 mod restore_transaction;
 mod session_end_exports;
 mod state_transfer;
@@ -97,6 +99,10 @@ pub struct RuntimeState {
     /// Set while parked sessions' exports run, so their own runtime calls do
     /// not start completing the rest.
     completing_parked_session_ends: bool,
+    /// The turn each session computes, for receipts; see `receipt_turns`.
+    receipt_turns: receipt_turns::ReceiptTurns,
+    /// Verifiable inference receipts, when the operator turned them on.
+    receipts: Option<Arc<crate::receipts::StageReceipts>>,
     #[cfg(test)]
     modelless_for_test: bool,
     /// Lets modelless tests exercise a split DFlash final stage.
@@ -297,6 +303,8 @@ impl RuntimeState {
             session_end_kv_exports: BTreeMap::new(),
             parked_session_ends: Vec::new(),
             completing_parked_session_ends: false,
+            receipt_turns: receipt_turns::ReceiptTurns::default(),
+            receipts: None,
             session_resident_prefixes: BTreeMap::new(),
             session_lifecycle_observer: None,
             compute_meter: Arc::default(),
@@ -475,6 +483,8 @@ fn runtime_from_loaded_model(
         session_end_kv_exports: BTreeMap::new(),
         parked_session_ends: Vec::new(),
         completing_parked_session_ends: false,
+        receipt_turns: receipt_turns::ReceiptTurns::default(),
+        receipts: None,
         session_resident_prefixes: BTreeMap::new(),
         session_lifecycle_observer,
         compute_meter: Arc::default(),

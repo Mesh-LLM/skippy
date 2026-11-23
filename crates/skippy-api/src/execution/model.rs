@@ -204,6 +204,7 @@ pub(super) fn model_request(
             telemetry_queue_capacity: 0,
             telemetry_level: telemetry.level,
             session_lifecycle_observer: None,
+            receipts: None,
         },
         openai,
         open_events: ModelOpenEvents::Disabled,

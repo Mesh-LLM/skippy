@@ -45,6 +45,8 @@ pub fn family(command: &Command) -> &'static str {
         Command::Models { .. } => "models",
         Command::PlanSplit(_) => "plan_split",
         Command::Runtime { .. } => "runtime",
+        Command::AuditReceipt(_) => "audit_receipt",
+        Command::RecheckReceipt(_) => "recheck_receipt",
         Command::Analytics { .. } => "analytics",
     }
 }

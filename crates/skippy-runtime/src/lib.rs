@@ -40,6 +40,7 @@ pub use activation::{
     DecodeFrameBatchRequest, IterationBatchPhase, IterationBatchRequest, PartialBatchExecution,
 };
 pub use capability_probe::{CapabilityReport, probe_capabilities};
+pub use chat_sampling_metadata::chat_sampling_metadata_for_native;
 pub use clef::{ClefModel, ClefModelInfo};
 pub use config::{
     FlashAttentionType, GGML_TYPE_F16, GGML_TYPE_F32, GGML_TYPE_I32, GGML_TYPE_Q4_0,
@@ -75,7 +76,13 @@ pub use logging::{
 };
 pub use media::{MediaRejected, SpeechAudio, SpeechOutputFormat, SpeechSynthesisConfig};
 pub use native::{
-    ModelWorkload, PoolingType, StageModel, StageModelReader, SystemOneReadSlot, WorkloadInfo,
+    ModelWorkload, PoolingType, ReceiptAnchorRef, ReceiptAttention, ReceiptAttentionOp,
+    ReceiptAttentionWindow, ReceiptFlusher, ReceiptGlueInput, ReceiptGlueRequestRef,
+    ReceiptGlueResult, ReceiptGlueTensor, ReceiptGlueValues, ReceiptMemoryEvent,
+    ReceiptRecorderSink, ReceiptReplayScope, ReceiptReplayStepRef, ReceiptReplayer,
+    ReceiptStoredRows, ReceiptTensorView, ReceiptUbatchView, RecordedUbatch, StageIdle, StageModel,
+    StageModelReader, StoredRowError, SystemOneReadSlot, WorkloadInfo, receipt_runtime_source,
+    receipt_stored_row_error,
 };
 pub use native_mtp::NativeMtpDraft;
 pub use native_test_evidence::write_evidence_marker;
