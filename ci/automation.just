@@ -14,6 +14,7 @@ automation-contracts: inference-contracts
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_process_environment.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/automation_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_contracts.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_lifecycle.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/graph_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/release_contracts.py
 
@@ -27,3 +28,7 @@ ci-automation: automation-contracts inference-publication-test
 [positional-arguments]
 ci-automation-setup directory:
     @bash scripts/ci-automation-setup.sh "$@"
+
+# Explicit model-backed controller rehearsal; excluded from offline defaults.
+upgrade-goose-rehearsal:
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_goose_rehearsal.py

@@ -64,7 +64,7 @@ test('candidate preparation and repair run with Goose on the native JY runner', 
     assert.match(job, /run: just automation-run upgrade runner-check/);
     const fallback = job.match(/SKIPPY_UPGRADE_REPAIR_COMMAND: .*\|\| '([^']+)'/);
     assert.deepEqual(JSON.parse(fallback[1]),
-      ['goose', 'run', '--no-session', '--with-builtin', 'developer', '--text']);
+      ['goose', 'run', '--with-builtin', 'developer', '--text']);
     assert.doesNotMatch(job, /SKIPPY_UPGRADE_REPAIR_COMMAND: \$\{\{ vars\.SKIPPY_UPGRADE_REPAIR_COMMAND \}\}/);
   }
 });
