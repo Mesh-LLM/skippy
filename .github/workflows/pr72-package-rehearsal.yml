@@ -1,0 +1,274 @@
+name: PR 72 package rehearsal
+on:
+  push:
+    branches: [rehearsal/pr-72-213b993]
+permissions:
+  contents: read
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_PROFILE_RELEASE_DEBUG: '0'
+  CARGO_PROFILE_BENCH_DEBUG: '0'
+  SCCACHE_GHA_ENABLED: 'true'
+  SKIPPY_REQUIRE_SCCACHE: '1'
+  SKIPPY_CI_PROFILE: full
+  SKIPPY_CUDA_ARCHITECTURE_MODE: release
+  SKIPPY_CI_SOURCE_REF: 213b9930b1c4fa08c63b2d1b5debef1251df6c8a
+  SKIPPY_ARTIFACT_SCOPE: release
+jobs:
+  plan:
+    name: Admit exact PR head and resolve the ROCm compiler image
+    if: github.repository == 'Mesh-LLM/skippy' && github.ref == 'refs/heads/rehearsal/pr-72-213b993'
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      profile: ${{ steps.plan.outputs.profile }}
+      registry-owner: ${{ steps.image.outputs.owner }}
+      rocm_digest: ${{ steps.image.outputs.digest }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - name: Validate the production package matrix
+        id: plan
+        run: |
+          test "$(git rev-parse HEAD)" = "$SKIPPY_CI_SOURCE_REF"
+          just ci-plan | jq -e '.profile == "full" and (.runtimes.include | length == 13) and ([.runtimes.include[] | select(.validation == "artifact")] | length == 5)'
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Resolve published ROCm image to an immutable digest
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          manifest=$(docker buildx imagetools inspect "ghcr.io/$owner/skippy-ci-rocm:latest")
+          digest=$(awk '$1 == "Digest:" {print $2; exit}' <<< "$manifest")
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "ROCm image digest: $digest"
+  package_linux_x86_64_cpu:
+    name: Build CLI and verify bootstrap archive · Linux x64 CPU
+    needs: [plan]
+    if: needs.plan.outputs.profile == 'full'
+    # The shared CLI must also run in the Ubuntu 24.04 CUDA toolchain images.
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: linux-x86_64-cpu
+          host-id: linux-x86_64
+          build-cli: 'true'
+          setup-host: 'true'
+          smoke: artifact
+  package_linux_x86_64_rocm:
+    name: Build and verify archive · Linux x64 ROCm
+    needs: [plan, package_linux_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-rocm@${{ needs.plan.outputs.rocm_digest }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      CARGO_BUILD_JOBS: '2'
+      LD_LIBRARY_PATH: /opt/rocm/lib
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: linux-x86_64-rocm
+          host-id: linux-x86_64
+          smoke: artifact
+          containerized: 'true'
+          compiler-image-digest: ${{ needs.plan.outputs.rocm_digest }}
+  package_windows_x86_64_cpu:
+    name: Build and verify archive · Windows x64 CPU
+    needs: [plan]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-2022
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-cpu
+          host-id: windows-x86_64
+          build-cli: 'true'
+          setup-host: 'true'
+          smoke: artifact
+  package_windows_x86_64_cuda12:
+    name: Build and verify archive · Windows x64 CUDA 12
+    needs: [plan, package_windows_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-2022
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-cuda12
+          host-id: windows-x86_64
+          setup-host: 'true'
+          smoke: artifact
+          windows-cuda: '12.9.2'
+  package_windows_x86_64_cuda13:
+    name: Build and verify archive · Windows x64 CUDA 13
+    needs: [plan, package_windows_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-2022
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-cuda13
+          host-id: windows-x86_64
+          setup-host: 'true'
+          smoke: artifact
+          windows-cuda: '13.1.2'
+  package_windows_x86_64_rocm:
+    name: Build and verify archive · Windows x64 ROCm
+    needs: [plan, package_windows_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-2022
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-rocm
+          host-id: windows-x86_64
+          setup-host: 'true'
+          smoke: artifact
+          windows-rocm: '7.2.0'
+  prepare:
+    name: Prepare five real archives with production verification
+    needs: [package_linux_x86_64_rocm, package_windows_x86_64_cpu, package_windows_x86_64_cuda12, package_windows_x86_64_cuda13, package_windows_x86_64_rocm]
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: release-product-*
+          path: release-artifacts
+      - name: Verify and prepare the archive-only subset
+        shell: bash
+        run: |
+          PYTHONPATH=scripts python3 - <<'PYTHON'
+          import importlib.util
+          from pathlib import Path
+
+          spec = importlib.util.spec_from_file_location("ci_release", "scripts/ci-release.py")
+          release = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(release)
+          hosts, runtimes = release.targets()
+          archive_targets = {key: row for key, row in runtimes.items() if row["validation"] == "artifact"}
+          if len(archive_targets) != 5:
+              raise ValueError("expected the five archive-only targets")
+          release.targets = lambda: (hosts, archive_targets)
+          release.prepare_candidate("v" + release.workspace_version(), Path("release-artifacts"))
+          PYTHON
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: rehearsal-prepared-${{ env.SKIPPY_CI_SOURCE_REF }}
+          path: dist/release
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: rehearsal-receipt-${{ env.SKIPPY_CI_SOURCE_REF }}
+          path: dist/release/release.json
+          if-no-files-found: error
+          retention-days: 7
+  verify:
+    name: Download and verify exact assets against independent receipt
+    needs: prepare
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: rehearsal-prepared-${{ env.SKIPPY_CI_SOURCE_REF }}
+          path: dist/release
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: rehearsal-receipt-${{ env.SKIPPY_CI_SOURCE_REF }}
+          path: independent-receipt
+      - name: Check downloaded bytes, roster, source and catalog
+        shell: bash
+        run: |
+          PYTHONPATH=scripts python3 - <<'PYTHON'
+          import importlib.util
+          from pathlib import Path
+
+          spec = importlib.util.spec_from_file_location("ci_release", "scripts/ci-release.py")
+          release = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(release)
+          hosts, runtimes = release.targets()
+          archive_targets = {key: row for key, row in runtimes.items() if row["validation"] == "artifact"}
+          if len(archive_targets) != 5:
+              raise ValueError("expected the five archive-only targets")
+          release.targets = lambda: (hosts, archive_targets)
+          receipt = release.verify(Path("dist/release"))
+          print("Verified transferred archives:", ", ".join(receipt["variants"]))
+          PYTHON
+          cmp independent-receipt/release.json dist/release/release.json
