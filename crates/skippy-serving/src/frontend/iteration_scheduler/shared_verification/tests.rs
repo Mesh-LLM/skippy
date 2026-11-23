@@ -8,7 +8,10 @@ fn sharing_is_default_and_explicit_zero_retains_independent_verification() {
     assert!(!enabled_by(Some("0")));
 }
 
-fn operation(id: &str, width: usize) -> VerificationOperation {
+pub(in crate::frontend::iteration_scheduler) fn operation(
+    id: &str,
+    width: usize,
+) -> VerificationOperation {
     VerificationOperation {
         request: RuntimeVerificationRequest {
             session_id: id.to_string(),
@@ -114,7 +117,8 @@ fn runtime_mutation_is_a_barrier_after_queued_verification() {
     stale.complete = Box::new(move |_, _, _, _| sender.send("verify").unwrap());
     worker.verifications.push_back(stale);
     worker.handle_command(SchedulerCommand::ExecuteRuntime(RuntimeOperation {
-        label: "repair",
+        kind: RuntimeOperationKind::Mutation,
+        label: "dflash-propose",
         control: None,
         run: Box::new(move |_| {
             send.send("repair").unwrap();
@@ -151,6 +155,7 @@ fn repairs_on_other_lanes_do_not_flush_waiting_verification() {
     worker.handle_command(SchedulerCommand::ExecuteLaneRuntime(
         "b".to_string(),
         RuntimeOperation {
+            kind: RuntimeOperationKind::Mutation,
             label: "repair-b",
             control: None,
             run: Box::new(move |_| {
@@ -164,6 +169,7 @@ fn repairs_on_other_lanes_do_not_flush_waiting_verification() {
     worker.handle_command(SchedulerCommand::ExecuteLaneRuntime(
         "a".to_string(),
         RuntimeOperation {
+            kind: RuntimeOperationKind::Mutation,
             label: "repair-a",
             control: None,
             run: Box::new(move |_| {
@@ -176,4 +182,33 @@ fn repairs_on_other_lanes_do_not_flush_waiting_verification() {
         [receive.recv().unwrap(), receive.recv().unwrap()],
         ["verify-a", "repair-a"]
     );
+}
+
+#[test]
+fn drained_verification_queue_does_not_consume_the_next_command() {
+    let mut worker = worker();
+    let (send, receive) = std_mpsc::channel();
+    worker.commands = receive;
+    worker.active_runtime_sessions = 2;
+    worker.verifications.push_back(operation("stale", 4));
+    let (mutation, _result) = runtime_operation("drain", |_| Ok(()));
+    send.send(SchedulerCommand::ExecuteRuntime(mutation))
+        .unwrap();
+    send.send(SchedulerCommand::Shutdown).unwrap();
+    assert!(worker.coalesce_verifications());
+    assert!(worker.verifications.is_empty());
+    assert!(matches!(
+        worker.commands.try_recv(),
+        Ok(SchedulerCommand::Shutdown)
+    ));
+}
+
+#[test]
+fn draft_kind_does_not_depend_on_the_diagnostic_label() {
+    let mut worker = worker();
+    worker.verifications.push_back(operation("pending", 4));
+    let (mut draft, _result) = runtime_operation("renamed-diagnostic", |_| Ok(()));
+    draft.kind = RuntimeOperationKind::Draft;
+    worker.handle_command(SchedulerCommand::ExecuteRuntime(draft));
+    assert_eq!(worker.verifications.len(), 1);
 }

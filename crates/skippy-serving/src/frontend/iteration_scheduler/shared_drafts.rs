@@ -42,6 +42,23 @@ fn enabled_by(setting: Option<&str>) -> bool {
 }
 
 impl IterationScheduler {
+    /// Draft work never mutates target positions; express the barrier rule in
+    /// the operation kind, independently of its diagnostic label.
+    pub(crate) fn execute_independent_draft<T: Send + 'static>(
+        &self,
+        operation: impl FnOnce(&mut RuntimeState) -> InferenceResult<T> + Send + 'static,
+    ) -> InferenceResult<T> {
+        let (mut operation, result) = runtime_operation("dflash-propose", operation);
+        operation.kind = RuntimeOperationKind::Draft;
+        self.enqueue_command(SchedulerCommand::ExecuteRuntime(operation))?;
+        result
+            .recv()
+            .map_err(|error| {
+                InferenceError::backend(format!("iteration scheduler stopped: {error}"))
+            })?
+            .map(|outcome| outcome.value)
+    }
+
     pub(crate) fn execute_draft_timed(
         &self,
         request: RuntimeDraftRequest,
@@ -87,14 +104,28 @@ impl SchedulerWorker {
         if self.drafts.is_empty() {
             return true;
         }
-        let target = self.active_runtime_sessions.min(self.max_direct_batch_size);
-        let mut idle_budget = Duration::from_micros(300);
+        let Gather { target, window } = self.batch_policy.gather_speculative(
+            self.active_runtime_sessions,
+            self.drafts.len(),
+            self.max_direct_batch_size,
+        );
+        let mut idle_budget = window;
         for _ in 0..self.max_commands_per_turn {
-            if self.drafts.is_empty() || self.drafts.len() >= target || idle_budget.is_zero() {
+            if self.drafts.is_empty()
+                || !self.verifications.is_empty()
+                || self.drafts.len() >= target
+                || idle_budget.is_zero()
+            {
                 break;
             }
             let started = Instant::now();
+            let span = ActiveSpan::start(
+                self.telemetry.as_ref(),
+                "stage.scheduler_drafts_coalesce",
+                SpanLevel::Debug,
+            );
             let received = self.commands.recv_timeout(idle_budget);
+            span.end();
             idle_budget = idle_budget.saturating_sub(started.elapsed());
             match received {
                 Ok(SchedulerCommand::Shutdown) => {
