@@ -14,7 +14,7 @@ env:
   SKIPPY_REQUIRE_SCCACHE: '1'
   SKIPPY_CI_PROFILE: full
   SKIPPY_CUDA_ARCHITECTURE_MODE: release
-  SKIPPY_CI_SOURCE_REF: 08a478ee328b7fb93def604a1d82492529fad6c2
+  SKIPPY_CI_SOURCE_REF: e7f4fbae0c3b8bd208bb03d6b47613ff758081a8
   SKIPPY_ARTIFACT_SCOPE: release
 jobs:
   plan:
@@ -53,9 +53,9 @@ jobs:
         run: |
           set -euo pipefail
           owner="${GITHUB_REPOSITORY_OWNER,,}"
-          manifest=$(docker buildx imagetools inspect "ghcr.io/$owner/skippy-ci-rocm:latest")
+          manifest=$(docker buildx imagetools inspect "ghcr.io/$owner/skippy-ci-rocm:build-45256471193-1")
           digest=$(awk '$1 == "Digest:" {print $2; exit}' <<< "$manifest")
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$digest" = sha256:afc90e5d65887e1fb5b7501105cdd91fe530f42d73c3a538e13bf4fbf41f75bd
           echo "owner=$owner" >> "$GITHUB_OUTPUT"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
           echo "ROCm image digest: $digest"
