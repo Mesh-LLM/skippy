@@ -484,6 +484,12 @@ another. The shell scripts read it too. Both profiles validate the full
 manifest. The short plan includes the eight inference-validated runtime rows,
 and the full plan adds the five archive-only rows.
 
+When changing the full roster, land the workflow's package jobs and the
+manifest together. Protected PR CI uses the short profile. Before landing,
+rehearse the new archive jobs on hosted runners and check the proposed full
+gate against the candidate's plan. Full CI and release validation use the
+workflow and roster from the same protected revision.
+
 1. Each platform's CPU job builds and verifies its CLI once using
    `just ci-host`. Inference PR jobs build their two CLIs locally because they
    do not run the CPU package jobs.

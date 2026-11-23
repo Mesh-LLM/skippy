@@ -95,6 +95,14 @@ test('PR plans exclude full-only archive targets but still require both device p
   assert.equal(full.length, 13);
   assert.ok(pr.every(row => row.validation === 'inference'));
   assert.deepEqual(full.filter(row => row.validation !== 'artifact'), pr);
+  const release = results({ full: true, release: true });
+  release.plan.outputs.runtimes = JSON.stringify({ include: full });
+  assert.doesNotThrow(() => gate(release, true));
+  // An eight-package controller must reject a thirteen-package candidate.
+  for (const row of full.filter(row => row.validation === 'artifact')) {
+    delete release['package_' + row.id.replaceAll('-', '_')];
+  }
+  assert.throws(() => gate(release, true), /active runtime matrix/);
   const needs = results({ packages: true });
   assert.equal(JSON.parse(needs.plan.outputs.runtimes).include.length, 8);
   assert.doesNotThrow(() => gate(needs));
