@@ -273,6 +273,16 @@ compute_patch_digest() {
 
 PATCH_DIGEST="$(compute_patch_digest)"
 
+# Runtime identity files must never enter a repair commit via git add -A.
+exclude_file="$(git -C "$LLAMA_WORKDIR" rev-parse --git-path info/exclude)"
+if [[ "$exclude_file" != /* ]]; then
+  exclude_file="$LLAMA_WORKDIR/$exclude_file"
+fi
+mkdir -p "$(dirname "$exclude_file")"
+if ! grep -qxF '/.skippy-*' "$exclude_file" 2>/dev/null; then
+  printf '\n/.skippy-*\n' >> "$exclude_file"
+fi
+
 if [[ -f "$LLAMA_WORKDIR/.skippy-upstream-sha" &&
       -f "$LLAMA_WORKDIR/.skippy-patched-sha" &&
       -f "$LLAMA_WORKDIR/.skippy-patch-digest" &&
@@ -316,15 +326,6 @@ git -C "$LLAMA_WORKDIR" checkout --force --detach "$TARGET_SHA"
 git -C "$LLAMA_WORKDIR" reset --hard "$TARGET_SHA"
 git -C "$LLAMA_WORKDIR" clean -fdx
 
-# Runtime identity files must never enter a repair commit via git add -A.
-exclude_file="$(git -C "$LLAMA_WORKDIR" rev-parse --git-path info/exclude)"
-if [[ "$exclude_file" != /* ]]; then
-  exclude_file="$LLAMA_WORKDIR/$exclude_file"
-fi
-mkdir -p "$(dirname "$exclude_file")"
-if ! grep -qxF '/.skippy-*' "$exclude_file" 2>/dev/null; then
-  printf '\n/.skippy-*\n' >> "$exclude_file"
-fi
 printf '%s\n' "$TARGET_SHA" > "$LLAMA_WORKDIR/.skippy-upstream-sha"
 
 if (( ${#PATCHES[@]} > 0 )); then
