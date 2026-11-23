@@ -117,7 +117,7 @@ jobs:
         env:
           SOURCE_SHA: ${{ steps.admission.outputs.source }}
           PROFILE: ${{ steps.admission.outputs.profile }}
-          NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'Mesh-LLM/skippy' }}
+          NIGHTLY_PUBLICATION: ${{ steps.admission.outputs.profile == 'nightly' && github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'Mesh-LLM/skippy' }}
         run: |
           flags=()
           if [[ "$NIGHTLY_PUBLICATION" == true ]]; then flags+=(--include-smoke); fi
@@ -144,7 +144,7 @@ jobs:
           SOURCE_SHA: ${{ needs.plan.outputs.source }}
           PROFILE: ${{ matrix.profile }}
           CONFIGURATION: ${{ matrix.configuration }}
-          NIGHTLY_PUBLICATION: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'Mesh-LLM/skippy' }}
+          NIGHTLY_PUBLICATION: ${{ needs.plan.outputs.profile == 'nightly' && github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'Mesh-LLM/skippy' }}
           JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
         run: |
           flags=()
@@ -171,6 +171,7 @@ jobs:
     if: >-
       always() && !cancelled() && github.event_name == 'schedule' &&
       github.repository == 'Mesh-LLM/skippy' && github.ref == 'refs/heads/main' &&
+      needs.plan.outputs.profile == 'nightly' &&
       needs.plan.result == 'success'
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 20
@@ -219,19 +220,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ needs.plan.outputs.source || github.event.pull_request.head.sha || github.sha }}
+          PROFILE: ${{ needs.plan.outputs.profile }}
           PLAN: ${{ needs.plan.result }}
           RESULT: ${{ needs.qualification.result }}
           PUBLICATION: ${{ needs.nightly_publish.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |
-            const { SOURCE_SHA: sha, PLAN: plan, RESULT: result, PUBLICATION: publication, RUN_URL: url } = process.env;
+            const { SOURCE_SHA: sha, PROFILE: profile, PLAN: plan, RESULT: result, PUBLICATION: publication, RUN_URL: url } = process.env;
             if (!/^[a-f0-9]{40}$/i.test(sha)) throw new Error('Invalid qualification source SHA');
             // A skipped plan is an intentional opt-out: the PR carries no
             // qualify label, so no Spark pair was reserved. Report it green
             // instead of failing unlabeled PRs.
             const skipped = plan === 'skipped';
-            const nightly = context.eventName === 'schedule';
+            // A reusable call from a scheduled Release also inherits schedule.
+            const nightly = context.eventName === 'schedule' && profile === 'nightly';
             const passed = plan === 'success' && result === 'success' &&
               (!nightly || publication === 'success');
             const description = passed

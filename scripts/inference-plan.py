@@ -46,10 +46,10 @@ def output(**values):
 
 
 def admit_release_candidate(sha):
-    if (os.environ["GITHUB_EVENT_NAME"] != "workflow_dispatch"
+    if (os.environ["GITHUB_EVENT_NAME"] not in {"workflow_dispatch", "schedule"}
             or os.environ["GITHUB_REF"] != "refs/heads/main"
             or os.environ["GITHUB_WORKFLOW_REF"] != f"{REPO}/.github/workflows/release.yml@refs/heads/main"):
-        raise ValueError("release candidates require a protected Release dispatch")
+        raise ValueError("release candidates require a protected Release dispatch or schedule")
     run = os.environ["GITHUB_RUN_ID"]
     if not re.fullmatch(r"[1-9][0-9]*", run):
         raise ValueError("invalid release run ID")

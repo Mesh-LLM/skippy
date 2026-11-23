@@ -2,6 +2,7 @@
 
 inference-contracts:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_contracts.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/jy_read_recovery.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_markdown.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_nightly.py
 
