@@ -96,6 +96,15 @@ budget waits for placement instead of failing fast. Relevant PRs retain
 same-repository/collaborator admission, a fresh-head check and all seven GPU
 smoke configurations. The credentialed controller runs only protected source.
 Python admission verifies trust and source identity.
+Release candidates are admitted only from scheduled or manually dispatched
+protected-main Release runs, with their exact source parent, candidate ref and
+run trailer verified. JY reads retry transient disconnects, timeouts and HTTP
+408/429/500/502/503/504 responses up to four attempts, waiting 1, 2 and 4 seconds.
+Authentication and launch/cancellation writes are not replayed. Exhausted reads
+still fail qualification and trigger the existing cleanup.
+The admitted profile distinguishes a scheduled Release call from the scheduled
+nightly ladder: only the nightly ladder adds smoke rows, collects public metrics
+and requires nightly report publication in its summary.
 The syntax/dependency classifier and offline replay command have been removed.
 The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
 `gh` and `jq`; it needs no Rust setup or compilation. It checks receipt source,

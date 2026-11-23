@@ -147,27 +147,72 @@ class PlacementTests(unittest.TestCase):
 
 
 class ReleaseAdmissionTests(unittest.TestCase):
-    def test_only_the_staged_commit_from_protected_release_dispatch_is_admitted(self):
-        admission = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))
-        admit = admission["admit_release_candidate"]
-        candidate, base = "a" * 40, "b" * 40
-        env = {
+    def setUp(self):
+        self.admission = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))
+        self.admit = self.admission["admit_release_candidate"]
+        self.candidate, self.base = "a" * 40, "b" * 40
+        self.env = {
             "GITHUB_EVENT_NAME": "workflow_dispatch",
             "GITHUB_REF": "refs/heads/main",
             "GITHUB_WORKFLOW_REF": "Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main",
             "GITHUB_RUN_ID": "123",
-            "GITHUB_SHA": base,
+            "GITHUB_SHA": self.base,
         }
-        ref = {"object": {"sha": candidate}}
-        commit = {"parents": [{"sha": base}], "message": "Release\n\nSkippy-Release-Run: 123"}
-        with patch.dict(os.environ, env):
-            with patch.dict(admit.__globals__, github=lambda path: ref if "/ref/" in path else commit):
-                admit(candidate)
+        self.ref = {"object": {"sha": self.candidate}}
+        self.commit = {"parents": [{"sha": self.base}], "message": "Release\n\nSkippy-Release-Run: 123"}
+
+    def test_staged_commit_from_manual_or_scheduled_release_is_admitted(self):
+        for event in ("workflow_dispatch", "schedule"):
+            github = Mock(side_effect=[self.ref, self.commit])
+            with self.subTest(event=event), patch.dict(os.environ, {**self.env, "GITHUB_EVENT_NAME": event}), \
+                    patch.dict(self.admit.__globals__, github=github):
+                self.admit(self.candidate)
+            self.assertEqual([call.args[0] for call in github.call_args_list], [
+                "repos/Mesh-LLM/skippy/git/ref/heads/release-candidates/123",
+                f"repos/Mesh-LLM/skippy/git/commits/{self.candidate}",
+            ])
+
+    def test_other_events_refs_and_workflows_are_rejected_before_api_access(self):
+        contexts = [
+            {"GITHUB_EVENT_NAME": event}
+            for event in ("push", "pull_request", "pull_request_target", "workflow_run", "workflow_call")
+        ] + [
+            {"GITHUB_REF": "refs/heads/branch"},
+            {"GITHUB_WORKFLOW_REF": "Mesh-LLM/skippy/.github/workflows/inference.yml@refs/heads/main"},
+            {"GITHUB_WORKFLOW_REF": "Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/branch"},
+        ]
+        for context in contexts:
+            github = Mock()
+            with self.subTest(context=context), patch.dict(os.environ, {**self.env, **context}), \
+                    patch.dict(self.admit.__globals__, github=github):
+                with self.assertRaisesRegex(ValueError, "protected Release dispatch or schedule"):
+                    self.admit(self.candidate)
+                github.assert_not_called()
+
+    def test_scheduled_release_requires_exact_candidate_parent_and_run_identity(self):
+        mismatches = [
+            ({"object": {"sha": "c" * 40}}, self.commit),
+            (self.ref, {**self.commit, "parents": [{"sha": "c" * 40}]}),
+            (self.ref, {**self.commit, "parents": [{"sha": self.base}, {"sha": "c" * 40}]}),
+            (self.ref, {**self.commit, "message": "Release\n\nSkippy-Release-Run: 124"}),
+        ]
+        for ref, commit in mismatches:
+            with self.subTest(ref=ref, commit=commit), \
+                    patch.dict(os.environ, {**self.env, "GITHUB_EVENT_NAME": "schedule"}), \
+                    patch.dict(self.admit.__globals__, github=Mock(side_effect=[ref, commit])):
                 with self.assertRaisesRegex(ValueError, "does not belong"):
-                    admit("c" * 40)
-                with patch.dict(os.environ, GITHUB_REF="refs/heads/branch"):
-                    with self.assertRaisesRegex(ValueError, "protected Release dispatch"):
-                        admit(candidate)
+                    self.admit(self.candidate)
+
+    def test_scheduled_candidate_uses_release_profile_and_candidate_source(self):
+        admit = self.admission["admit"]
+        planner, output = Mock(), Mock()
+        with patch.dict(os.environ, {**self.env, "GITHUB_EVENT_NAME": "schedule",
+                                   "GITHUB_EVENT_PATH": "event.json", "RELEASE_CANDIDATE": self.candidate}), \
+                patch.dict(admit.__globals__, read_json=Mock(return_value={}), plan=planner,
+                           github=Mock(side_effect=[self.ref, self.commit]), output=output):
+            admit()
+        planner.assert_called_once_with("release", self.candidate)
+        output.assert_called_once_with(source=self.candidate, profile="release")
 
 
 if __name__ == "__main__":

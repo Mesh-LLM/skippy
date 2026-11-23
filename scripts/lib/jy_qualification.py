@@ -3,15 +3,19 @@
 import json
 import os
 import re
+import sys
 import tempfile
 import time
+from http.client import IncompleteRead
 from pathlib import Path
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from .ci_process import capture
 
 ORIGIN = "https://pilot.jianyang.cloud"
+READ_ATTEMPTS = 4
+TRANSIENT_HTTP_STATUSES = {408, 429, 500, 502, 503, 504}
 
 
 class PilotHTTPError(RuntimeError):
@@ -86,7 +90,25 @@ class Pilot:
         return self.session[1]
 
     def api(self, method, path, body=None):
-        return self.request(method, path, body, self.auth())
+        token = self.auth()
+        for attempt in range(READ_ATTEMPTS):
+            try:
+                return self.request(method, path, body, token)
+            except (ConnectionError, TimeoutError, IncompleteRead, URLError, PilotHTTPError) as error:
+                if isinstance(error, PilotHTTPError):
+                    transient = error.status in TRANSIENT_HTTP_STATUSES
+                elif isinstance(error, URLError):
+                    transient = isinstance(error.reason, (ConnectionError, TimeoutError))
+                else:
+                    transient = True
+                # Only replay idempotent reads. Authentication is outside this
+                # loop; launch/cancel POSTs and permanent errors fail immediately.
+                if method != "GET" or not transient or attempt == READ_ATTEMPTS - 1:
+                    raise
+                delay = 2 ** attempt
+                print(f"Retrying JY GET {path} after {type(error).__name__} "
+                      f"in {delay}s (attempt {attempt + 2}/{READ_ATTEMPTS})", file=sys.stderr)
+                time.sleep(delay)
 
 
 def placement(inventory, runner, attempt, source):
