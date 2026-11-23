@@ -78,9 +78,11 @@ explicit choice fails rather than silently changing precision.
 
 Native resident caching keeps attention cells in the shared KV pool. Hybrid and
 recurrent models also retain immutable checkpoints in a separate, bounded
-host-RAM budget. This works with disk caching disabled. Set `prefix_cache_ram`
-to an IEC size to bound those checkpoints; `off` or an unset value selects the
-1 GiB default. Disable prefix caching itself to retain no checkpoints.
+host-RAM budget. This works with disk caching disabled. Set
+`prefix_cache_checkpoint_ram` to a positive IEC size or leave it at the
+1 GiB default. Move any previous native checkpoint override from
+`prefix_cache_ram` to this setting. Disable prefix caching itself to retain
+no checkpoints.
 
 For serialized runtimes on unified-memory systems, set
 `prefix_cache_ram = "off"` to avoid a second copy in the same physical memory.
@@ -118,7 +120,8 @@ status, matched prefix tokens, suffix prefill tokens, and restore source.
 | `prefix_cache_budget` | Set the resident retention target |
 | `prefix_cache_exact_budget` | Set the exact-state retention ceiling; one snapshot may exceed it |
 | `prefix_cache_max_entries` | Limit retained prefix entries |
-| `prefix_cache_ram` | Bound native recurrent checkpoints; serialized runtimes use optional L2 |
+| `prefix_cache_ram` | Set the L2 host-RAM budget for disk fills |
+| `prefix_cache_checkpoint_ram` | Bound native L1 recurrent checkpoints |
 | `prefix_cache_retention_tokens` | Bound attention cells retained after requests finish |
 | `prefill_admission` | Cooperatively batch uncached suffixes, or serialize their prefill |
 | `prefix_cache_min_tokens` | Avoid recording prefixes below a token threshold |

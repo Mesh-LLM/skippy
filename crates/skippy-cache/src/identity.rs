@@ -1078,6 +1078,7 @@ mod identity_stability_tests {
                 max_entries: 64,
                 max_bytes: 0,
                 l2_max_bytes: 0,
+                l1_checkpoint_max_bytes: None,
                 codec: StageKvCacheCodec::CacheGen,
                 min_tokens: 64,
                 shared_prefix_stride_tokens: 128,

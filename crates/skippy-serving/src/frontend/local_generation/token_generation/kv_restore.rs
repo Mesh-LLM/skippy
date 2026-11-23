@@ -293,9 +293,12 @@ impl StageOpenAiBackend {
                     .emit("stage.openai_kv_record_decision", attrs);
             }
             for identity in kv.record_identities(&self.config, &base, 0, prefill_tokens) {
-                if let Ok(Some(record)) =
-                    kv.record_resident_prefix(runtime, session_id, &identity, prefill_tokens)
-                {
+                if let Ok(Some(record)) = kv.record_resident_prefix_for_idle_capture(
+                    runtime,
+                    session_id,
+                    &identity,
+                    prefill_tokens,
+                ) {
                     resident_recorded_pages = resident_recorded_pages.saturating_add(1);
                     let mut attrs = self.openai_attrs(ids);
                     attrs.insert(

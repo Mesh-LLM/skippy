@@ -12,6 +12,25 @@ impl KvStageIntegration {
             .map(ResidentRecordOutcome::into_record)
     }
 
+    pub(crate) fn record_resident_prefix_for_idle_capture(
+        self: &Arc<Self>,
+        runtime: &mut RuntimeState,
+        session_id: &str,
+        identity: &PrefillKvIdentity,
+        token_ids: &[i32],
+    ) -> Result<Option<ResidentPrefixRecord>> {
+        let record = self.record_resident_prefix(runtime, session_id, identity, token_ids)?;
+        if let Some(record) = &record
+            && self.l3.is_some()
+        {
+            let mut identity = identity.clone();
+            identity.token_ids.truncate(record.token_count);
+            identity.identity.token_count = record.token_count as u64;
+            self.offer_idle_prefix_capture(runtime, identity, false);
+        }
+        Ok(record)
+    }
+
     /// Record a resident prefix, saying why when none is kept.
     pub fn record_resident_prefix_outcome(
         &self,

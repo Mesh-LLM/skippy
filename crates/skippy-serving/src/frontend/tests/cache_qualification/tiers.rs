@@ -38,8 +38,8 @@ pub(super) fn observe(
         .context("loaded runtime did not admit L2")?;
 
     let seed = observations.seed.insert(runner.generate(request)?);
-    observations.evictions.push(evict_l1(&runner, &cache)?);
     let checkpoint = published_checkpoint(family, &manager, seed)?;
+    observations.evictions.push(evict_l1(&runner, &cache)?);
     observations.checkpoint_tokens = Some(checkpoint);
     let pack_name = published_pack_name(directory, &cache, checkpoint)?;
 
@@ -113,19 +113,26 @@ fn published_pack_name(
     checkpoint: u32,
 ) -> Result<PathBuf> {
     let store = cache.l3.as_ref().context("missing disk tier")?.store();
-    let mut found = None;
-    for digest in store.list_manifests()? {
-        let manifest = store.load_manifest(&digest)?;
-        if manifest.token_count == u64::from(checkpoint) {
-            let pack = PathBuf::from(digest).with_extension("pack");
-            ensure!(
-                directory.join("l3/packs").join(&pack).is_file() && found.is_none(),
-                "expected one packed object for the qualification checkpoint"
-            );
-            found = Some(pack);
-        }
-    }
-    found.context("missing packed payload for the qualification checkpoint")
+    let manifests = store.list_manifests()?;
+    let [manifest] = manifests.as_slice() else {
+        anyhow::bail!("expected one manifest in the fresh qualification store");
+    };
+    ensure!(
+        store.load_manifest(manifest)?.token_count == u64::from(checkpoint),
+        "published manifest has the wrong checkpoint length"
+    );
+    // The isolated store has one checkpoint. A raw pack is named by its
+    // content digest, which can differ from the manifest digest.
+    let mut packs = fs::read_dir(directory.join("l3/packs"))?;
+    let pack = packs.next().context("missing qualification pack")??;
+    let name = PathBuf::from(pack.file_name());
+    ensure!(
+        packs.next().is_none()
+            && pack.file_type()?.is_file()
+            && name.extension() == Some(OsStr::new("pack")),
+        "expected one packed object for the qualification checkpoint"
+    );
+    Ok(name)
 }
 
 pub(super) fn wait_for_checkpoint(manager: &L3CacheManager, tokens: u64) -> Result<()> {

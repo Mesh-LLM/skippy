@@ -63,7 +63,8 @@ impl ServeSettings {
     pub fn validate_cache_dependencies(&self, config: &StageConfig) -> Result<()> {
         if let Some(cache) = &config.kv_cache {
             anyhow::ensure!(
-                cache.mode != StageKvCacheMode::Disabled || cache.l2_max_bytes == 0,
+                cache.mode != StageKvCacheMode::Disabled
+                    || (cache.l2_max_bytes == 0 && cache.l1_checkpoint_max_bytes.is_none()),
                 "RAM caching requires enabled prefix caching"
             );
         }
@@ -111,7 +112,13 @@ impl ServeSettings {
                     spec.name != "prefix-cache-budget" || value.as_str() != Some("off"),
                     "use --prefix-cache off to disable caching"
                 );
-                bytes(value)?
+                let budget = bytes(value)?;
+                anyhow::ensure!(
+                    spec.name != "prefix-cache-checkpoint-ram"
+                        || budget.as_u64().is_some_and(|bytes| bytes > 0),
+                    "prefix-cache-checkpoint-ram requires auto or a positive fixed IEC budget"
+                );
+                budget
             } else if spec.name == "prefix-cache-retention-tokens" {
                 retention(value)?
             } else if spec.name == "prefix-cache" {

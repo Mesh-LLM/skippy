@@ -264,6 +264,7 @@ fn checkpoint_preference_case(root: &Path) -> Result<CheckpointPreferenceCase> {
         kv.record_resident_prefix(&mut rt, "long-source", &long, &tokens)?
             .unwrap();
         rt.drop_session_timed("long-source")?;
+        assert!(kv.capture_resident_prefix_for_l3(&mut rt, &long)?);
         rt.ensure_session_active("eviction")?;
         assert_eq!(
             kv.evict_resident_prefix_for_tokens(&mut rt, "eviction", u64::MAX)?
@@ -336,7 +337,7 @@ fn capture_and_commit(root: &Path) -> Result<PrefixReference> {
             assert!(!attention.is_empty());
             assert!(!recurrent.is_empty());
             let record = kv
-                .record_resident_prefix(&mut runtime, "source", &stored, &tokens)?
+                .record_resident_prefix_for_idle_capture(&mut runtime, "source", &stored, &tokens)?
                 .expect("native checkpoint captured");
             assert!(record.stored);
             assert!(kv.probe_resident_prefix(&stored).is_some());
@@ -352,13 +353,15 @@ fn capture_and_commit(root: &Path) -> Result<PrefixReference> {
                 .iter()
                 .map(|&token| runtime.decode("source", token))
                 .collect::<Result<Vec<_>>>()?;
-            runtime.drop_session_timed("source")?;
-            runtime.ensure_session_active("eviction")?;
-            let evicted =
-                kv.evict_resident_prefix_for_tokens(&mut runtime, "eviction", u64::MAX)?;
-            assert_eq!(evicted.evicted_entries, 1);
             (attention, recurrent, output)
         };
+        backend
+            .iteration_scheduler
+            .execute_runtime("finish-source", |runtime| {
+                runtime
+                    .drop_session_timed("source")
+                    .map_err(crate::frontend::util::openai_backend_error)
+            })?;
         let l3 = kv.l3.as_ref().expect("persistent tier enabled");
         let deadline = Instant::now() + Duration::from_secs(30);
         loop {
@@ -371,6 +374,14 @@ fn capture_and_commit(root: &Path) -> Result<PrefixReference> {
                 "cold offload did not commit to L3"
             );
             thread::sleep(Duration::from_millis(2));
+        }
+        {
+            let mut runtime = backend.runtime.lock().unwrap();
+            runtime.ensure_session_active("eviction")?;
+            let evicted =
+                kv.evict_resident_prefix_for_tokens(&mut runtime, "eviction", u64::MAX)?;
+            assert_eq!(evicted.evicted_entries, 1);
+            assert_eq!(runtime.memory_used_cells("eviction")?, 0);
         }
         PrefixReference {
             seed_process_id: std::process::id(),
@@ -501,7 +512,9 @@ fn native_cold_offload_refusal_keeps_inference_usable() -> Result<()> {
             .map(|&token| runtime.decode("source", token))
             .collect::<Result<Vec<_>>>()?;
         runtime.drop_session_timed("source")?;
+        assert!(kv.capture_resident_prefix_for_l3(&mut runtime, &stored)?);
         runtime.ensure_session_active("reuse")?;
+        assert!(!kv.capture_resident_prefix_for_l3(&mut runtime, &stored)?);
         assert_eq!(
             kv.evict_resident_prefix_for_tokens(&mut runtime, "reuse", u64::MAX)?
                 .evicted_entries,

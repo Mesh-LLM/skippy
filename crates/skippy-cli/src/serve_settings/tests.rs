@@ -865,7 +865,7 @@ fn checkpoint_ram_budget_does_not_require_disk() {
         "missing.gguf",
         "--prefix-cache",
         "on",
-        "--prefix-cache-ram",
+        "--prefix-cache-checkpoint-ram",
         "1GiB",
     ])
     .unwrap()
@@ -880,9 +880,10 @@ fn checkpoint_ram_budget_does_not_require_disk() {
         .validate_cache_dependencies(&stage)
         .unwrap();
     assert_eq!(
-        stage.kv_cache.as_ref().unwrap().l2_max_bytes,
-        1024 * 1024 * 1024
+        stage.kv_cache.as_ref().unwrap().l1_checkpoint_max_bytes,
+        std::num::NonZeroU64::new(1024 * 1024 * 1024)
     );
+    assert_eq!(stage.kv_cache.as_ref().unwrap().l2_max_bytes, 0);
     let tuning = args
         .public
         .settings

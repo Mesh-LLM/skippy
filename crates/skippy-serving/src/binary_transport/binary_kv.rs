@@ -638,7 +638,7 @@ pub(in crate::binary_transport) fn maybe_record_binary_prefill(
                     }
                 }
             }
-            match kv.record_resident_prefix(
+            match kv.record_resident_prefix_for_idle_capture(
                 runtime,
                 session_id,
                 &identity,
@@ -923,7 +923,7 @@ pub(in crate::binary_transport) fn maybe_record_binary_full_prefill(
                 }
             }
         }
-        match kv.record_resident_prefix(
+        match kv.record_resident_prefix_for_idle_capture(
             runtime,
             session_id,
             &identity,

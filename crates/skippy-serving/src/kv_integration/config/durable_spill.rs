@@ -64,6 +64,18 @@ pub(in crate::kv_integration) struct DurableSpillSender {
 }
 
 impl DurableSpillSender {
+    pub(in crate::kv_integration) fn has_native_checkpoint(
+        &self,
+        namespace: &str,
+        tokens: &[i32],
+    ) -> bool {
+        self.recent_checkpoints
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .any(|entry| entry.namespace == namespace && entry.tokens == tokens)
+    }
+
     fn new(tx: std::sync::mpsc::SyncSender<QueuedDurableSpill>, byte_cap: u64) -> Self {
         Self {
             tx,
@@ -220,7 +232,6 @@ pub(in crate::kv_integration) fn start_durable_spill_worker(
     let (tx, rx) = std::sync::mpsc::sync_channel::<QueuedDurableSpill>(EXACT_STATE_RECORD_CAPACITY);
     let sender = DurableSpillSender::new(tx, byte_cap);
     let recent_checkpoints = Arc::clone(&sender.recent_checkpoints);
-    let profile_spill = std::env::var_os("SKIPPY_PROFILE_DURABLE_SPILL").is_some();
     let task = std::thread::Builder::new()
         .name(format!("skippy-l3-spill-{stage_id}"))
         .spawn(move || {
@@ -243,19 +254,7 @@ pub(in crate::kv_integration) fn start_durable_spill_worker(
                     .extension
                     .as_ref()
                     .map(|extension| extension.base.manifest_key.clone());
-                let start = profile_spill.then(std::time::Instant::now);
                 spill_exact_record_to_l3(&l3, cachegen_enabled, pending);
-                if let Some(start) = start {
-                    let elapsed_ms = start.elapsed().as_secs_f64() * 1_000.0;
-                    let _ = skippy_events::diagnostics::emit(
-                        skippy_events::diagnostics::ServingDiagnostic::Info {
-                            message: "Skippy diagnostic durable KV spill".to_string(),
-                            context: Some(
-                                serde_json::json!({ "elapsed_ms": elapsed_ms }).to_string(),
-                            ),
-                        },
-                    );
-                }
                 if let Some((namespace, tokens)) = prefix
                     && let Ok(Some(location)) = l3.locate_longest(&namespace, &tokens, 1)
                     && location.token_count == tokens.len() as u64

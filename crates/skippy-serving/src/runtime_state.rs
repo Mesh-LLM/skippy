@@ -98,6 +98,7 @@ pub struct RuntimeState {
     /// Set while parked sessions' exports run, so their own runtime calls do
     /// not start completing the rest.
     completing_parked_session_ends: bool,
+    idle_prefix_capture: Option<resident_prefix::IdlePrefixCapture>,
     #[cfg(test)]
     modelless_for_test: bool,
     /// Lets modelless tests exercise a split DFlash final stage.
@@ -297,6 +298,7 @@ impl RuntimeState {
             session_end_kv_exports: BTreeMap::new(),
             parked_session_ends: Vec::new(),
             completing_parked_session_ends: false,
+            idle_prefix_capture: None,
             session_resident_prefixes: BTreeMap::new(),
             session_lifecycle_observer: None,
             compute_meter: Arc::default(),
@@ -454,6 +456,7 @@ fn runtime_from_loaded_model(
         session_end_kv_exports: BTreeMap::new(),
         parked_session_ends: Vec::new(),
         completing_parked_session_ends: false,
+        idle_prefix_capture: None,
         session_resident_prefixes: BTreeMap::new(),
         session_lifecycle_observer,
         compute_meter: Arc::default(),

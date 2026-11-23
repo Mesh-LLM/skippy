@@ -1,6 +1,43 @@
 //! Cold exports read immutable cache owners, never a borrowed execution lane.
 use super::*;
 
+pub(super) type IdlePrefixCapture = (bool, Box<dyn FnOnce(&mut RuntimeState) + Send>);
+
+impl RuntimeState {
+    pub(crate) fn offer_idle_prefix_capture(
+        &mut self,
+        preferred: bool,
+        capture: impl FnOnce(&mut Self) + Send + 'static,
+    ) {
+        // Keep one candidate without retaining another native owner. Prefer
+        // a reusable boundary over a later request-specific checkpoint.
+        if preferred
+            || !self
+                .idle_prefix_capture
+                .as_ref()
+                .is_some_and(|(preferred, _)| *preferred)
+        {
+            self.idle_prefix_capture = Some((preferred, Box::new(capture)));
+        }
+    }
+
+    pub(crate) fn can_run_idle_prefix_capture(&self) -> bool {
+        self.idle_prefix_capture.is_some() && self.is_idle_for_prefix_capture()
+    }
+
+    pub(crate) fn run_idle_prefix_capture(&mut self) {
+        if self.is_idle_for_prefix_capture()
+            && let Some((_, capture)) = self.idle_prefix_capture.take()
+        {
+            capture(self);
+        }
+    }
+
+    pub(crate) fn is_idle_for_prefix_capture(&self) -> bool {
+        self.sessions.is_empty() && self.parked_session_ends.is_empty()
+    }
+}
+
 impl RuntimeState {
     pub(crate) fn resident_kv_page_desc(
         &mut self,

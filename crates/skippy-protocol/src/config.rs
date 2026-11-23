@@ -1,7 +1,7 @@
 //! Stage configuration, topology, and activation contracts.
 
 use serde::{Deserialize, Deserializer, Serialize, de};
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct StageIdentity {
     pub run_id: String,
@@ -653,12 +653,13 @@ pub struct StageKvCacheConfig {
     pub max_entries: usize,
     #[serde(default)]
     pub max_bytes: u64,
-    /// Host-RAM byte budget. Native resident caching uses this for retained
-    /// checkpoint and token metadata, independently of disk; zero selects its
-    /// bounded default. Serialized runtimes use an opt-in L2 mirror, where zero
-    /// disables that mirror.
+    /// Host-RAM byte budget for the L2 mirror. Zero disables the mirror.
     #[serde(default)]
     pub l2_max_bytes: u64,
+    /// Host-RAM byte limit for resident recurrent checkpoints and metadata.
+    /// When unset, the runtime uses its bounded resident default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub l1_checkpoint_max_bytes: Option<NonZeroU64>,
     /// Exact-state retention ceiling; None derives eight times max_bytes.
     /// One indivisible snapshot may exceed it. Some(0) disables the ceiling.
     #[serde(default)]

@@ -114,6 +114,7 @@ pub(super) fn recurrent_test_backend_with_lanes(
             max_entries: 8,
             max_bytes: 0,
             l2_max_bytes: RECURRENT_TEST_CHECKPOINT_RAM_BYTES,
+            l1_checkpoint_max_bytes: std::num::NonZeroU64::new(RECURRENT_TEST_CHECKPOINT_RAM_BYTES),
             codec: skippy_protocol::StageKvCacheCodec::Native,
             min_tokens: 1,
             shared_prefix_stride_tokens: 1,

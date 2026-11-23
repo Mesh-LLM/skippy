@@ -1,4 +1,4 @@
-//! Materialize a native prefix only when releasing it to the persistent tier.
+//! Capture resident prefixes for optional persistence during scheduler idle time.
 use super::*;
 use crate::runtime_state::RuntimeState;
 use config::durable_spill::{DurableSpillSender, NativeSpillExtension, PendingDurableSpill};
@@ -95,29 +95,61 @@ impl KvStageIntegration {
         session: &str,
         victim: &skippy_cache::RadixEvictionCandidate<RadixResidentEntry>,
     ) -> Result<()> {
-        // Disk admission/export is optional. Failure must not prevent reclaiming
-        // native cells needed by an active request.
-        if let Err(error) = self.offload_native_prefix(runtime, session, victim) {
-            static WARNED: AtomicBool = AtomicBool::new(false);
-            if !WARNED.swap(true, std::sync::atomic::Ordering::AcqRel) {
-                let _ = skippy_events::diagnostics::emit(
-                    skippy_events::diagnostics::ServingDiagnostic::Warning {
-                        message:
-                            "Native prefix cold offload failed; continuing with cache eviction"
-                                .into(),
-                        context: Some(format!("reason={error:#}")),
-                    },
-                );
-            }
-        }
         runtime.drop_resident_prefix_sequence(session, victim.value.seq_id)
+    }
+
+    pub(crate) fn offer_idle_prefix_capture(
+        self: &Arc<Self>,
+        runtime: &mut RuntimeState,
+        identity: PrefillKvIdentity,
+        preferred: bool,
+    ) {
+        let cache = Arc::downgrade(self);
+        runtime.offer_idle_prefix_capture(preferred, move |runtime| {
+            if let Some(cache) = cache.upgrade()
+                && let Err(error) = cache.capture_resident_prefix_for_l3(runtime, &identity)
+            {
+                tracing::debug!(%error, "idle durable prefix capture skipped");
+            }
+        });
+    }
+
+    /// Read an exact, still-resident checkpoint while holding the runtime.
+    /// The spill worker receives an owned payload, so persistence can outlive
+    /// the native prefix and does not hold any KV cells.
+    pub(crate) fn capture_resident_prefix_for_l3(
+        &self,
+        runtime: &mut RuntimeState,
+        identity: &PrefillKvIdentity,
+    ) -> Result<bool> {
+        if self.l3.is_none() || !runtime.is_idle_for_prefix_capture() {
+            return Ok(false);
+        }
+        let entry = self
+            .radix
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .resident_exact(&identity.namespace, &identity.token_ids)
+            .map(|entry| entry.value);
+        let Some(entry) = entry else {
+            return Ok(false);
+        };
+        // This lane provides access to the shared model. It owns no prompt
+        // cells. Runtime serialization precludes concurrent native eviction
+        // until the capture returns.
+        const SESSION: &str = "native-prefix-durable-capture";
+        runtime.ensure_session_active(SESSION)?;
+        let result = self.offload_native_prefix(runtime, SESSION, identity, &entry);
+        runtime.drop_session_timed(SESSION)?;
+        result
     }
 
     fn offload_native_prefix(
         &self,
         runtime: &mut RuntimeState,
         session: &str,
-        victim: &skippy_cache::RadixEvictionCandidate<RadixResidentEntry>,
+        identity: &PrefillKvIdentity,
+        entry: &RadixResidentEntry,
     ) -> Result<bool> {
         let sender = self
             .exact_state_record_worker
@@ -134,13 +166,18 @@ impl KvStageIntegration {
         if self.l3.is_none() {
             return Ok(false);
         }
-        let Some(claim) =
-            NativeOffloadClaim::acquire(&self.inflight_records, &victim.namespace, &victim.tokens)
-        else {
+        if sender.has_native_checkpoint(&identity.namespace, &identity.token_ids) {
+            return Ok(false);
+        }
+        let Some(claim) = NativeOffloadClaim::acquire(
+            &self.inflight_records,
+            &identity.namespace,
+            &identity.token_ids,
+        ) else {
             return Ok(false);
         };
-        let sequence = victim.value.seq_id;
-        let tokens = victim.tokens.len() as u64;
+        let sequence = entry.seq_id;
+        let tokens = entry.token_count;
         let desc = if capabilities.resident_attention {
             Some(runtime.resident_kv_page_desc(session, sequence, 0..tokens)?)
         } else {
@@ -153,7 +190,7 @@ impl KvStageIntegration {
         };
         let incremental = desc
             .as_ref()
-            .and_then(|full| incremental_capture(&sender, victim, full, recurrent_bytes))
+            .and_then(|full| incremental_capture(&sender, identity, full, recurrent_bytes))
             .and_then(|extension| {
                 let start = extension.reused_rows.get();
                 let tail = runtime
@@ -176,7 +213,10 @@ impl KvStageIntegration {
         let bytes = kv_bytes
             .checked_add(recurrent_bytes as u64)
             .ok_or_else(|| anyhow::anyhow!("native offload size overflow"))?;
-        if bytes == 0 {
+        // An idle capture is advisory. Bound the bytes of a single capture
+        // independently from the disk queue, which can hold multiple copies.
+        const MAX_IDLE_CAPTURE_BYTES: u64 = 1024 * 1024 * 1024;
+        if bytes == 0 || bytes > MAX_IDLE_CAPTURE_BYTES {
             return Ok(false);
         }
         let Some(reservation) = sender.try_reserve(bytes) else {
@@ -215,11 +255,11 @@ impl KvStageIntegration {
         };
         Ok(sender.send_reserved(
             PendingDurableSpill {
-                page_id: victim.value.page_id.clone(),
+                page_id: entry.page_id.clone(),
                 payload,
                 extra: ExactStateExtra { kv_desc: desc },
-                namespace: victim.namespace.clone(),
-                token_ids: victim.tokens.clone(),
+                namespace: identity.namespace.clone(),
+                token_ids: identity.token_ids.to_vec(),
                 l3_cost: None,
                 native_raw: true,
                 extension: incremental.map(|(extension, _)| extension),
@@ -232,11 +272,11 @@ impl KvStageIntegration {
 
 fn incremental_capture(
     sender: &DurableSpillSender,
-    victim: &skippy_cache::RadixEvictionCandidate<RadixResidentEntry>,
+    identity: &PrefillKvIdentity,
     full: &skippy_runtime::RuntimeKvPageDesc,
     recurrent_bytes: usize,
 ) -> Option<NativeSpillExtension> {
-    let base = sender.native_base(&victim.namespace, &victim.tokens)?;
+    let base = sender.native_base(&identity.namespace, &identity.token_ids)?;
     let base_desc = serde_json::from_str(base.kv_desc_json.as_deref()?).ok()?;
     let base_geometry = config::kv_page_geometry(&base_desc, base.kv_bytes)?;
     let total = full.payload_bytes.checked_add(recurrent_bytes as u64)?;

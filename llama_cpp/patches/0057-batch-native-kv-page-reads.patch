@@ -1,0 +1,101 @@
+From: Skippy contributors <ci@skippy.local>
+Subject: [PATCH] skippy: batch native KV page reads
+
+Skip backend fences for descriptor-only queries. Preserve the existing page
+layout while batching device reads for bounded groups of spans.
+
+---
+diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
+--- a/src/llama-kv-cache.cpp
++++ b/src/llama-kv-cache.cpp
+@@ -2123,13 +2123,36 @@
+     }
+ 
+     const auto cell_runs = llama_kv_cache_cell_runs(cell_idxs);
+-    char * dst = static_cast<char *>(output);
++    // Each span writes directly into its original place in the K, V, index
++    // layout. Submit bounded batches so CUDA can share a transfer fence.
++    constexpr size_t batch_capacity = 256;
++    std::array<const ggml_tensor *, batch_capacity> tensors;
++    std::array<size_t, batch_capacity> offsets;
++    std::array<size_t, batch_capacity> sizes;
++    std::array<size_t, batch_capacity> data_offsets;
++    size_t batch_size = 0;
++    size_t output_offset = 0;
++    const auto flush = [&]() {
++        if (batch_size != 0) {
++            ggml_backend_tensor_get_n(tensors.data(), output, offsets.data(), sizes.data(), data_offsets.data(), batch_size);
++            batch_size = 0;
++        }
++    };
++    const auto read = [&](const ggml_tensor * tensor, size_t offset, size_t bytes) {
++        tensors[batch_size] = tensor;
++        offsets[batch_size] = offset;
++        sizes[batch_size] = bytes;
++        data_offsets[batch_size] = output_offset;
++        output_offset += bytes;
++        if (++batch_size == batch_capacity) {
++            flush();
++        }
++    };
+     for (const auto * layer : selected) {
+         auto * k = layer->k_stream[strm];
+         for (const auto & run : cell_runs) {
+             const size_t run_bytes = static_cast<size_t>(run.count) * k_row_bytes;
+-            ggml_backend_tensor_get(k, dst, static_cast<size_t>(run.first) * k_row_bytes, run_bytes);
+-            dst += run_bytes;
++            read(k, static_cast<size_t>(run.first) * k_row_bytes, run_bytes);
+         }
+     }
+ 
+@@ -2141,8 +2164,7 @@
+             auto * v = layer->v_stream[strm];
+             for (const auto & run : cell_runs) {
+                 const size_t run_bytes = static_cast<size_t>(run.count) * v_row_bytes;
+-                ggml_backend_tensor_get(v, dst, static_cast<size_t>(run.first) * v_row_bytes, run_bytes);
+-                dst += run_bytes;
++                read(v, static_cast<size_t>(run.first) * v_row_bytes, run_bytes);
+             }
+         }
+     } else {
+@@ -2156,8 +2178,7 @@
+                 for (const auto & run : cell_runs) {
+                     const size_t run_bytes = static_cast<size_t>(run.count) * v_element_bytes;
+                     const size_t src_offset = (static_cast<size_t>(run.first) + static_cast<size_t>(j) * cells.size()) * v_element_bytes;
+-                    ggml_backend_tensor_get(v, dst, src_offset, run_bytes);
+-                    dst += run_bytes;
++                    read(v, src_offset, run_bytes);
+                 }
+             }
+         }
+@@ -2171,10 +2192,10 @@
+         auto * k_idx = layer->k_idx_stream[strm];
+         for (const auto & run : cell_runs) {
+             const size_t run_bytes = static_cast<size_t>(run.count) * k_idx_row_bytes;
+-            ggml_backend_tensor_get(k_idx, dst, static_cast<size_t>(run.first) * k_idx_row_bytes, run_bytes);
+-            dst += run_bytes;
+-        }
+-    }
++            read(k_idx, static_cast<size_t>(run.first) * k_idx_row_bytes, run_bytes);
++        }
++    }
++    flush();
+ 
+     return true;
+ }
+diff --git a/src/skippy/state.cpp b/src/skippy/state.cpp
+--- a/src/skippy/state.cpp
++++ b/src/skippy/state.cpp
+@@ -435,7 +435,11 @@
+         skippy_set_error(out_error, SKIPPY_STATUS_INVALID_ARGUMENT, "session is required");
+         return SKIPPY_STATUS_INVALID_ARGUMENT;
+     }
+-    session->ctx->synchronize();
++    // A size query reads cell ownership and tensor layout maintained by the
++    // host. Only a payload export needs completed device writes.
++    if (output != nullptr) {
++        session->ctx->synchronize();
++    }
+     std::string error;
+     bool ok = false;
+     if (auto * iswa = skippy_get_iswa_cache(session)) {

@@ -243,7 +243,14 @@ pub const OPTIONS: &[OptionSpec] = &[
         "cache",
         "kv_cache.l2_max_bytes",
         Kind::Bytes,
-        "Resident checkpoint RAM budget: off for default or a fixed IEC size; independent of disk",
+        "L2 host-RAM mirror: off or a fixed IEC size",
+    ),
+    option(
+        "prefix-cache-checkpoint-ram",
+        "cache",
+        "kv_cache.l1_checkpoint_max_bytes",
+        Kind::Bytes,
+        "L1 recurrent-checkpoint RAM: auto (default 1GiB) or a positive fixed IEC size",
     ),
     option(
         "prefix-cache-max-entries",

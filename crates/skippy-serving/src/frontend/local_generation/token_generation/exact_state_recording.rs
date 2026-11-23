@@ -264,6 +264,13 @@ impl StageOpenAiBackend {
                     Some(&identity.namespace),
                 );
             }
+            if recorded && write_through_l3 && kv.l3.is_some() {
+                let preferred = matches!(
+                    decision_prefix,
+                    "chat_prefix_checkpoint" | "shared_prefill_checkpoint"
+                );
+                kv.offer_idle_prefix_capture(runtime, identity, preferred);
+            }
             return recorded;
         }
         #[cfg(test)]

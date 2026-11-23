@@ -22,6 +22,7 @@ fn harness_config() -> StageConfig {
             max_entries: 8,
             max_bytes: 0,
             l2_max_bytes: 0,
+            l1_checkpoint_max_bytes: None,
             codec: skippy_protocol::StageKvCacheCodec::Native,
             min_tokens: 1,
             shared_prefix_stride_tokens: 1,
@@ -459,6 +460,7 @@ fn a_deferred_capture_of_a_cached_checkpoint_skips_at_registration() {
 /// recurrent state; session-end admission checks the radix again.
 #[test]
 fn a_deferred_capture_goes_ahead_on_a_miss_or_a_busy_radix() {
+    skippy_runtime::test_support::require_native_runtime();
     let (kv, config) = harness();
     let mut runtime = RuntimeState::new_modelless_for_test(1);
     let chat_identity = identity(&kv, &config, &[1, 2, 3]);
