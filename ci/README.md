@@ -171,7 +171,9 @@ Full CI and releases also require archive checks for Windows x64 CPU, CUDA 12,
 CUDA 13 and ROCm 7.2.0, and Linux x64 ROCm 7.2.4. The Windows jobs use
 `windows-2022` for the pinned HIP SDK and compatible MSVC toolset. CUDA
 components and the HIP SDK are downloaded from checksum-pinned inputs. The
-Linux ROCm job uses the published compiler image resolved to a digest.
+Linux ROCm job uses the published compiler image resolved to a digest and
+adds the SHA-256-pinned ROCm 7.2.4 BLAS libraries to a job-local prefix for
+compilation and archive smoke.
 Windows users need the Microsoft Visual C++ x64 Redistributable and, for CUDA,
 a compatible NVIDIA driver. Linux ROCm users need a matching ROCm runtime
 visible to the system loader. Inference qualification is pending for these

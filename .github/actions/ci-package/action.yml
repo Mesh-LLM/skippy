@@ -78,6 +78,10 @@ runs:
       env:
         ROCM_VERSION: ${{ inputs.windows-rocm }}
       run: ./scripts/install-windows-rocm-sdk.ps1 -ExpectedVersion "$env:ROCM_VERSION"
+    - name: Provision the Linux ROCm BLAS libraries
+      if: inputs.runtime-id == 'linux-x86_64-rocm'
+      shell: bash
+      run: bash scripts/ci-rocm-blas.sh
     - uses: ./.github/actions/cache
       with:
         scope: package-${{ inputs.runtime-id }}-${{ inputs.compiler-image-digest || inputs.windows-cuda || inputs.windows-rocm || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}
