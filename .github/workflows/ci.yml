@@ -357,7 +357,11 @@ jobs:
   quality:
     name: Quality canary
     needs: [changes, plan, automation]
-    if: needs.changes.outputs.code == 'true'
+    if: >-
+      !cancelled() && needs.changes.result == 'success' &&
+      needs.plan.result == 'success' && needs.changes.outputs.code == 'true' &&
+      (needs.automation.result == 'success' ||
+       (needs.changes.outputs.automation == 'false' && needs.automation.result == 'skipped'))
     env:
       CARGO_BUILD_JOBS: '2'
       CMAKE_BUILD_PARALLEL_LEVEL: '2'
