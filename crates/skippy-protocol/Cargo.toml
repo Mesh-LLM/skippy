@@ -11,7 +11,7 @@ homepage = "https://github.com/Mesh-LLM/skippy"
 [dependencies]
 prost = "0.14"
 serde.workspace = true
-skippy-tokenizer = { path = "../skippy-tokenizer", version = "0.80.0" }
+skippy-tokenizer = { path = "../skippy-tokenizer", version = "0.80.2" }
 
 [dev-dependencies]
 serde_json.workspace = true
