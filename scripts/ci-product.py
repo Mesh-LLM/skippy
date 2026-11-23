@@ -110,8 +110,10 @@ def build_runtime(host, runtime):
             "SKIPPY_ROCM_VERSION": toolkit,
             "LLAMA_STAGE_AMDGPU_TARGETS": arches,
         })
+    # The Windows build waits for its outputs, but toolchain helpers can stay
+    # in the job after it exits. Drain the job before verifying those outputs.
     command(["just", "release-runtime-build", backend, host["target"]],
-            timeout=10800, overrides=environment)
+            timeout=10800, overrides=environment, terminate_descendants=host["os"] == "windows")
     runtimes = [path.parent for path in Path("dist/native-runtimes").glob("*/manifest.json")]
     if len(runtimes) != 1:
         raise ValueError("native producer must emit exactly one runtime")

@@ -149,16 +149,21 @@ def captured(child, deadline, limit):
 
 
 def command(args, timeout=180, overrides=None, capture_stdout=False, cwd=None, *,
-            limit=16 * 1024 * 1024, raw=False, inherit_env=True, stdout=None, stderr=None):
+            limit=16 * 1024 * 1024, raw=False, inherit_env=True, stdout=None, stderr=None,
+            terminate_descendants=False):
     deadline = time.monotonic() + timeout
     with start(args, overrides, cwd=cwd, inherit_env=inherit_env,
                stdout=subprocess.PIPE if capture_stdout else stdout, stderr=stderr) as child:
+        completed = False
         try:
             output = captured(child, deadline, limit) if capture_stdout else None
-            child.wait(timeout=max(0, deadline - time.monotonic()))
+            completed = child.wait(timeout=max(0, deadline - time.monotonic())) == 0
         finally:
             if group_alive(child):
-                stop(child)
+                if completed and terminate_descendants:
+                    force_stop(child)
+                else:
+                    stop(child)
         if child.returncode:
             raise subprocess.CalledProcessError(child.returncode, args)
         if output is not None:
