@@ -298,9 +298,9 @@ case "$(uname -s)" in
       CMAKE_ARGS+=("-DCMAKE_CXX_FLAGS_INIT=-DPATH_MAX=4096")
     fi
     if [[ ( "$LLAMA_BACKEND" == rocm || "$LLAMA_BACKEND" == hip ) && -n "${HIPCXX:-}" ]]; then
-      # ggml builds Windows HIP sources as CXX. Record the SDK compiler in
-      # the CMake arguments and the build stamp for this backend.
-      CMAKE_ARGS+=("-DCMAKE_CXX_COMPILER=$HIPCXX")
+      # ggml builds Windows HIP sources as CXX. CMake also needs Clang for C
+      # because its Windows toolchain rejects mixing the GNU and MSVC drivers.
+      CMAKE_ARGS+=("-DCMAKE_C_COMPILER=${HIPCC:-clang}" "-DCMAKE_CXX_COMPILER=$HIPCXX")
     fi
     ;;
 esac
