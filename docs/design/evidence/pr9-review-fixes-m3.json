@@ -309,5 +309,60 @@
         }
       ]
     }
+  },
+  "native_validation": {
+    "job": "job_947w4gdfrhnad3x",
+    "run": "run_n8ckbq618kdhr4f",
+    "source_sha": "0caf2309ad48188d3337449bcccbf38f63f0b36f",
+    "status": "passed",
+    "backend": "Metal on Apple M3 Ultra",
+    "routed_native_cases": 40,
+    "paired_outputs": 80,
+    "fp64_oracle_checks": 160,
+    "r8_pipeline_compiles": 1,
+    "r4_pipeline_compiles": 1,
+    "row_diagnostics": "GGML_METAL_ROUTED_ROWS=1; production defaults unchanged",
+    "copy_contracts": "CPU and MTL0; identity, non-overlap, swaps, fan-out, zeroing, ascending snapshot planes",
+    "peer_rollback_modes": [
+      0,
+      1,
+      2,
+      7
+    ],
+    "url": "https://pilot.jianyang.cloud/jobs/job_947w4gdfrhnad3x",
+    "logs": {
+      "routed-native.log": {
+        "sha256": "3e3efa1113c84380e2e48e34e4f4fc21541915b9ee1e2dc162fe844af69b316b",
+        "size_bytes": 12107
+      },
+      "metal-copy.log": {
+        "sha256": "567c81c424137121d647002861fb4d33e511c7f1a14b55bd6de98ad8a4db3ddc",
+        "size_bytes": 4027
+      },
+      "metal-peer-rollback.log": {
+        "sha256": "015db8fb0d830834a596d6f79c053714184e849abd7600fcb1c56bce113fd66c",
+        "size_bytes": 740
+      }
+    }
+  },
+  "local_validation": {
+    "serving_tests": {
+      "passed": 1374,
+      "ignored_opt_in": 32,
+      "failed": 0,
+      "doc_tests": "passed"
+    },
+    "native_replay": {
+      "unique_passed": 335,
+      "timeout": [
+        "skippy_graph_contract_glm4-expansion"
+      ],
+      "skipped_opt_in": [
+        "skippy_resident_checkpoint_gpu_long"
+      ],
+      "clean_full_replay_pass": false
+    },
+    "clippy": "warning-denying all-target skippy-serving with dynamic-native-runtime",
+    "native_tree": "aafc58beb4f494798917276e28da54e62a10b06f"
   }
 }

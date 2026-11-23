@@ -288,3 +288,16 @@ and `evidence-manifest.json`. Each archive contains responses, batch timings,
 commands, provenance, loaded-library paths and load/thermal observations. Archive
 SHA-256 hashes, exact source/CLI identities and independent rates are recorded in
 [evidence/pr9-review-fixes-m3.json](evidence/pr9-review-fixes-m3.json).
+
+The source-pinned [M3 Ultra native diagnostic job](https://pilot.jianyang.cloud/jobs/job_947w4gdfrhnad3x)
+also passed CPU/Metal copy contracts, 40 routed native cases (80 paired outputs,
+160 FP64 oracle checks, both R8 and R4 pipeline execution), and GPU peer rollback
+modes 0/1/2/7. It tests the opt-in row diagnostic and bounded u32 eligibility;
+it does not promote broader performance defaults. Log hashes are in the same
+evidence manifest.
+
+Local validation of the follow-up passed 1,374 serving tests (32 opt-in tests
+ignored), documentation tests and warning-denying all-target Clippy. The combined
+native replay/resume recorded 335 distinct passes; `skippy_graph_contract_glm4-expansion`
+timed out and `skippy_resident_checkpoint_gpu_long` remained an opt-in skip. This
+is not a clean unrestricted full-replay pass.
