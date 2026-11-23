@@ -84,8 +84,10 @@ contract; no downstream product's workflow topology applies here.
   Both Linux x64 and ARM64 can prepare CPU candidates. Use the supplied GitHub
   CLI rather than installing a replacement in the workflow.
   The workflow defaults to noninteractive Goose and preflights its
-  native tools. Explicitly pass JY's job-scoped model gateway token to the
-  repair child; keep the shared build subprocess credential filter unchanged.
+  native tools. Build, generation and repair subprocesses inherit the job
+  environment, including JY model configuration and compiler-cache access.
+  Scope credentials in the workflow jobs; do not filter environment variable
+  names or maintain per-tool credential exceptions in subprocess helpers.
   Match Mesh's upgrade budgets: 41,400 seconds (11h30) for the repair child
   and 1,430 minutes (23h50) for both preparation and repair jobs. The job
   deadline includes preparation and candidate export; full CI runs separately.

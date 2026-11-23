@@ -21,28 +21,31 @@ SHA = "a" * 40
 
 
 class Repair(unittest.TestCase):
-    def test_repair_inherits_job_model_access_without_publication_credentials(self):
+    def test_repair_inherits_job_configuration(self):
         with tempfile.TemporaryDirectory() as tmp:
             sandbox = Path(tmp)
             checkout = sandbox / "candidate"
             checkout.mkdir()
             self.checkout(checkout)
             agent = sandbox / "agent.py"
+            expected = {
+                "JIANYANG_GATEWAY_TOKEN": "fixture-model-access",
+                "JIANYANG_API_KEY": "fixture-control-plane-key",
+                "GOOSE_PROVIDER": "fixture-provider", "GOOSE_MODEL": "fixture-model",
+                "GOOSE_PATH_ROOT": str(sandbox / "goose-config"),
+                "ACTIONS_RUNTIME_TOKEN": "fixture-cache-access",
+                "GITHUB_TOKEN": "fixture-github-access", "GH_TOKEN": "fixture-gh-access",
+                "GITHUB_OUTPUT": str(sandbox / "github-output"),
+            }
             agent.write_text(
                 "import os\nfrom pathlib import Path\n"
-                "assert os.environ.get('JIANYANG_GATEWAY_TOKEN') == 'fixture-model-access'\n"
-                "assert 'GITHUB_TOKEN' not in os.environ\n"
-                "assert 'GH_TOKEN' not in os.environ\n"
-                "assert 'JIANYANG_API_KEY' not in os.environ\n"
-                "assert 'PUBLISH_SECRET' not in os.environ\n"
+                f"expected = {expected!r}\n"
+                "assert {key: os.environ.get(key) for key in expected} == expected\n"
                 "Path('llama_cpp/patches').mkdir()\n"
                 "Path('llama_cpp/patches/0001-fix.patch').write_text('repair fixture')\n")
             with patch.dict(os.environ, {
                 "SKIPPY_UPGRADE_REPAIR_COMMAND": json.dumps([sys.executable, str(agent)]),
-                "JIANYANG_GATEWAY_TOKEN": "fixture-model-access",
-                "GITHUB_TOKEN": "fixture-github-access", "GH_TOKEN": "fixture-gh-access",
-                "JIANYANG_API_KEY": "fixture-control-plane-key",
-                "PUBLISH_SECRET": "fixture-publication-secret",
+                **expected,
             }):
                 repair(checkout, sandbox / "diagnostics")
             self.assertEqual((checkout / "llama_cpp/patches/0001-fix.patch").read_text(), "repair fixture")
