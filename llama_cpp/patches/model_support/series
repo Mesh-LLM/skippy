@@ -16,3 +16,4 @@
 0016-models-add-dspine-block-parallel-drafter-support.patch
 0017-skippy-remove-callback-backed-checkpoint-serving.patch
 0018-skippy-bump-the-native-abi-for-shared-verification.patch
+0019-skippy-bump-native-abi-for-chunked-kv-import.patch

@@ -79,7 +79,7 @@ fn record(
         token_ids,
         l3_fill_claim: None,
         write_through_l3: true,
-        l2_promotion_digest: None,
+        l2_promotion_manifest: None,
         l3_cost: None,
         admission_credit,
     }

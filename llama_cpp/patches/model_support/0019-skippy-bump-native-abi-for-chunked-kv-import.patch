@@ -1,0 +1,25 @@
+From 478d0d10284ebdf02a7b8b596af2f616806b6f0b Mon Sep 17 00:00:00 2001
+From: Skippy contributors <ci@skippy.local>
+Date: Mon, 23 Nov 2026 14:44:27 +1100
+Subject: [PATCH] skippy: bump native ABI for chunked KV import
+
+---
+ include/skippy/common.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/skippy/common.h b/include/skippy/common.h
+index ee9bb3f1f..5a2a5cbc0 100644
+--- a/include/skippy/common.h
++++ b/include/skippy/common.h
+@@ -46,7 +46,7 @@ extern "C" {
+ 
+ #define SKIPPY_ABI_VERSION_MAJOR 0
+ #define SKIPPY_ABI_VERSION_MINOR 1
+-#define SKIPPY_ABI_VERSION_PATCH 88
++#define SKIPPY_ABI_VERSION_PATCH 89
+ 
+ #if defined(_MSC_VER)
+ #define SKIPPY_DEPRECATED(message) __declspec(deprecated(message))
+-- 
+2.56.0
+

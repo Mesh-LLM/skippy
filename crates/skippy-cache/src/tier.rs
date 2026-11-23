@@ -10,8 +10,10 @@
 
 use std::sync::atomic::Ordering;
 
+mod native_extension;
 mod spill_payload;
 mod spill_segments;
+pub use native_extension::NativeKvExtension;
 use spill_payload::SpillPayload;
 
 #[cfg(test)]
@@ -20,8 +22,8 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
 use crate::l3::{
-    HandoffManifest, HandoffSegmentRef, HandoffSegmentStore, MANIFEST_VERSION, PayloadCodec,
-    PayloadGeometry, StoreLimits, StoreUsage, segment_digest,
+    CHECKPOINT_MANIFEST_VERSION, HandoffManifest, HandoffSegmentRef, HandoffSegmentStore,
+    PayloadCodec, PayloadGeometry, StoreLimits, StoreUsage, segment_digest,
 };
 use crate::manager::{
     BenefitRestoreObservation, L3ActivitySnapshot, L3CacheManager, L3EffectiveStatus,
@@ -88,7 +90,7 @@ pub struct L3Location {
     pub namespace_key: String,
     pub prefix_key: String,
     pub token_count: u64,
-    /// Manifest key (payload digest) — the identity of the physical entry;
+    /// Manifest key, the identity of the stored checkpoint and
     /// the correct single-flight claim key.
     pub manifest_key: String,
     /// Metadata copied from the located manifest so the runtime can reject an
@@ -101,8 +103,10 @@ pub struct L3Location {
 }
 
 /// A successful fill from the tier.
+#[derive(Clone)]
 pub struct L3Fill {
     pub payload: ExactStatePayload,
+    pub manifest: HandoffManifest,
     /// How many of the query's leading tokens the filled state covers — the
     /// length the entry was recorded at, which may be shorter than the
     /// query (longest-recorded-prefix semantics, mirroring the radix).
@@ -230,13 +234,10 @@ impl L3Tier {
         &self,
         namespace: &str,
         token_ids: &[i32],
-        location: &L3Location,
+        manifest: &HandoffManifest,
         cold_prefill_cost: Option<f64>,
         restore_cost: f64,
     ) {
-        let Ok(manifest) = self.store().load_manifest(&location.manifest_key) else {
-            return;
-        };
         let shared = manifest
             .segments
             .iter()
@@ -246,7 +247,7 @@ impl L3Tier {
             .benefit_observe_restore(BenefitRestoreObservation {
                 state_identity: self.state_identity.clone(),
                 key: benefit_entry_key(namespace, token_ids),
-                manifest: location.manifest_key.clone(),
+                manifest: manifest.payload_digest.clone(),
                 exclusive_bytes: 0,
                 shared,
                 cold_prefill_cost,
@@ -277,7 +278,7 @@ impl L3Tier {
             model_identity: self.model_identity.clone(),
             state_identity: self.state_identity.clone(),
             effective: self.manager.effective_status(),
-            format_version: MANIFEST_VERSION,
+            format_version: CHECKPOINT_MANIFEST_VERSION,
             usage: self.store().usage()?,
             restorable_manifests: restorable_manifests as u64,
             restorable_tokens,
@@ -384,15 +385,14 @@ impl L3Tier {
         let kv_decoded_bytes = wire.decoded_kv_bytes;
         let kv_bytes = wire.kv_bytes();
         let recurrent_bytes = wire.recurrent_bytes();
-        let payload_digest = wire.digest();
-
         let mut manifest = HandoffManifest::new_for_model(
             self.model_identity.clone(),
             self.state_identity.clone(),
             payload.kind().as_str().to_string(),
         );
+        manifest.version = CHECKPOINT_MANIFEST_VERSION;
         manifest.total_bytes = wire.len() as u64;
-        manifest.payload_digest = payload_digest.clone();
+        manifest.prefix_key = Some(l3_prefix_key(namespace, token_ids));
         manifest.kv_bytes = kv_bytes;
         manifest.kv_decoded_bytes = kv_decoded_bytes;
         manifest.recurrent_bytes = recurrent_bytes;
@@ -457,6 +457,30 @@ impl L3Tier {
                 meta_json: (!cut.label.is_empty()).then(|| cut.label.clone()),
             })
             .collect();
+        self.commit_spill(
+            namespace,
+            token_ids,
+            manifest,
+            segment_slices.into_iter().map(Some).collect(),
+            cost,
+        )
+    }
+
+    fn commit_spill(
+        &self,
+        namespace: &str,
+        token_ids: &[i32],
+        mut manifest: HandoffManifest,
+        fresh_segments: Vec<Option<&[u8]>>,
+        cost: Option<CostSample>,
+    ) -> Result<Option<String>> {
+        let prefix_key = manifest
+            .prefix_key
+            .clone()
+            .context("missing checkpoint prefix")?;
+        let token_count = manifest.token_count;
+        let payload_digest = manifest.checkpoint_digest()?;
+        manifest.payload_digest.clone_from(&payload_digest);
         let exclusive_bytes = serde_json::to_vec(&manifest)
             .map(|bytes| bytes.len() as u64)
             .unwrap_or_default();
@@ -474,11 +498,22 @@ impl L3Tier {
         }
         if !self.manager.benefit_prepare_write(
             benefit_key,
-            (wire.len() as u64).saturating_add(exclusive_bytes),
+            fresh_segments
+                .iter()
+                .flatten()
+                .fold(exclusive_bytes, |total, bytes| {
+                    total.saturating_add(bytes.len() as u64)
+                }),
         )? {
             return Ok(None);
         }
-        let stored_segments = match self.store().try_put_segments(&segment_slices) {
+        let hashed_segments = manifest
+            .segments
+            .iter()
+            .zip(fresh_segments)
+            .filter_map(|(segment, bytes)| bytes.map(|bytes| (segment.digest.as_str(), bytes)))
+            .collect::<Vec<_>>();
+        let stored_segments = match self.store().try_put_hashed_segments(&hashed_segments) {
             Ok(Ok(stored)) => stored,
             Ok(Err(refusal)) => {
                 self.manager.record_write_refusal(refusal);
@@ -521,7 +556,7 @@ impl L3Tier {
         if let Err(error) = self.store().link_prefix(
             &l3_namespace_key(namespace),
             token_count,
-            &l3_prefix_key(namespace, token_ids),
+            &prefix_key,
             &payload_digest,
         ) {
             self.manager.record_storage_error();
@@ -595,6 +630,13 @@ impl L3Tier {
             else {
                 continue;
             };
+            if manifest
+                .prefix_key
+                .as_ref()
+                .is_some_and(|key| key != &prefix_key)
+            {
+                continue;
+            }
             if manifest.model_identity != self.model_identity
                 || manifest.state_identity != self.state_identity
             {
@@ -633,13 +675,18 @@ impl L3Tier {
     /// itself. Full-state fills are whole-blob by nature; kv-recurrent
     /// fills could stream per segment later.
     pub fn load(&self, location: &L3Location) -> Result<L3Fill> {
+        self.load_bounded(location, u64::MAX)
+    }
+
+    /// Bound the packed buffers allocated before any page bytes are read.
+    pub fn load_bounded(&self, location: &L3Location, max_bytes: u64) -> Result<L3Fill> {
         let Some(_operation) = self.manager.try_operation_guard() else {
             bail!("disk cache lifecycle operation in progress");
         };
         // Pinned for the whole load: eviction under a concurrent spill must
         // not remove the segments this fill is assembling.
         let _pin = self.store().pin(&location.manifest_key);
-        let result = self.load_inner(location);
+        let result = self.load_inner(location, max_bytes);
         match &result {
             Ok(fill) => {
                 self.manager
@@ -656,8 +703,19 @@ impl L3Tier {
         result
     }
 
-    fn load_inner(&self, location: &L3Location) -> Result<L3Fill> {
+    fn load_inner(&self, location: &L3Location, max_bytes: u64) -> Result<L3Fill> {
         let manifest = self.store().load_manifest(&location.manifest_key)?;
+        if manifest.total_bytes > max_bytes {
+            bail!("L3 checkpoint exceeds the staging budget");
+        }
+        if manifest.token_count != location.token_count
+            || manifest
+                .prefix_key
+                .as_ref()
+                .is_some_and(|key| key != &location.prefix_key)
+        {
+            bail!("L3 manifest does not match the located prefix");
+        }
         if manifest.model_identity != self.model_identity
             || manifest.state_identity != self.state_identity
         {
@@ -693,10 +751,11 @@ impl L3Tier {
         Ok(L3Fill {
             payload,
             token_count: manifest.token_count,
-            kv_desc_json: manifest.kv_desc_json,
+            kv_desc_json: manifest.kv_desc_json.clone(),
             payload_bytes,
             cachegen_kv,
             kv_decoded_bytes: manifest.kv_decoded_bytes,
+            manifest,
         })
     }
 
@@ -861,7 +920,13 @@ mod tests {
             .expect("seed locate")
             .expect("seed location");
         assert_eq!(seed_location.manifest_key, seed);
-        tier.benefit_observe_l3_restore("ns", &seed_tokens, &seed_location, Some(400.0), 100.0);
+        tier.benefit_observe_l3_restore(
+            "ns",
+            &seed_tokens,
+            &tier.load(&seed_location).unwrap().manifest,
+            Some(400.0),
+            100.0,
+        );
 
         let candidate_tokens = tokens(8);
         let candidate_payload = ExactStatePayload::full_state(vec![9; 256]);
@@ -1177,6 +1242,77 @@ mod tests {
     }
 
     #[test]
+    fn native_extension_reuses_whole_windows_and_restores_the_new_recurrent_state() {
+        use std::num::NonZeroU64;
+
+        let tier = tier("native-tail", "blake3:native");
+        let base = kv_payload(1, 10, 16, 16);
+        let plan = kv_geometry(1, 10, 16, 16, 4);
+        tier.spill(
+            "ns",
+            &tokens(10),
+            &base,
+            Some(runtime_kv_desc(1, 10, 320)),
+            Some(&plan),
+        )
+        .unwrap();
+        let base = tier.locate_longest("ns", &tokens(10), 1).unwrap().unwrap();
+        let bytes_before = tier.activity().bytes_written;
+        let full = kv_payload(1, 15, 16, 16);
+        let full = full.kv_bytes().unwrap().unwrap();
+        let tail = [&full[128..240], &full[368..480]].concat();
+        let recurrent = [42u8; 50];
+        let geometry = PayloadGeometry {
+            tail_bytes: 50,
+            ..kv_geometry(1, 15, 16, 16, 4)
+        };
+        let key = tier
+            .spill_native_extension(
+                "ns",
+                &tokens(15),
+                NativeKvExtension {
+                    base: &base,
+                    reused_rows: NonZeroU64::new(8).unwrap(),
+                    geometry: &geometry,
+                    kv_desc_json: runtime_kv_desc(1, 15, 480),
+                    kv_tail: &tail,
+                    recurrent: &recurrent,
+                },
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            tier.activity().bytes_written - bytes_before,
+            (tail.len() + recurrent.len()) as u64
+        );
+
+        let fill = tier.fill_longest("ns", &tokens(15), 1).unwrap().unwrap();
+        assert_eq!(fill.payload.kv_bytes().unwrap().unwrap(), full);
+        assert_eq!(
+            fill.payload.recurrent_state_bytes().unwrap().as_ref(),
+            recurrent
+        );
+        assert_eq!(fill.manifest.payload_digest, key);
+        let mut tampered = fill.manifest;
+        tampered.segments[0].digest = segment_digest(b"wrong page");
+        assert!(tier.store().assemble(&tampered).is_err());
+
+        tier.store()
+            .link_prefix(
+                &l3_namespace_key("other"),
+                15,
+                &l3_prefix_key("other", &tokens(15)),
+                &key,
+            )
+            .unwrap();
+        assert!(
+            tier.locate_longest("other", &tokens(15), 1)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
     fn fixed_offset_cutting_is_what_fails_the_gate() {
         // The same growth without geometry: this is the 8x the probe measured,
         // kept as a test so the regression is visible rather than remembered.
@@ -1238,7 +1374,7 @@ mod tests {
         let fill = tier.load(&location).unwrap();
 
         let status = tier.status().unwrap();
-        assert_eq!(status.format_version, MANIFEST_VERSION);
+        assert_eq!(status.format_version, CHECKPOINT_MANIFEST_VERSION);
         assert_eq!(status.restorable_manifests, 1);
         assert_eq!(status.restorable_tokens, 3);
         assert_eq!(status.namespaces, 1);

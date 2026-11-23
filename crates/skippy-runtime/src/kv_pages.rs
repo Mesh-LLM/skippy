@@ -6,7 +6,7 @@ use skippy_cache::cachegen::archive::{
     CacheGenArchive, ComponentLayout, PageLayout, RecordKind, ValidatedArchive, ValueType,
     decode_page, encode_page, validate_archive,
 };
-use skippy_ffi::{CacheGenRecordV1, KvPageDesc as RawKvPageDesc};
+use skippy_ffi::{CacheGenRecordV1, KvPageChunk, KvPageDesc as RawKvPageDesc};
 
 use crate::error::{ensure_ok, free_error};
 use crate::session::StageSession;
@@ -491,12 +491,63 @@ impl StageSession {
             ))
         };
         ensure_ok(status, error)?;
+        self.finish_kv_page_import(desc);
+        Ok(())
+    }
+
+    /// Imports a raw page from borrowed chunks. Returns false when this
+    /// layout or backend needs the contiguous importer.
+    pub fn try_import_kv_page_chunks<'a>(
+        &mut self,
+        desc: &RuntimeKvPageDesc,
+        chunks: impl ExactSizeIterator<Item = &'a [u8]>,
+    ) -> Result<bool> {
+        if chunks.len() < 2 || desc.has_sliding_window_component() {
+            return Ok(false);
+        }
+        let mut raw_chunks = Vec::with_capacity(chunks.len());
+        let mut bytes = 0usize;
+        for chunk in chunks.filter(|chunk| !chunk.is_empty()) {
+            bytes = bytes
+                .checked_add(chunk.len())
+                .ok_or_else(|| anyhow::anyhow!("KV page chunk lengths overflow"))?;
+            raw_chunks.push(KvPageChunk {
+                data: chunk.as_ptr().cast(),
+                bytes: chunk.len(),
+            });
+        }
+        desc.validate_payload(bytes)?;
+        if raw_chunks.len() < 2 {
+            return Ok(false);
+        }
+        let raw = desc.as_raw();
+        let mut error = ptr::null_mut();
+        // SAFETY: the slices and descriptor array stay alive for the call.
+        // The native importer synchronously copies the bytes into KV storage.
+        let status = unsafe {
+            native_call!(skippy_import_kv_page_chunks(
+                self.raw,
+                &raw,
+                raw_chunks.as_ptr(),
+                raw_chunks.len(),
+                &mut error,
+            ))
+        };
+        if status == crate::Status::Unsupported {
+            free_error(error);
+            return Ok(false);
+        }
+        ensure_ok(status, error)?;
+        self.finish_kv_page_import(desc);
+        Ok(true)
+    }
+
+    fn finish_kv_page_import(&mut self, desc: &RuntimeKvPageDesc) {
         self.token_count = self
             .token_count
             .max(desc.token_start.saturating_add(desc.token_count));
         // Imported target state has no matching draft features.
         self.dflash_after_replace();
-        Ok(())
     }
 
     pub fn import_cachegen_kv_page(

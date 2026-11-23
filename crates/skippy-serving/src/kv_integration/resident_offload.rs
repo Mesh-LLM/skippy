@@ -1,7 +1,8 @@
 //! Materialize a native prefix only when releasing it to the persistent tier.
 use super::*;
 use crate::runtime_state::RuntimeState;
-use config::durable_spill::PendingDurableSpill;
+use config::durable_spill::{DurableSpillSender, NativeSpillExtension, PendingDurableSpill};
+use std::num::NonZeroU64;
 
 #[derive(Debug)]
 pub(super) struct NativeOffloadClaim {
@@ -141,7 +142,7 @@ impl KvStageIntegration {
         let sequence = victim.value.seq_id;
         let tokens = victim.tokens.len() as u64;
         let desc = if capabilities.resident_attention {
-            Some(runtime.resident_kv_page_desc(session, sequence, tokens)?)
+            Some(runtime.resident_kv_page_desc(session, sequence, 0..tokens)?)
         } else {
             None
         };
@@ -150,7 +151,28 @@ impl KvStageIntegration {
         } else {
             0
         };
-        let kv_bytes = desc.as_ref().map_or(0, |desc| desc.payload_bytes);
+        let incremental = desc
+            .as_ref()
+            .and_then(|full| incremental_capture(&sender, victim, full, recurrent_bytes))
+            .and_then(|extension| {
+                let start = extension.reused_rows.get();
+                let tail = runtime
+                    .resident_kv_page_desc(session, sequence, start..tokens)
+                    .ok()?;
+                let tail_geometry = config::kv_page_geometry(&tail, tail.payload_bytes)?;
+                if tail.token_start != start
+                    || tail.token_count != tokens - start
+                    || tail_geometry.blocks != extension.geometry.blocks
+                    || tail_geometry.window_rows != extension.geometry.window_rows
+                {
+                    return None;
+                }
+                Some((extension, tail.payload_bytes))
+            });
+        let (start, kv_bytes) = incremental.as_ref().map_or_else(
+            || (0, desc.as_ref().map_or(0, |desc| desc.payload_bytes)),
+            |(extension, bytes)| (extension.reused_rows.get(), *bytes),
+        );
         let bytes = kv_bytes
             .checked_add(recurrent_bytes as u64)
             .ok_or_else(|| anyhow::anyhow!("native offload size overflow"))?;
@@ -160,15 +182,20 @@ impl KvStageIntegration {
         let Some(reservation) = sender.try_reserve(bytes) else {
             return Ok(false);
         };
-        let kv = if let Some(desc) = &desc {
-            runtime
-                .export_resident_kv_page(
-                    session,
-                    sequence,
-                    tokens,
-                    usize::try_from(desc.payload_bytes)?,
-                )?
-                .payload
+        let kv = if kv_bytes > 0 {
+            let page = runtime.export_resident_kv_page(
+                session,
+                sequence,
+                start..tokens,
+                usize::try_from(kv_bytes)?,
+            )?;
+            anyhow::ensure!(
+                page.desc.token_start == start
+                    && page.desc.token_count == tokens - start
+                    && page.payload.len() as u64 == kv_bytes,
+                "resident export no longer matches its sized token range"
+            );
+            page.payload
         } else {
             Vec::new()
         };
@@ -195,11 +222,39 @@ impl KvStageIntegration {
                 token_ids: victim.tokens.clone(),
                 l3_cost: None,
                 native_raw: true,
+                extension: incremental.map(|(extension, _)| extension),
             },
             reservation,
             claim,
         ))
     }
+}
+
+fn incremental_capture(
+    sender: &DurableSpillSender,
+    victim: &skippy_cache::RadixEvictionCandidate<RadixResidentEntry>,
+    full: &skippy_runtime::RuntimeKvPageDesc,
+    recurrent_bytes: usize,
+) -> Option<NativeSpillExtension> {
+    let base = sender.native_base(&victim.namespace, &victim.tokens)?;
+    let base_desc = serde_json::from_str(base.kv_desc_json.as_deref()?).ok()?;
+    let base_geometry = config::kv_page_geometry(&base_desc, base.kv_bytes)?;
+    let total = full.payload_bytes.checked_add(recurrent_bytes as u64)?;
+    let geometry = config::kv_page_geometry(full, total)?;
+    if base_geometry.blocks != geometry.blocks
+        || base_geometry.window_rows != geometry.window_rows
+        || base_geometry.rows != base.token_count
+        || full.token_start != 0
+    {
+        return None;
+    }
+    let reused_rows =
+        NonZeroU64::new(base.token_count / geometry.window_rows * geometry.window_rows)?;
+    Some(NativeSpillExtension {
+        base,
+        reused_rows,
+        geometry,
+    })
 }
 
 #[cfg(test)]

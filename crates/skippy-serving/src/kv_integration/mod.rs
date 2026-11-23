@@ -257,6 +257,7 @@ pub struct KvStageIntegration {
     /// stored prefix must not each read it from disk: the loser prefills
     /// normally while the winner re-warms the radix for everyone.
     pub(crate) inflight_fills: Arc<Mutex<BTreeSet<String>>>,
+    l3_staging: Arc<std::sync::atomic::AtomicBool>,
     /// The model has attention KV but no recurrent memory, so an exact-state
     /// entry legitimately carries an empty recurrent snapshot. Restores set
     /// the position directly instead of importing one. Never true for a
@@ -300,9 +301,9 @@ pub(crate) struct PendingExactStateRecord {
     /// Only freshly exported request state writes through. Tier fills that
     /// merely re-warm L1 must not rewrite their existing durable entry.
     pub(crate) write_through_l3: bool,
-    /// Durable manifest digest to mirror into L2 on this worker job. `None`
+    /// Durable manifest to mirror into L2 on this worker job. `None`
     /// leaves the payload out of L2.
-    pub(crate) l2_promotion_digest: Option<String>,
+    pub(crate) l2_promotion_manifest: Option<Box<skippy_cache::HandoffManifest>>,
     /// Measured cold-versus-restore cost for L3 benefit admission. Missing
     /// telemetry preserves the established LRU write-through behavior.
     pub(crate) l3_cost: Option<skippy_cache::policy::CostSample>,

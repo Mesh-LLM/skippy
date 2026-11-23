@@ -124,7 +124,7 @@ impl PackedSegmentStore {
             .clone();
         let mut planned = HashMap::<String, PackedSegmentLocation>::new();
         let mut pack_segments = Vec::new();
-        let mut pack_hasher = blake3::Hasher::new();
+        let mut pack_hasher = blake3::Hasher::new_derive_key("Skippy L3 pack page list v1");
         let mut candidate_bytes = 0u64;
         let mut new_digests = HashSet::new();
 
@@ -140,7 +140,8 @@ impl PackedSegmentStore {
             candidate_bytes = candidate_bytes
                 .checked_add(bytes.len() as u64)
                 .context("packed object size overflows u64")?;
-            pack_hasher.update(bytes);
+            // Page digests are fixed-width and already cover the stored bytes.
+            pack_hasher.update(digest.as_bytes());
             pack_segments.push(*bytes);
             planned.insert(
                 (*digest).to_string(),
@@ -562,7 +563,7 @@ fn write_pack_atomically(path: &Path, segments: &[&[u8]]) -> Result<()> {
     Ok(())
 }
 
-fn is_digest(value: &str) -> bool {
+pub(super) fn is_digest(value: &str) -> bool {
     value.len() == 64
         && value
             .bytes()

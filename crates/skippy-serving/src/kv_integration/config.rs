@@ -295,17 +295,16 @@ impl KvStageIntegration {
                         pending,
                         |pending| {
                             if admitted.resident
-                                && let (Some(l2), Some(digest)) =
-                                    (worker_l2.as_ref(), pending.l2_promotion_digest.as_deref())
+                                && let (Some(l2), Some(manifest)) =
+                                    (worker_l2.as_ref(), pending.l2_promotion_manifest.as_deref())
                             {
                                 // The native resident prefix already owns L1.
                                 // Publish only the bounded host-RAM mirror.
                                 let _ = l2.promote(
                                     &pending.namespace,
                                     &pending.token_ids,
-                                    digest,
+                                    manifest,
                                     &pending.payload,
-                                    &pending.extra,
                                 );
                                 return Ok(());
                             }
@@ -418,6 +417,7 @@ impl KvStageIntegration {
             l3,
             cachegen_serving_enabled: worker_cachegen,
             inflight_fills,
+            l3_staging: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             dense_without_recurrent,
             resident_checkpoint_max_bytes,
         };
@@ -590,7 +590,10 @@ fn l3_payload_kind(payload: StagePrefixCachePayload) -> &'static str {
 /// Returns `None` when the layout is not one this mapping can state exactly;
 /// the store then falls back to fixed-size cutting, which is correct but not
 /// cheap.
-fn kv_page_geometry(desc: &RuntimeKvPageDesc, payload_bytes: u64) -> Option<PayloadGeometry> {
+pub(super) fn kv_page_geometry(
+    desc: &RuntimeKvPageDesc,
+    payload_bytes: u64,
+) -> Option<PayloadGeometry> {
     // A composite (ISWA) page is two independently-shaped components; its
     // geometry is not this single-run description.
     if desc.component_count != 0 || desc.token_count == 0 || desc.layer_count == 0 {
@@ -754,7 +757,7 @@ fn store_exact_radix_record_with_codec(
         token_ids,
         l3_fill_claim: _,
         write_through_l3,
-        l2_promotion_digest,
+        l2_promotion_manifest,
         l3_cost,
         admission_credit: _admission_credit,
     } = pending;
@@ -822,8 +825,8 @@ fn store_exact_radix_record_with_codec(
     #[cfg(test)]
     crate::frontend::capture_trace::log_stored_identity(&namespace, &token_ids);
 
-    if let (Some(l2), Some(payload_digest)) = (l2, l2_promotion_digest.as_deref()) {
-        let _ = l2.promote(&namespace, &token_ids, payload_digest, &payload, &extra);
+    if let (Some(l2), Some(manifest)) = (l2, l2_promotion_manifest.as_deref()) {
+        let _ = l2.promote(&namespace, &token_ids, manifest, &payload);
     }
     // Durable write-through is best-effort after L1 publication: a slow, full,
     // or failing disk must not delay or invalidate the in-memory record. The
@@ -832,6 +835,7 @@ fn store_exact_radix_record_with_codec(
     let durable_spill = write_through_l3.then_some(PendingDurableSpill {
         page_id,
         native_raw: false,
+        extension: None,
         payload,
         extra,
         namespace,
@@ -1031,7 +1035,7 @@ mod tests {
             token_ids: tokens.to_vec(),
             l3_fill_claim: None,
             write_through_l3: true,
-            l2_promotion_digest: None,
+            l2_promotion_manifest: None,
             l3_cost: None,
             admission_credit: budget.credit(),
         }
@@ -1084,7 +1088,7 @@ mod tests {
             token_ids: tokens.to_vec(),
             l3_fill_claim: None,
             write_through_l3: true,
-            l2_promotion_digest: None,
+            l2_promotion_manifest: None,
             l3_cost: None,
             admission_credit: budget.credit(),
         }
@@ -1239,7 +1243,9 @@ mod tests {
         let budget = StorageBudget::new();
         let mut record = pending("filled", &[1, 2], bytes, &budget);
         record.write_through_l3 = false;
-        record.l2_promotion_digest = Some(skippy_cache::segment_digest(bytes));
+        record.l2_promotion_manifest = Some(Box::new(
+            super::super::l2_serving::legacy_test_manifest(2, bytes),
+        ));
 
         store_exact_radix_record(&radix, &blobs, 1, limits(0, 0), Some(&l2), None, record).unwrap();
 

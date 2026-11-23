@@ -645,6 +645,31 @@ impl RuntimeState {
         self.abandon_session_end_kv_exports(session_id);
         let session = self.session(session_id)?;
         session.import_kv_page(desc, bytes)?;
+        self.record_imported_kv_page(session_id, desc)
+    }
+
+    pub fn try_import_kv_page_chunks<'a>(
+        &mut self,
+        session_id: &str,
+        desc: &RuntimeKvPageDesc,
+        chunks: impl ExactSizeIterator<Item = &'a [u8]>,
+    ) -> Result<bool> {
+        self.abandon_session_end_kv_exports(session_id);
+        if !self
+            .session(session_id)?
+            .try_import_kv_page_chunks(desc, chunks)?
+        {
+            return Ok(false);
+        }
+        self.record_imported_kv_page(session_id, desc)?;
+        Ok(true)
+    }
+
+    fn record_imported_kv_page(
+        &mut self,
+        session_id: &str,
+        desc: &RuntimeKvPageDesc,
+    ) -> Result<()> {
         let token_end = desc
             .token_start
             .checked_add(desc.token_count)

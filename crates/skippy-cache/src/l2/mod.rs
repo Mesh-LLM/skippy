@@ -3,7 +3,7 @@
 //! The radix cache (L1) holds resident payloads; the L3 tier holds the same
 //! state durably on disk as content-addressed packed segments. This module
 //! adds the missing middle tier: a bounded host-RAM cache of *immutable
-//! packed segments*, keyed and identified exactly like the L3 entries they
+//! checkpoint bytes*, keyed and identified exactly like the L3 entries they
 //! mirror.
 //!
 //! Contract (mirrors `crate::tier::L3Tier`):
@@ -20,7 +20,7 @@
 //!   entry's L3 manifest segment list onto those handles. A longer prefix
 //!   that extends a shorter one references the same segment handles, so
 //!   turn growth shares prefix bytes instead of duplicating them — L2 RAM
-//!   tracks *distinct segment* bytes, not per-prefix assembled bytes.
+//!   tracks *distinct segment* bytes.
 //! - **Integrity**: the whole concatenated L3 wire digest (the manifest key)
 //!   is verified exactly once, at admission, against the payload being
 //!   admitted. After admission the segment bytes are immutable, so every
@@ -35,12 +35,13 @@
 //!   first admission pays for it.
 //! - **Zero-copy reads**: `get` clones handles, not bytes; the returned
 //!   `CacheBytes` is a block-backed view over the shared segment storages,
-//!   contiguous in the single-segment case.
+//!   contiguous in the single-segment case. Native import can consume the
+//!   shared segments directly.
 //!
 //! `skippy-server` wires this tier as a bounded mirror of repeated or
 //! high-value L3 fills. An L2 hit rewarms L1.
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ops::Range,
     sync::{
         Arc, Mutex,
@@ -52,7 +53,8 @@ use std::{
 use crate::PayloadCodec;
 use crate::payload::{CacheBytes, ExactStatePayload, ExactStatePayloadKind};
 use crate::{
-    HandoffManifest, HandoffSegmentRef, MANIFEST_VERSION, SegmentCodecIdentity, segment_digest,
+    CHECKPOINT_MANIFEST_VERSION, HandoffManifest, HandoffSegmentRef, MANIFEST_VERSION,
+    SegmentCodecIdentity, segment_digest,
 };
 
 const DIRECT_SEGMENT_BYTES: usize = 1024 * 1024;
@@ -91,8 +93,7 @@ pub struct L2Stats {
     pub entries: u64,
     /// Sum of entries' distinct segment charges — the live budget usage.
     pub bytes: u64,
-    /// Sum of entry payload lengths including cross-entry sharing; larger
-    /// than `bytes` exactly when entries share prefix segments.
+    /// Sum of entry payload lengths, including cross-entry sharing.
     pub logical_bytes: u64,
     /// Distinct immutable segment handles currently held.
     pub segments: u64,
@@ -229,13 +230,13 @@ impl ExactStatePayloadMirror {
 
     /// Segment digests in wire order, deduplicated.
     fn segment_digests(&self) -> Vec<&str> {
-        let mut seen = Vec::new();
-        for (digest, _) in &self.layout().segments {
-            if !seen.contains(&digest.as_str()) {
-                seen.push(digest.as_str());
-            }
-        }
-        seen
+        let mut seen = HashSet::new();
+        self.layout()
+            .segments
+            .iter()
+            .map(|(digest, _)| digest.as_str())
+            .filter(|digest| seen.insert(*digest))
+            .collect()
     }
 }
 
@@ -260,13 +261,16 @@ impl L2Hit {
     /// `Cow` on `as_cow`.
     pub fn to_payload(&self) -> crate::payload::ExactStatePayload {
         let layout = self.payload.layout();
-        let wire = self.wire_view(0..layout.total_bytes);
         match self.payload.kind() {
             crate::payload::ExactStatePayloadKind::FullState => {
-                crate::payload::ExactStatePayload::FullState { bytes: wire }
+                crate::payload::ExactStatePayload::FullState {
+                    bytes: self.wire_view(0..layout.total_bytes),
+                }
             }
             crate::payload::ExactStatePayloadKind::RecurrentOnly => {
-                crate::payload::ExactStatePayload::RecurrentOnly { recurrent: wire }
+                crate::payload::ExactStatePayload::RecurrentOnly {
+                    recurrent: self.wire_view(0..layout.total_bytes),
+                }
             }
             crate::payload::ExactStatePayloadKind::KvRecurrent => {
                 // Split the wire at kv_bytes exactly like L3 load does: kv
@@ -278,6 +282,23 @@ impl L2Hit {
                 crate::payload::ExactStatePayload::KvRecurrent { kv, recurrent }
             }
         }
+    }
+
+    /// Borrows the verified KV portion in wire order. The last segment may
+    /// also contain recurrent bytes, which are outside this view.
+    pub fn kv_chunks(&self) -> Option<impl ExactSizeIterator<Item = &[u8]>> {
+        let layout = self.payload.layout();
+        if layout.payload_kind != ExactStatePayloadKind::KvRecurrent {
+            return None;
+        }
+        let kv_len = layout.kv_bytes.min(layout.total_bytes);
+        let end = layout
+            .segments
+            .partition_point(|(_, range)| range.start < kv_len);
+        Some(layout.segments[..end].iter().map(move |(digest, range)| {
+            let len = (range.end.min(kv_len) - range.start) as usize;
+            &self.segments[digest].bytes[..len]
+        }))
     }
 
     /// Block-backed `CacheBytes` over `range` of the assembled wire, in
@@ -625,6 +646,42 @@ impl L2Tier {
         self.budget_bytes
     }
 
+    /// Mirror the exact layout of a checkpoint without hashing its bytes as
+    /// a second, monolithic object. The shared admission path verifies every
+    /// segment before installing it in the immutable pool.
+    pub fn admit_manifest_payload(
+        &self,
+        cache_key: String,
+        manifest: &HandoffManifest,
+        payload: &ExactStatePayload,
+    ) -> Result<Vec<L2Eviction>, L2InsertRefusal> {
+        let mirror = ExactStatePayloadMirror::from_manifest(manifest)?;
+        let digest = manifest.payload_digest.clone();
+        if manifest.version != CHECKPOINT_MANIFEST_VERSION {
+            let (wire, _, _) = payload_wire(payload)?;
+            return self.admit(
+                cache_key,
+                manifest.token_count,
+                digest,
+                &wire,
+                mirror,
+                L2Origin::FromL3,
+            );
+        }
+        manifest
+            .verify_checkpoint()
+            .map_err(|error| L2InsertRefusal::MalformedManifest(error.to_string()))?;
+        let (wire, _, _) = payload_wire(payload)?;
+        self.admit_segments(
+            cache_key,
+            manifest.token_count,
+            digest,
+            &wire,
+            mirror,
+            L2Origin::FromL3,
+        )
+    }
+
     /// Admit an exact-state payload restored from the authoritative L3 tier.
     ///
     /// The payload is cut into stable one-MiB content chunks. This preserves
@@ -726,6 +783,18 @@ impl L2Tier {
                 actual,
             });
         }
+        self.admit_segments(cache_key, token_count, payload_digest, wire, mirror, origin)
+    }
+
+    fn admit_segments(
+        &self,
+        cache_key: String,
+        token_count: u64,
+        payload_digest: String,
+        wire: &[u8],
+        mirror: ExactStatePayloadMirror,
+        origin: L2Origin,
+    ) -> Result<Vec<L2Eviction>, L2InsertRefusal> {
         let payload_bytes = mirror.byte_len();
         if payload_bytes == 0 {
             // Mirrors L3: an empty payload cannot represent state.
@@ -752,8 +821,9 @@ impl L2Tier {
         let mut new_segments: Vec<(String, SegmentHandle)> = Vec::new();
         let mut new_bytes = 0u64;
         let mut shared_bytes = 0u64;
-        for &(digest, slice) in segments.iter() {
-            if new_segments.iter().any(|(d, _)| d == digest) {
+        let mut seen = HashSet::with_capacity(segments.len());
+        for (digest, slice) in segments {
+            if !seen.insert(digest) {
                 // Within-admission duplicate digest: the validation pass
                 // already proved both slices have identical content, so
                 // keep the first copy.
@@ -786,22 +856,18 @@ impl L2Tier {
                                 .to_string(),
                         });
                     }
-                    new_bytes = new_bytes.saturating_add(slice.len() as u64);
-                    new_segments.push((
-                        digest.to_string(),
-                        SegmentHandle {
-                            bytes: Arc::new(slice.to_vec()),
-                        },
-                    ));
+                    let handle = SegmentHandle {
+                        bytes: Arc::new(slice.to_vec()),
+                    };
+                    new_bytes = new_bytes.saturating_add(handle.bytes.len() as u64);
+                    new_segments.push((digest.to_string(), handle));
                 }
                 None => {
-                    new_bytes = new_bytes.saturating_add(slice.len() as u64);
-                    new_segments.push((
-                        digest.to_string(),
-                        SegmentHandle {
-                            bytes: Arc::new(slice.to_vec()),
-                        },
-                    ));
+                    let handle = SegmentHandle {
+                        bytes: Arc::new(slice.to_vec()),
+                    };
+                    new_bytes = new_bytes.saturating_add(handle.bytes.len() as u64);
+                    new_segments.push((digest.to_string(), handle));
                 }
             }
         }
@@ -1182,23 +1248,26 @@ impl L2Tier {
     /// corruption cleanup, and rollback alike. Deterministic: identical
     /// map states produce identical ownership.
     fn recompute_all_charges(inner: &mut L2Inner) {
-        let mut ownership: HashMap<String, u64> = HashMap::new();
-        for digest in inner.segments.keys() {
-            let Some(bytes) = inner.segments.get(digest).map(|h| h.bytes.len() as u64) else {
-                continue;
-            };
-            let owner = inner
-                .map
-                .iter()
-                .filter(|(_, entry)| entry.payload.segment_digests().contains(&digest.as_str()))
-                .map(|(key, _)| key.clone())
-                .min();
-            if let Some(owner) = owner {
-                *ownership.entry(owner).or_insert(0) += bytes;
+        let mut owners = HashMap::<&str, &str>::with_capacity(inner.segments.len());
+        for (key, entry) in &inner.map {
+            for (digest, _) in &entry.payload.layout().segments {
+                let owner = owners.entry(digest).or_insert(key);
+                *owner = (*owner).min(key);
+            }
+        }
+        let mut charges = HashMap::<String, u64>::with_capacity(inner.map.len());
+        for (digest, owner) in owners {
+            if let Some(segment) = inner.segments.get(digest) {
+                let bytes = segment.bytes.len() as u64;
+                if let Some(charge) = charges.get_mut(owner) {
+                    *charge += bytes;
+                } else {
+                    charges.insert(owner.to_owned(), bytes);
+                }
             }
         }
         for (key, entry) in inner.map.iter_mut() {
-            entry.charge_bytes = ownership.get(key).copied().unwrap_or(0);
+            entry.charge_bytes = charges.get(key).copied().unwrap_or(0);
         }
     }
 
@@ -1402,6 +1471,50 @@ mod tests {
 
     fn key(namespace: &str, tokens: &[i32]) -> String {
         l2_cache_key("model-a", "state-a", namespace, tokens)
+    }
+
+    #[test]
+    fn kv_chunks_borrow_shared_segments_and_exclude_recurrent_bytes() {
+        let tier = L2Tier::new(16);
+        let admit = |key: &str, wire: &[u8], kv_bytes: u64| {
+            let mut start = 0;
+            let segments = wire
+                .chunks(4)
+                .map(|chunk| {
+                    let end = start + chunk.len() as u64;
+                    let segment = (segment_digest(chunk), start..end);
+                    start = end;
+                    segment
+                })
+                .collect();
+            let layout = L2Layout {
+                payload_kind: ExactStatePayloadKind::KvRecurrent,
+                total_bytes: wire.len() as u64,
+                kv_bytes,
+                recurrent_bytes: wire.len() as u64 - kv_bytes,
+                kv_desc_json: None,
+                segments,
+            };
+            tier.admit(
+                key.into(),
+                2,
+                segment_digest(wire),
+                wire,
+                ExactStatePayloadMirror::KvRecurrent { layout },
+                L2Origin::Direct,
+            )
+            .unwrap();
+        };
+        admit("first", b"abcdefRR", 6);
+        admit("grown", b"abcdefghiirr", 10);
+        assert_eq!(tier.stats().bytes, 16);
+        let first = tier.get("first").unwrap();
+        let grown = tier.get("grown").unwrap();
+        let first_chunks: Vec<_> = first.kv_chunks().unwrap().collect();
+        let grown_chunks: Vec<_> = grown.kv_chunks().unwrap().collect();
+        assert_eq!(first_chunks, [b"abcd".as_slice(), b"ef"]);
+        assert_eq!(grown_chunks, [b"abcd".as_slice(), b"efgh", b"ii"]);
+        assert_eq!(first_chunks[0].as_ptr(), grown_chunks[0].as_ptr());
     }
 
     #[test]
@@ -1940,6 +2053,7 @@ mod tests {
             payload_kind: "kv-recurrent".to_string(),
             total_bytes: wire_bytes.len() as u64,
             payload_digest: digest.clone(),
+            prefix_key: None,
             segments: vec![
                 HandoffSegmentRef {
                     index: 0,
@@ -2000,6 +2114,7 @@ mod tests {
             payload_kind: "blob".to_string(),
             total_bytes: 10,
             payload_digest: "blake3:aa".to_string(),
+            prefix_key: None,
             segments: Vec::new(),
             kv_bytes: 10,
             kv_decoded_bytes: 10,
@@ -2725,6 +2840,7 @@ mod tests {
             payload_kind: "full-state".to_string(),
             total_bytes: 32,
             payload_digest: digest.clone(),
+            prefix_key: None,
             segments: vec![HandoffSegmentRef {
                 index,
                 offset,

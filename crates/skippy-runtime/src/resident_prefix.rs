@@ -3,7 +3,7 @@ use crate::error::{ensure_ok, free_error};
 use crate::native_timing::native_call;
 use crate::{RuntimeKvPage, RuntimeKvPageDesc, Status, session::StageSession};
 use anyhow::{Result, ensure};
-use std::ptr;
+use std::{ops::Range, ptr};
 
 impl StageSession {
     pub fn resident_kv_page_desc(
@@ -12,6 +12,19 @@ impl StageSession {
         layers: (i32, i32),
         tokens: u64,
     ) -> Result<RuntimeKvPageDesc> {
+        self.resident_kv_range_desc(sequence, layers, 0..tokens)
+    }
+
+    pub fn resident_kv_range_desc(
+        &mut self,
+        sequence: i32,
+        layers: (i32, i32),
+        tokens: Range<u64>,
+    ) -> Result<RuntimeKvPageDesc> {
+        let count = tokens
+            .end
+            .checked_sub(tokens.start)
+            .ok_or_else(|| anyhow::anyhow!("resident KV token range is reversed"))?;
         let mut desc = skippy_ffi::KvPageDesc::default();
         let mut bytes = 0;
         let mut error = ptr::null_mut();
@@ -22,8 +35,8 @@ impl StageSession {
                 sequence,
                 layers.0,
                 layers.1,
-                0,
-                tokens,
+                tokens.start,
+                count,
                 &mut desc,
                 ptr::null_mut(),
                 0,
@@ -46,6 +59,20 @@ impl StageSession {
         tokens: u64,
         bytes: usize,
     ) -> Result<RuntimeKvPage> {
+        self.export_resident_kv_range(sequence, layers, 0..tokens, bytes)
+    }
+
+    pub fn export_resident_kv_range(
+        &mut self,
+        sequence: i32,
+        layers: (i32, i32),
+        tokens: Range<u64>,
+        bytes: usize,
+    ) -> Result<RuntimeKvPage> {
+        let count = tokens
+            .end
+            .checked_sub(tokens.start)
+            .ok_or_else(|| anyhow::anyhow!("resident KV token range is reversed"))?;
         let mut desc = skippy_ffi::KvPageDesc::default();
         let mut payload = vec![0; bytes];
         let mut written = 0;
@@ -57,8 +84,8 @@ impl StageSession {
                 sequence,
                 layers.0,
                 layers.1,
-                0,
-                tokens,
+                tokens.start,
+                count,
                 &mut desc,
                 payload.as_mut_ptr().cast(),
                 payload.len(),

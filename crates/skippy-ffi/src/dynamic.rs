@@ -10,9 +10,9 @@ use crate::{
     ABI_VERSION_MAJOR, ABI_VERSION_MINOR, ABI_VERSION_PATCH, AbiVersion, ActivationBoundaryDesc,
     ActivationDesc, AsrAbortCallback, AsrInfoV1, AsrModel, AsrResult, AsrSegmentV1,
     AsrTranscribeParamsV1, BackendDevice, CacheGenRecordV1, ClefInfoV1, ClefModel, Error,
-    GenerationSignalWindow, IterationRequest, KvPageDesc, LayaInfoV1, LayaMemoryV1, LayaModel,
-    LayaSequence, LlamaLogCallback, LlamaModelQuantizeParams, LlamaPerfContextFn, Model, ModelInfo,
-    MtmdBitmap, MtmdContext, MtmdContextParams, MtmdDecoderPos, MtmdGenAudioInfo,
+    GenerationSignalWindow, IterationRequest, KvPageChunk, KvPageDesc, LayaInfoV1, LayaMemoryV1,
+    LayaModel, LayaSequence, LlamaLogCallback, LlamaModelQuantizeParams, LlamaPerfContextFn, Model,
+    ModelInfo, MtmdBitmap, MtmdContext, MtmdContextParams, MtmdDecoderPos, MtmdGenAudioInfo,
     MtmdHelperBitmapWrapper, MtmdHelperDecodeBudget, MtmdHelperGenAudio, MtmdHelperGenAudioInput,
     MtmdHelperInitOpt, MtmdHelperVideo, MtmdInputChunkType, MtmdInputChunks, MtmdInputText,
     NativeMtpDraft, NativeRuntimeLoadError, NgramCache, Opaque, RuntimeConfig, SamplingConfig,
@@ -263,6 +263,7 @@ dynamic_symbols! {
     skippy_import_full_state(session: *mut Session, layer_start: i32, layer_end: i32, input: *const c_void, input_bytes: usize, out_error: *mut *mut Error) -> Status;
     skippy_export_kv_page(session: *mut Session, layer_start: i32, layer_end: i32, token_start: u64, token_count: u64, out_desc: *mut KvPageDesc, output: *mut c_void, output_capacity: usize, out_bytes: *mut usize, out_error: *mut *mut Error) -> Status;
     skippy_import_kv_page(session: *mut Session, desc: *const KvPageDesc, input: *const c_void, input_bytes: usize, out_error: *mut *mut Error) -> Status;
+    skippy_import_kv_page_chunks(session: *mut Session, desc: *const KvPageDesc, chunks: *const KvPageChunk, chunk_count: usize, out_error: *mut *mut Error) -> Status;
     skippy_import_cachegen_kv_page_v1(session: *mut Session, desc: *const KvPageDesc, records: *const CacheGenRecordV1, record_count: usize, out_error: *mut *mut Error) -> Status;
     skippy_model_memory_cache_capabilities(model: *const Model) -> u32;
     skippy_model_kv_pool_cells(model: *const Model) -> u32;

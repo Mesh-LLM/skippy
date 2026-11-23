@@ -61,6 +61,9 @@ const EVICTION_LOW_WATER_PERCENT: u64 = 85;
 /// version whose segment lacks it is rejected rather than reinterpreted.
 pub const MANIFEST_VERSION: u32 = 4;
 
+/// Serving checkpoints address ordered page metadata instead of concatenated bytes.
+pub const CHECKPOINT_MANIFEST_VERSION: u32 = 5;
+
 /// The pre-codec-identity manifest format. These entries predate codec
 /// identity, are always raw by construction, and are decoded as raw through
 /// the explicit legacy path in [`decode_manifest`]. New manifests are never
@@ -313,8 +316,12 @@ pub struct HandoffManifest {
     #[serde(default)]
     pub codec: Option<PayloadCodec>,
     pub total_bytes: u64,
-    /// BLAKE3 of the assembled payload; also the manifest's key.
+    /// Manifest key. Older handoff manifests use the digest of the assembled bytes.
+    /// Serving checkpoints use the digest of the manifest with this field cleared.
     pub payload_digest: String,
+    /// The serving prefix coordinate includes the cache namespace and token IDs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix_key: Option<String>,
     pub segments: Vec<HandoffSegmentRef>,
     pub kv_bytes: u64,
     /// Decoded native KV length. Equal to `kv_bytes` for native pages; for a
@@ -335,6 +342,32 @@ pub struct HandoffManifest {
 }
 
 impl HandoffManifest {
+    pub(crate) fn checkpoint_digest(&self) -> Result<String> {
+        let mut manifest = self.clone();
+        manifest.payload_digest.clear();
+        let mut hasher = blake3::Hasher::new_derive_key("Skippy L3 checkpoint manifest v5");
+        hasher.update(&serde_json::to_vec(&manifest)?);
+        Ok(hasher.finalize().to_hex().to_string())
+    }
+
+    pub(crate) fn verify_checkpoint(&self) -> Result<()> {
+        if self.version == CHECKPOINT_MANIFEST_VERSION {
+            if !self
+                .prefix_key
+                .as_deref()
+                .is_some_and(|key| key.strip_prefix("blake3:").is_some_and(packed::is_digest))
+            {
+                bail!("checkpoint manifest has no valid prefix key");
+            }
+            if self.checkpoint_digest()? != self.payload_digest {
+                bail!("checkpoint manifest does not match its digest");
+            }
+        } else if self.prefix_key.is_some() {
+            bail!("handoff manifest carries a serving checkpoint prefix key");
+        }
+        Ok(())
+    }
+
     pub fn new(state_identity: String, payload_kind: String) -> Self {
         Self::new_for_model(state_identity.clone(), state_identity, payload_kind)
     }
@@ -352,6 +385,7 @@ impl HandoffManifest {
             codec: Some(PayloadCodec::raw()),
             total_bytes: 0,
             payload_digest: String::new(),
+            prefix_key: None,
             segments: Vec::new(),
             kv_bytes: 0,
             kv_decoded_bytes: 0,
@@ -1173,29 +1207,36 @@ impl HandoffSegmentStore {
     }
 
     /// Store one spill's logical segments in one immutable physical pack.
-    pub fn try_put_segments<'store>(
-        &'store self,
+    pub fn try_put_segments(
+        &self,
         segments: &[&[u8]],
-    ) -> Result<Result<Vec<StoredSegment<'store>>, WriteRefusal>> {
-        let digests = segments
+    ) -> Result<Result<Vec<StoredSegment<'_>>, WriteRefusal>> {
+        let inputs = segments
             .iter()
-            .map(|bytes| segment_digest(bytes))
+            .map(|bytes| (segment_digest(bytes), *bytes))
             .collect::<Vec<_>>();
-        let holds = digests
+        let inputs = inputs
             .iter()
-            .map(|digest| self.hold_segment(digest))
-            .collect::<Vec<_>>();
-        let inputs = digests
-            .iter()
-            .zip(segments)
             .map(|(digest, bytes)| (digest.as_str(), *bytes))
             .collect::<Vec<_>>();
-        let estimated = self.packed.estimated_new_bytes(&inputs);
+        self.try_put_hashed_segments(&inputs)
+    }
+
+    /// Callers must compute each digest from the supplied immutable slice.
+    pub(crate) fn try_put_hashed_segments(
+        &self,
+        inputs: &[(&str, &[u8])],
+    ) -> Result<Result<Vec<StoredSegment<'_>>, WriteRefusal>> {
+        let holds = inputs
+            .iter()
+            .map(|(digest, _)| self.hold_segment(digest))
+            .collect::<Vec<_>>();
+        let estimated = self.packed.estimated_new_bytes(inputs);
         let reservation = match self.reserve(estimated)? {
             Ok(reservation) => reservation,
             Err(refusal) => return Ok(Err(refusal)),
         };
-        let (packed, new_bytes) = match self.packed.write_batch(&inputs) {
+        let (packed, new_bytes) = match self.packed.write_batch(inputs) {
             Ok(result) => result,
             Err(error) => {
                 self.invalidate_usage();
@@ -1204,13 +1245,12 @@ impl HandoffSegmentStore {
         };
         self.add_usage_bytes(new_bytes);
         drop(reservation);
-        Ok(Ok(digests
-            .into_iter()
+        Ok(Ok(inputs
+            .iter()
             .zip(holds)
             .zip(packed)
-            .zip(segments)
-            .map(|(((digest, hold), packed), bytes)| StoredSegment {
-                digest,
+            .map(|(((digest, bytes), hold), packed)| StoredSegment {
+                digest: (*digest).to_owned(),
                 put: SegmentPut {
                     new: packed.new,
                     bytes: bytes.len() as u64,
@@ -1439,13 +1479,14 @@ impl HandoffSegmentStore {
         Ok(entries.into_iter().map(|(_, stem)| stem).collect())
     }
 
-    /// Assemble the full payload for a manifest, verifying every segment
-    /// digest, the tiling, and the whole-payload digest.
+    /// Assemble a checkpoint from verified pages. Legacy handoff manifests
+    /// additionally verify the digest of the assembled bytes.
     pub fn assemble(&self, manifest: &HandoffManifest) -> Result<Vec<u8>> {
         validate_manifest_compatibility(manifest)?;
         let total = usize::try_from(manifest.total_bytes).context("payload exceeds usize")?;
         let mut payload = Vec::with_capacity(total);
-        let mut payload_hasher = blake3::Hasher::new();
+        let mut payload_hasher =
+            (manifest.version != CHECKPOINT_MANIFEST_VERSION).then(blake3::Hasher::new);
         let locations = self
             .packed
             .load_manifest_index(&manifest.payload_digest, manifest.segments.len())?;
@@ -1478,21 +1519,25 @@ impl HandoffSegmentStore {
                     output_offset: segment.offset,
                 });
             } else {
-                self.append_packed(&packed_requests, &mut payload, &mut payload_hasher)?;
+                self.append_packed(&packed_requests, &mut payload, payload_hasher.as_mut())?;
                 packed_requests.clear();
                 let bytes = self.read_segment(&segment.digest)?;
-                payload_hasher.update(&bytes);
+                if let Some(hasher) = &mut payload_hasher {
+                    hasher.update(&bytes);
+                }
                 payload.extend_from_slice(&bytes);
             }
         }
-        self.append_packed(&packed_requests, &mut payload, &mut payload_hasher)?;
+        self.append_packed(&packed_requests, &mut payload, payload_hasher.as_mut())?;
         if payload.len() != total {
             bail!(
                 "assembled {} bytes but manifest records {total}",
                 payload.len()
             );
         }
-        if payload_hasher.finalize().to_hex().as_str() != manifest.payload_digest {
+        if payload_hasher
+            .is_some_and(|hasher| hasher.finalize().to_hex().as_str() != manifest.payload_digest)
+        {
             bail!("assembled payload failed manifest digest verification");
         }
         Ok(payload)
@@ -1502,12 +1547,9 @@ impl HandoffSegmentStore {
         &self,
         requests: &[PackedReadRequest<'_>],
         payload: &mut Vec<u8>,
-        payload_hasher: &mut blake3::Hasher,
+        payload_hasher: Option<&mut blake3::Hasher>,
     ) -> Result<()> {
-        match self
-            .packed
-            .append_many(requests, payload, Some(payload_hasher))
-        {
+        match self.packed.append_many(requests, payload, payload_hasher) {
             Ok(()) => Ok(()),
             Err(failure) => {
                 let path = self.packed.pack_path(&failure.pack_digest);
@@ -1999,8 +2041,13 @@ fn reject_unsupported_codec(manifest: &HandoffManifest) -> Result<()> {
 /// and the two legacy formats (pre-codec and payload-level-codec).
 fn manifest_version_is_supported(version: u32) -> bool {
     version == MANIFEST_VERSION
+        || version == CHECKPOINT_MANIFEST_VERSION
         || version == LEGACY_MANIFEST_VERSION
         || version == LEGACY_PAYLOAD_CODEC_MANIFEST_VERSION
+}
+
+fn manifest_has_segment_codecs(version: u32) -> bool {
+    matches!(version, MANIFEST_VERSION | CHECKPOINT_MANIFEST_VERSION)
 }
 
 /// Reject a manifest whose segment codec identities this build cannot decode,
@@ -2036,7 +2083,7 @@ fn reject_unsupported_segment_codecs(manifest: &HandoffManifest) -> Result<()> {
         .as_deref()
         .is_some_and(|descriptor| serde_json::from_str::<serde_json::Value>(descriptor).is_ok());
     if has_native_kv
-        && (manifest.version != MANIFEST_VERSION
+        && (!manifest_has_segment_codecs(manifest.version)
             || manifest.payload_kind != "kv-recurrent"
             || manifest.kv_bytes == 0
             || !has_runtime_descriptor
@@ -2049,7 +2096,7 @@ fn reject_unsupported_segment_codecs(manifest: &HandoffManifest) -> Result<()> {
         );
     }
     if has_cachegen_kv
-        && (manifest.version != MANIFEST_VERSION
+        && (!manifest_has_segment_codecs(manifest.version)
             || manifest.payload_kind != "kv-recurrent"
             || manifest.kv_bytes == 0
             || manifest.kv_decoded_bytes == 0
@@ -2183,7 +2230,8 @@ fn validate_manifest_compatibility(manifest: &HandoffManifest) -> Result<()> {
             manifest.version
         );
     }
-    if manifest.version == MANIFEST_VERSION {
+    manifest.verify_checkpoint()?;
+    if manifest_has_segment_codecs(manifest.version) {
         require_v4_segment_identities(manifest)?;
     }
     reject_unsupported_codec(manifest)?;
@@ -2194,7 +2242,7 @@ fn decode_manifest(payload_digest: &str, bytes: &[u8]) -> Result<HandoffManifest
     let mut manifest: HandoffManifest =
         serde_json::from_slice(bytes).context("malformed manifest")?;
     match manifest.version {
-        MANIFEST_VERSION => {
+        MANIFEST_VERSION | CHECKPOINT_MANIFEST_VERSION => {
             // The current format must stamp both the payload codec and every
             // per-segment codec identity explicitly. A missing field means it
             // was stripped to force a reinterpretation of bytes this build
@@ -2243,6 +2291,7 @@ fn decode_manifest(payload_digest: &str, bytes: &[u8]) -> Result<HandoffManifest
     // and a direct load fails.
     reject_unsupported_codec(&manifest)?;
     reject_unsupported_segment_codecs(&manifest)?;
+    manifest.verify_checkpoint()?;
     if manifest.payload_digest != payload_digest {
         bail!(
             "manifest key {payload_digest} disagrees with payload digest {}",

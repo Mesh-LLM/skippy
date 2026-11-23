@@ -49,6 +49,7 @@ pub const CACHEGEN_RECORD_Q4_0: u32 = bindings::skippy::skippy_cachegen_record_k
 pub type CacheGenRecordV1 = bindings::skippy::skippy_cachegen_record_v1;
 
 pub type KvPageDesc = bindings::skippy::skippy_kv_page_desc;
+pub type KvPageChunk = bindings::skippy::skippy_kv_page_chunk;
 
 #[allow(clippy::derivable_impls)]
 impl Default for KvPageDesc {
