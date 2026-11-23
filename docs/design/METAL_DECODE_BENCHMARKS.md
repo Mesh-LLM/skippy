@@ -252,3 +252,39 @@ an attributable broad Q4_K row-rule comparison on M1 Ultra/M4. The M3 Ultra
 historical tables did not exercise the old chip-gated host-greedy/routed paths.
 Do not infer those patches' gains from the combined tables. Broader defaults
 require new per-device numerical and matched serving results.
+
+## Matched review-fix pilot against current main
+
+The source-bound [measurement job](https://pilot.jianyang.cloud/jobs/job_gf030kdnqjk30wq)
+compares candidate `ab0dd87` with main `5008074` and separately with pre-fix
+PR #9 `1ebce5e`. All three use the same upstream pin `8954f194`, target/draft
+bytes and serving settings. The later follow-ups add test wiring and backport
+main's deterministic telemetry test; these rates remain attributed to `ab0dd87`.
+
+| Serving mode | Main `5008074` TPS | Candidate `ab0dd87` TPS | Change |
+| --- | ---: | ---: | ---: |
+| Plain, concurrency 1 | 94.84 | 99.56 | +4.97% |
+| Plain, concurrency 2, aggregate | 150.46 | 161.93 | +7.62% |
+| DFlash, concurrency 1 | 162.63 | 164.79 | +1.33% |
+| DFlash, concurrency 2, aggregate | 157.72 | 207.70 | +31.69% |
+
+The separate before/after review-fix pilot measured concurrent DFlash at
+205.70 → 208.07 TPS (+1.15%); other modes changed by +0.38% to +0.53%.
+Do not pool the two comparisons: their requests and process lifetimes are separate.
+The large main comparison reflects all PR #9 work; it is not a gain attributable
+to these review fixes alone or evidence of a hundreds-of-milliseconds copy penalty.
+
+Each mode/comparison has one fresh-process campaign, three warm cycles and three
+measured cycles at concurrency one and two. All 288 accepted requests per
+comparison obeyed the 128-token budget, had zero prompt-cache hits and matched
+response hashes. Complete ABBA blocks with interference were rejected. Rates
+include HTTP/prefill time. Four independent audits were rerun locally against
+downloaded raw evidence and match the remote audits. This is a provisional pilot:
+`promotion_allowed` remains false until further fresh-process confirmation.
+
+The [raw-evidence job](https://pilot.jianyang.cloud/jobs/job_0ec18ww6y3e96qe)
+retains four flat archives named `{main,previous}-vs-candidate-{plain,dflash}.tar.gz`
+and `evidence-manifest.json`. Each archive contains responses, batch timings,
+commands, provenance, loaded-library paths and load/thermal observations. Archive
+SHA-256 hashes, exact source/CLI identities and independent rates are recorded in
+[evidence/pr9-review-fixes-m3.json](evidence/pr9-review-fixes-m3.json).

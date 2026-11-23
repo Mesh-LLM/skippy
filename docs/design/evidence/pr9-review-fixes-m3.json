@@ -1,0 +1,313 @@
+{
+  "schema_version": 1,
+  "scope": "Single matched M3 Ultra campaign per comparison and serving mode; three measured cycles, not a promoted headline",
+  "model": {
+    "repo": "unsloth/Qwen3.6-35B-A3B-GGUF",
+    "revision": "a483e9e6cbd595906af30beda3187c2663a1118c",
+    "file": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+    "sha256": "707a55a8a4397ecde44de0c499d3e68c1ad1d240d1da65826b4949d1043f4450"
+  },
+  "hardware": {
+    "chip": "Apple M3 Ultra",
+    "memory_gb": 256,
+    "node": "macstudio-4f19n3"
+  },
+  "measurement": {
+    "job": "job_gf030kdnqjk30wq",
+    "run": "run_vx3h77yq2w6f6rf",
+    "url": "https://pilot.jianyang.cloud/jobs/job_gf030kdnqjk30wq"
+  },
+  "raw_evidence": {
+    "job": "job_0ec18ww6y3e96qe",
+    "run": "run_j3gbezzqzb7ztn0",
+    "url": "https://pilot.jianyang.cloud/jobs/job_0ec18ww6y3e96qe",
+    "manifest": {
+      "source_run": "run_vx3h77yq2w6f6rf",
+      "archives": [
+        {
+          "name": "main-vs-candidate-plain.tar.gz",
+          "sha256": "ef077e304c28a60c07fef311e48522ba2b4fdb01e7e95dc10d05932c3bf75ac9",
+          "size_bytes": 6168954
+        },
+        {
+          "name": "main-vs-candidate-dflash.tar.gz",
+          "sha256": "4f7f22a198d31c83c76b51782d59da20e9407a646acea4baa893bc46dce60b5e",
+          "size_bytes": 5940507
+        },
+        {
+          "name": "previous-vs-candidate-plain.tar.gz",
+          "sha256": "62151ea16ab1890a409c556188e9f00b9c9ae18515636105124aab3e323565db",
+          "size_bytes": 6397625
+        },
+        {
+          "name": "previous-vs-candidate-dflash.tar.gz",
+          "sha256": "8a8e916830037114d08abe67981348f96ccff7e8c7c070c15a6e0c3636500e15",
+          "size_bytes": 6200060
+        }
+      ]
+    }
+  },
+  "sources": {
+    "candidate": {
+      "source_sha": "ab0dd87644237851ce1b576b70eec8cf2c32a6d5",
+      "cli_sha256": "bbf8e5f65f775b2103068bee74eb8275aa587775d5f6ad919c7e73b138bacfc8",
+      "upstream": "8954f194837d2ec4d5f67f20c81b84abe63883ba"
+    },
+    "main": {
+      "source_sha": "5008074f6e255929aa26589e03e736df3822a545",
+      "cli_sha256": "f7e4925abffffac38145099ca933678bacfee6741860e21ca11b8b3955d80184",
+      "upstream": "8954f194837d2ec4d5f67f20c81b84abe63883ba"
+    },
+    "previous": {
+      "source_sha": "1ebce5ed2168c13f2a1865ae8ff2fe70cc43bfb5",
+      "cli_sha256": "7b3820f42fa55760bbb0dba4b6badc58f10bf070e7a03428cc6934fb712fcd01",
+      "upstream": "8954f194837d2ec4d5f67f20c81b84abe63883ba"
+    }
+  },
+  "method": {
+    "order": "within-prompt ABBA",
+    "prompts": 8,
+    "output_tokens_per_request": 128,
+    "concurrency": [
+      1,
+      2
+    ],
+    "warmup_cycles": 3,
+    "measured_cycles": 3,
+    "sampling": "temperature zero, top-k one",
+    "cache": "prompt and disk disabled, zero cache hits verified",
+    "rate": "output tokens divided by pooled HTTP batch elapsed time, including prefill",
+    "guards": "reject complete blocks on competing load or non-nominal thermals",
+    "promotion_allowed": false
+  },
+  "comparisons": {
+    "main-plain": {
+      "status": "PASS_ARTIFACT_AUDIT",
+      "single_campaign": true,
+      "promotion_allowed": false,
+      "accepted_requests": 288,
+      "rejected_blocks": 21,
+      "comparisons": [
+        {
+          "concurrency": 1,
+          "arms": [
+            {
+              "arm": "old",
+              "output_tokens": 6144,
+              "elapsed_s": 64.78189199999906,
+              "tok_s": 94.84131769414961
+            },
+            {
+              "arm": "new",
+              "output_tokens": 6144,
+              "elapsed_s": 61.71361899934709,
+              "tok_s": 99.55663109086183
+            }
+          ],
+          "percent": 4.971792369986328,
+          "cycle_percent": [
+            4.693237770240333,
+            5.037783035677412,
+            5.184624623160161
+          ],
+          "all_text_exact": true
+        },
+        {
+          "concurrency": 2,
+          "arms": [
+            {
+              "arm": "old",
+              "output_tokens": 6144,
+              "elapsed_s": 40.835763999959454,
+              "tok_s": 150.4563499780756
+            },
+            {
+              "arm": "new",
+              "output_tokens": 6144,
+              "elapsed_s": 37.942690999479964,
+              "tok_s": 161.92841989210012
+            }
+          ],
+          "percent": 7.624849277346035,
+          "cycle_percent": [
+            7.86788963490106,
+            7.941412609710019,
+            7.0675151109427015
+          ],
+          "all_text_exact": true
+        }
+      ]
+    },
+    "main-dflash": {
+      "status": "PASS_ARTIFACT_AUDIT",
+      "single_campaign": true,
+      "promotion_allowed": false,
+      "accepted_requests": 288,
+      "rejected_blocks": 18,
+      "comparisons": [
+        {
+          "concurrency": 1,
+          "arms": [
+            {
+              "arm": "old",
+              "output_tokens": 6144,
+              "elapsed_s": 37.77992199989967,
+              "tok_s": 162.62606365403073
+            },
+            {
+              "arm": "new",
+              "output_tokens": 6144,
+              "elapsed_s": 37.28446499980055,
+              "tok_s": 164.78713051220842
+            }
+          ],
+          "percent": 1.3288564019941607,
+          "cycle_percent": [
+            1.2718362417887707,
+            1.3529851093694756,
+            1.3619846946107739
+          ],
+          "all_text_exact": true
+        },
+        {
+          "concurrency": 2,
+          "arms": [
+            {
+              "arm": "old",
+              "output_tokens": 6144,
+              "elapsed_s": 38.956046000588685,
+              "tok_s": 157.7162117507294
+            },
+            {
+              "arm": "new",
+              "output_tokens": 6144,
+              "elapsed_s": 29.581658999668434,
+              "tok_s": 207.6962620679545
+            }
+          ],
+          "percent": 31.6898622927988,
+          "cycle_percent": [
+            30.59416238688599,
+            32.63350598551329,
+            31.85208701129605
+          ],
+          "all_text_exact": true
+        }
+      ]
+    },
+    "previous-plain": {
+      "status": "PASS_ARTIFACT_AUDIT",
+      "single_campaign": true,
+      "promotion_allowed": false,
+      "accepted_requests": 288,
+      "rejected_blocks": 27,
+      "comparisons": [
+        {
+          "concurrency": 1,
+          "arms": [
+            {
+              "arm": "old",
+              "output_tokens": 6144,
+              "elapsed_s": 62.22441299865022,
+              "tok_s": 98.73938063719903
+            },
+            {
+              "arm": "new",
+              "output_tokens": 6144,
+              "elapsed_s": 61.990102000534534,
+              "tok_s": 99.11259703923412
+            }
+          ],
+          "percent": 0.3779813075862837,
+          "cycle_percent": [
+            0.2501577404599331,
+            0.7548334014564562,
+            0.12980263760229427
+          ],
+          "all_text_exact": true
+        },
+        {
+          "concurrency": 2,
+          "arms": [
+            {
+              "arm": "old",
+              "output_tokens": 6144,
+              "elapsed_s": 38.067643999587744,
+              "tok_s": 161.39690704437965
+            },
+            {
+              "arm": "new",
+              "output_tokens": 6144,
+              "elapsed_s": 37.86665099998936,
+              "tok_s": 162.25358825637173
+            }
+          ],
+          "percent": 0.5307915917846628,
+          "cycle_percent": [
+            0.6061706973918835,
+            0.515295808723848,
+            0.47129154148917163
+          ],
+          "all_text_exact": true
+        }
+      ]
+    },
+    "previous-dflash": {
+      "status": "PASS_ARTIFACT_AUDIT",
+      "single_campaign": true,
+      "promotion_allowed": false,
+      "accepted_requests": 288,
+      "rejected_blocks": 22,
+      "comparisons": [
+        {
+          "concurrency": 1,
+          "arms": [
+            {
+              "arm": "old",
+              "output_tokens": 6144,
+              "elapsed_s": 37.420559999533,
+              "tok_s": 164.18781547033706
+            },
+            {
+              "arm": "new",
+              "output_tokens": 6144,
+              "elapsed_s": 37.256177000235766,
+              "tok_s": 164.91225065741767
+            }
+          ],
+          "percent": 0.4412234763008227,
+          "cycle_percent": [
+            -0.017664873822431648,
+            1.0072273194966064,
+            0.33578426237002024
+          ],
+          "all_text_exact": true
+        },
+        {
+          "concurrency": 2,
+          "arms": [
+            {
+              "arm": "old",
+              "output_tokens": 6144,
+              "elapsed_s": 29.86924699996598,
+              "tok_s": 205.69651454578008
+            },
+            {
+              "arm": "new",
+              "output_tokens": 6144,
+              "elapsed_s": 29.52857599989511,
+              "tok_s": 208.06963397157466
+            }
+          ],
+          "percent": 1.1536993862219402,
+          "cycle_percent": [
+            0.8091444971112693,
+            1.4958001339886673,
+            1.1578186950807812
+          ],
+          "all_text_exact": true
+        }
+      ]
+    }
+  }
+}
