@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from lib import ci_artifacts, ci_smoke
+from lib import ci_artifacts, ci_smoke, ci_targets
 
 
 SCRIPTS = Path(__file__).resolve().parents[1]
@@ -16,6 +16,17 @@ SOURCE = "a" * 40
 HOST = {"id": "linux-x86_64", "target": "x86_64-unknown-linux-gnu",
         "os": "linux", "arch": "x86_64"}
 RUNTIME = {"id": "linux-x86_64-cpu", "backend": "cpu", "gpu_architectures": ""}
+
+
+class TargetPlannerContract(unittest.TestCase):
+    def test_windows_launches_bash_by_its_resolved_path(self):
+        bash = r"C:\Program Files\Git\usr\bin\bash.exe"
+        plan = '{"hosts":{"include":[]},"runtimes":{"include":[]}}'
+        with (patch.object(ci_targets.platform, "system", return_value="Windows"),
+              patch.object(ci_targets.shutil, "which", return_value=bash),
+              patch.object(ci_targets, "capture", return_value=plan) as capture):
+            self.assertEqual(ci_targets.targets(), ({}, {}))
+        capture.assert_called_once_with([bash, "scripts/ci-plan.sh"])
 
 
 class ProductContract(unittest.TestCase):

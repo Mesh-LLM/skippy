@@ -2,13 +2,18 @@
 
 import json
 import platform
+import shutil
 
 from .ci_artifacts import read_json
 from .ci_process import capture
 
 
 def targets():
-    plan = json.loads(capture(["bash", "scripts/ci-plan.sh"]))
+    # Windows resolves a bare bash to the system WSL launcher before PATH.
+    bash = shutil.which("bash") if platform.system() == "Windows" else "bash"
+    if not bash:
+        raise ValueError("target planning requires Git Bash on Windows")
+    plan = json.loads(capture([bash, "scripts/ci-plan.sh"]))
     return (
         {row["id"]: row for row in plan["hosts"]["include"]},
         {row["id"]: row for row in plan["runtimes"]["include"]},
