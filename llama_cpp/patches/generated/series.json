@@ -1,5 +1,5 @@
 {
-  "full_patch_sha256": "6496654e8f850f8874b23513b45aed737c4a1e76fbe279217c455b6d29e43c32",
+  "full_patch_sha256": "fbaaab309c64096c99554bb69d4d7c64000fe7434c56dd0f7b05f41172f84a59",
   "generator_version": "0.5.0",
   "schema_version": 1,
   "shards": [
@@ -111,7 +111,7 @@
         "deepseek32"
       ],
       "file": "0011-family-deepseek32.patch",
-      "sha256": "945eb10483d8cb07c1c17d31770cbc566bfabcdcad2326243c89b50f9fc4eee8",
+      "sha256": "1b3503117e828ce7205512b6c1cb67e3714a533ac71e106fefd9ca00277ae5ac",
       "sources": [
         "src/models/deepseek32.cpp"
       ]
@@ -121,9 +121,10 @@
         "deepseek4"
       ],
       "file": "0012-family-deepseek4.patch",
-      "sha256": "f744409c30f99e1f0d49220fa1fbb59e92824e488c7421ffa3094799cc512a15",
+      "sha256": "97390ed33889142a2f605d5474c3698322302189697abcab5dd2eaafad213e52",
       "sources": [
-        "src/models/deepseek4.cpp"
+        "src/models/deepseek4.cpp",
+        "src/models/dflash.cpp"
       ]
     },
     {
@@ -231,7 +232,7 @@
         "gemma4"
       ],
       "file": "0023-family-gemma4.patch",
-      "sha256": "30e6ee4603cf169d476c9a153d91141f31b53b1052c18dc6e2006b954680e828",
+      "sha256": "6121c160efcec68adc9a412c1cb9c428543bac4e4ed9860c26d8ed7d12792a66",
       "sources": [
         "src/models/gemma4.cpp"
       ]
@@ -241,7 +242,7 @@
         "glm-dsa"
       ],
       "file": "0024-family-glm-dsa.patch",
-      "sha256": "42973bb31bd87491bcb726004f7357d2efc8e3a64dc32fc172a62e75bb5b03b2",
+      "sha256": "b3ba3281bb0b9a08d2f7b88455e8105ae74b86a9c9a0cf44d5836ffbd72e15bc",
       "sources": [
         "src/models/glm-dsa.cpp"
       ]
@@ -252,7 +253,7 @@
         "glm4-expansion"
       ],
       "file": "0025-family-glm4--glm4-expansion.patch",
-      "sha256": "df9f72b67718fde50068c2709b9b664d39a668015a67e0cf43853d18ff30794e",
+      "sha256": "4638c3db29c1574c253a91a9072a68d345859cfa4b65216e095f46d037ad1684",
       "sources": [
         "src/models/glm4.cpp"
       ]
@@ -272,7 +273,7 @@
         "glm45-air"
       ],
       "file": "0027-family-glm45-air.patch",
-      "sha256": "f79c654b41ba06b02905d5720da2e4a13b1089146349d042cd00aa3dfab8cfb4",
+      "sha256": "02282eea2a611b47fda7026d5befcf799f831b633394b8d3c135eea05989bd24",
       "sources": [
         "src/models/glm4-moe.cpp"
       ]
@@ -304,7 +305,7 @@
         "minicpm"
       ],
       "file": "0030-family-granite-dense--granite-moe--minicpm.patch",
-      "sha256": "7a566dbd70bfca465e743ac39fe93ab2f1433c7e0324215453bc925d2f55754d",
+      "sha256": "3f1b4d4077216a61218f31905ef96542b2d5f91b530960d84c51fe6ef1ee1afc",
       "sources": [
         "src/models/granite.cpp"
       ]
@@ -314,7 +315,7 @@
         "granite-hybrid"
       ],
       "file": "0031-family-granite-hybrid.patch",
-      "sha256": "94fce6f61be9a69ffc9f664be12a758104c160aef570905c69aef4bceaeb55a4",
+      "sha256": "2f33aa8b70ec9aaa8128ef27fe39310fd68641ad6a330f35018ee804048977a4",
       "sources": [
         "src/models/granite-hybrid.cpp"
       ]
@@ -324,7 +325,7 @@
         "granite-swa"
       ],
       "file": "0032-family-granite-swa.patch",
-      "sha256": "08b910488028e5ebb4fc59c786e85ed7509165f5e667b3f9c53a8fc8a0aa7c85",
+      "sha256": "b3d2ff7e2f8de217736bd897f4b0cbcacc5d2e2bf751dd10344c0861b28877ed",
       "sources": [
         "src/models/granite-swa.cpp"
       ]
@@ -364,7 +365,7 @@
         "hy-v3"
       ],
       "file": "0036-family-hy-v3.patch",
-      "sha256": "8cd1f4128118915e1f4d81b3e2173beb9455f105d546ed06015193575f36b3ed",
+      "sha256": "c75ee7bd8238e5f1f57c6979faf166019958592a24665ff1849c7c3ba199d32c",
       "sources": [
         "src/models/hy-v3.cpp"
       ]
@@ -374,7 +375,7 @@
         "inkling"
       ],
       "file": "0037-family-inkling.patch",
-      "sha256": "1bb0dbdec5c7371f6c0d298cf65401ab28fb9b91e2eb64acf9de42d36ac2e083",
+      "sha256": "836630a4c3279a560f0db40bdabd4cfc9d5d1411d41761aff334c716805bf473",
       "sources": [
         "src/models/inkling.cpp"
       ]
@@ -404,7 +405,7 @@
         "jais2"
       ],
       "file": "0040-family-jais2.patch",
-      "sha256": "e8fbe351766c9c53a22aaac118a92cd503aaaf640d39d061df210ddcf45768d4",
+      "sha256": "31d23be525c97b0d185c99ad5d2ec1af0240e46e5bb319bd2a01e7aab349cd0b",
       "sources": [
         "src/models/jais2.cpp"
       ]
@@ -466,7 +467,7 @@
         "llama"
       ],
       "file": "0046-family-llama.patch",
-      "sha256": "904803970f771483091ef74879101909aded634053920a61833550bf436906e8",
+      "sha256": "e4869daa5184a7f821f74bc00a55d1091ab51c5538adf23d58b6e5d19182d920",
       "sources": [
         "src/models/llama.cpp"
       ]
@@ -518,7 +519,7 @@
         "mellum"
       ],
       "file": "0051-family-mellum.patch",
-      "sha256": "ce09c83df5f99bd275d6ed38f0dd8162edac2968e7afddf2ffefbf7219567a1f",
+      "sha256": "3acf68c74a77d8f822e8166d1c9763b727da4b74631d245b814d1bc42a13c3a9",
       "sources": [
         "src/models/mellum.cpp"
       ]
@@ -558,7 +559,7 @@
         "minimax-m3"
       ],
       "file": "0055-family-minimax-m3.patch",
-      "sha256": "397299107fda31325bc555d875aedc98cb4c39b08a26682d9f882cd2947c4e05",
+      "sha256": "f0ad6c198887988cde44cc3c066e5dec8323585454350ecfcd580938a554d9c6",
       "sources": [
         "src/models/minimax-m3.cpp"
       ]
@@ -569,7 +570,7 @@
         "mistral3"
       ],
       "file": "0056-family-mistral-small--mistral3.patch",
-      "sha256": "cdb30a5536d0e8d40cbdbfff897456b2e51e08f87d70cb6218ae9fdd99c569fd",
+      "sha256": "c1d3c40c5ebc3075d95b864af1f8030f295080d37b536c40154535f7eb82f627",
       "sources": [
         "src/models/mistral3.cpp"
       ]
@@ -600,7 +601,7 @@
         "nemotron-nano"
       ],
       "file": "0059-family-nemotron--nemotron-nano.patch",
-      "sha256": "bcb5b6934f767e96118f7ad6cf865c203b5a8333d7cb76e78a114a70246394be",
+      "sha256": "590bd9686b8d6156b1f432cfc4ab99d38ee2395b80ffd72a2909841b53b36d82",
       "sources": [
         "src/models/nemotron-h.cpp"
       ]
@@ -661,7 +662,7 @@
         "qwen2-vl"
       ],
       "file": "0065-family-qwen2-vl.patch",
-      "sha256": "ebfe005bfd82e862adcf35dc2f08cabf9978c579a4f31b6310cf3e21390f836b",
+      "sha256": "4745ebddcad397cf6ca4d3c523d0f4e980b629fca20be2d9e9dd4c5b1bbf0afd",
       "sources": [
         "src/models/qwen2vl.cpp"
       ]
@@ -681,7 +682,7 @@
         "qwen3-moe"
       ],
       "file": "0067-family-qwen3-moe.patch",
-      "sha256": "95fea788a78943ee382480f2f022815e13f42c633ce4a796af743a986167c14d",
+      "sha256": "50c5ab5dff404f4dd64a85453d1cfd11e0e59ceb1a593a95ee6ceff2bee0a8f0",
       "sources": [
         "src/models/qwen3moe.cpp"
       ]
@@ -691,7 +692,7 @@
         "qwen3-next"
       ],
       "file": "0068-family-qwen3-next.patch",
-      "sha256": "207255737f3dbc87d5361abd02fa5033de879bc34a09ba5301776001c8c2ec7a",
+      "sha256": "eeb8f8f4de3ebe72cee9b49e1b44bfe018e7329fa546fa27194c52537ad2d93e",
       "sources": [
         "src/models/qwen3next.cpp"
       ]
@@ -701,7 +702,7 @@
         "qwen3-vl"
       ],
       "file": "0069-family-qwen3-vl.patch",
-      "sha256": "095f756b16699470800fc505862e58380ae4c334e00c6ae9380f1ea894590a24",
+      "sha256": "780670f4f552fd53deca5de88a23333b00767b2097df4db7087331e3bb1c5ec9",
       "sources": [
         "src/models/qwen3vl.cpp"
       ]
@@ -711,7 +712,7 @@
         "qwen35"
       ],
       "file": "0070-family-qwen35.patch",
-      "sha256": "c735bcd982763fe3a331022a4baeb14bb306b557d2b97ac5c6c6cdadc9bd3714",
+      "sha256": "378366e6236c4da47143ecf2a3383411a27261bb7c25a0528928b7b24434d5b6",
       "sources": [
         "src/models/qwen35.cpp"
       ]
@@ -721,7 +722,7 @@
         "qwen35moe"
       ],
       "file": "0071-family-qwen35moe.patch",
-      "sha256": "6aad03baa130f344a261e6e8f290f485cc7157ffc1e392d0a985fb954316346b",
+      "sha256": "34ee142c08aebcd74246575472b4e02a8bfd8bf66c44763e1d22d90551871c93",
       "sources": [
         "src/models/qwen35moe.cpp"
       ]
@@ -741,7 +742,7 @@
         "qwen4exp"
       ],
       "file": "0073-family-qwen4exp.patch",
-      "sha256": "a53aefb3bfb8b46c26e29b98a643bccc187d0820954e3195af3ae2e0965ec6cb",
+      "sha256": "f7c8c96096a686996003574066a0d74297d4f61aa3c74a6a6d38d0b9479ccd07",
       "sources": [
         "src/models/qwen4exp.cpp"
       ]
@@ -820,7 +821,7 @@
     {
       "families": [],
       "file": "0081-family-unmapped.patch",
-      "sha256": "e322c733e8195fe913854c35ff2b2c8685fdcedffc6b5bd6802c820d7a8934a0",
+      "sha256": "80d983665136bb424c3b8a1080d105b20eafe3a2b7f5e7dd31785f6896a4d043",
       "sources": [
         "src/models/arctic.cpp",
         "src/models/baichuan.cpp",
@@ -839,6 +840,7 @@
         "src/models/deepseek.cpp",
         "src/models/deepseek41.cpp",
         "src/models/diffusion-gemma.cpp",
+        "src/models/domyn-edge.cpp",
         "src/models/dots3note.cpp",
         "src/models/dream.cpp",
         "src/models/eurobert.cpp",
@@ -852,8 +854,10 @@
         "src/models/grok.cpp",
         "src/models/hunyuan-moe.cpp",
         "src/models/hy-v4.cpp",
+        "src/models/inkling2.cpp",
         "src/models/k2-horizon.cpp",
         "src/models/kimi-k31.cpp",
+        "src/models/kokoro.cpp",
         "src/models/kolibri1.cpp",
         "src/models/lfm3.cpp",
         "src/models/limite.cpp",
@@ -864,6 +868,7 @@
         "src/models/minimax-01.cpp",
         "src/models/mistral-large4.cpp",
         "src/models/modern-bert.cpp",
+        "src/models/moshi.cpp",
         "src/models/muse-spark.cpp",
         "src/models/nanbeige.cpp",
         "src/models/neo-bert.cpp",
@@ -888,8 +893,11 @@
         "src/models/starcoder.cpp",
         "src/models/t5.cpp",
         "src/models/talkie.cpp",
+        "src/models/tiny-voca.cpp",
         "src/models/xing4-0.cpp",
-        "src/models/xverse.cpp"
+        "src/models/xverse.cpp",
+        "src/models/zaya1.cpp",
+        "src/models/zonos3.cpp"
       ]
     }
   ]

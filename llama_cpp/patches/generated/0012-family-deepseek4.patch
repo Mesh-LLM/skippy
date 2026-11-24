@@ -9,10 +9,10 @@ separately and remain outside the primary decoder stage interval.
 
 ---
 diff --git a/src/models/deepseek4.cpp b/src/models/deepseek4.cpp
-index b428cbd043157c698377134b86ad21b3c5c24af0..6c5e2a1dda6b3ac3c55b64e6279a46ae1d0c1bec 100644
+index 6f7b00f3b7aa79c6711aba30f76f12635254f5d6..b44cd6c474409cb830a6ce2d85b063e88dc00ed4 100644
 --- a/src/models/deepseek4.cpp
 +++ b/src/models/deepseek4.cpp
-@@ -1244,6 +1244,8 @@ llama_model_deepseek4::graph::graph(const llm_graph_params & params) :
+@@ -1220,6 +1220,8 @@ llama_model_deepseek4::graph::graph(const llm_graph_params & params) :
      cb(inpL, "hc_init", -1);
  
      for (int il = 0; il < n_layer; ++il) {
@@ -21,7 +21,7 @@ index b428cbd043157c698377134b86ad21b3c5c24af0..6c5e2a1dda6b3ac3c55b64e6279a46ae
          if ((size_t) il < cparams.embeddings_layer_inp.size() && cparams.embeddings_layer_inp[il]) {
              res->t_layer_inp[il] = build_hc_mean(inpL);
              cb(res->t_layer_inp[il], "layer_inp", il);
-@@ -1331,6 +1333,7 @@ llama_model_deepseek4::graph::graph(const llm_graph_params & params) :
+@@ -1304,6 +1306,7 @@ llama_model_deepseek4::graph::graph(const llm_graph_params & params) :
          inpL = build_hc_post(cur, residual, ffn_hc.post, ffn_hc.comb, il);
          inpL = build_cvec(inpL, il);
          cb(inpL, "l_last", il);
@@ -29,6 +29,27 @@ index b428cbd043157c698377134b86ad21b3c5c24af0..6c5e2a1dda6b3ac3c55b64e6279a46ae
      }
  
      if ((size_t) n_layer < cparams.embeddings_layer_inp.size() && cparams.embeddings_layer_inp[n_layer]) {
+diff --git a/src/models/dflash.cpp b/src/models/dflash.cpp
+index ab1cc749d61490c0d0a36d3c35b912b6991f728d..2538cc91d1e85165a68a985a8467c165cc906813 100644
+--- a/src/models/dflash.cpp
++++ b/src/models/dflash.cpp
+@@ -634,6 +634,8 @@ ggml_tensor * llama_model_dflash::graph_base::build_layers(ggml_tensor * tok_emb
+     dspine_stash dspine;
+ 
+     for (int il = 0; il < n_layer; ++il) {
++        begin_block(inpL, il);
++
+         const auto & layer = model.layers[il];
+ 
+         ggml_tensor * noise_norm = build_norm(inpL, layer.attn_norm, NULL, LLM_NORM_RMS, il);
+@@ -753,6 +755,7 @@ ggml_tensor * llama_model_dflash::graph_base::build_layers(ggml_tensor * tok_emb
+         cb(cur, "l_out", il);
+ 
+         inpL = cur;
++        end_block(inpL, il);
+     }
+ 
+     ggml_tensor * cur = build_norm(inpL, model.output_norm, NULL, LLM_NORM_RMS, -1);
 -- 
 2.54.0
 

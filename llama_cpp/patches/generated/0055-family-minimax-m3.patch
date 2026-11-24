@@ -9,26 +9,26 @@ separately and remain outside the primary decoder stage interval.
 
 ---
 diff --git a/src/models/minimax-m3.cpp b/src/models/minimax-m3.cpp
-index 010bc1cf19a96e3f0a56cbd4106aa2dcbfeb00af..1e6969ded2696a676bcc118c000b1d054e878b0e 100644
+index 313c8301d64721bf0d03a7f5b0045c3bb5815b21..e50619e0e2237e2be2de0e72a56f6131e2486c7f 100644
 --- a/src/models/minimax-m3.cpp
 +++ b/src/models/minimax-m3.cpp
-@@ -322,6 +322,8 @@ llama_model_minimax_m3::graph::graph(const llm_graph_params & params) : llm_grap
-     ggml_tensor * inp_out_ids = build_inp_out_ids();
+@@ -330,6 +330,8 @@ llama_model_minimax_m3::graph::graph(const llm_graph_params & params) : llm_grap
+     const bool extract_last = (size_t) n_layer < cparams.embeddings_layer_inp.size() && cparams.embeddings_layer_inp[n_layer];
  
      for (int il = 0; il < n_layer; ++il) {
 +        begin_block(inpL, il);
 +
-         ggml_tensor * inpSA = inpL;
+         res->t_layer_inp[il] = inpL;
  
-         // self-attention
-@@ -608,6 +610,7 @@ llama_model_minimax_m3::graph::graph(const llm_graph_params & params) : llm_grap
+         ggml_tensor * inpSA = inpL;
+@@ -615,6 +617,7 @@ llama_model_minimax_m3::graph::graph(const llm_graph_params & params) : llm_grap
  
          // input for next layer
          inpL = cur;
 +        end_block(inpL, il);
      }
  
-     cur = inpL;
+     if (extract_last) {
 -- 
 2.54.0
 

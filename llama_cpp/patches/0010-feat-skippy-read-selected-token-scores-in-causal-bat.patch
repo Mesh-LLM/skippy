@@ -1,8 +1,7 @@
-From 20bd1020fa04e7f55bdf30fa2201abbd20a53213 Mon Sep 17 00:00:00 2001
+From 5df98009e30e637f45de93a8660fba4cc30bc86f Mon Sep 17 00:00:00 2001
 From: IvGolovach <20299097+IvGolovach@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 12:00:00 -0700
-Subject: [PATCH 10/32] feat(skippy): read selected token scores in causal
- batches
+Subject: [PATCH] feat(skippy): read selected token scores in causal batches
 
 Keep full vocabulary logits on the terminal worker and read bounded
 conditional log probabilities before another iteration can replace them.
@@ -247,3 +246,6 @@ index 000000000..d33237d1a
 +    if (skippy_selected_log_probabilities(inf.data(), inf.size(), selected.data() + 1, 1, result.data())) return 8;
 +    return 0;
 +}
+-- 
+2.56.1
+
