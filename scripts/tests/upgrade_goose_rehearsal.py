@@ -1,7 +1,8 @@
 """Explicit live JY rehearsal of session resumption and verification feedback."""
 
-import os
+import json
 from pathlib import Path
+import shutil
 import tempfile
 
 from upgrade_lifecycle import fixture, commit
@@ -10,8 +11,23 @@ from lib.upgrade_lifecycle import verify_or_repair
 from lib.upgrade_repair import repair
 
 
+def recovery_manifests(diagnostics, turns):
+    recovery = diagnostics / 'recovery'
+    for label in [*(f'turn-{turn}' for turn in range(1, turns + 1)), 'final']:
+        matches = list(recovery.glob(f'{label}-*/manifest.json'))
+        if len(matches) != 1:
+            raise ValueError(f'rehearsal requires one completed {label} checkpoint from this run')
+        if json.loads(matches[0].read_text()).get('unverified') is not True:
+            raise ValueError(f'invalid rehearsal checkpoint: {matches[0]}')
+    manifests = list(recovery.glob('*/manifest.json'))
+    if len(manifests) != turns + 1:
+        raise ValueError('rehearsal contains unexpected recovery checkpoints')
+    return manifests
+
+
 def main():
     output = Path('target/upgrade-goose-rehearsal').resolve()
+    shutil.rmtree(output, ignore_errors=True)
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         checkout = fixture(Path(tmp))
@@ -39,9 +55,10 @@ def main():
         assert len(calls) >= 2 and calls[0]['started'] is False and calls[1]['started'] is True
         assert len({item['name'] for item in calls}) == 1
         assert 'phase-one' in checks and checks[-1] == 'phase-two'
+        manifests = recovery_manifests(diagnostics, len(calls))
         write_json(output / 'result.json', {'passed': True, 'agent_turns': len(calls),
                    'same_session': True, 'verification_feedback': checks,
-                   'recovery_snapshots': len(list((diagnostics / 'recovery').glob('*/manifest.json')))})
+                   'recovery_snapshots': len(manifests)})
         print('JY_GOOSE_LIFECYCLE_REHEARSAL_PASSED', flush=True)
 
 
