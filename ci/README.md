@@ -240,7 +240,11 @@ Cache**. sccache writes only when building the exact protected `main` commit
 on push, schedule, or manual dispatch with a write-capable job cache mode.
 PR and other branch builds use `SCCACHE_WEBDAV_RW_MODE=READ_ONLY`. Ordinary
 Depot jobs skip shared Cargo, model, native source, and npm caches. The
-GitHub-hosted jobs use sccache's Actions backend.
+GitHub-hosted jobs use sccache's Actions backend. Windows CUDA archive
+builds use a native cache namespace keyed by their release GPU architectures,
+compiler and SDK identity, and native source recipe. A release version bump
+can reuse entries from a protected full run with the same native inputs and
+cache backend. The shared Windows CLI keeps its Rust cache namespace.
 [Depot sccache integration](https://depot.dev/docs/cache/integrations/sccache)
 
 After enabling the switch, verify full CI and `CI images` with
