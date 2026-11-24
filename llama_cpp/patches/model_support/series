@@ -17,3 +17,7 @@
 0017-skippy-remove-callback-backed-checkpoint-serving.patch
 0018-models-shape-dflash-inkling2-zonos3-builders-for-stage-proof.patch
 0019-gemma4-register-shared-kv-pruning-inputs.patch
+0020-minimax-m3-load-indexer-tensors-by-attention-role.patch
+0021-inkling-preserve-media-aware-template-routing.patch
+0022-dspine-populate-the-graph-owned-lattice-stash.patch
+0023-muse-glimmer-retain-token-aware-turn-boundaries.patch

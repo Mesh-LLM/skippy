@@ -378,7 +378,8 @@ unsafe extern "C" {
 // `src/llama-ext.h` is a C++ staging header, so its entry points keep C++
 // linkage and are bound by their decorated names: Itanium for GCC, Clang and
 // MinGW, MSVC for MSVC-ABI Windows. Both decorations encode the parameter
-// types, so an upstream signature change fails to link instead of miscalling.
+// types, so parameter changes fail to link. Itanium names omit the return type;
+// keep it synchronized with the upstream declaration separately.
 #[cfg(not(target_env = "msvc"))]
 unsafe extern "C" {
     #[link_name = "_Z25llama_layer_inp_publishedP13llama_contextj"]

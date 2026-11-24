@@ -1,0 +1,53 @@
+From f5a21adc54e8e68ffff2285039d7df38d49e3cc9 Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Wed, 25 Nov 2026 08:04:02 +1100
+Subject: [PATCH] muse-glimmer: retain token-aware continuation and turn
+ boundaries
+
+---
+ common/parsers/muse-glimmer.cpp | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/common/parsers/muse-glimmer.cpp b/common/parsers/muse-glimmer.cpp
+index f31845702..85e67fad9 100644
+--- a/common/parsers/muse-glimmer.cpp
++++ b/common/parsers/muse-glimmer.cpp
+@@ -17,7 +17,7 @@ common_chat_params common_chat_params_init_muse_glimmer(const common_chat_templa
+     data.supports_thinking = true;
+ 
+     data.preserved_tokens = {
+-        "<|start|>", "<|message|>", "<|eom|>",
++        "<|start|>", "<|message|>", "<|eom|>", "<|eot|>",
+         // ATEM tool-call markup emitted on " to=<tool>" turns.
+         "<atem:function_calls>", "<atem:invoke", "<atem:parameter", "</atem:parameter>",
+         "</atem:invoke>", "</atem:function_calls>",
+@@ -52,6 +52,7 @@ common_chat_params common_chat_params_init_muse_glimmer(const common_chat_templa
+         auto start_token = p.token("<|start|>");
+         auto message     = p.token("<|message|>");
+         auto eom         = p.token("<|eom|>");
++        auto eot         = p.token("<|eot|>");
+         auto start       = p.rule("start", start_token + p.literal("assistant"));
+ 
+         if (!extract_reasoning && !include_grammar) {
+@@ -61,15 +62,15 @@ common_chat_params common_chat_params_init_muse_glimmer(const common_chat_templa
+         if (extract_reasoning) {
+             // Some checkpoints continue directly into the reasoning body
+             // after the assistant generation prefix.
+-            auto reasoning_route = p.literal(" to=self<|message|>") | p.negate(p.literal(" to="));
+-            p.rule("analysis", reasoning_route + p.reasoning(p.until("<|eom|>")) + p.literal("<|eom|>"));
++            auto reasoning_route = (p.literal(" to=self") + message) | p.negate(p.literal(" to="));
++            p.rule("analysis", reasoning_route + p.reasoning(p.until(eom)) + eom);
+         } else {
+             p.rule("analysis", p.literal(" to=self") + message + p.content(p.until(eom)) + eom);
+         }
+         auto analysis = p.ref("analysis");
+ 
+         auto recipient  = p.optional(p.literal(" to=user"));
+-        auto final_msg  = p.rule("final", recipient + message + p.content(p.until(eom)));
++        auto final_msg  = p.rule("final", recipient + message + p.content(p.until(eom | eot)) + p.optional(eot));
+ 
+         if (has_response_format) {
+             auto response_json   = p.content(p.schema(p.json(), "response-format-schema", inputs.json_schema));
+-- 
+2.56.0
+

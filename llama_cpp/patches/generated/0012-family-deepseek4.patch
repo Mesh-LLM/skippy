@@ -30,11 +30,11 @@ index 6f7b00f3b7aa79c6711aba30f76f12635254f5d6..b44cd6c474409cb830a6ce2d85b063e8
  
      if ((size_t) n_layer < cparams.embeddings_layer_inp.size() && cparams.embeddings_layer_inp[n_layer]) {
 diff --git a/src/models/dflash.cpp b/src/models/dflash.cpp
-index ab1cc749d61490c0d0a36d3c35b912b6991f728d..2538cc91d1e85165a68a985a8467c165cc906813 100644
+index 961a6e7ab041732d9883e6e13186985ec3cb6567..c3a2397ea57bc1db7f411befab6fba0e722f6625 100644
 --- a/src/models/dflash.cpp
 +++ b/src/models/dflash.cpp
-@@ -634,6 +634,8 @@ ggml_tensor * llama_model_dflash::graph_base::build_layers(ggml_tensor * tok_emb
-     dspine_stash dspine;
+@@ -632,6 +632,8 @@ ggml_tensor * llama_model_dflash::graph_base::build_layers(ggml_tensor * tok_emb
+     cb(inpL, "inp_noise_embd", -1);
  
      for (int il = 0; il < n_layer; ++il) {
 +        begin_block(inpL, il);
@@ -42,7 +42,7 @@ index ab1cc749d61490c0d0a36d3c35b912b6991f728d..2538cc91d1e85165a68a985a8467c165
          const auto & layer = model.layers[il];
  
          ggml_tensor * noise_norm = build_norm(inpL, layer.attn_norm, NULL, LLM_NORM_RMS, il);
-@@ -753,6 +755,7 @@ ggml_tensor * llama_model_dflash::graph_base::build_layers(ggml_tensor * tok_emb
+@@ -751,6 +753,7 @@ ggml_tensor * llama_model_dflash::graph_base::build_layers(ggml_tensor * tok_emb
          cb(cur, "l_out", il);
  
          inpL = cur;

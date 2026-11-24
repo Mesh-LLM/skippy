@@ -1,5 +1,5 @@
 {
-  "full_patch_sha256": "bec6ff2b100ed3b8998ef6d84e68cfe8c5a81575bb116bc4617c4d60b5e8b365",
+  "full_patch_sha256": "38ac059a3e658248ec7d8c2d24e83a96cf7b7f5ba1c6b0a8cb45b85b500f00e2",
   "generator_version": "0.5.0",
   "schema_version": 1,
   "shards": [
@@ -121,7 +121,7 @@
         "deepseek4"
       ],
       "file": "0012-family-deepseek4.patch",
-      "sha256": "97390ed33889142a2f605d5474c3698322302189697abcab5dd2eaafad213e52",
+      "sha256": "ac291099b81da530e325cda11a38a4d6264a7c46ae042a85081212a73df7cef0",
       "sources": [
         "src/models/deepseek4.cpp",
         "src/models/dflash.cpp"
@@ -559,7 +559,7 @@
         "minimax-m3"
       ],
       "file": "0055-family-minimax-m3.patch",
-      "sha256": "f0ad6c198887988cde44cc3c066e5dec8323585454350ecfcd580938a554d9c6",
+      "sha256": "b17326d91c29bd286a1045a4f4a8914262a2ad32f98d819ff1ed6ca08e10837c",
       "sources": [
         "src/models/minimax-m3.cpp"
       ]
