@@ -1,7 +1,9 @@
 """Offline contracts for passing verified runtime directories into product archives."""
 
 import importlib.util
+import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -27,6 +29,73 @@ class TargetPlannerContract(unittest.TestCase):
               patch.object(ci_targets, "capture", return_value=plan) as capture):
             self.assertEqual(ci_targets.targets(), ({}, {}))
         capture.assert_called_once_with([bash, "scripts/ci-plan.sh"])
+
+
+class WindowsCudaCacheContract(unittest.TestCase):
+    def test_release_bump_preserves_cache_and_native_changes_invalidate_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "scripts").mkdir()
+            for name in ("artifact-file.sh", "ci-plan.sh", "ci-windows-cuda-cache.sh"):
+                shutil.copyfile(SCRIPTS / name, root / "scripts" / name)
+            (root / "ci").mkdir()
+            matrix = root / "ci/targets.json"
+            shutil.copyfile(SCRIPTS.parent / "ci/targets.json", matrix)
+            (root / "llama_cpp").mkdir()
+            pin = root / "llama_cpp/upstream.txt"
+            pin.write_text("first llama pin")
+            lockfile = root / "Cargo.lock"
+            lockfile.write_text("first release version")
+            nvcc = root / "nvcc.exe"
+            nvcc.write_bytes(b"CUDA compiler")
+            cl = root / "cl.exe"
+            cl.write_bytes(b"MSVC compiler")
+            cl.chmod(0o755)
+
+            def git(*args):
+                subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.com",
+                                *args], cwd=root, check=True, stdout=subprocess.DEVNULL)
+
+            def commit():
+                git("add", ".")
+                git("commit", "-qm", "Fixture inputs")
+
+            def namespace(**overrides):
+                environment = {**os.environ, "SKIPPY_CI_PROFILE": "full",
+                               "WindowsSDKVersion": "10.0.26100.0", "VCToolsVersion": "14.44.35207",
+                               "CUDACXX": str(nvcc),
+                               "CC": str(cl), "CXX": str(cl), **overrides}
+                return subprocess.check_output(
+                    ["bash", "scripts/ci-windows-cuda-cache.sh", "windows-x86_64-cuda13", "13.1.2"],
+                    cwd=root, env=environment, text=True,
+                ).strip()
+
+            git("init", "-q")
+            commit()
+            initial = namespace(SKIPPY_CUDA_ARCHITECTURE_MODE="native")
+            self.assertRegex(initial, r"^skippy-native-windows-cuda-v1-[0-9a-f]{64}$")
+            self.assertEqual(initial, namespace(SKIPPY_CUDA_ARCHITECTURE_MODE="release"))
+
+            lockfile.write_text("next release version")
+            commit()
+            self.assertEqual(initial, namespace())
+
+            plan = json.loads(matrix.read_text())
+            row = next(row for row in plan["runtimes"] if row["id"] == "windows-x86_64-cuda13")
+            row["gpu_architectures"] += ";121"
+            matrix.write_text(json.dumps(plan))
+            commit()
+            changed_arches = namespace()
+            self.assertNotEqual(initial, changed_arches)
+            self.assertNotEqual(changed_arches, namespace(WindowsSDKVersion="10.0.26200.0"))
+            self.assertNotEqual(changed_arches, namespace(VCToolsVersion="14.45.00000"))
+
+            nvcc.write_bytes(b"Updated CUDA compiler")
+            self.assertNotEqual(changed_arches, namespace())
+            nvcc.write_bytes(b"CUDA compiler")
+            pin.write_text("next llama pin")
+            commit()
+            self.assertNotEqual(changed_arches, namespace())
 
 
 class ProductContract(unittest.TestCase):

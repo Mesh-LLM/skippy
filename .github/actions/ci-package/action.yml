@@ -89,9 +89,23 @@ runs:
         build-paths: |
           target/debug
           target/release
+    - name: Identify the Windows CUDA compiler cache
+      id: cuda-cache
+      if: runner.os == 'Windows' && inputs.windows-cuda != '' && inputs.smoke == 'artifact' && inputs.build-cli != 'true'
+      shell: bash
+      env:
+        RUNTIME_ID: ${{ inputs.runtime-id }}
+        CUDA_VERSION: ${{ inputs.windows-cuda }}
+      run: |
+        if namespace=$(bash scripts/ci-windows-cuda-cache.sh "$RUNTIME_ID" "$CUDA_VERSION"); then
+          echo "namespace=$namespace" >> "$GITHUB_OUTPUT"
+        else
+          echo "::warning::Could not identify the native CUDA cache. Using the standard compiler cache."
+        fi
     - uses: ./.github/actions/sccache
       with:
         scope: package-${{ inputs.runtime-id }}-${{ inputs.windows-cuda || inputs.windows-rocm || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}-${{ env.SKIPPY_CUDA_ARCHITECTURE_MODE }}
+        native-windows-cuda-namespace: ${{ steps.cuda-cache.outputs.namespace }}
     - uses: ./.github/actions/native-source
     - name: Build and verify the platform CLI
       if: inputs.build-cli == 'true'

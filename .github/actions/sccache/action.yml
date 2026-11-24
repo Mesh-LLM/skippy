@@ -4,6 +4,9 @@ inputs:
   scope:
     description: Platform and backend identity for cache isolation.
     required: true
+  native-windows-cuda-namespace:
+    description: Optional native-only namespace for Windows CUDA archive producers.
+    default: ''
 runs:
   using: composite
   steps:
@@ -23,6 +26,7 @@ runs:
       shell: bash
       env:
         SCCACHE_SCOPE: ${{ inputs.scope }}
+        NATIVE_WINDOWS_CUDA_NAMESPACE: ${{ inputs.native-windows-cuda-namespace }}
         USE_DEPOT_CACHE: ${{ startsWith(runner.name, 'depot-') }}
       run: |
         set -euo pipefail
@@ -68,16 +72,20 @@ runs:
           chmod +x "$sccache_path"
         fi
 
-        recipe_digest="$({
-          git ls-files -z Cargo.lock skippy-api-rs/Cargo.lock rust-toolchain.toml \
-            .cargo/config.toml Justfile scripts/build-llama.sh scripts/cargo-linker\* \
-            llama_cpp/upstream.txt llama_cpp/whisper-upstream.txt llama_cpp/patches
-        } | xargs -0 git hash-object | bash scripts/artifact-file.sh sha256 -)"
+        if [[ -n "$NATIVE_WINDOWS_CUDA_NAMESPACE" ]]; then
+          namespace="$NATIVE_WINDOWS_CUDA_NAMESPACE"
+        else
+          recipe_digest="$({
+            git ls-files -z Cargo.lock skippy-api-rs/Cargo.lock rust-toolchain.toml \
+              .cargo/config.toml Justfile scripts/build-llama.sh scripts/cargo-linker\* \
+              llama_cpp/upstream.txt llama_cpp/whisper-upstream.txt llama_cpp/patches
+          } | xargs -0 git hash-object | bash scripts/artifact-file.sh sha256 -)"
+          namespace="skippy-v1-$SCCACHE_SCOPE-$recipe_digest"
+        fi
         if [[ "$RUNNER_OS" == Windows ]]; then
           sccache_path="$(cygpath -m "$sccache_path")"
         fi
         export SCCACHE_BASEDIRS="$GITHUB_WORKSPACE"
-        namespace="skippy-v1-$SCCACHE_SCOPE-$recipe_digest"
         cache_mode=READ_ONLY
         case "${GITHUB_REF:-}:$GITHUB_EVENT_NAME" in
           refs/heads/main:push|refs/heads/main:schedule|refs/heads/main:workflow_dispatch)
@@ -114,7 +122,9 @@ runs:
         "$sccache_path" --start-server
         "$sccache_path" --zero-stats
         {
-          echo "RUSTC_WRAPPER=$sccache_path"
+          if [[ -z "$NATIVE_WINDOWS_CUDA_NAMESPACE" ]]; then
+            echo "RUSTC_WRAPPER=$sccache_path"
+          fi
           echo "SCCACHE=$sccache_path"
           echo "CMAKE_C_COMPILER_LAUNCHER=$sccache_path"
           echo "CMAKE_CXX_COMPILER_LAUNCHER=$sccache_path"
