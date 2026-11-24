@@ -9,7 +9,7 @@ separately and remain outside the primary decoder stage interval.
 
 ---
 diff --git a/src/models/gemma4.cpp b/src/models/gemma4.cpp
-index 0e1e6808723a212f7e04e4e0ad585bfdf182b1fb..3bb8db05a48a2cdfdafb592c8ce9ed529b6e3c67 100644
+index d8bf44a1205ef674bb15e9916447c556cfb255e6..80a5890a67b09212825f161f1171cdc6cdfd6916 100644
 --- a/src/models/gemma4.cpp
 +++ b/src/models/gemma4.cpp
 @@ -236,6 +236,8 @@ llama_model_gemma4::graph::graph(const llm_graph_params & params) :
@@ -21,7 +21,7 @@ index 0e1e6808723a212f7e04e4e0ad585bfdf182b1fb..3bb8db05a48a2cdfdafb592c8ce9ed52
          if (prune_shared && il == (int) hparams.n_layer_kv_from_start) {
              ggml_tensor * full     = inp_attn->self_attn_mask.raw;
              ggml_tensor * full_swa = inp_attn->self_attn_mask_swa.raw;
-@@ -473,6 +475,7 @@ llama_model_gemma4::graph::graph(const llm_graph_params & params) :
+@@ -478,6 +480,7 @@ llama_model_gemma4::graph::graph(const llm_graph_params & params) :
  
          // input for next layer
          inpL = cur;

@@ -16,3 +16,4 @@
 0016-models-add-dspine-block-parallel-drafter-support.patch
 0017-skippy-remove-callback-backed-checkpoint-serving.patch
 0018-models-shape-dflash-inkling2-zonos3-builders-for-stage-proof.patch
+0019-gemma4-register-shared-kv-pruning-inputs.patch
