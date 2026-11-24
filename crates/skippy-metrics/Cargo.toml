@@ -2,7 +2,7 @@
 name = "skippy-metrics"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Telemetry metric names and helpers for Skippy runtimes"
 repository = "https://github.com/Mesh-LLM/skippy"
