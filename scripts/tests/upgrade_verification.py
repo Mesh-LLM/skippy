@@ -82,9 +82,12 @@ class CIFailure(unittest.TestCase):
 
     def test_missing_nvml_stops_even_when_another_source_failure_is_repairable(self):
         jobs = [self.job(), self.job(2, 'Run ./.github/actions/ci-package', 'requalify / ARM64 CUDA 13')]
-        verdict = classify(jobs, {1: 'undeclared identifier', 2: 'fatal error: nvml.h: No such file or directory'})
-        self.assertFalse(verdict['repairable'])
-        self.assertEqual(verdict['failure_class'], 'infrastructure')
+        for error in ('fatal error: nvml.h: No such file or directory',
+                      "fatal error C1083: Cannot open include file: 'nvml.h': No such file or directory"):
+            with self.subTest(error=error):
+                verdict = classify(jobs, {1: 'undeclared identifier', 2: error})
+                self.assertFalse(verdict['repairable'])
+                self.assertEqual(verdict['failure_class'], 'infrastructure')
 
     def test_setup_failure_is_not_sent_to_source_repair_and_summary_gate_is_ignored(self):
         self.assertFalse(classify([self.job(step='Initialize containers')], {})['repairable'])

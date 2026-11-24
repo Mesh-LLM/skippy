@@ -5,7 +5,7 @@ import re
 SOURCE_STEPS = {"Run just test", "Run just lint", "Run just llama-check",
                 "Run just skippy-ffi-bindgen-check", "Run ./.github/actions/ci-package"}
 ENVIRONMENT_ERRORS = (
-    r"fatal error:.*nvml[.]h.*No such file or directory",
+    r"fatal error(?: C[0-9]+)?:.*nvml[.]h.*No such file or directory",
     r"fatal error:.*['\"]nvml[.]h['\"] file not found",
     r"No space left on device",
     r"Cannot connect to the Docker daemon",
