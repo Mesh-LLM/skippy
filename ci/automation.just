@@ -13,6 +13,8 @@ automation-contracts: inference-contracts
     @"{{ automation_python }}" scripts/tests/ci_cuda_license.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_process_environment.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/automation_contracts.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_process_contracts.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_product_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_diagnostics.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_lifecycle.py

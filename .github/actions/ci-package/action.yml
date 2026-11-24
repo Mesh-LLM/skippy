@@ -16,6 +16,12 @@ inputs:
   smoke:
     description: Select inference or artifact smoke.
     default: inference
+  windows-cuda:
+    description: Pinned CUDA toolkit version to provision on the hosted Windows builder.
+    default: ''
+  windows-rocm:
+    description: Pinned ROCm version whose HIP SDK is provisioned on the hosted Windows builder.
+    default: ''
   containerized:
     description: Use the preinstalled toolchain in a Skippy compiler image.
     default: 'false'
@@ -35,6 +41,19 @@ runs:
       if: inputs.setup-host == 'true'
       with:
         cache: 'false'
+    - name: Prefer Git Bash for Windows build scripts
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $gitRoot = Split-Path (Split-Path (Get-Command git.exe).Source)
+        Join-Path $gitRoot 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        'SKIPPY_PYTHON=python' | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+    # CMake, Ninja, nvcc, and the HIP compilers need the MSVC tools on PATH;
+    # rustc locates Visual Studio itself, the native stage does not.
+    - name: Enable the MSVC developer environment
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: ./scripts/enable-msvc-dev-env.ps1
     - name: Identify the compiler image
       if: inputs.containerized == 'true'
       shell: bash
@@ -46,16 +65,47 @@ runs:
       with:
         artifact: ${{ inputs.candidate-artifact }}
         sha: ${{ inputs.candidate-sha }}
+    - name: Provision NVIDIA CUDA on Windows
+      if: inputs.windows-cuda != ''
+      shell: bash
+      env:
+        CUDA_VERSION: ${{ inputs.windows-cuda }}
+      run: |
+        "$SKIPPY_PYTHON" scripts/ci-windows-cuda.py "$CUDA_VERSION"
+    - name: Provision AMD HIP SDK on Windows
+      if: inputs.windows-rocm != ''
+      shell: pwsh
+      env:
+        ROCM_VERSION: ${{ inputs.windows-rocm }}
+      run: ./scripts/install-windows-rocm-sdk.ps1 -ExpectedVersion "$env:ROCM_VERSION"
+    - name: Provision the Linux ROCm BLAS libraries
+      if: inputs.runtime-id == 'linux-x86_64-rocm'
+      shell: bash
+      run: bash scripts/ci-rocm-blas.sh
     - uses: ./.github/actions/cache
       with:
-        scope: package-${{ inputs.runtime-id }}-${{ inputs.compiler-image-digest || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}
+        scope: package-${{ inputs.runtime-id }}-${{ inputs.compiler-image-digest || inputs.windows-cuda || inputs.windows-rocm || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}
         download-scope: ${{ inputs.build-cli == 'true' && 'host' || 'tools' }}
         build-paths: |
           target/debug
           target/release
+    - name: Identify the Windows CUDA compiler cache
+      id: cuda-cache
+      if: runner.os == 'Windows' && inputs.windows-cuda != '' && inputs.smoke == 'artifact' && inputs.build-cli != 'true'
+      shell: bash
+      env:
+        RUNTIME_ID: ${{ inputs.runtime-id }}
+        CUDA_VERSION: ${{ inputs.windows-cuda }}
+      run: |
+        if namespace=$(bash scripts/ci-windows-cuda-cache.sh "$RUNTIME_ID" "$CUDA_VERSION"); then
+          echo "namespace=$namespace" >> "$GITHUB_OUTPUT"
+        else
+          echo "::warning::Could not identify the native CUDA cache. Using the standard compiler cache."
+        fi
     - uses: ./.github/actions/sccache
       with:
-        scope: package-${{ inputs.runtime-id }}-${{ env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}-${{ env.SKIPPY_CUDA_ARCHITECTURE_MODE }}
+        scope: package-${{ inputs.runtime-id }}-${{ inputs.windows-cuda || inputs.windows-rocm || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}-${{ env.SKIPPY_CUDA_ARCHITECTURE_MODE }}
+        native-windows-cuda-namespace: ${{ steps.cuda-cache.outputs.namespace }}
     - uses: ./.github/actions/native-source
     - name: Build and verify the platform CLI
       if: inputs.build-cli == 'true'
@@ -64,7 +114,7 @@ runs:
         HOST_ID: ${{ inputs.host-id }}
       run: just ci-host "$HOST_ID"
     - name: Upload the shared CLI for full CI
-      if: inputs.build-cli == 'true' && inputs.smoke == 'inference' && env.SKIPPY_CI_PROFILE == 'full'
+      if: inputs.build-cli == 'true' && env.SKIPPY_CI_PROFILE == 'full'
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
         name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-host-${{ inputs.host-id }}

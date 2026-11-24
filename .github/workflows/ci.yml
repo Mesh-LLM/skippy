@@ -292,6 +292,7 @@ jobs:
       cuda12_digest: ${{ steps.images.outputs.cuda12 }}
       cuda12_arm_digest: ${{ steps.images.outputs.cuda12_arm }}
       cuda13_digest: ${{ steps.images.outputs.cuda13 }}
+      rocm_digest: ${{ steps.images.outputs.rocm }}
       runtimes: ${{ steps.plan.outputs.runtimes }}
       registry-owner: ${{ steps.registry.outputs.owner }}
     steps:
@@ -353,6 +354,7 @@ jobs:
             resolve cuda12 cuda12:latest
             resolve cuda12_arm cuda12:latest-arm64
             resolve cuda13 cuda13:latest
+            resolve rocm rocm:latest
           fi
   quality:
     name: Quality canary
@@ -662,6 +664,39 @@ jobs:
           compiler-image-digest: ${{ needs.plan.outputs.cuda13_digest }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
+  package_linux_x86_64_rocm:
+    name: Build and verify archive · Linux x64 ROCm
+    needs: [plan, quality, package_linux_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-rocm@${{ needs.plan.outputs.rocm_digest }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      CARGO_BUILD_JOBS: '2'
+      LD_LIBRARY_PATH: /opt/rocm/lib
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: linux-x86_64-rocm
+          host-id: linux-x86_64
+          smoke: artifact
+          containerized: 'true'
+          compiler-image-digest: ${{ needs.plan.outputs.rocm_digest }}
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
   package_linux_aarch64_cpu:
     name: Build, package, and smoke · Linux ARM64 CPU
     needs: [plan, quality]
@@ -778,13 +813,102 @@ jobs:
           download-package: 'true'
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
+  package_windows_x86_64_cpu:
+    name: Build and verify archive · Windows x64 CPU
+    needs: [plan, quality]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-2022
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-cpu
+          host-id: windows-x86_64
+          build-cli: 'true'
+          setup-host: 'true'
+          smoke: artifact
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_windows_x86_64_cuda12:
+    name: Build and verify archive · Windows x64 CUDA 12
+    needs: [plan, quality, package_windows_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-2022
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-cuda12
+          host-id: windows-x86_64
+          setup-host: 'true'
+          smoke: artifact
+          windows-cuda: '12.9.2'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_windows_x86_64_cuda13:
+    name: Build and verify archive · Windows x64 CUDA 13
+    needs: [plan, quality, package_windows_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-windows-2022-8' || 'windows-2022' }}
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-cuda13
+          host-id: windows-x86_64
+          setup-host: 'true'
+          smoke: artifact
+          windows-cuda: '13.1.2'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_windows_x86_64_rocm:
+    name: Build and verify archive · Windows x64 ROCm
+    needs: [plan, quality, package_windows_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-2022
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-rocm
+          host-id: windows-x86_64
+          setup-host: 'true'
+          smoke: artifact
+          windows-rocm: '7.2.0'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
   gate:
     name: ${{ needs.plan.outputs.profile == 'full' && 'Full CI gate' || (github.event_name == 'pull_request_target' && 'Same-repository CI' || 'CI') }}
     needs: [
       changes, automation, plan, quality, native_contracts,
       package_darwin_aarch64_cpu, package_darwin_aarch64_metal,
-      package_linux_x86_64_cpu, package_linux_x86_64_cuda12, package_linux_x86_64_cuda13,
+      package_linux_x86_64_cpu, package_linux_x86_64_cuda12, package_linux_x86_64_cuda13, package_linux_x86_64_rocm,
       package_linux_aarch64_cpu, package_linux_aarch64_cuda12, package_linux_aarch64_cuda13,
+      package_windows_x86_64_cpu, package_windows_x86_64_cuda12, package_windows_x86_64_cuda13, package_windows_x86_64_rocm,
       release_smoke_linux_x86_64_cuda12, release_smoke_linux_aarch64_cuda12, release_smoke_linux_x86_64_cuda13
     ]
     if: always() && needs.changes.result != 'skipped'
@@ -824,7 +948,8 @@ jobs:
               const rows = JSON.parse(needs.plan.outputs.runtimes).include;
               const matrixJobs = rows.map(row => 'package_' + row.id.replaceAll('-', '_'));
               if (matrixJobs.length === 0 ||
-                  matrixJobs.length !== packageJobs.length || new Set(matrixJobs).size !== matrixJobs.length ||
+                  (full && matrixJobs.length !== packageJobs.length) || new Set(matrixJobs).size !== matrixJobs.length ||
+                  prPackages.some(job => !matrixJobs.includes(job)) ||
                   matrixJobs.some(job => !packageJobs.includes(job))) {
                 throw new Error('Package jobs do not match the active runtime matrix');
               }

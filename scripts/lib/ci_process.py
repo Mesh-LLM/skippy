@@ -80,8 +80,11 @@ def group_alive(child):
     except ProcessLookupError:
         return False
     except PermissionError:
-        if not exited:
+        # The child can exit between poll() and killpg(), leaving a group
+        # visible to a different reaper. Recheck before treating it as live.
+        if child.poll() is None:
             raise
+        exited = True
     if not exited:
         return True
     # A group containing only unreaped descendants can still be visible to
@@ -171,7 +174,8 @@ def captured(child, deadline, limit):
 
 
 def command(args, timeout=180, overrides=None, capture_stdout=False, cwd=None, *,
-            limit=16 * 1024 * 1024, raw=False, inherit_env=True, stdout=None, stderr=None):
+            limit=16 * 1024 * 1024, raw=False, inherit_env=True, stdout=None, stderr=None,
+            terminate_descendants=False):
     if DEADLINE.get() is not None:
         timeout = min(timeout, DEADLINE.get() - time.monotonic())
         if timeout <= 0:
@@ -183,16 +187,21 @@ def command(args, timeout=180, overrides=None, capture_stdout=False, cwd=None, *
         print(f"Verification step {logs[1]}: {args[0]} (log: {path})", flush=True)
         with path.open("wb") as stream:
             return command(args, timeout=timeout, overrides=overrides, cwd=cwd, limit=limit,
-                           raw=raw, inherit_env=inherit_env, stdout=stream, stderr=subprocess.STDOUT)
+                           raw=raw, inherit_env=inherit_env, stdout=stream, stderr=subprocess.STDOUT,
+                           terminate_descendants=terminate_descendants)
     deadline = time.monotonic() + timeout
     with start(args, overrides, cwd=cwd, inherit_env=inherit_env,
                stdout=subprocess.PIPE if capture_stdout else stdout, stderr=stderr) as child:
+        completed = False
         try:
             output = captured(child, deadline, limit) if capture_stdout else None
-            child.wait(timeout=max(0, deadline - time.monotonic()))
+            completed = child.wait(timeout=max(0, deadline - time.monotonic())) == 0
         finally:
             if group_alive(child):
-                stop(child)
+                if completed and terminate_descendants:
+                    force_stop(child)
+                else:
+                    stop(child)
         if child.returncode:
             raise subprocess.CalledProcessError(child.returncode, args)
         if output is not None:

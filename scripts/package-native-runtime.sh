@@ -25,6 +25,7 @@ source "$SCRIPT_DIR/lib/cuda-toolkit.sh"
 BUILD=0
 KEEP_RUNPATH=0
 MODEL_PACKAGE_TOOL=1
+CREATE_ARCHIVE="${SKIPPY_NATIVE_RUNTIME_ARCHIVE:-1}"
 ID_SUFFIX=""
 OUT_DIR="$REPO_ROOT/dist/native-runtimes"
 BACKEND="${LLAMA_STAGE_BACKEND:-${SKIPPY_LLAMA_BACKEND:-cpu}}"
@@ -58,8 +59,10 @@ Environment:
   LLAMA_STAGE_BUILD_DIR
   SKIPPY_NATIVE_RUNTIME_TARGET
   SKIPPY_NATIVE_RUNTIME_MODEL_PACKAGE_TOOL (non-Windows test/packaging override)
+  SKIPPY_NATIVE_RUNTIME_ARCHIVE (1 by default; 0 retains only the runtime directory)
   SKIPPY_CUDA_VERSION / SKIPPY_CUDA_TOOLKIT_MAJOR (validated against the selected compiler)
   SKIPPY_CUDA_LICENSE_FILE (optional CUDA EULA/copyright file override)
+  SKIPPY_ROCM_LICENSE_FILE (optional combined AMD/HIP component license override)
   SKIPPY_LLAMA_PIN_SHA
   SKIPPY_NATIVE_RUNTIME_RANK (manifest rank, default 0; among compatible
                       runtimes the highest rank wins)
@@ -107,6 +110,11 @@ while [[ "$#" -gt 0 ]]; do
             ;;
     esac
 done
+
+case "$CREATE_ARCHIVE" in
+    0|1) ;;
+    *) echo "SKIPPY_NATIVE_RUNTIME_ARCHIVE must be 0 or 1" >&2; exit 1 ;;
+esac
 
 case "$BACKEND" in
     cpu|metal|cuda|cuda-blackwell|rocm|hip|vulkan) ;;
@@ -792,6 +800,17 @@ build_model_package_tool
 
 if [[ "$runtime_os" == "windows" ]]; then
     dependency_args=()
+    if [[ "$BACKEND" == "cuda" || "$BACKEND" == "cuda-blackwell" ]]; then
+        dependency_args+=(--cuda-major "$(cuda_toolkit_major)")
+        bundle_cuda_distribution_license
+    fi
+    if [[ "$BACKEND" == "rocm" || "$BACKEND" == "hip" ]]; then
+        rocm_licenses="$(bash "$SCRIPT_DIR/rocm-distribution-licenses.sh" \
+            "$stage_dir" "${ROCM_PATH:-}" "${SKIPPY_ROCM_LICENSE_FILE:-}")"
+        while IFS= read -r license; do
+            license_paths+=("$license")
+        done <<< "$rocm_licenses"
+    fi
     for library in "${runtime_libraries[@]}"; do
         dependency_args+=(--search-dir "$(dirname "$library")")
     done
@@ -920,7 +939,7 @@ checksum from \`native-runtimes.json\`, installs the artifact into the
 versioned native runtime cache, and loads these libraries before Skippy starts.
 EOF
 
-if [[ "${#license_paths[@]}" -gt 0 ]]; then
+if [[ -f "$stage_dir/licenses/NVIDIA-CUDA-LICENSE.txt" ]]; then
     cat >> "$stage_dir/README.md" <<'EOF'
 
 Redistributed NVIDIA CUDA libraries remain byte-for-byte unchanged. Their
@@ -928,13 +947,30 @@ distribution terms are included at `licenses/NVIDIA-CUDA-LICENSE.txt`.
 EOF
 fi
 
-mkdir -p "$OUT_DIR"
-archive="$OUT_DIR/$artifact_id.tar.gz"
-COPYFILE_DISABLE=1 tar -C "$OUT_DIR" -czf "$archive" "$artifact_id"
-archive_sha="$(sha256_file "$archive")"
-printf '%s  %s\n' "$archive_sha" "$(basename "$archive")" > "$archive.sha256"
+if compgen -G "$stage_dir/licenses/AMD-HIP-SDK-*" >/dev/null; then
+    cat >> "$stage_dir/README.md" <<'EOF'
 
+Redistributed AMD HIP SDK libraries and kernels remain byte-for-byte
+unchanged. Their distribution terms are included under `licenses/`.
+EOF
+fi
+
+if [[ "$runtime_os" == "linux" && ( "$BACKEND" == "rocm" || "$BACKEND" == "hip" ) ]]; then
+    cat >> "$stage_dir/README.md" <<'EOF'
+
+Install the AMD ROCm runtime matching the version in `manifest.json` and make
+its libraries available to the system loader before running inference.
+EOF
+fi
+
+mkdir -p "$OUT_DIR"
 echo "packaged native runtime:"
 echo "  artifact: $artifact_id"
 echo "  primary:  $stage_dir/$primary_library"
-echo "  archive:  $archive"
+if [[ "$CREATE_ARCHIVE" == 1 ]]; then
+    archive="$OUT_DIR/$artifact_id.tar.gz"
+    COPYFILE_DISABLE=1 tar -C "$OUT_DIR" -czf "$archive" "$artifact_id"
+    archive_sha="$(sha256_file "$archive")"
+    printf '%s  %s\n' "$archive_sha" "$(basename "$archive")" > "$archive.sha256"
+    echo "  archive:  $archive"
+fi
