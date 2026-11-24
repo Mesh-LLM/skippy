@@ -1,0 +1,231 @@
+From bca35e0231e78932c4737e63b9caced19abb6762 Mon Sep 17 00:00:00 2001
+From: Skippy contributors <ci@skippy.local>
+Date: Mon, 23 Nov 2026 13:51:35 +1100
+Subject: [PATCH] Skip clearing reclaimed KV chunks fully overwritten by raw
+ import
+
+---
+ src/CMakeLists.txt                    |  6 ++++
+ src/llama-kv-cache.cpp                | 49 +++++++++++++++++++++------
+ src/llama-kv-cache.h                  |  6 ++--
+ src/skippy/tests/sampling_history.cpp | 41 +++++++++++++++++++++-
+ 4 files changed, 88 insertions(+), 14 deletions(-)
+
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 3d11e2444..735f3081d 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -569,6 +569,12 @@ if (LLAMA_STAGE_BUILD_TESTS)
+         endforeach()
+     endfunction()
+     add_skippy_sampling_history_tests(gemma skippy-model-loader-fixtures dense)
++    if(APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
++        add_test(NAME skippy_raw_kv_import_reclaims_chunks
++            COMMAND skippy-sampling-history "${SKIPPY_MODEL_FIXTURE_DIR}/gemma-dense.gguf" raw-reclaim dense)
++        set_tests_properties(skippy_raw_kv_import_reclaims_chunks PROPERTIES
++            FIXTURES_REQUIRED skippy-model-loader-fixtures ENVIRONMENT "SKIPPY_NATIVE_TEST_GPU_LAYERS=0")
++    endif()
+     add_skippy_sampling_history_tests(qwen35 skippy-noalloc-qwen35-fixture recurrent)
+     add_skippy_sampling_history_tests(granitehybrid skippy-noalloc-granite-hybrid-fixture recurrent)
+ 
+diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
+index b8c00f857..7d7901d8e 100644
+--- a/src/llama-kv-cache.cpp
++++ b/src/llama-kv-cache.cpp
+@@ -648,7 +648,7 @@ void llama_kv_cache::release_free_chunks(uint32_t stream) {
+     trace.set_value("bytes", (int64_t) bytes);
+ }
+ 
+-void llama_kv_cache::reclaim_chunks(uint32_t stream, const std::vector<uint32_t> & idxs) {
++void llama_kv_cache::reclaim_chunks(uint32_t stream, const std::vector<uint32_t> & idxs, bool overwrites_full_rows) {
+     if (!release_pages) {
+         return;
+     }
+@@ -663,18 +663,35 @@ void llama_kv_cache::reclaim_chunks(uint32_t stream, const std::vector<uint32_t>
+     if (chunks.empty()) {
+         return;
+     }
+-    // a released chunk comes back as a fresh one: announced to the kernel,
+-    // then zeroed from the CPU so its pages exist before the GPU writes them
++    // Track distinct cells so that any holes in the import still require clearing.
++    static_assert(kv_chunk_cells == 64);
++    std::vector<uint64_t> overwrite_masks;
++    if (overwrites_full_rows) {
++        overwrite_masks.resize(get_size()/kv_chunk_cells, 0);
++        for (const uint32_t idx : idxs) {
++            const auto chunk = idx/kv_chunk_cells;
++            if (chunk < overwrite_masks.size()) {
++                overwrite_masks[chunk] |= uint64_t{1} << (idx % kv_chunk_cells);
++            }
++        }
++    }
++
++    // Announce page reuse even for a full overwrite. Raw import then writes
++    // every byte itself. Other callers and partial chunks still need the clear.
+     skippy_trace::scope trace("llama.kv_reclaim_cells");
+     size_t bytes = 0;
+-    std::for_each(chunks.begin(), chunks.end(), [&](uint32_t chunk) {
++    for (const uint32_t chunk : chunks) {
+         chunk_released[base + chunk] = false;
++        const bool fully_overwritten = overwrites_full_rows &&
++            overwrite_masks[chunk] == std::numeric_limits<uint64_t>::max();
+         for_each_chunk_range(stream, chunk, chunk + 1, [&](ggml_tensor * t, size_t offset, size_t size) {
+             skippy_kv_advise_pages((char *) t->data + offset, size, skippy_kv_reuse_advice);
+-            ggml_backend_tensor_memset(t, 0, offset, size);
+-            bytes += size;
++            if (!fully_overwritten) {
++                ggml_backend_tensor_memset(t, 0, offset, size);
++                bytes += size;
++            }
+         });
+-    });
++    }
+     trace.set_value("bytes", (int64_t) bytes);
+ }
+ 
+@@ -1536,7 +1553,7 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
+     return res;
+ }
+ 
+-void llama_kv_cache::apply_ubatch(const slot_info & sinfo, const llama_ubatch & ubatch) {
++void llama_kv_cache::apply_ubatch(const slot_info & sinfo, const llama_ubatch & ubatch, bool overwrites_full_rows) {
+     // TODO: refactor [TAG_KV_CACHE_SHARE_CELLS]
+     if (other) {
+         return;
+@@ -1559,7 +1576,7 @@ void llama_kv_cache::apply_ubatch(const slot_info & sinfo, const llama_ubatch &
+         if (top != idxs.end()) {
+             clear_cells_through(*top);
+         }
+-        reclaim_chunks(sinfo.strm[s], idxs);
++        reclaim_chunks(sinfo.strm[s], idxs, overwrites_full_rows);
+     }
+ 
+     for (uint32_t s = 0; s < sinfo.n_stream(); ++s) {
+@@ -2332,7 +2349,19 @@ bool llama_kv_cache::stage_import_kv_page(
+         error = "failed to allocate KV cache cells for imported page";
+         return false;
+     }
+-    apply_ubatch(sinfo, ubatch);
++    // The optimization requires a synchronous write of every cache tensor
++    // and every byte of its selected rows. Partial layers or padded layouts
++    // keep the usual reclaim clear.
++    const auto writes_full_row = [](const ggml_tensor * t, size_t row_bytes) {
++        return t == nullptr ? row_bytes == 0 : row_bytes != 0 && t->nb[1] == row_bytes;
++    };
++    const bool overwrites_full_rows = !v_trans && selected.size() == layers.size() &&
++        std::all_of(selected.begin(), selected.end(), [&](const kv_layer * layer) {
++            return writes_full_row(layer->k, desc.k_row_bytes) &&
++                   writes_full_row(layer->v, desc.v_row_bytes) &&
++                   writes_full_row(layer->k_idx, desc.k_idx_row_bytes);
++        });
++    apply_ubatch(sinfo, ubatch, overwrites_full_rows);
+ 
+     const auto cell_runs = llama_kv_cache_cell_runs(sinfo.idxs[0]);
+     const char * src = static_cast<const char *>(input);
+diff --git a/src/llama-kv-cache.h b/src/llama-kv-cache.h
+index ad9257353..f77e14586 100644
+--- a/src/llama-kv-cache.h
++++ b/src/llama-kv-cache.h
+@@ -304,7 +304,7 @@ public:
+     // A chunk whose cells are all free again hands its pages back to the
+     // kernel, so the pool's resident memory follows the cells in use rather
+     // than the high-water mark. A released chunk is zeroed again before a
+-    // ubatch writes into it, as a chunk above the mark is. Indexed
++    // ubatch writes into it unless raw import overwrites it completely. Indexed
+     // [stream][chunk]; only host-visible buffers take part.
+     bool release_pages = false;
+     std::vector<bool> chunk_released;
+@@ -312,14 +312,14 @@ public:
+     void set_page_release(bool enabled);
+     void release_free_chunks();
+     void release_free_chunks(uint32_t stream);
+-    void reclaim_chunks(uint32_t stream, const std::vector<uint32_t> & idxs);
++    void reclaim_chunks(uint32_t stream, const std::vector<uint32_t> & idxs, bool overwrites_full_rows = false);
+     void reclaim_compaction_targets(const std::vector<compaction_move> & moves);
+     // the byte range of chunks [chunk0, chunk1) of `stream` in each cache tensor
+     void for_each_chunk_range(uint32_t stream, uint32_t chunk0, uint32_t chunk1,
+             const std::function<void(ggml_tensor *, size_t, size_t)> & fn) const;
+ 
+     // emplace the ubatch context into slot: [sinfo.idxs[0...ubatch.n_tokens - 1]]
+-    void apply_ubatch(const slot_info & sinfo, const llama_ubatch & ubatch);
++    void apply_ubatch(const slot_info & sinfo, const llama_ubatch & ubatch, bool overwrites_full_rows = false);
+ 
+     // move used cells toward the beginning of each stream and copy the backing KV rows
+     std::vector<compaction_move> compact_cells();
+diff --git a/src/skippy/tests/sampling_history.cpp b/src/skippy/tests/sampling_history.cpp
+index 1e636d0f3..db4a27bd2 100644
+--- a/src/skippy/tests/sampling_history.cpp
++++ b/src/skippy/tests/sampling_history.cpp
+@@ -623,6 +623,37 @@ std::vector<float> decode_logits(skippy_session * session, llama_token token) {
+     return std::vector<float>(logits, logits + n_vocab);
+ }
+ 
++// Import two complete reclaimed chunks and one partial chunk. Verify the
++// partial chunk still clears, the logical page round trips, and decode agrees.
++void raw_import_reclaims_chunks(skippy_model * model) {
++    const std::vector<llama_token> prefix(129, 1);
++    auto * source = create(model);
++    prefill(source, prefix);
++    const snapshot saved(source, false);
++    CHECK(saved.page.component_count == 0);
++    CHECK(saved.page.token_count == prefix.size());
++    const auto expected = decode_logits(source, 42);
++    release(source);
++
++    auto * restored = create(model);
++    int64_t cleared_bytes = 0;
++    const auto receive = [](const skippy_native_span_v1 * span, void * context) {
++        if (std::strcmp(span->name, "llama.kv_reclaim_cells") == 0) {
++            CHECK(span->value_name && std::strcmp(span->value_name, "bytes") == 0);
++            *static_cast<int64_t *>(context) += span->value;
++        }
++    };
++    CHECK(skippy_set_native_span_callback(receive, &cleared_bytes) == SKIPPY_STATUS_OK);
++    saved.restore(restored, prefix);
++    CHECK(skippy_set_native_span_callback(nullptr, nullptr) == SKIPPY_STATUS_OK);
++    constexpr size_t cells_per_chunk = 64;
++    CHECK(saved.payload.size() % prefix.size() == 0);
++    CHECK(cleared_bytes == static_cast<int64_t>(saved.payload.size() / prefix.size() * cells_per_chunk));
++    CHECK(export_page(restored, prefix.size()) == saved.payload);
++    CHECK(decode_logits(restored, 42) == expected);
++    release(restored);
++}
++
+ // A hybrid checkpoint is the composition of an independently exported attention
+ // page and recurrent-only component. Restoring the recurrent component alone
+ // leaves no attention cells. Compare both components byte for byte after restore,
+@@ -970,8 +1001,9 @@ int main(int argc, char ** argv) {
+     const bool grammar = std::strcmp(argv[2], "grammar") == 0;
+     const bool state = std::strcmp(argv[2], "state") == 0;
+     const bool argmax = std::strcmp(argv[2], "argmax") == 0;
++    const bool raw_reclaim = std::strcmp(argv[2], "raw-reclaim") == 0;
+     const bool resident = std::strcmp(argv[2], "resident") == 0;
+-    CHECK(grammar || state || resident || argmax || std::strcmp(argv[2], "penalty") == 0);
++    CHECK(grammar || state || resident || argmax || raw_reclaim || std::strcmp(argv[2], "penalty") == 0);
+     const bool automatic = resident && std::strcmp(argv[3], "auto") == 0;
+     CHECK(automatic || std::strcmp(argv[3], "dense") == 0 || std::strcmp(argv[3], "recurrent") == 0);
+     CHECK(argc == 4 || resident);
+@@ -985,6 +1017,11 @@ int main(int argc, char ** argv) {
+         config.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+     }
+     config.ctx_size = 512;
++    if (raw_reclaim) {
++        config.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
++        config.kv_lazy_clear = SKIPPY_TRISTATE_TRUE;
++        config.kv_release_pages = SKIPPY_TRISTATE_TRUE;
++    }
+     if (resident) { config.lane_count = 2; config.kv_unified = 1; }
+     skippy_model * model = nullptr;
+     skippy_error * error = nullptr;
+@@ -1014,6 +1051,8 @@ int main(int argc, char ** argv) {
+         state_round_trip(model);
+     } else if (argmax) {
+         argmax_path(model);
++    } else if (raw_reclaim) {
++        raw_import_reclaims_chunks(model);
+     } else {
+         for (const bool full : {false, true}) {
+             if (grammar) {
+-- 
+2.56.0
+
