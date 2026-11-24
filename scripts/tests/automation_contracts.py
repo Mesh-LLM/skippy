@@ -479,6 +479,18 @@ class Upgrade(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "complete lowercase Git"):
                     publisher.validated_candidate(root, bundle, "main")
 
+    def test_generated_upgrade_description_passes_the_actual_protected_acceptance_gate(self):
+        publisher = module("upgrade-publish")
+        candidate = {'candidate_sha': 'a' * 40, 'upstream_sha': 'b' * 40}
+        with patch.dict(os.environ, GITHUB_RUN_ID='45354222627'):
+            body = publisher.description(candidate)
+        script = 'let body="";process.stdin.on("data",s=>body+=s);process.stdin.on("end",()=>require(process.argv[1])(body));'
+        checked = subprocess.run(['node', '-e', script, str(ROOT / '.github/scripts/pr-acceptance.cjs')],
+                                 input=body, text=True, capture_output=True, timeout=30)
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+        self.assertIn(candidate['candidate_sha'], body)
+        self.assertIn('/actions/runs/45354222627', body)
+
 
 class RewriterReport(unittest.TestCase):
     @staticmethod
