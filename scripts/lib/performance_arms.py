@@ -76,10 +76,13 @@ def server_args(built, help_text, model, coordinate, context, server):
     wanted = [("--generation-concurrency", lanes), ("--speculative-strategy", "disabled")]
     if pool is not None:
         wanted.append(("--kv-pool-tokens", pool))
+    # llama.cpp's offloaded-layers line is the only GPU evidence older skippy
+    # forwards, and only at debug verbosity; a None value passes a bare flag.
+    wanted.append(("--debug", None))
     for flag, value in wanted:
-        if supports(help_text, flag):
-            args += [flag, str(value)]
-            applied[flag.removeprefix("--").replace("-", "_")] = value
-        else:
+        if not supports(help_text, flag):
             missing.append(flag)
+            continue
+        args += [flag] if value is None else [flag, str(value)]
+        applied[flag.removeprefix("--").replace("-", "_")] = True if value is None else value
     return args, applied, missing

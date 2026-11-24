@@ -147,7 +147,16 @@ class ServerTests(unittest.TestCase):
         args, applied, missing = server_args(self.skippy, help_text, "/m.gguf", "org/m@rev", 8192, self.server)
         self.assertIn("--generation-concurrency", args)
         self.assertEqual(applied["generation_concurrency"], 4)
-        self.assertEqual(missing, ["--speculative-strategy", "--kv-pool-tokens"])
+        self.assertEqual(missing, ["--speculative-strategy", "--kv-pool-tokens", "--debug"])
+
+    def test_measured_servers_run_at_debug_verbosity_for_offload_evidence(self):
+        help_text = (" ".join(REQUIRED) + " --debug --generation-concurrency <N>"
+                     " --speculative-strategy <S> --kv-pool-tokens <N>\n")
+        args, applied, missing = server_args(self.skippy, help_text, "/m.gguf", "org/m@rev", 8192, self.server)
+        self.assertEqual(args.count("--debug"), 1)
+        self.assertNotIn("None", args)
+        self.assertIs(applied["debug"], True)
+        self.assertEqual(missing, [])
 
     def test_required_options_are_probed_before_any_measured_round(self):
         for missing in REQUIRED:
