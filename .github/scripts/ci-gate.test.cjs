@@ -234,7 +234,7 @@ test('hosted CI cannot satisfy a native package requirement', () => {
   assert.throws(() => gate(results({ hostedRequiresNative: true })), /require native hardware qualification on an isolated runner/);
 });
 
-test('the repository switch moves Linux and macOS hosted jobs to Depot and retains Windows toolchains', () => {
+test('the repository switch routes Windows CUDA 13 and eligible Linux and macOS jobs to Depot', () => {
   const workflows = ['ci', 'ci-images', 'ci-image-builds', 'docs', 'inference', 'llama-upgrade', 'pr-checks', 'release'];
   for (const name of workflows) {
     const yaml = readFileSync(join(__dirname, '../workflows', name + '.yml'), 'utf8');
@@ -250,7 +250,10 @@ test('the repository switch moves Linux and macOS hosted jobs to Depot and retai
   assert.doesNotMatch(workflow, /windows_toolchain_probe/);
   for (const job of packageJobs.filter(job => job.startsWith('package_windows_'))) {
     const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
-    assert.match(body, /^    runs-on: windows-2022$/m, job);
+    const expected = job === 'package_windows_x86_64_cuda13'
+      ? "${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-windows-2022-8' || 'windows-2022' }}"
+      : 'windows-2022';
+    assert.equal(body.match(/^    runs-on: (.+)$/m)?.[1], expected, job);
   }
 });
 

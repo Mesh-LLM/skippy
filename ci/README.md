@@ -177,8 +177,8 @@ Spark pool; x64 CUDA 13 device coverage remains required for releases. The full
 CI gate matches all package jobs to the plan and checks required device results.
 
 Full CI and releases also require archive checks for Windows x64 CPU, CUDA 12,
-CUDA 13 and ROCm 7.2.0, and Linux x64 ROCm 7.2.4. The Windows jobs use
-`windows-2022` for the pinned HIP SDK and compatible MSVC toolset. CUDA
+CUDA 13 and ROCm 7.2.0, and Linux x64 ROCm 7.2.4. The Windows jobs use Windows
+Server 2022 for the pinned SDKs and compatible MSVC toolset. CUDA
 components and the HIP SDK are downloaded from checksum-pinned inputs. The
 Linux ROCm job uses the published compiler image resolved to a digest and
 adds the SHA-256-pinned ROCm 7.2.4 BLAS libraries to a job-local prefix for
@@ -191,7 +191,9 @@ five variants.
 ### Depot runners
 
 The repository Actions variable `SKIPPY_DEPOT_RUNNERS_ENABLED=true` selects
-Depot for Linux and macOS jobs that otherwise use GitHub-hosted runners.
+Depot for eligible Linux and macOS jobs and for the Windows CUDA 13 package.
+Windows CUDA 13 uses `depot-windows-2022-8` with Depot enabled. The Windows CPU,
+CUDA 12, and ROCm package jobs use GitHub-hosted `windows-2022`.
 This includes PR validation and its aggregate, code and package CI, compiler images and
 publishing, documentation and deployment, release validation and publication,
 the inference controllers, and llama upgrade publication. Most

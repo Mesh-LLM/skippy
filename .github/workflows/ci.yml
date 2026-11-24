@@ -861,7 +861,7 @@ jobs:
     name: Build and verify archive · Windows x64 CUDA 13
     needs: [plan, quality, package_windows_x86_64_cpu]
     if: needs.plan.outputs.profile == 'full'
-    runs-on: windows-2022
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-windows-2022-8' || 'windows-2022' }}
     timeout-minutes: 240
     env:
       SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
