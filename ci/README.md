@@ -180,7 +180,10 @@ Full CI and releases also require archive checks for Windows x64 CPU, CUDA 12,
 CUDA 13 and ROCm 7.2.0, and Linux x64 ROCm 7.2.4. The Windows jobs use Windows
 Server 2022 for the pinned SDKs and compatible MSVC toolset. CUDA
 components and the HIP SDK are downloaded from checksum-pinned inputs. The
-Linux ROCm job uses the published compiler image resolved to a digest and
+Windows CUDA installer includes the NVML development component for both pinned
+toolkits and requires a nonempty `include/nvml.h` before exposing the toolkit
+to package builds. This supplies headers for llama.cpp's driver-library lookup.
+The Linux ROCm job uses the published compiler image resolved to a digest and
 adds the SHA-256-pinned ROCm 7.2.4 BLAS libraries to a job-local prefix for
 compilation and archive smoke.
 Windows users need the Microsoft Visual C++ x64 Redistributable and, for CUDA,

@@ -28,7 +28,7 @@ def install(version, root):
     if hashlib.sha256(raw).hexdigest() != MANIFESTS[version]:
         raise ValueError(f"NVIDIA CUDA {version} manifest checksum mismatch")
     manifest = json.loads(raw)
-    components = ["cuda_nvcc", "cuda_cccl", *REDISTRIBUTED]
+    components = ["cuda_nvcc", "cuda_cccl", "cuda_nvml_dev", *REDISTRIBUTED]
     if version == "13.1.2":
         components.extend(("cuda_crt", "libnvvm"))
 
@@ -61,6 +61,9 @@ def install(version, root):
                     with bundle.open(member) as source, destination.open("xb") as output:
                         shutil.copyfileobj(source, output)
             archive.unlink()
+    header = root / "include/nvml.h"
+    if not header.is_file() or header.stat().st_size == 0:
+        raise ValueError(f"CUDA {version} NVML development header is missing or empty")
     (root / "EULA.txt").write_bytes(b"\n\n".join(licenses))
 
 
