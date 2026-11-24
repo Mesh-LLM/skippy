@@ -298,7 +298,7 @@ class Upgrade(unittest.TestCase):
                              ["llama_cpp/patches/generated/0001-family-fixture.patch",
                               "llama_cpp/patches/generated/series", "llama_cpp/upstream.txt"])
 
-    def test_repaired_candidate_is_fresh_and_directly_descends_from_protected_base(self):
+    def test_failed_ci_logs_reach_ffi_repair_and_a_fresh_restorable_candidate(self):
         source = module("upgrade-source")
         upstream = "b" * 40
         with tempfile.TemporaryDirectory() as tmp:
@@ -311,9 +311,23 @@ class Upgrade(unittest.TestCase):
             self.run_prepare(root, regenerate, upstream)
             output = root / "target/llama-upgrade"
             original_candidate = json.loads((output / "candidate.json").read_text())["candidate_sha"]
-            def agent(checkout, diagnostics, **_options):
-                self.assertEqual(diagnostics, (root / "target/llama-upgrade/diagnostics").resolve())
-                (checkout / "llama_cpp/patches/repair.patch").write_text("native repair\n")
+            diagnostics = root / "target/diagnostics"
+            collector = module("upgrade-diagnostics")
+            failure_log = 'undefined symbol: llama_set_embeddings_nextn(llama_context*, bool, bool)\n'
+            with patch.dict(os.environ, GITHUB_RUN_ID='45296606108'), \
+                 patch.object(collector, 'gh', side_effect=['--jq --paginate', '138197945347\n', failure_log]):
+                collector.collect(diagnostics)
+            agent = Path(tmp) / 'agent.py'
+            adapters = ('static_bindings.rs', 'dynamic.rs', 'llama_draft.rs')
+            agent.write_text(
+                'import sys\nfrom pathlib import Path\n'
+                f'evidence=Path({str(output / "diagnostics/previous-ci")!r})\n'
+                f'assert (evidence/"actions-138197945347.log").read_text()=={failure_log!r}\n'
+                'assert (evidence/"actions-log-collection.json").is_file()\n'
+                f'for adapter in {adapters!r}:\n'
+                '    path=Path("crates/skippy-ffi/src")/adapter\n'
+                '    assert str(path) in sys.argv[-1]\n'
+                '    path.write_text("upstream C linkage adapter repair\\n")\n')
             real = source.command
             def native(args, **kwargs):
                 return None if args[:1] == ["just"] else real(args, **kwargs)
@@ -322,17 +336,21 @@ class Upgrade(unittest.TestCase):
                 os.chdir(root)
                 with patch.object(source, "seed_patch_preimages"), patch.object(source, "regenerate", regenerate), \
                      patch.object(source, "check_upgrade_coverage"), patch.object(source, "write_native_recipe"), \
-                     patch.object(source, "repair", side_effect=agent) as repair_agent, \
-                     patch.dict(os.environ, SKIPPY_UPGRADE_REPAIR_COMMAND='["agent"]'), \
+                     patch.object(source, "repair", wraps=source.repair) as repair_agent, \
+                     patch.dict(os.environ, SKIPPY_UPGRADE_REPAIR_COMMAND=json.dumps([sys.executable, str(agent)])), \
                      patch.object(source, "command", side_effect=native), \
                      patch("sys.stdout", io.StringIO()):
-                    source.prepare(upstream, output / "candidate.bundle", root / "target/diagnostics")
+                    source.prepare(upstream, output / "candidate.bundle", diagnostics)
                 repaired = json.loads((output / "candidate.json").read_text())["candidate_sha"]
                 self.assertNotEqual(repaired, original_candidate)
                 self.assertEqual(git(root, "bundle", "list-heads", str(output / "candidate.bundle")), f"{repaired} HEAD")
                 git(root, "fetch", str(output / "candidate.bundle"), "HEAD")
                 self.assertEqual(git(root, "rev-list", "--parents", "-n1", repaired), f"{repaired} {base}")
                 repair_agent.assert_called_once()
+                restore_at(root, output / 'candidate.bundle', repaired)
+                for adapter in adapters:
+                    self.assertEqual((root / 'crates/skippy-ffi/src' / adapter).read_text(),
+                                     'upstream C linkage adapter repair\n')
             finally:
                 os.chdir(cwd)
 
