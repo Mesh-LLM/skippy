@@ -481,8 +481,11 @@ smoke commands use Python 3.9 or later. Release inventory uses Python
 3.11 or later for TOML parsing. With uv installed, Justfile recipes run Python
 on the interpreter `.python-version` names. Set `SKIPPY_PYTHON` to select
 another. The shell scripts read it too. Both profiles validate the full
-manifest. The short plan includes the eight inference-validated runtime rows,
-and the full plan adds the five archive-only rows.
+manifest. The short plan lists the eight runtime rows classified for inference,
+and the full plan adds the five archive-only rows. When package checks are
+selected, short CI builds and runs device smoke for macOS ARM64 Metal and Linux
+ARM64 CUDA 13. The Linux x64 CUDA packages build in full CI and receive device
+smoke during release validation.
 
 When changing the full roster, land the workflow's package jobs and the
 manifest together. Protected PR CI uses the short profile. Before landing,
