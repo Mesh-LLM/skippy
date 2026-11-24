@@ -102,7 +102,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        if: ${{ failure() || cancelled() }}
+        if: ${{ always() && steps.resolve.outputs.validate == 'true' }}
         with:
           name: llama-preparation-diagnostics-recovery
           path: target/llama-upgrade/diagnostics/recovery
@@ -134,99 +134,23 @@ jobs:
       artifact_scope: upgrade-initial
       profile: full
   repair:
-    permissions:
-      contents: read
-      actions: read
     needs: [candidate, qualify]
     if: >-
       !cancelled() && needs.candidate.result == 'success' &&
       needs.candidate.outputs.validate == 'true' && needs.qualify.result == 'failure'
-    runs-on:
-      group: jy-rnr_vfnz8k5p4yrh334
-      labels: [self-hosted, jy-linux-docker, Linux]
-    defaults:
-      run:
-        shell: bash
-    timeout-minutes: 1430
-    outputs:
-      candidate_sha: ${{ steps.prepare.outputs.candidate_sha }}
-    env:
-      CARGO_BUILD_JOBS: '4'
-      CMAKE_BUILD_PARALLEL_LEVEL: '4'
-      SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
-      LIBCLANG_PATH: /usr/lib/llvm-22/lib
-      GOOSE_MODE: auto
-      GOOSE_DISABLE_SESSION_NAMING: 'true'
-      SKIPPY_UPGRADE_REPAIR_COMMAND: ${{ vars.SKIPPY_UPGRADE_REPAIR_COMMAND || '["goose","run","--with-builtin","developer","--text"]' }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-        with:
-          cache: 'false'
-      - name: Check runner GitHub CLI
-        run: gh --version
-      - name: Check JY native tools and repair agent
-        run: just automation-run upgrade runner-check
-      - uses: ./.github/actions/cache
-        with:
-          scope: upgrade-candidate-jy-llvm22
-          download-scope: upgrade-candidate
-      - uses: ./.github/actions/sccache
-        id: compiler_cache
-        with:
-          scope: upgrade-candidate-jy-${{ runner.os }}-${{ runner.arch }}-llvm22
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: llama-initial-candidate
-          path: target/llama-repair/candidate
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          pattern: '*-evidence'
-          path: target/llama-repair/diagnostics
-      - name: Collect failed Actions job logs
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: just automation-run upgrade diagnostics target/llama-repair/diagnostics
-      - name: Repair failed candidate and prepare a fresh bundle
-        id: prepare
-        env:
-          UPSTREAM_SHA: ${{ needs.candidate.outputs.upstream_sha }}
-        run: >-
-          just automation-run upgrade prepare "$UPSTREAM_SHA"
-          --repair-bundle target/llama-repair/candidate/candidate.bundle --diagnostics target/llama-repair/diagnostics
-      - uses: ./.github/actions/report-sccache
-        if: ${{ !cancelled() && steps.compiler_cache.outcome == 'success' }}
-        with:
-          artifact-prefix: llama-repaired-preparation
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        with:
-          name: llama-repaired-candidate
-          path: |
-            target/llama-upgrade/candidate.bundle
-            target/llama-upgrade/candidate.json
-          if-no-files-found: error
-          retention-days: 14
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        if: ${{ failure() || cancelled() }}
-        with:
-          name: llama-repair-diagnostics-recovery
-          path: target/llama-upgrade/diagnostics/recovery
-          if-no-files-found: warn
-          retention-days: 14
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        if: ${{ failure() || cancelled() }}
-        with:
-          name: llama-repair-diagnostics
-          path: |
-            target/llama-upgrade/diagnostics
-            target/llama-repair/diagnostics
-          if-no-files-found: warn
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/llama-upgrade-repair.yml
+    with:
+      upstream_sha: ${{ needs.candidate.outputs.upstream_sha }}
+      candidate_artifact: llama-initial-candidate
+      output_artifact: llama-repaired-candidate
+      ci_scope: upgrade-initial
+      ci_prefix: 'qualify / '
   requalify:
-    needs: [candidate, repair]
-    if: ${{ !cancelled() && needs.repair.result == 'success' }}
+    needs: repair
+    if: ${{ !cancelled() && needs.repair.result == 'success' && needs.repair.outputs.candidate_sha != '' }}
     permissions:
       contents: read
       packages: read
@@ -238,16 +162,64 @@ jobs:
       candidate_artifact: llama-repaired-candidate
       artifact_scope: upgrade-repaired
       profile: full
-  publish:
-    needs: [candidate, qualify, repair, requalify]
+  repair_2:
+    needs: [candidate, repair, requalify]
     if: >-
-      !cancelled() && needs.candidate.outputs.changed == 'true' &&
-      (needs.qualify.result == 'success' || needs.requalify.result == 'success')
+      !cancelled() && needs.repair.result == 'success' && needs.repair.outputs.candidate_sha != '' &&
+      needs.requalify.result == 'failure'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/llama-upgrade-repair.yml
+    with:
+      upstream_sha: ${{ needs.candidate.outputs.upstream_sha }}
+      candidate_artifact: llama-repaired-candidate
+      output_artifact: llama-repaired-2-candidate
+      ci_scope: upgrade-repaired
+      ci_prefix: 'requalify / '
+  requalify_2:
+    needs: repair_2
+    if: ${{ !cancelled() && needs.repair_2.result == 'success' && needs.repair_2.outputs.candidate_sha != '' }}
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+      pull-requests: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      candidate_sha: ${{ needs.repair_2.outputs.candidate_sha }}
+      candidate_artifact: llama-repaired-2-candidate
+      artifact_scope: upgrade-repaired-2
+      profile: full
+  result:
+    needs: [candidate, qualify, repair, requalify, repair_2, requalify_2]
+    if: ${{ !cancelled() && needs.candidate.outputs.validate == 'true' }}
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    outputs:
+      candidate_sha: ${{ steps.select.outputs.candidate_sha }}
+      candidate_artifact: ${{ steps.select.outputs.candidate_artifact }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - name: Require an independently verified candidate
+        id: select
+        env:
+          UPGRADE_RESULTS: ${{ toJSON(needs) }}
+        run: just automation-run upgrade result
+  publish:
+    needs: [candidate, result]
+    if: >-
+      !cancelled() && needs.candidate.outputs.changed == 'true' && needs.result.result == 'success'
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 30
     env:
-      CANDIDATE_ARTIFACT: ${{ needs.qualify.result == 'success' && 'llama-initial-candidate' || 'llama-repaired-candidate' }}
-      VALIDATED_SHA: ${{ needs.qualify.result == 'success' && needs.candidate.outputs.candidate_sha || needs.repair.outputs.candidate_sha }}
+      CANDIDATE_ARTIFACT: ${{ needs.result.outputs.candidate_artifact }}
+      VALIDATED_SHA: ${{ needs.result.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:

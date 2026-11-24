@@ -73,7 +73,7 @@ contract; no downstream product's workflow topology applies here.
   It cannot move an existing tag or publish an incomplete
   artifact matrix. Canary runs leave main, tags, and publication untouched.
 - `.github/workflows/llama-upgrade.yml` keeps control on protected main, prepares
-  an immutable candidate and runs existing full CI once. Graph contracts and
+  an immutable candidate and runs existing full CI. Graph contracts and
   small synthetic execution tests remain the architectural regression gate.
   There is no additional live-model CPU, CUDA or Spark upgrade battery.
   Registered synthetic cases must match their metadata and test modes. Uncovered
@@ -106,6 +106,15 @@ contract; no downstream product's workflow topology applies here.
   committed native changes against upstream. Upload unverified recovery on
   failure/cancellation before verbose logs; never admit it as CI evidence.
   A repaired candidate receives fresh full CI.
+  Every local verification pass must run the existing CPU `just lint`,
+  `just test` and `just llama-check` gates against the same prepared native
+  tree before freezing a candidate. Source failures return to the same Goose
+  session while its budget remains. Full platform CI admits at most three
+  candidate rounds; each repair restores the latest bundle and receives only
+  that round's failure evidence. Recognized runner/image failures stop source
+  repair with diagnostics. Retain unverified checkpoints on successful local
+  preparation too, because subsequent independent CI can still fail. The
+  shared repair job lives in `.github/workflows/llama-upgrade-repair.yml`.
   Log collection must support the installed JY GitHub CLI, record partial
   download failures and pass available CI evidence to repair. Preserve that
   evidence on failure even before preparation starts. Repair may update the

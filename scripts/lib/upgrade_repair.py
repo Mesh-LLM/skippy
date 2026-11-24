@@ -35,7 +35,8 @@ def repair(checkout, diagnostics, *, session=None, timeout=41400):
         "Keep preparation stamps (.skippy-*) out of native commits and patches. "
         "Validate replay with just llama-prepare, which creates those stamps, not bare git am. "
         "Keep generated patches compiler-generated; the controller regenerates them after your turn. "
-        "Return after focused checks; the controller owns complete regeneration and full CI. "
+        "Return after focused checks; the controller owns complete regeneration, CPU graph contracts, "
+        "lint and offline Rust/C++ tests after every turn, and independent full platform CI. "
         "Leave outer repository changes uncommitted. Allowed paths: " + ", ".join(ALLOWED) + "."
     )
     before = git(checkout, "rev-parse", "HEAD")

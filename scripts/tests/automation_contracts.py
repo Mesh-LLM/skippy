@@ -294,7 +294,7 @@ class Upgrade(unittest.TestCase):
         os.chdir(root)
         try:
             with patch.object(source, "seed_patch_preimages"), patch.object(source, "regenerate", regenerate), patch.object(source, "check_upgrade_coverage"), \
-                    patch.object(source, "write_native_recipe"), patch.object(source, "command", native), \
+                    patch.object(source, "write_native_recipe"), patch.object(source, "verify_offline"), patch.object(source, "command", native), \
                     patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("GITHUB_OUTPUT", None)
                 with patch("sys.stdout", io.StringIO()) as stdout:
@@ -390,7 +390,7 @@ class Upgrade(unittest.TestCase):
             collector = module("upgrade-diagnostics")
             failure_log = 'undefined symbol: llama_set_embeddings_nextn(llama_context*, bool, bool)\n'
             with patch.dict(os.environ, GITHUB_RUN_ID='45296606108'), \
-                 patch.object(collector, 'gh', side_effect=['--jq --paginate', '138197945347\n', failure_log]):
+                 patch.object(collector, 'gh', side_effect=['--jq --paginate', json.dumps({'id': 138197945347, 'name': 'qualify / Quality canary', 'steps': []}), failure_log]):
                 collector.collect(diagnostics)
             agent = Path(tmp) / 'agent.py'
             adapters = ('static_bindings.rs', 'dynamic.rs', 'llama_draft.rs')
@@ -410,7 +410,7 @@ class Upgrade(unittest.TestCase):
             try:
                 os.chdir(root)
                 with patch.object(source, "seed_patch_preimages"), patch.object(source, "regenerate", regenerate), \
-                     patch.object(source, "check_upgrade_coverage"), patch.object(source, "write_native_recipe"), \
+                     patch.object(source, "check_upgrade_coverage"), patch.object(source, "write_native_recipe"), patch.object(source, "verify_offline"), \
                      patch.object(source, "repair", wraps=source.repair) as repair_agent, \
                      patch.dict(os.environ, SKIPPY_UPGRADE_REPAIR_COMMAND=json.dumps([sys.executable, str(agent)])), \
                      patch.object(source, "command", side_effect=native), \
@@ -453,7 +453,7 @@ class Upgrade(unittest.TestCase):
                 os.chdir(root)
                 with patch.object(source, "seed_patch_preimages"), patch.object(source, "regenerate", side_effect=regenerate), \
                      patch.object(source, "check_upgrade_coverage", side_effect=coverage) as checked, \
-                     patch.object(source, "write_native_recipe"), \
+                     patch.object(source, "write_native_recipe"), patch.object(source, "verify_offline"), \
                      patch.object(source, "repair", side_effect=agent) as repaired, \
                      patch.object(source, "command", side_effect=native), \
                      patch.dict(os.environ, SKIPPY_UPGRADE_REPAIR_COMMAND='["agent"]'), \

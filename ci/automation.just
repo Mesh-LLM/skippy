@@ -17,6 +17,7 @@ automation-contracts: inference-contracts
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_product_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_diagnostics.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_verification.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_lifecycle.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_rehearsal.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/graph_contracts.py

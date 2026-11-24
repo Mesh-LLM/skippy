@@ -688,6 +688,25 @@ also apply. Verification runs real preparation, native builds, generation,
 bindings, graph coverage and recipe generation before freezing the candidate.
 Full CI then validates its exact SHA. A failed full CI candidate enters the same
 preparation loop with its retained CI evidence before receiving fresh full CI.
+Before either initial preparation or a returned repair can freeze its candidate,
+the controller runs the same CPU `just lint`, `just test` and `just llama-check`
+gates used by ordinary CI. These include Rust link checks and native graph
+contract compilation/execution. They use the regenerated native tree, static
+CPU libraries and one shared verification deadline. Every failure returns its
+command and logs to the same named Goose session. These gates use offline
+fixtures; they do not add a live-model inference battery.
+
+Independent full CI can evaluate at most three candidates: the initial bundle,
+then up to two repaired bundles. Both repair rounds reuse
+`llama-upgrade-repair.yml`, restore the latest candidate and collect only the
+preceding round's logs and evidence. Known runner/image failures, including a
+missing NVML development header, stop source repair and record their reason in
+`ci-failure.json`. Failures outside candidate build/test steps also stop repair.
+The result controller selects exactly one successful full-CI candidate and its
+matching artifact; no successful round, ambiguous success or an invalid source
+identity prevents publication. Each repair job keeps the existing 11h30 coding,
+12h verification and 23h40 outer budgets. Goose sessions are local to each JY
+job; cross-job repair continues from the immutable bundle and CI diagnostics.
 Failed-job log collection uses paginated `gh --jq` output supported by JY's
 installed GitHub CLI. ANSI log output is enabled only when that CLI supports
 the flag. Individual download failures are recorded in
@@ -702,7 +721,9 @@ including native commits not yet exported to patches. Missing native bases use
 a full tracked-tree patch. Manifests record bases and heads; tracked patches and
 untracked inputs each have a 256 MiB capture limit. Recovery errors are reported
 without replacing the original outcome. Failure/cancellation uploads recovery
-before verbose diagnostics. Hard runner loss can still prevent a final capture;
+before verbose diagnostics. Successful local preparation also uploads its
+unverified checkpoints so downstream CI failure does not discard recovery.
+Hard runner loss can still prevent a final capture;
 completed checkpoints remain available. These files are diagnostic recovery
 inputs, never successful qualification evidence or publication authority.
 
