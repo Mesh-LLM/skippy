@@ -8,6 +8,7 @@ import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from lib.release_version import bump, parse_tag
 
@@ -102,6 +103,55 @@ class RuntimeCatalogContract(unittest.TestCase):
         for edit in cases:
             with self.assertRaises(ValueError):
                 self.release.verify_catalog(changed(edit), TAG, self.archives)
+
+
+class PreparedReleaseContract(unittest.TestCase):
+    def setUp(self):
+        self.release = release_script()
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.source = "a" * 40
+        self.variant = "linux-x86_64-cpu"
+        self.enterContext(patch.object(self.release.artifacts, "source", return_value=self.source))
+        self.enterContext(patch.object(self.release, "version", return_value="true"))
+        self.enterContext(patch.object(self.release, "targets", return_value=({}, {self.variant: {}})))
+        name = f"skippy-{TAG}-{self.variant}.tar.gz"
+        # Publisher verification uses the exact compressed bytes, without extraction.
+        self.archive = self.root / name
+        self.archive.write_bytes(b"verified compressed product")
+        digest = self.release.artifacts.digest(self.archive)
+        catalog = self.release.catalog(TAG, [self.release.catalog_entry({
+            "id": self.variant, "release_version": TAG[1:], "skippy_abi": "0.1.86",
+        }, TAG, name, digest)])
+        catalog_path = self.root / self.release.CATALOG
+        self.release.artifacts.write_json(catalog_path, catalog)
+        self.receipt = {
+            "schema_version": 1, "tag": TAG, "source": self.source,
+            "upstream_pin": "b" * 40, "variants": [self.variant],
+            "assets": {name: digest, self.release.CATALOG: self.release.artifacts.digest(catalog_path)},
+        }
+        self.release.artifacts.write_json(self.root / "release.json", self.receipt)
+        for file in list(self.root.iterdir()):
+            self.release.artifacts.write_checksum(file)
+
+    def test_prepared_assets_verify_without_unpacking_or_rebuilding_inventory(self):
+        with patch.object(self.release.artifacts, "unpack", side_effect=AssertionError("unexpected extraction")):
+            self.assertEqual(self.release.verify(self.root), self.receipt)
+
+    def test_changed_archive_bytes_fail_even_with_an_updated_checksum_sidecar(self):
+        self.archive.write_bytes(b"modified after preparation")
+        self.release.artifacts.write_checksum(self.archive)
+        with self.assertRaisesRegex(ValueError, "archive identity mismatch"):
+            self.release.verify(self.root)
+
+    def test_foreign_source_and_missing_archive_cannot_pass(self):
+        with patch.object(self.release.artifacts, "source", return_value="c" * 40):
+            with self.assertRaisesRegex(ValueError, "roster/source mismatch"):
+                self.release.verify(self.root)
+        self.archive.unlink()
+        with self.assertRaises(FileNotFoundError):
+            self.release.verify(self.root)
 
 
 class ReleaseContract(unittest.TestCase):

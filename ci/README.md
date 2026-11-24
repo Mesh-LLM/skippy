@@ -84,7 +84,7 @@ concurrency coalescing. If prior coverage cannot be verified, require both
 device smokes and Graph Contracts. The gate rejects missing, skipped, failed
 or cancelled selected jobs. Exact promoted-release receipt reuse avoids
 repeating validated work. Scheduled, manual and reusable full validation
-retain all eight packages and Graph Contracts. Main merges do not start the
+require all thirteen packages and Graph Contracts. Main merges do not start the
 separate Spark qualification ladder.
 
 The protected inference workflow has its own qualification paths, separate from
@@ -162,13 +162,11 @@ for the Linux ARM64 CUDA 13 device job. Compiler-only CUDA builds always use the
 manifest architecture lists. The only source override is the immutable bundle
 produced by the protected-main llama upgrade workflow.
 
-`targets.json` defines four hosts and eleven runtimes. Three hosts and eight
-runtimes are active. Windows qualification and publication are deferred. After
-the quality and automation canary, each CPU job builds, packages and tests its
-runtime on the selected Ubuntu x64, Ubuntu ARM64, or macOS ARM64 runner. Each
-also produces the shared CLI for its platform. Linux x64 builds the shared CLI
-on Ubuntu 24.04 for compatibility with the CUDA toolchain images. Each backend
-job waits for its matching CPU job only. Linux x64 CUDA 12 and 13 and Linux ARM64
+`targets.json` defines four hosts and thirteen active runtimes. After the
+automation checks and Quality canary, each CPU job builds and verifies its
+runtime and the shared CLI for that platform. Linux x64 builds its shared CLI
+on Ubuntu 24.04 for compatibility with the compiler images. Each backend
+job waits for its matching CPU job. Linux x64 CUDA 12 and 13 and Linux ARM64
 CUDA 12 run on Ubuntu in the corresponding compiler images and check the
 packaged CLI and runtime artifact without a device. Linux ARM64 CUDA 13 and
 macOS Metal run device smoke on ephemeral JY runners. Tagged
@@ -178,11 +176,25 @@ CUDA device job uses the existing ARM64 CUDA 13 runner group to use the larger
 Spark pool; x64 CUDA 13 device coverage remains required for releases. The full
 CI gate matches all package jobs to the plan and checks required device results.
 
+Full CI and releases also require archive checks for Windows x64 CPU, CUDA 12,
+CUDA 13 and ROCm 7.2.0, and Linux x64 ROCm 7.2.4. The Windows jobs use Windows
+Server 2022 for the pinned SDKs and compatible MSVC toolset. CUDA
+components and the HIP SDK are downloaded from checksum-pinned inputs. The
+Linux ROCm job uses the published compiler image resolved to a digest and
+adds the SHA-256-pinned ROCm 7.2.4 BLAS libraries to a job-local prefix for
+compilation and archive smoke.
+Windows users need the Microsoft Visual C++ x64 Redistributable and, for CUDA,
+a compatible NVIDIA driver. Linux ROCm users need a matching ROCm runtime
+visible to the system loader. Inference qualification is pending for these
+five variants.
+
 ### Depot runners
 
 The repository Actions variable `SKIPPY_DEPOT_RUNNERS_ENABLED=true` selects
-Depot for every job that otherwise uses a GitHub-hosted runner. This includes
-PR validation and its aggregate, code and package CI, compiler images and
+Depot for eligible Linux and macOS jobs and for the Windows CUDA 13 package.
+Windows CUDA 13 uses `depot-windows-2022-8` with Depot enabled. The Windows CPU,
+CUDA 12, and ROCm package jobs use GitHub-hosted `windows-2022`.
+This includes PR validation and its aggregate, code and package CI, compiler images and
 publishing, documentation and deployment, release validation and publication,
 the inference controllers, and llama upgrade publication. Most
 Linux jobs use four-core Ubuntu 24.04 runners of the existing architecture.
@@ -228,7 +240,11 @@ Cache**. sccache writes only when building the exact protected `main` commit
 on push, schedule, or manual dispatch with a write-capable job cache mode.
 PR and other branch builds use `SCCACHE_WEBDAV_RW_MODE=READ_ONLY`. Ordinary
 Depot jobs skip shared Cargo, model, native source, and npm caches. The
-GitHub-hosted jobs use sccache's Actions backend.
+GitHub-hosted jobs use sccache's Actions backend. Windows CUDA archive
+builds use a native cache namespace keyed by their release GPU architectures,
+compiler and SDK identity, and native source recipe. A release version bump
+can reuse entries from a protected full run with the same native inputs and
+cache backend. The shared Windows CLI keeps its Rust cache namespace.
 [Depot sccache integration](https://depot.dev/docs/cache/integrations/sccache)
 
 After enabling the switch, verify full CI and `CI images` with
@@ -355,8 +371,8 @@ and toolkit labels, then pushes immutable build tags and the corresponding lates
 tags. ARM64 build tags also end in `-arm64`.
 
 The kernel compiler probes and container smoke establish compiler/toolkit image
-contents only. They do not execute GPU kernels and cannot qualify a GPU runtime;
-device evidence still comes from the matching CUDA/ROCm inference jobs.
+contents only. The CUDA device jobs produce GPU evidence, and ROCm inference
+qualification is pending.
 Run `just ci-gpu-image-build cuda12 BASE_IMAGE 12.9.2`,
 `just ci-gpu-image-build cuda13 BASE_IMAGE 13.1.2`, or
 `just ci-gpu-image-build rocm BASE_IMAGE 7.2.4`, then the matching smoke and
@@ -470,20 +486,35 @@ artifact smoke is recorded separately from inference evidence.
 smoke commands use Python 3.9 or later. Release inventory uses Python
 3.11 or later for TOML parsing. With uv installed, Justfile recipes run Python
 on the interpreter `.python-version` names. Set `SKIPPY_PYTHON` to select
-another; the shell scripts read it too.
+another. The shell scripts read it too. Both profiles validate the full
+manifest. The short plan lists the eight runtime rows classified for inference,
+and the full plan adds the five archive-only rows. When package checks are
+selected, short CI builds and runs device smoke for macOS ARM64 Metal and Linux
+ARM64 CUDA 13. The Linux x64 CUDA packages build in full CI and receive device
+smoke during release validation.
+
+When changing the full roster, land the workflow's package jobs and the
+manifest together. Protected PR CI uses the short profile. Before landing,
+rehearse the new archive jobs on hosted runners and check the proposed full
+gate against the candidate's plan. Full CI and release validation use the
+workflow and roster from the same protected revision.
 
 1. Each platform's CPU job builds and verifies its CLI once using
    `just ci-host`. Inference PR jobs build their two CLIs locally because they
    do not run the CPU package jobs.
-2. Each selected job calls `just ci-runtime` for its variant, then
-   `just ci-package` to compose verified producer archives. It smokes the
-   extracted product on the same runner and uploads the package with its evidence.
+2. Each selected job calls `just ci-runtime` to retain the source-bound
+   runtime directory and file receipt. `just ci-package` combines it with the
+   shared CLI and compresses the final product. Smoke runs against the extracted
+   archive. Standalone `just release-runtime-build` still archives by default.
 3. Release-only device jobs download the exact compiler-only CUDA archives,
-   run inference smoke, and upload only `release-device-evidence-*`. Both release
-   stages check the smoke report against the SHA-256 of the original product
-   archive. The publisher requires all eight variants and smoke evidence before
-   publication.
-4. The hosted CI gate reads the dependency results and the validated plan
+   run inference, and upload `release-device-evidence-*`. Release verification
+   checks each result against the SHA-256 of the corresponding product archive.
+   The five Windows and ROCm variants supply archive smoke evidence.
+4. Release verification prepares the complete asset directory once. The publisher
+   checks its roster, hashes, and catalog against the separately transferred
+   candidate receipt before promotion. Release notes identify the five variants
+   awaiting inference qualification.
+5. The hosted CI gate reads the dependency results and the validated plan
    without checkout or Rust setup. Required work must pass and unselected work
    must report a skip.
 

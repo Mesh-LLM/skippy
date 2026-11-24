@@ -97,15 +97,16 @@ def verify_catalog(value, tag, archives):
         raise ValueError("runtime catalog does not match the release archives")
 
 
-def verify_smoke(input_dir, variant, source, backend, archive_sha256):
+def verify_smoke(input_dir, variant, source, backend, archive_sha256, *, artifact_only=False):
     evidence_dir = input_dir / f"release-product-{variant}" / "evidence"
-    if (evidence_dir / "artifact-smoke.json").is_file():
+    if not artifact_only and (evidence_dir / "artifact-smoke.json").is_file():
         evidence_dir = input_dir / f"release-device-evidence-{variant}"
-    evidence = artifacts.read_json(evidence_dir / "smoke.json")
+    report = "artifact-smoke.json" if artifact_only else "smoke.json"
+    evidence = artifacts.read_json(evidence_dir / report)
     if (evidence.get("source"), evidence.get("variant"), evidence.get("backend")) != (
         source, variant, backend
     ):
-        raise ValueError(f"missing or mismatched smoke evidence for {variant}")
+        raise ValueError(f"missing or mismatched {report.removesuffix('.json')} evidence for {variant}")
     if evidence.get("archive_sha256") != archive_sha256:
         raise ValueError(f"smoke evidence does not match release archive for {variant}")
 
@@ -132,9 +133,10 @@ def inventory(tag, input_dir, source):
                 native = artifacts.read_json(root / "native-runtimes" / variant / "manifest.json")
             file = stage / f"skippy-{tag}-{variant}.tar.gz"
             shutil.copyfile(directory / f"skippy-{variant}.tar.gz", file)
-            artifacts.write_checksum(file)
             assets[file.name] = artifacts.digest(file)
-            verify_smoke(input_dir, variant, source, runtime["backend"], assets[file.name])
+            verify_smoke(input_dir, variant, source, runtime["backend"], assets[file.name],
+                         artifact_only=runtime["validation"] == "artifact")
+            artifacts.write_checksum(file)
             entries.append(catalog_entry(native["runtime"], tag, file.name, assets[file.name]))
         runtime_catalog = stage / CATALOG
         artifacts.write_json(runtime_catalog, catalog(tag, entries))
@@ -149,6 +151,9 @@ def inventory(tag, input_dir, source):
         artifacts.write_checksum(index)
         verify(stage)
         stage.rename(output)
+    github_output("artifact_only", ", ".join(
+        variant for variant, runtime in runtimes.items() if runtime["validation"] == "artifact"
+    ))
 
 
 def verify(directory):

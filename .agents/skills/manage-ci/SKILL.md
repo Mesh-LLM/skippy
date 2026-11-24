@@ -46,11 +46,14 @@ contract; no downstream product's workflow topology applies here.
   which runs it expects. Hosted offline
   automation gates Quality canary and package jobs; Quality canary gates package
   jobs whenever source checks apply. Full CI
-  runs Graph Contracts in parallel with eight build, package and smoke jobs.
+  runs Graph Contracts in parallel with thirteen build, package and smoke jobs.
   Each CPU job supplies a shared platform CLI to its backend jobs. Routine CI
   uses two device jobs and checks the three remaining CUDA archives on hosted
   compiler-image runners.
   Tagged releases add device smoke on those exact archives, including x64 CUDA 13.
+  Windows x64 CPU, CUDA and ROCm plus Linux x64 ROCm require archive smoke in
+  full CI and on releases. The short plan validates the whole manifest and
+  excludes those five full-only jobs. The package jobs verify their toolchains.
   The lightweight CI gate checks the validated matrix and requires all applicable results.
 - `.github/workflows/docs.yml` directly validates `docs-site/**` changes on PRs
   and deploys to beta on protected-main pushes. The protected PR aggregate
@@ -64,8 +67,10 @@ contract; no downstream product's workflow topology applies here.
 - `.github/workflows/release.yml` runs daily and on dispatch from protected main
   (a daily run takes the next patch version and skips an already released main), stages the
   version-only candidate, and calls the shared validation implementations on
-  its exact SHA. Only the publisher can promote the verified commit and create
-  its tag together. It cannot move an existing tag or publish an incomplete
+  its exact SHA. Verification prepares release assets once; publication verifies
+  their hashes against the candidate receipt without unpacking them again.
+  Only the publisher can promote the verified commit and create its tag together.
+  It cannot move an existing tag or publish an incomplete
   artifact matrix. Canary runs leave main, tags, and publication untouched.
 - `.github/workflows/llama-upgrade.yml` keeps control on protected main, prepares
   an immutable candidate and runs existing full CI once. Graph contracts and
@@ -110,12 +115,14 @@ contract; no downstream product's workflow topology applies here.
   Only the publisher receives scoped publication credentials. It can publish only the
   exact candidate selected by successful full CI. The four established inference
   models retain their separate PR/manual/nightly/release workflow.
-- `ci/targets.json` owns four host definitions and eleven runtime definitions.
-  `enabled_hosts` selects the active CI and release roster. Windows is temporarily
-  deferred; the active roster has three hosts and eight runtimes. Do not publish
-  artifacts for disabled hosts or describe those hosts as qualified.
+- `ci/targets.json` owns four host definitions and thirteen runtime definitions.
+  `enabled_hosts` selects the active CI and release roster. Require the evidence
+  declared for every release asset. Call out pending inference qualification
+  for archive-only targets in the release notes.
   Keep CLI builds backend-neutral and build each host once. Package by copying
-  exact verified producer outputs; consumers must not rebuild missing inputs.
+  exact verified producer outputs; keep same-job runtime producers as directories
+  with file receipts, and archive only cross-job CLI inputs and final products.
+  Consumers must not rebuild missing inputs.
 - Keep workflow path routing declarative in YAML. Keep Just recipes and platform adapters thin. Use
   shell for orchestration and focused Python modules for structured build and
   qualification work under `scripts/`. PR lab-result comments use the focused Bash/gh/jq report
