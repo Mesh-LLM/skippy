@@ -39,13 +39,12 @@ def snapshot(root, destination, base):
     return {"base": base, "head": git(root, "rev-parse", "HEAD"), "unverified": True}
 
 
-def checkpoint(checkout, recovery, label):
+def checkpoint(checkout, recovery, label, *, base):
     recovery.mkdir(parents=True, exist_ok=True)
     # An interrupted checkpoint leaves previous completed snapshots intact.
     with tempfile.TemporaryDirectory(dir=recovery, prefix=".capturing-") as scratch:
         stage = Path(scratch) / "source"
         stage.mkdir()
-        base = git(checkout, "rev-parse", "HEAD")
         manifest = {"outer": snapshot(checkout, stage / "outer", base), "unverified": True}
         native = checkout / ".deps/llama.cpp"
         if (native / ".git").exists():
@@ -62,12 +61,12 @@ def checkpoint(checkout, recovery, label):
         return destination
 
 
-def retain(checkout, recovery, label):
+def retain(checkout, recovery, label, *, base):
     token = DEADLINE.set(None)
     try:
         # Recovery must work after the coding or verification deadline expires.
         with time_budget(180):
-            return checkpoint(checkout, recovery, label)
+            return checkpoint(checkout, recovery, label, base=base)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"Unverified source checkpoint failed: {error}", flush=True)
     finally:

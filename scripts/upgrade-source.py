@@ -114,7 +114,7 @@ def prepare(upstream, repair_bundle=None, diagnostics=None):
                 bundle.replace(directory / bundle.name)
                 metadata.replace(directory / metadata.name)
         finally:
-            retain(checkout, directory / "diagnostics/recovery", "preparation-exit")
+            retain(checkout, directory / "diagnostics/recovery", "preparation-exit", base=base)
     output("candidate_sha", candidate)
 
 

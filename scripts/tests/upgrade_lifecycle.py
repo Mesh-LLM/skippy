@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shlex
 import signal
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -140,6 +141,39 @@ class Lifecycle(unittest.TestCase):
             self.assertEqual((restored / 'native.cpp').read_text(), 'after\n')
             self.assertTrue(json.loads((saved / 'manifest.json').read_text())['unverified'])
 
+    def test_rejected_agent_commit_is_recoverable_against_original_base(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkout = fixture(root)
+            base = git(checkout, 'rev-parse', 'HEAD')
+            def committing_agent(*_args, **_kwargs):
+                queue = checkout / 'llama_cpp/patches/repair.patch'
+                queue.write_text('committed repair\n')
+                commit(checkout, 'agent incorrectly committed repair')
+                queue.write_text('committed repair\nuncommitted addition\n')
+                (checkout / 'llama_cpp/patches/untracked.patch').write_text('untracked repair\n')
+            with patch.dict(os.environ, SKIPPY_UPGRADE_REPAIR_COMMAND='["agent"]'), \
+                 patch('lib.upgrade_repair.command', side_effect=committing_agent):
+                with self.assertRaisesRegex(ValueError, 'candidate history'):
+                    verify_or_repair(checkout, root / 'diagnostics', lambda: None, repair,
+                                     lambda *_: None, initial_repair=True)
+            saved = next((root / 'diagnostics/recovery').glob('final-*'))
+            manifest = json.loads((saved / 'manifest.json').read_text())
+            self.assertEqual(manifest['outer']['base'], base)
+            self.assertNotEqual(manifest['outer']['head'], base)
+            restored = root / 'restored'
+            restored.mkdir()
+            git(restored, 'init', '--initial-branch=main')
+            git(restored, 'fetch', '--no-tags', str(checkout), base)
+            git(restored, 'checkout', '--detach', base)
+            shutil.rmtree(checkout)
+            git(restored, 'apply', str(saved / 'outer/tracked.patch'))
+            self.assertEqual((restored / 'llama_cpp/patches/repair.patch').read_text(),
+                             'committed repair\nuncommitted addition\n')
+            with tarfile.open(saved / 'outer/untracked.tar.gz') as archive:
+                self.assertEqual(archive.extractfile('llama_cpp/patches/untracked.patch').read(),
+                                 b'untracked repair\n')
+
     @unittest.skipIf(os.name == 'nt', 'Exercises the native runner SIGTERM path')
     def test_sigterm_during_child_command_retains_recovery(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -182,7 +216,7 @@ class Lifecycle(unittest.TestCase):
             git(native, 'init', '--initial-branch=main')
             (native / 'native.cpp').write_text('complete source\n')
             commit(native, 'native work with unavailable upstream')
-            saved = checkpoint(checkout, root / 'recovery', 'missing-base')
+            saved = checkpoint(checkout, root / 'recovery', 'missing-base', base=git(checkout, 'rev-parse', 'HEAD'))
             manifest = json.loads((saved / 'manifest.json').read_text())
             self.assertTrue(manifest['native']['full_tracked_tree'])
             restored = root / 'restored'
@@ -202,9 +236,11 @@ class Lifecycle(unittest.TestCase):
                 token = DEADLINE.set(None)
                 try:
                     checkout = fixture(root)
+                    base = git(checkout, 'rev-parse', 'HEAD')
                 finally:
                     DEADLINE.reset(token)
-                self.assertIsNotNone(retain(checkout, root / 'recovery', 'expired'))
+                self.assertIsNotNone(retain(checkout, root / 'recovery', 'expired',
+                                          base=base))
 
     def test_repeated_failures_share_one_coding_deadline(self):
         with tempfile.TemporaryDirectory() as tmp:

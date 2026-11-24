@@ -8,6 +8,7 @@ import uuid
 
 from .ci_process import command_logs, time_budget
 from .upgrade_recovery import retain
+from .upgrade_source import git
 
 CODING_SECONDS = 41400
 VERIFICATION_SECONDS = 43200
@@ -20,6 +21,8 @@ def verify_or_repair(checkout, diagnostics, verify, repair, save_diagnostics, *,
     deadline = None
     turn = 0
     needs_repair = initial_repair
+    # Repair rejects history changes, but recovery must still retain their work.
+    base = git(checkout, "rev-parse", "HEAD")
     try:
         while True:
             if needs_repair:
@@ -34,7 +37,7 @@ def verify_or_repair(checkout, diagnostics, verify, repair, save_diagnostics, *,
                 # This also bounds any tools invoked by the repair adapter.
                 with time_budget(remaining):
                     repair(checkout, diagnostics, session=session, timeout=remaining)
-                if retain(checkout, diagnostics / "recovery", f"turn-{turn}") is None:
+                if retain(checkout, diagnostics / "recovery", f"turn-{turn}", base=base) is None:
                     raise RuntimeError("could not preserve returned repair work before verification")
             try:
                 # Like Mesh, a returned coding turn gets a fresh verification pass.
@@ -52,4 +55,4 @@ def verify_or_repair(checkout, diagnostics, verify, repair, save_diagnostics, *,
                     raise
                 needs_repair = True
     finally:
-        retain(checkout, diagnostics / "recovery", "final")
+        retain(checkout, diagnostics / "recovery", "final", base=base)
