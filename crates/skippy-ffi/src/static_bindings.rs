@@ -363,8 +363,8 @@ pub unsafe extern "C" fn ggml_backend_dev_by_name(name: *const c_char) -> *mut O
 // `include/llama.h` binds inside `extern "C"`, so these upstream entry points
 // resolve by their undecorated names on every platform. The pinned upstream
 // moved them there from the C++ staging header `src/llama-ext.h`; the
-// undecorated names stay stable, but the parameters are part of the C ABI, so
-// an upstream signature change fails to link instead of miscalling.
+// undecorated names stay stable; keep these parameter types synchronized with
+// the generated bindings because C symbol names do not encode signatures.
 unsafe extern "C" {
     pub fn llama_set_embeddings_nextn(ctx: *mut Opaque, value: bool, masked: bool);
     pub fn llama_get_embeddings_nextn(ctx: *mut Opaque) -> *mut f32;

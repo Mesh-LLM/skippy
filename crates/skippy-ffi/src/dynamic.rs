@@ -507,7 +507,7 @@ pub(crate) fn llama_model_meta_val_str_fn() -> Option<LlamaModelMetaValStrFn> {
     })
 }
 
-/// An `src/llama-ext.h` entry point. These keep C++ linkage, so they resolve by
+/// A `src/llama-ext.h` entry point. These keep C++ linkage, so they resolve by
 /// their decorated name: Itanium for GCC, Clang and MinGW builds, MSVC for
 /// MSVC-ABI Windows builds. Both decorations encode the parameter types, so an
 /// upstream signature change fails lookup instead of miscalling. Entry points
