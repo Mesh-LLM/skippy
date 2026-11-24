@@ -72,7 +72,7 @@ test('all thirteen runtime packages match the planned matrix and depend on the c
 test('release publication consumes prepared assets and independently verifies their receipt', () => {
   const release = readFileSync(join(__dirname, '../workflows/release.yml'), 'utf8');
   const verify = release.split('\n  verify:\n')[1].split('\n  publish:\n')[0];
-  const publish = release.split('\n  publish:\n')[1].split('\n  documentation:\n')[0];
+  const publish = release.split('\n  publish:\n')[1].split('\n  publish_crates:\n')[0];
   assert.match(verify, /just release-prepare-candidate/);
   assert.match(verify, /name: prepared-release-\$\{\{ needs.admission.outputs.source \}\}/);
   const download = publish.indexOf('name: prepared-release-');
@@ -82,6 +82,20 @@ test('release publication consumes prepared assets and independently verifies th
   assert.match(publish, /cmp release-receipt\/release.json dist\/release\/release.json/);
   assert.doesNotMatch(publish, /release-prepare-candidate|release-product-/);
   assert.match(publish, /ARTIFACT_ONLY: \$\{\{ needs.verify.outputs.artifact_only \}\}/);
+});
+
+test('crates.io publishes from the verified stable tag when enabled', () => {
+  const release = readFileSync(join(__dirname, '../workflows/release.yml'), 'utf8');
+  const verify = release.split('\n  verify:\n')[1].split('\n  publish:\n')[0];
+  const [publish, rest] = release.split('\n  publish_crates:\n');
+  const [crates, following] = rest.split('\n  documentation:\n');
+  assert.match(verify, /if: needs\.admission\.outputs\.prerelease != 'true'\n +run: just release-crates package release-artifacts\/release-product-linux-x86_64-cpu/);
+  assert.doesNotMatch(publish + following, /CARGO_REGISTRY_TOKEN|SKIPPY_CRATES_BOOTSTRAP_TOKEN|crates-io-auth-action/);
+  assert.match(crates, /needs: \[admission, publish\]/);
+  assert.match(crates, /!inputs\.canary && needs\.admission\.outputs\.prerelease != 'true' && vars\.SKIPPY_PUBLISH_CRATES == 'true'/);
+  assert.match(crates, /ref: refs\/tags\/\$\{\{ needs\.admission\.outputs\.tag \}\}/);
+  assert.match(crates, /id-token: write/);
+  assert.match(crates, /just release-crates publish "\$RELEASE_TAG" "\$SOURCE_SHA"/);
 });
 
 test('PR plans exclude full-only archive targets but still require both device packages', () => {
