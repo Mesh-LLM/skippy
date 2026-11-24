@@ -48,6 +48,7 @@ fn probe_that_exits_on_its_own_returns_its_output() {
 }
 
 const SLEEPER: &str = "probe::tests::sleeping_probe_child";
+#[cfg(windows)]
 const OWNER: &str = "probe::tests::owner_that_exits_mid_probe";
 
 #[test]
