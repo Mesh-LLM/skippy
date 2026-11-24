@@ -4,9 +4,11 @@ import os
 import subprocess
 import sys
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, Mock, patch
 
-from lib.ci_process import command, force_stop, group_alive
+from lib.ci_process import command, command_logs, force_stop, group_alive
 
 
 class CommandCleanupContract(unittest.TestCase):
@@ -31,6 +33,21 @@ class CommandCleanupContract(unittest.TestCase):
                         command(["fixture"], terminate_descendants=True)
                     terminate.assert_not_called()
                     stop.assert_called_once_with(child)
+
+    def test_logged_command_preserves_descendant_termination(self):
+        with (
+            TemporaryDirectory() as directory,
+            command_logs(Path(directory)),
+            patch("lib.ci_process.start") as start,
+            patch("lib.ci_process.group_alive", return_value=True),
+            patch("lib.ci_process.force_stop") as terminate,
+        ):
+            child = MagicMock(returncode=0)
+            child.wait.return_value = 0
+            start.return_value.__enter__.return_value = child
+            command(["fixture"], terminate_descendants=True)
+            terminate.assert_called_once_with(child)
+            self.assertEqual(Path(start.call_args.kwargs["stdout"].name).name, "step-001.log")
 
     @unittest.skipUnless(os.name == "nt", "requires a Windows job object")
     def test_successful_build_drains_a_detached_descendant(self):

@@ -8,6 +8,31 @@ import subprocess
 import threading
 import time
 from contextlib import contextmanager
+from contextvars import ContextVar
+
+DEADLINE = ContextVar("command_deadline", default=None)
+LOGS = ContextVar("command_logs", default=None)
+
+
+@contextmanager
+def time_budget(seconds):
+    deadline = time.monotonic() + seconds
+    previous = DEADLINE.get()
+    token = DEADLINE.set(min(previous, deadline) if previous is not None else deadline)
+    try:
+        yield
+    finally:
+        DEADLINE.reset(token)
+
+
+@contextmanager
+def command_logs(directory):
+    directory.mkdir(parents=True, exist_ok=True)
+    token = LOGS.set([directory, 0])
+    try:
+        yield
+    finally:
+        LOGS.reset(token)
 
 
 def environment(overrides=None):
@@ -151,6 +176,19 @@ def captured(child, deadline, limit):
 def command(args, timeout=180, overrides=None, capture_stdout=False, cwd=None, *,
             limit=16 * 1024 * 1024, raw=False, inherit_env=True, stdout=None, stderr=None,
             terminate_descendants=False):
+    if DEADLINE.get() is not None:
+        timeout = min(timeout, DEADLINE.get() - time.monotonic())
+        if timeout <= 0:
+            raise subprocess.TimeoutExpired(args, 0)
+    logs = LOGS.get()
+    if logs is not None and not capture_stdout and stdout is None and stderr is None:
+        logs[1] += 1
+        path = logs[0] / f"step-{logs[1]:03d}.log"
+        print(f"Verification step {logs[1]}: {args[0]} (log: {path})", flush=True)
+        with path.open("wb") as stream:
+            return command(args, timeout=timeout, overrides=overrides, cwd=cwd, limit=limit,
+                           raw=raw, inherit_env=inherit_env, stdout=stream, stderr=subprocess.STDOUT,
+                           terminate_descendants=terminate_descendants)
     deadline = time.monotonic() + timeout
     with start(args, overrides, cwd=cwd, inherit_env=inherit_env,
                stdout=subprocess.PIPE if capture_stdout else stdout, stderr=stderr) as child:

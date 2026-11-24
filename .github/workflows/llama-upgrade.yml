@@ -46,7 +46,7 @@ jobs:
       LIBCLANG_PATH: /usr/lib/llvm-22/lib
       GOOSE_MODE: auto
       GOOSE_DISABLE_SESSION_NAMING: 'true'
-      SKIPPY_UPGRADE_REPAIR_COMMAND: ${{ vars.SKIPPY_UPGRADE_REPAIR_COMMAND || '["goose","run","--no-session","--with-builtin","developer","--text"]' }}
+      SKIPPY_UPGRADE_REPAIR_COMMAND: ${{ vars.SKIPPY_UPGRADE_REPAIR_COMMAND || '["goose","run","--with-builtin","developer","--text"]' }}
     outputs:
       changed: ${{ steps.resolve.outputs.changed }}
       validate: ${{ steps.resolve.outputs.validate }}
@@ -101,8 +101,15 @@ jobs:
             target/llama-upgrade/candidate.json
           if-no-files-found: error
           retention-days: 14
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: ${{ failure() || cancelled() }}
+        with:
+          name: llama-preparation-diagnostics-recovery
+          path: target/llama-upgrade/diagnostics/recovery
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        if: failure()
+        if: ${{ failure() || cancelled() }}
         with:
           name: llama-preparation-diagnostics
           path: |
@@ -150,7 +157,7 @@ jobs:
       LIBCLANG_PATH: /usr/lib/llvm-22/lib
       GOOSE_MODE: auto
       GOOSE_DISABLE_SESSION_NAMING: 'true'
-      SKIPPY_UPGRADE_REPAIR_COMMAND: ${{ vars.SKIPPY_UPGRADE_REPAIR_COMMAND || '["goose","run","--no-session","--with-builtin","developer","--text"]' }}
+      SKIPPY_UPGRADE_REPAIR_COMMAND: ${{ vars.SKIPPY_UPGRADE_REPAIR_COMMAND || '["goose","run","--with-builtin","developer","--text"]' }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
@@ -203,7 +210,14 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        if: failure()
+        if: ${{ failure() || cancelled() }}
+        with:
+          name: llama-repair-diagnostics-recovery
+          path: target/llama-upgrade/diagnostics/recovery
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: ${{ failure() || cancelled() }}
         with:
           name: llama-repair-diagnostics
           path: target/llama-upgrade/diagnostics
