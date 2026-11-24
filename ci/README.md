@@ -623,7 +623,7 @@ actual stage graphs, required tensors, activation boundaries and backend
 compatibility. There is no family certification or experimental bypass.
 
 On the JY workflow jobs, the default repair command is
-`goose run --no-session --with-builtin developer --text`, with the diagnostic
+`goose run --with-builtin developer --text`, with the diagnostic
 prompt appended as one argument. `GOOSE_MODE=auto` keeps repair noninteractive and session naming is disabled. The JY runner must
 already provide Goose and its provider authentication. A repository variable
 `SKIPPY_UPGRADE_REPAIR_COMMAND` may override the command with a JSON argv array.
@@ -643,13 +643,43 @@ The job deadline includes setup, regeneration and candidate export. Mesh also
 allocates a separate 12-hour verification window inside its build job; Skippy
 runs full CI in separate jobs after the candidate is frozen.
 
-Preparation can make one repair attempt when native regeneration fails. After a full CI failure, the controller collects
-failed job logs and CI artifacts, repairs the disposable candidate, and reruns
-the complete gate. Native patch queues, bindings and generated API documentation
-may change. Policy, workflow, fixture selection, upstream pin and commit-history
-changes by the agent are rejected. An unavailable agent or exhausted attempt
-fails the upgrade. An initial failed CI attempt remains visible as a failure in
-Actions even when the repaired candidate later passes and opens a PR.
+Preparation follows the [Mesh repair lifecycle](https://github.com/Mesh-LLM/mesh-llm/blob/37f1590cffa15e88c951a635ab42aa249b60ab73/scripts/llama-canary-agent-repair.sh#L752).
+A unique named Goose session receives the first failure and resumes with exact
+verification errors and per-command logs until preparation passes or the coding
+window expires. Legacy Goose overrides containing `--no-session` are upgraded
+to named sessions. Custom executable adapters receive the prompt each turn and
+own any session persistence they require.
+
+All turns share one 11h30 wall-clock coding window. Each returned turn receives
+a fresh 12-hour verification window; the complete preparation/export process
+is bounded at 23h40 inside the 23h50 job. Existing individual command limits
+also apply. Verification runs real preparation, native builds, generation,
+bindings, graph coverage and recipe generation before freezing the candidate.
+Full CI then validates its exact SHA. A failed full CI candidate enters the same
+preparation loop with its retained CI evidence before receiving fresh full CI.
+
+Every returned repair turn and final exit retains an explicitly unverified
+source checkpoint outside the temporary checkout. It includes the outer diff,
+untracked source files and native changes against the selected upstream,
+including native commits not yet exported to patches. Missing native bases use
+a full tracked-tree patch. Manifests record bases and heads; tracked patches and
+untracked inputs each have a 256 MiB capture limit. Recovery errors are reported
+without replacing the original outcome. Failure/cancellation uploads recovery
+before verbose diagnostics. Hard runner loss can still prevent a final capture;
+completed checkpoints remain available. These files are diagnostic recovery
+inputs, never successful qualification evidence or publication authority.
+
+Patch staging is rebuilt on every verification attempt. Preparation excludes
+`.skippy-*` bookkeeping files from Git staging; repaired patch inputs touching
+those files are rejected and returned to the session. Repair may change native
+patch queues, bindings and API docs. Agent changes to policy, workflows,
+fixtures, the selected pin, outer history or generated admission inputs fail.
+
+Run offline lifecycle regressions with `just ci-automation`. A live provider
+rehearsal is explicit: set `SKIPPY_UPGRADE_REPAIR_COMMAND` to the installed Goose
+argv and run `just upgrade-goose-rehearsal`. This checks two real agent turns,
+session resumption, failure feedback and checkpoint capture; it does not qualify
+a native upgrade or model.
 
 Only the publisher uses `SKIPPY_UPGRADE_APP_ID` and
 `SKIPPY_UPGRADE_APP_PRIVATE_KEY`. Its Contents and Pull requests write permissions

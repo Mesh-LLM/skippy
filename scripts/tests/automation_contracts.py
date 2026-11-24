@@ -284,7 +284,7 @@ class Upgrade(unittest.TestCase):
             stdout = self.run_prepare(root, regenerated, upstream)
             output = root / "target/llama-upgrade"
             self.assertEqual(sorted(path.name for path in output.iterdir()),
-                             ["candidate.bundle", "candidate.json"])
+                             ["candidate.bundle", "candidate.json", "diagnostics"])
             metadata = json.loads((output / "candidate.json").read_text())
             candidate = metadata["candidate_sha"]
             self.assertIn(f"candidate_sha={candidate}", stdout)
@@ -311,8 +311,8 @@ class Upgrade(unittest.TestCase):
             self.run_prepare(root, regenerate, upstream)
             output = root / "target/llama-upgrade"
             original_candidate = json.loads((output / "candidate.json").read_text())["candidate_sha"]
-            def agent(checkout, diagnostics):
-                self.assertEqual(diagnostics, (root / "target/diagnostics").resolve())
+            def agent(checkout, diagnostics, **_options):
+                self.assertEqual(diagnostics, (root / "target/llama-upgrade/diagnostics").resolve())
                 (checkout / "llama_cpp/patches/repair.patch").write_text("native repair\n")
             real = source.command
             def native(args, **kwargs):
@@ -323,6 +323,7 @@ class Upgrade(unittest.TestCase):
                 with patch.object(source, "seed_patch_preimages"), patch.object(source, "regenerate", regenerate), \
                      patch.object(source, "check_upgrade_coverage"), patch.object(source, "write_native_recipe"), \
                      patch.object(source, "repair", side_effect=agent) as repair_agent, \
+                     patch.dict(os.environ, SKIPPY_UPGRADE_REPAIR_COMMAND='["agent"]'), \
                      patch.object(source, "command", side_effect=native), \
                      patch("sys.stdout", io.StringIO()):
                     source.prepare(upstream, output / "candidate.bundle", root / "target/diagnostics")
@@ -347,7 +348,7 @@ class Upgrade(unittest.TestCase):
                 output.write_text(json.dumps({"errors": errors}))
                 if errors:
                     raise ValueError(errors[0])
-            def agent(checkout, diagnostics):
+            def agent(checkout, diagnostics, **_options):
                 self.assertTrue((diagnostics / "graph-coverage.json").is_file())
                 (checkout / "llama_cpp/patches").mkdir(exist_ok=True)
                 (checkout / "llama_cpp/patches/repair.patch").write_text("existing contract fix\n")

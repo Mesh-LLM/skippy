@@ -93,7 +93,14 @@ contract; no downstream product's workflow topology applies here.
   deadline includes preparation and candidate export; full CI runs separately.
   Seed the protected current patch queue before replaying a new
   upstream revision so cold repositories have intermediate merge-base blobs.
-  A bounded agent repair produces a fresh candidate and fresh full CI. Only the
+  Use one named Goose session with verification feedback and a shared 11h30
+  coding deadline. Each returned turn gets up to 12h verification, with a 23h40
+  outer preparation deadline. Rebuild patch staging every turn, exclude native
+  preparation stamps from Git staging and reject them in repaired patches.
+  Checkpoint outer/native source before verification and on final exit, including
+  committed native changes against upstream. Upload unverified recovery on
+  failure/cancellation before verbose logs; never admit it as CI evidence.
+  A repaired candidate receives fresh full CI. Only the
   publisher receives scoped publication credentials. It can publish only the
   exact candidate selected by successful full CI. The four established inference
   models retain their separate PR/manual/nightly/release workflow.
