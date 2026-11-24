@@ -68,3 +68,10 @@ test('candidate preparation and repair run with Goose on the native JY runner', 
     assert.doesNotMatch(job, /SKIPPY_UPGRADE_REPAIR_COMMAND: \$\{\{ vars\.SKIPPY_UPGRADE_REPAIR_COMMAND \}\}/);
   }
 });
+
+test('repair failure uploads downloaded CI evidence even before candidate preparation', () => {
+  const repair = jobs(workflow('llama-upgrade.yml')).find(job => job.startsWith('  repair:\n'));
+  const upload = repair.slice(repair.indexOf('name: llama-repair-diagnostics\n'));
+  assert.match(upload, /target\/llama-upgrade\/diagnostics/);
+  assert.match(upload, /target\/llama-repair\/diagnostics/);
+});

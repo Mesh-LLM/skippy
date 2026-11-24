@@ -100,8 +100,14 @@ contract; no downstream product's workflow topology applies here.
   Checkpoint outer/native source before verification and on final exit, including
   committed native changes against upstream. Upload unverified recovery on
   failure/cancellation before verbose logs; never admit it as CI evidence.
-  A repaired candidate receives fresh full CI. Only the
-  publisher receives scoped publication credentials. It can publish only the
+  A repaired candidate receives fresh full CI.
+  Log collection must support the installed JY GitHub CLI, record partial
+  download failures and pass available CI evidence to repair. Preserve that
+  evidence on failure even before preparation starts. Repair may update the
+  exact handwritten FFI adapters static_bindings.rs, dynamic.rs and
+  llama_draft.rs for upstream signature/linkage changes; other Rust sources
+  and qualification policy stay outside the update allowlist.
+  Only the publisher receives scoped publication credentials. It can publish only the
   exact candidate selected by successful full CI. The four established inference
   models retain their separate PR/manual/nightly/release workflow.
 - `ci/targets.json` owns four host definitions and eleven runtime definitions.

@@ -657,6 +657,12 @@ also apply. Verification runs real preparation, native builds, generation,
 bindings, graph coverage and recipe generation before freezing the candidate.
 Full CI then validates its exact SHA. A failed full CI candidate enters the same
 preparation loop with its retained CI evidence before receiving fresh full CI.
+Failed-job log collection uses paginated `gh --jq` output supported by JY's
+installed GitHub CLI. ANSI log output is enabled only when that CLI supports
+the flag. Individual download failures are recorded in
+`actions-log-collection.json`; available CI artifacts and logs still reach the
+repair agent. Failure uploads include the original downloaded evidence even
+when preparation has not started.
 
 Every returned repair turn and final exit retains an explicitly unverified
 source checkpoint outside the temporary checkout. It includes the outer diff,
@@ -672,7 +678,10 @@ inputs, never successful qualification evidence or publication authority.
 Patch staging is rebuilt on every verification attempt. Preparation excludes
 `.skippy-*` bookkeeping files from Git staging; repaired patch inputs touching
 those files are rejected and returned to the session. Repair may change native
-patch queues, bindings and API docs. Agent changes to policy, workflows,
+patch queues, generated bindings, API docs and the specific handwritten FFI
+adapters `static_bindings.rs`, `dynamic.rs` and `llama_draft.rs`. These adapters
+must follow upstream signature and C/C++ linkage changes for both static and
+dynamic runtimes. Agent changes to policy, workflows,
 fixtures, the selected pin, outer history or generated admission inputs fail.
 
 Run offline lifecycle regressions with `just ci-automation`. A live provider
