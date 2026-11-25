@@ -4,6 +4,7 @@
 //! implementations bind it to an already-loaded tokenizer; they must not open
 //! another model on behalf of a caller.
 
+// CI trial fixture (approved fork); not for merge.
 pub mod inventory;
 
 use std::{error::Error, fmt};
