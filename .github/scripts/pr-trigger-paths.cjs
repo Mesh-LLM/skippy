@@ -18,7 +18,13 @@ function workflowPaths(workflow, eventName) {
   const entries = paths[1]
     ? paths[1].split(/,\s*/)
     : paths[2].trimEnd().split('\n').map(line => line.replace(/^      - /, ''));
-  const rules = entries.map(entry => {
+  const rules = compileRules(entries, workflow);
+  if (!rules.some(rule => rule.include)) throw new Error(`No included PR paths for ${workflow}`);
+  return rules;
+}
+
+function compileRules(entries, workflow) {
+  return entries.map(entry => {
     const match = /^'(!?)([\w./*-]+)'$/.exec(entry);
     if (!match) throw new Error(`Unsupported PR path entry in ${workflow}: ${entry}`);
     const [, negated, glob] = match;
@@ -30,11 +36,22 @@ function workflowPaths(workflow, eventName) {
     }).join('');
     return { include: !negated, regex: new RegExp(`^${expression}$`, 's') };
   });
-  if (!rules.some(rule => rule.include)) throw new Error(`No included PR paths for ${workflow}`);
-  return rules;
 }
 
-function expectedWorkflows(files, sameRepositoryPR = false, depot = false) {
+function routes(files) {
+  const config = readFileSync(join(__dirname, '../path-filters.yml'), 'utf8');
+  const filenames = files.flatMap(file => [file.filename, file.previous_filename]).filter(Boolean);
+  return Object.fromEntries(['automation', 'code', 'packages', 'inference'].map(name => {
+    const section = config.match(new RegExp(`^${name}:\\n((?:  .+\\n)+)`, 'm'))?.[1];
+    if (!section) throw new Error(`Missing PR route ${name}`);
+    const entries = section.trimEnd().split('\n').map(line => line.replace(/^  - /, ''));
+    const rules = compileRules(entries, name);
+    return [name, filenames.some(filename => rules.some(rule => rule.include && rule.regex.test(filename)) &&
+      !rules.some(rule => !rule.include && rule.regex.test(filename)))];
+  }));
+}
+
+function expectedWorkflows(files, sameRepositoryPR = true, depot = false) {
   const filenames = files.flatMap(({ filename, previous_filename }) => [filename, previous_filename]).filter(Boolean);
   const expected = new Map();
   for (const [workflow, defaultEvent] of producers) {
@@ -47,7 +64,14 @@ function expectedWorkflows(files, sameRepositoryPR = false, depot = false) {
       expected.set(`.github/workflows/${producer}`, eventName);
     }
   }
+  if (!sameRepositoryPR && (expected.has(`.github/workflows/${depot ? 'ci-pr' : 'ci'}.yml`) ||
+      expected.has('.github/workflows/inference.yml'))) {
+    expected.delete('.github/workflows/inference.yml');
+    expected.set('.github/workflows/fork-native.yml', 'workflow_run');
+  }
   return expected;
 }
 
 module.exports = expectedWorkflows;
+
+module.exports.routes = routes;

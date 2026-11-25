@@ -15,7 +15,7 @@ const packageJobs = rows.map(row => `package_${row.id.replaceAll('-', '_')}`);
 const prPackages = ['package_darwin_aarch64_metal', 'package_linux_aarch64_cuda13'];
 const releaseSmokes = ['release_smoke_linux_x86_64_cuda12', 'release_smoke_linux_aarch64_cuda12', 'release_smoke_linux_x86_64_cuda13'];
 
-function results({ automation = true, code = true, packages = false, native = false, full = false, release = false, hostedRequiresNative = false } = {}) {
+function results({ automation = true, code = true, packages = false, native = false, full = false, release = false } = {}) {
   const selected = code || packages;
   const required = ['changes'];
   if (automation) required.push('automation');
@@ -26,7 +26,7 @@ function results({ automation = true, code = true, packages = false, native = fa
   if (native) required.push('native_contracts');
   if (release) required.push(...releaseSmokes);
   const needs = Object.fromEntries(declared.map(job => [job, { result: required.includes(job) ? 'success' : 'skipped' }]));
-  needs.changes.outputs = { automation: String(automation), code: String(code), packages: String(packages), native: String(native), hosted_requires_native: String(hostedRequiresNative) };
+  needs.changes.outputs = { automation: String(automation), code: String(code), packages: String(packages), native: String(native) };
   if (selected) needs.plan.outputs = {
     profile: full ? 'full' : 'pr',
     runtimes: JSON.stringify({ include: full ? rows : rows.filter(row => !row.full_only) }),
@@ -158,7 +158,7 @@ test('automation-only PRs require successful offline checks and skip all builds'
     else needs.automation.result = result;
     assert.throws(() => gate(needs), /automation/);
   }
-  for (const decision of ['automation', 'code', 'packages', 'native', 'hosted_requires_native']) {
+  for (const decision of ['automation', 'code', 'packages', 'native']) {
     const needs = results({ code: false });
     delete needs.changes.outputs[decision];
     assert.throws(() => gate(needs), /Path selection/);
@@ -249,8 +249,9 @@ test('release validation requires the three other GPU smokes', () => {
   assert.throws(() => gate(results(), true), /requires full CI/);
 });
 
-test('hosted CI cannot satisfy a native package requirement', () => {
-  assert.throws(() => gate(results({ hostedRequiresNative: true })), /require native hardware qualification on an isolated runner/);
+test('hosted CI no longer fails merely because native qualification is separate', () => {
+  assert.doesNotThrow(() => gate(results()));
+  assert.doesNotMatch(workflow, /hosted_requires_native/);
 });
 
 test('the repository switch routes Windows CUDA 13 and eligible Linux and macOS jobs to Depot', () => {
@@ -430,7 +431,7 @@ test('native CI trusts only an immutable same-repository PR from a writer', asyn
 
 test('main can reuse only a receipt for the exact release dispatch and candidate', async () => {
   const changes = workflow.split('\n  changes:\n')[1].split('\n  plan:\n')[0];
-  const receiptScript = changes.split('          script: |\n')[1].split('\n      - uses:')[0];
+  const receiptScript = changes.split('      - name: Reuse qualification')[1].split('          script: |\n')[1].split('\n      - uses:')[0];
   const evaluateReceipt = new Function('github', 'context', 'core',
     'return (async () => {\n' + receiptScript + '\n})()');
   const sha = 'a'.repeat(40);

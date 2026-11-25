@@ -111,16 +111,15 @@ test('CI selects package jobs independently of qualification and preserves full 
     assert.equal(decide('automation', 'pull_request_target', paths), true);
     assert.equal(decide('code', 'pull_request_target', paths), false);
     assert.equal(decide('packages', 'pull_request_target', paths), false);
-    assert.equal(decide('hosted_requires_native', 'pull_request', paths), false);
   }
   assert.equal(decide('packages', 'pull_request_target', runtime), true);
-  assert.equal(decide('hosted_requires_native', 'pull_request', runtime), true);
+  assert.equal(decide('packages', 'pull_request', runtime), false);
   for (const event of ['push', 'schedule', 'workflow_dispatch', 'workflow_call']) {
     assert.equal(decide('automation', event, {}), true, event);
     assert.equal(decide('code', event, {}), true, event);
     assert.equal(decide('packages', event, {}), false, event);
   }
-  for (const name of ['automation', 'code', 'packages', 'native', 'hosted_requires_native']) {
+  for (const name of ['automation', 'code', 'packages', 'native']) {
     assert.equal(decide(name, 'push', {}, true), false, name);
   }
 });

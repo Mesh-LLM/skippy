@@ -107,6 +107,14 @@ on:
       artifact_scope:
         type: string
         default: ci
+      approved_fork_pr:
+        description: PR number supplied only by the protected approved-fork controller.
+        type: string
+        default: ''
+      approved_fork_routes:
+        description: Protected path decisions for the admitted fork head.
+        type: string
+        default: ''
       source_ref:
         type: string
         default: ''
@@ -169,16 +177,40 @@ jobs:
       pull-requests: read
       actions: read
     outputs:
-      automation: ${{ steps.release.outputs.verified != 'true' && (!github.event.pull_request || steps.paths.outputs.automation == 'true') }}
-      code: ${{ steps.release.outputs.verified != 'true' && (!github.event.pull_request || steps.paths.outputs.code == 'true' || (github.event_name == 'pull_request' && steps.paths.outputs.packages == 'true')) }}
-      packages: ${{ steps.release.outputs.verified != 'true' && ((github.event_name == 'pull_request_target' && steps.paths.outputs.packages == 'true') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && (steps.main_base.outputs.force == 'true' || steps.paths.outputs.packages == 'true' || steps.paths.outputs.inference == 'true' || steps.paths.outputs.packaging == 'true' || steps.paths.outputs.native == 'true'))) }}
+      automation: ${{ steps.release.outputs.verified != 'true' && (github.event_name == 'workflow_run' && steps.fork.outputs.automation == 'true' || github.event_name != 'workflow_run' && (!github.event.pull_request || steps.paths.outputs.automation == 'true')) }}
+      code: ${{ steps.release.outputs.verified != 'true' && (github.event_name == 'workflow_run' && steps.fork.outputs.code == 'true' || github.event_name != 'workflow_run' && (!github.event.pull_request || steps.paths.outputs.code == 'true' || (github.event_name == 'pull_request' && steps.paths.outputs.packages == 'true'))) }}
+      packages: ${{ steps.release.outputs.verified != 'true' && ((github.event_name == 'workflow_run' && steps.fork.outputs.packages == 'true') || (github.event_name == 'pull_request_target' && steps.paths.outputs.packages == 'true') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && (steps.main_base.outputs.force == 'true' || steps.paths.outputs.packages == 'true' || steps.paths.outputs.inference == 'true' || steps.paths.outputs.packaging == 'true' || steps.paths.outputs.native == 'true'))) }}
       native: ${{ steps.release.outputs.verified != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' && (steps.main_base.outputs.force == 'true' || steps.paths.outputs.native == 'true') }}
-      hosted_requires_native: ${{ github.event_name == 'pull_request' && steps.paths.outputs.packages == 'true' }}
     steps:
+      - name: Verify the approved-fork caller and current source
+        id: fork
+        if: github.event_name == 'workflow_run'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          SOURCE: ${{ inputs.source_ref }}
+          PR: ${{ inputs.approved_fork_pr }}
+          ROUTES: ${{ inputs.approved_fork_routes }}
+        with:
+          script: |
+            if (process.env.WORKFLOW_REF !== 'Mesh-LLM/skippy/.github/workflows/fork-native.yml@refs/heads/main' ||
+                process.env.SOURCE !== context.payload.workflow_run.head_sha ||
+                !/^[a-f0-9]{40}$/.test(process.env.SOURCE) || !/^[1-9][0-9]*$/.test(process.env.PR)) {
+              throw new Error('Fork CI requires the protected approved-fork controller');
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo, pull_number: Number(process.env.PR),
+            });
+            if (pr.state !== 'open' || pr.head.sha !== process.env.SOURCE) throw new Error('Fork PR head changed');
+            const routes = JSON.parse(process.env.ROUTES);
+            for (const name of ['automation', 'code', 'packages']) {
+              if (typeof routes[name] !== 'boolean') throw new Error('Invalid protected path decisions');
+              core.setOutput(name, String(routes[name]));
+            }
       - name: Reject custom candidate inputs on pull requests
         if: >-
           github.event.pull_request != null &&
-          (inputs.source_ref != '' || inputs.candidate_artifact != '' || inputs.candidate_sha != '' ||
+          (inputs.approved_fork_pr != '' || inputs.approved_fork_routes != '' || inputs.source_ref != '' || inputs.candidate_artifact != '' || inputs.candidate_sha != '' ||
             (inputs.artifact_scope != '' && inputs.artifact_scope != 'ci'))
         run: |
           echo '::error::Pull requests must use the source from their event.'
@@ -944,8 +976,7 @@ jobs:
                 !['true', 'false'].includes(paths?.automation) ||
                 !['true', 'false'].includes(paths?.code) ||
                 !['true', 'false'].includes(paths?.packages) ||
-                !['true', 'false'].includes(paths?.native) ||
-                !['true', 'false'].includes(paths?.hosted_requires_native)) {
+                !['true', 'false'].includes(paths?.native)) {
               throw new Error('Path selection failed or did not report all decisions');
             }
             const packages = paths.packages === 'true';
@@ -985,6 +1016,3 @@ jobs:
             for (const job of prPackages) if (!packageJobs.includes(job)) throw new Error(`Missing package job ${job}`);
             for (const job of packageJobs) requireResult(job, full || (packages && prPackages.includes(job)));
             for (const job of releaseSmokes) requireResult(job, release);
-            if (paths.hosted_requires_native === 'true') {
-              throw new Error('These changes require native hardware qualification on an isolated runner');
-            }

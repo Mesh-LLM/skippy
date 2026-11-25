@@ -45,7 +45,8 @@ status updates cannot recursively trigger the controller.
 `ci.yml` uses native paths to start on automation, code, package or qualification
 inputs on PRs and pushes to `main`. Its protected `pull_request_target` path
 admits same-repository PRs from repository collaborators against any base
-branch; fork PRs stay on the isolated `pull_request` path. A pinned
+branch. Fork PRs start on the approval-gated `pull_request` path, then enter
+the protected `fork-native.yml` controller described below. A pinned
 `dorny/paths-filter` action reads `.github/path-filters.yml` from the PR base
 commit using `some-with-excludes`: each changed file must match an inclusion
 and no exclusion. The routes are independent; mixed PRs run all applicable work.
@@ -56,6 +57,50 @@ and no exclusion. The routes are independent; mixed PRs run all applicable work.
 | `code` | Quality canary: formatting, Clippy, FFI, Rust and C++ tests, after automation passes. |
 | `packages` | Linux ARM64 CUDA 13 and macOS ARM64 Metal builds and packaged inference on real devices, after automation and any applicable source checks pass. |
 | `inference` | Automatic qualification on each matching PR head, using the separate workflow's native trigger list. |
+
+## Approved fork PRs
+
+Keep **Settings → Actions → General → Approval for running fork pull request
+workflows → Require approval for all external contributors** enabled
+(`approval_policy: all_external_contributors`). The existing **Approve workflows
+to run** button is the only approval needed; there is no environment approval,
+label, or shadow branch. Repository collaborators retain GitHub's normal trusted
+contributor behavior.
+
+Approval admits that candidate to the **same native execution trust boundary as
+trusted branch code**, including the persistent lab and shared build caches. It
+is not a hostile-code sandbox and does not grant the contributor repository write
+access. Review the complete diff first, especially workflow files, local Actions,
+`Justfile`, build scripts and `build.rs`. Do not relax the repository approval
+setting: a successful fork workflow is the admission signal, not independent
+proof that a maintainer approved it under some weaker setting.
+
+1. GitHub releases the fork's hosted CI after approval. Its ordinary CI gate no
+   longer fails just because native work is required elsewhere.
+2. `fork-native.yml` receives that successful run. Protected-main code verifies
+   its workflow path (CI or CI PR, matching the configured runner provider),
+   repository, event, attempt, fork identity and current open PR head. It reads
+   PR metadata/files from GitHub, never candidate artifacts, outputs or caches.
+3. The controller calls the existing `ci.yml` and `inference.yml` implementations
+   against the exact source, using protected path decisions. These repeat selected
+   automation/source checks, CUDA/Metal package/device smoke and all seven Spark
+   PR configurations where applicable. Fork-reported success is not treated as
+   evidence that those tests ran. Branch routing and nightly/release profiles are
+   unchanged. Dispatch credentials stay in the protected inference controller;
+   candidate-running CI receives only read permissions and no publisher secrets.
+4. `PR checks` requires the protected controller's admission, CI gate and complete
+   selected inference roster. Missing/pending work stays pending; skipped or failed
+   required work cannot green the PR. Its source-bound workflow title identifies
+   the candidate because GitHub records the default-branch SHA for `workflow_run`
+   controllers. New commits need their own released upstream run and cannot reuse
+   an older commit's qualification.
+
+The controller must land on the default branch before GitHub can exercise this
+route. Existing fork branches based on older CI may still contain the old hosted
+failure gate; update them from main, then approve/re-run their CI. If the runner
+provider setting changes while a run is in flight, re-run the expected producer.
+The existing inference PR comment is target-event-only; fork qualification links
+and artifacts are available in **Approved fork CI** and the aggregate status.
 
 On PRs, runtime source and package/build/smoke inputs select device package smoke.
 Qualification planning, dispatch, scoring, baselines and publication select
@@ -97,9 +142,9 @@ synchronization, reopening and readiness for review; no `qualify` label is neede
 Label changes do not restart or cancel qualification. Skipped admission or matrix
 jobs fail qualification and cannot satisfy `PR checks`.
 Qualification may queue behind another PR's atomic Spark pair; the PR
-budget waits for placement instead of failing fast. Relevant PRs retain
-same-repository/collaborator admission, a fresh-head check and all seven GPU
-smoke configurations. The credentialed controller runs only protected source.
+budget waits for placement instead of failing fast. Branch PRs retain same-repository/collaborator admission; forks use the approved
+controller above. Both retain a fresh-head check and all seven GPU smoke
+configurations. The credentialed controller runs only protected source.
 Python admission verifies trust and source identity.
 Release candidates are admitted only from scheduled or manually dispatched
 protected-main Release runs, with their exact source parent, candidate ref and
