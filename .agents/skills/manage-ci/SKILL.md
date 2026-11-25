@@ -133,6 +133,10 @@ contract; no downstream product's workflow topology applies here.
   exact candidate selected by successful full CI. The four established inference
   models retain their separate PR/manual/nightly/release workflow.
 - `ci/targets.json` owns four host definitions and thirteen runtime definitions.
+  The branch-only Windows GPU rehearsal is documented in `ci/windows-rehearsal.md`.
+  It uses public Windows VM recipes but supplies no production qualification;
+  require real Windows results and verified host lifecycle recovery before adoption.
+  Remove its temporary workflow and JY allowlists before merging production wiring.
   `enabled_hosts` selects the active CI and release roster. Require the evidence
   declared for every release asset. Call out pending inference qualification
   for archive-only targets in the release notes.

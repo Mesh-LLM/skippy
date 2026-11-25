@@ -16,6 +16,7 @@ inference-publication-test:
 automation-contracts: inference-contracts
     @"{{ automation_python }}" scripts/tests/ci_cuda_license.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_windows_cuda.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_windows_vm_profile.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_process_environment.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/automation_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_process_contracts.py
