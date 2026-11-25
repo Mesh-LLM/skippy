@@ -37,16 +37,23 @@ def toolkit_overrides(script):
     return found
 
 
+def resolve_setting(entry, key):
+    """A table value, or a callable the host resolves at build time, such as a GPU architecture."""
+    value = entry[key]
+    return value() if callable(value) else value
+
+
 def build(arm, log, backend="metal"):
     """Every arm is a release build: the comparison measures what ships, not a debug harness."""
     entry = BACKENDS[backend]
+    skippy_env = resolve_setting(entry, "skippy_env")
     path = checkout(arm)
     with log.open("wb") as stream:
         if arm["kind"] == "skippy":
-            command(["just", "llama-build"], timeout=7200, overrides=entry["skippy_env"], cwd=path,
+            command(["just", "llama-build"], timeout=7200, overrides=skippy_env, cwd=path,
                     stdout=stream, stderr=stream)
             command(["cargo", "build", "--locked", "--release", "-p", "skippy-cli"], timeout=7200,
-                    overrides=entry["skippy_env"], cwd=path, stdout=stream, stderr=stream)
+                    overrides=skippy_env, cwd=path, stdout=stream, stderr=stream)
             binary = path / "target/release/skippy"
         else:
             overrides = None
@@ -54,15 +61,19 @@ def build(arm, log, backend="metal"):
                 overrides = toolkit_overrides(ROOT / entry["toolkit_script"])
             build_dir = path / "build"
             command(["cmake", "-S", str(path), "-B", str(build_dir), "-G", "Ninja",
-                     "-DCMAKE_BUILD_TYPE=Release", *entry["reference_cmake"],
+                     "-DCMAKE_BUILD_TYPE=Release", *resolve_setting(entry, "reference_cmake"),
                      "-DLLAMA_BUILD_TESTS=OFF",
                      "-DLLAMA_BUILD_EXAMPLES=OFF", "-DLLAMA_BUILD_SERVER=ON"], timeout=1800,
                     cwd=path, overrides=overrides, stdout=stream, stderr=stream)
             command(["cmake", "--build", str(build_dir), "--target", "llama-server", "--parallel"],
                     timeout=7200, cwd=path, overrides=overrides, stdout=stream, stderr=stream)
             binary = build_dir / "bin/llama-server"
-    return {"label": arm["label"], "kind": arm["kind"], "sha": arm["sha"], "binary": str(binary),
-            "binary_sha256": digest(binary)}
+    built = {"label": arm["label"], "kind": arm["kind"], "sha": arm["sha"], "binary": str(binary),
+             "binary_sha256": digest(binary)}
+    architecture = skippy_env.get("LLAMA_STAGE_CUDA_ARCHITECTURES")
+    if architecture:
+        built["gpu_architecture"] = architecture
+    return built
 
 
 def capabilities(built):

@@ -7,7 +7,7 @@ from runpy import run_path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
-from lib import performance_arms, performance_plan
+from lib import performance_arms, performance_backends, performance_plan
 from lib.performance_arms import REQUIRED, capabilities, may_reject, server_args
 from lib.performance_load import measurements, rejection, run_point
 from lib import performance_report
@@ -135,6 +135,22 @@ class PlanTests(unittest.TestCase):
             performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 3, None, "any",
                                       backend="space-heater")
 
+    def test_a_cuda_x86_plan_targets_one_pinned_discrete_gpu(self):
+        arm_list = performance_plan.arms(self.candidate, self.baseline, self.pin)
+        with self.assertRaisesRegex(ValueError, "must name exactly one node"):
+            performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 3, None, "any",
+                                      backend="cuda-x86")
+        spec = performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 3, "lab-a33338", "x",
+                                         backend="cuda-x86")
+        selector = spec["target"]["selector"]
+        self.assertEqual(selector["os"], {"family": "linux"})
+        self.assertEqual(selector["arch"], {"in": ["x86_64"]})
+        self.assertEqual(selector["accelerator"], {"backend": "cuda"})
+        self.assertIs(selector["memory"]["unified"], False)
+        self.assertGreaterEqual(selector["memory"]["dedicated_vram_gib"]["min"], 9)
+        self.assertEqual(spec["target"]["nodes"], ["lab-a33338"])
+        self.assertEqual(spec["runtime"]["env"].get("CUDA_VISIBLE_DEVICES"), "0")
+
     def test_models_must_be_ladder_ids(self):
         with self.assertRaises(ValueError):
             performance_plan.models(["qwen35-4b", "qwen35-4b"])
@@ -260,6 +276,32 @@ class BackendTests(unittest.TestCase):
         self.assertIn("-DGGML_METAL=ON", calls[0][0])
         self.assertNotIn("-DGGML_CUDA=ON", calls[0][0])
         self.assertIsNone(calls[0][1]["overrides"])
+
+    def test_the_cuda_x86_entry_builds_for_the_hosts_own_architecture(self):
+        calls = []
+        with patch("lib.performance_backends.cuda_x86_architecture", return_value="89"):
+            with TemporaryDirectory() as directory:
+                with patch("lib.performance_arms.checkout", return_value=Path(directory)), \
+                     patch("lib.performance_arms.command",
+                           side_effect=lambda args, **kwargs: calls.append((args, kwargs)) or None), \
+                     patch("lib.performance_arms.toolkit_overrides",
+                           return_value={"CUDACXX": "/c/bin/nvcc"}), \
+                     patch("lib.performance_arms.digest", return_value="0" * 64):
+                    built = performance_arms.build(self.skippy, Path(directory) / "b.log", "cuda-x86")
+                    self.assertEqual(calls[0][1]["overrides"]["LLAMA_STAGE_CUDA_ARCHITECTURES"], "89")
+                    self.assertEqual(built["gpu_architecture"], "89")
+                    del calls[:]
+                    built = performance_arms.build(self.reference, Path(directory) / "r.log", "cuda-x86")
+            self.assertIn("-DCMAKE_CUDA_ARCHITECTURES=89", calls[0][0])
+            self.assertEqual(built["gpu_architecture"], "89")
+
+    def test_cuda_x86_admission_takes_the_lesser_of_gpu0_free_vram_and_host_memory(self):
+        meminfo = "MemAvailable: 2097152 kB\n"
+        for free_vram, expected in ((10 * 1024**3, 2 * 1024**3), (1 * 1024**3, 1 * 1024**3)):
+            with patch("lib.performance_backends.Path") as path:
+                path.return_value.read_text.return_value = meminfo
+                self.assertEqual(performance_backends.cuda_x86_free(
+                    {"gpu_memory_free_bytes": free_vram}), expected)
 
 
 class RejectionTests(unittest.TestCase):

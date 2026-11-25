@@ -38,11 +38,29 @@ reference build when it needs one, the device prefixes that count as GPU offload
 and the functions that prove the host and measure its free memory. A backend without a
 complete entry fails at plan time, not partway through a job.
 
-The table holds `metal` (any Apple M-series Mac whose Metal device is its own GPU) and
+The table holds `metal` (any Apple M-series Mac whose Metal device is its own GPU),
 `cuda` (a DGX Spark: Linux aarch64, an NVIDIA GB10, unified memory, CUDA architecture
-121). The Spark's reference arm builds with `-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=121`,
-configuring with the same toolkit environment `scripts/lib/cuda-toolkit.sh` resolves for
-Skippy's build. The GitHub workflow still dispatches Metal only.
+121) and `cuda-x86` (a discrete NVIDIA GPU on Linux x86_64). The Spark's reference arm
+builds with `-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=121`, configuring with the same
+toolkit environment `scripts/lib/cuda-toolkit.sh` resolves for Skippy's build. The
+GitHub workflow still dispatches Metal only.
+
+`cuda-x86` differs from the Spark in four ways, all in its table entry:
+
+- **Pinned to one node.** x86 hosts carry different cards, so an unpinned `cuda-x86`
+  plan is refused at plan time; a result is only comparable on the card it was measured on.
+- **One GPU.** The job environment sets `CUDA_VISIBLE_DEVICES=0`, so both arms see the
+  same single GPU; the host record says how many GPUs the host has and that GPU 0 was used.
+- **The host's own architecture.** Both arms read GPU 0's compute capability at build time
+  (`nvidia-smi --query-gpu=compute_cap`, 8.9 meaning 89) and build for it, not the release
+  lists from `ci/targets.json`. The architecture is recorded in the evidence.
+- **Discrete memory.** Admission checks the weights plus a 6 GiB discrete reserve against
+  GPU 0's free VRAM and against system `MemAvailable`, since Skippy can hold KV in host
+  RAM. The reserve is not the unified 16 GiB: a discrete GPU runs no operating system
+  beside the model, so the reserve covers only the KV pools and recurrent state of the
+  deepest cells (3.0 GiB and 0.94 GiB for the largest full-attention and hybrid models at
+  a 32K pool and 16 lanes) plus both arms' compute buffers. The host record also lists any
+  other compute process already on GPU 0.
 
 Both commits must be on protected main, unless an arm is `pr:N`: the head of an
 open pull request from this repository, never a fork's, authored by a collaborator with write access, so only code that could
