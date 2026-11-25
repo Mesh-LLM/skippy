@@ -23,6 +23,8 @@ use column_check::{CheckedRows, ColumnCheck};
 
 mod block_sums;
 mod column_check;
+#[cfg(test)]
+mod metal_tests;
 mod near_ties;
 pub(crate) mod pairs;
 pub(crate) mod rounding_flips;

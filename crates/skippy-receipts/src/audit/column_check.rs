@@ -40,7 +40,7 @@ impl CheckedRows<'_> {
             None => self
                 .rows
                 .iter()
-                .map(|&(r, w)| (r, w.iter().zip(xq).map(|(w, a)| w * a).sum()))
+                .map(|&(r, w)| (r, w.iter().zip(xq).map(|(&w, a)| p.weight(w) * a).sum()))
                 .collect(),
         }
     }
@@ -50,7 +50,7 @@ impl CheckedRows<'_> {
     fn weight(&self, p: Profile, k: usize, i: usize) -> f64 {
         match p.block_sums() {
             Some(rounded) => block_sums::activation_weight(self.blocks[k], i, rounded),
-            None => self.rows[k].1[i],
+            None => p.weight(self.rows[k].1[i]),
         }
     }
 

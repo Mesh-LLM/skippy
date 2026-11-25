@@ -12,6 +12,12 @@
 pub enum Profile {
     Raw,
     F16,
+    /// Candidate legacy Metal matmul: both weights and activations round to f16.
+    /// Not admitted by `rounding_profiles` until end-to-end qualification.
+    F16Weights,
+    /// Candidate Metal tensor matmul: f16 weights, f32 activations with the low 13
+    /// fraction bits discarded (toward zero, not round-to-nearest).
+    MetalTensor,
     /// Rounded to bf16, as CPU bf16 dot products and cuBLAS bf16 do.
     Bf16,
     /// CUDA `quantize_q8_1` (MMVQ): d = amax/127, q = round(x/d), d stored as f16.
@@ -43,6 +49,8 @@ impl Profile {
         match self {
             Self::Raw => "raw",
             Self::F16 => "f16",
+            Self::F16Weights => "f16_weights",
+            Self::MetalTensor => "metal_tensor",
             Self::Bf16 => "bf16",
             Self::Q8DivHalf => "q8_32_div_dh",
             Self::Q8MulHalf => "q8_32_mul_dh",
@@ -65,10 +73,32 @@ impl Profile {
         }
     }
 
+    /// The same profile must round weights in both the reference and a
+    /// near-tie repair; changing only the activation models neither Metal path.
+    pub(crate) fn weight(self, w: f64) -> f64 {
+        match self {
+            Self::F16Weights | Self::MetalTensor => f64::from(half::f16::from_f64(w).to_f32()),
+            _ => w,
+        }
+    }
+
     pub fn apply(self, x: &[f32]) -> Vec<f64> {
         match self {
             Self::Raw => x.iter().map(|&v| f64::from(v)).collect(),
-            Self::F16 => x
+            Self::MetalTensor => x
+                .iter()
+                .map(|&v| {
+                    // Preserve non-finite inputs: truncating a NaN payload
+                    // must not turn it into infinity.
+                    let truncated = if v.is_finite() {
+                        f32::from_bits(v.to_bits() & !0x1fff)
+                    } else {
+                        v
+                    };
+                    f64::from(truncated)
+                })
+                .collect(),
+            Self::F16 | Self::F16Weights => x
                 .iter()
                 .map(|&v| f64::from(half::f16::from_f32(v).to_f32()))
                 .collect(),
