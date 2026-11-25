@@ -3,7 +3,7 @@ on:
   pull_request_target:
     types: [opened, edited, synchronize, reopened, ready_for_review]
   workflow_run:
-    workflows: [CI, CI PR, Documentation, Documentation PR, CI images, CI images PR, Inference qualification, Approved fork CI]
+    workflows: [CI, CI PR, Documentation, Documentation PR, CI images, CI images PR, Inference qualification]
     types: [in_progress, completed]
   check_run:
     types: [created, completed]
@@ -15,7 +15,7 @@ permissions:
   pull-requests: read
   statuses: write
 concurrency:
-  group: pr-checks-${{ github.event.pull_request.head.sha || (github.event.workflow_run.path == '.github/workflows/fork-native.yml' && github.event.workflow_run.display_title) || github.event.workflow_run.head_sha || github.event.check_run.head_sha || github.event.sha }}
+  group: pr-checks-${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.event.check_run.head_sha || github.event.sha }}
   # Serialize evaluations for one PR commit without replacing a pending run.
   queue: max
 jobs:
@@ -23,7 +23,6 @@ jobs:
     name: Evaluate aggregate PR checks
     if: >-
       github.event_name == 'pull_request_target' ||
-      (github.event.workflow_run.path == '.github/workflows/fork-native.yml' && github.event.workflow_run.event == 'workflow_run') ||
       github.event_name == 'check_run' || github.event_name == 'status' ||
       contains(fromJSON('["pull_request", "pull_request_target"]'), github.event.workflow_run.event)
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}

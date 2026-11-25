@@ -3,7 +3,7 @@ const { join } = require('node:path');
 
 // Read only the protected roster used by the inference controller. A green
 // workflow with a skipped plan (the former label policy) is not qualification.
-module.exports = async function requireInferenceJobs(github, repo, run, prefix = '') {
+module.exports = async function requireInferenceJobs(github, repo, run) {
   if (run.conclusion !== 'success') throw new Error(`Inference qualification: ${run.conclusion}`);
   const { models } = JSON.parse(readFileSync(join(__dirname, '../../ci/inference-ladder.json'), 'utf8'));
   const configurations = models.filter(model => model.pr).flatMap(model =>
@@ -20,7 +20,7 @@ module.exports = async function requireInferenceJobs(github, repo, run, prefix =
     if (!latest.has(job.name) || latest.get(job.name).id < job.id) latest.set(job.name, job);
   }
   for (const name of required) {
-    const job = latest.get(prefix + name);
+    const job = latest.get(name);
     if (job?.status !== 'completed' || job.conclusion !== 'success') {
       throw new Error(`Inference qualification: ${name}: ${job?.conclusion || 'missing or incomplete'}`);
     }
