@@ -4,6 +4,7 @@
 //! implementations bind it to an already-loaded tokenizer; they must not open
 //! another model on behalf of a caller.
 
+// Approval-path rehearsal: this comment intentionally changes no runtime behavior.
 pub mod inventory;
 
 use std::{error::Error, fmt};
