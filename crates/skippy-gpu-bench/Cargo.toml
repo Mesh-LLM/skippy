@@ -10,7 +10,7 @@ homepage = "https://github.com/Mesh-LLM/skippy"
 readme = "README.md"
 
 [dependencies]
-skippy-subprocess = { path = "../../tools/process-supervision", version = "0.80.0" }
+skippy-subprocess = { path = "../../tools/process-supervision", version = "0.80.3" }
 tempfile = "3"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }

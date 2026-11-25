@@ -14,7 +14,7 @@ workspace = true
 
 [dependencies]
 process-wrap = { version = "10", default-features = false, features = ["std", "process-group", "job-object"] }
-skippy-native-runtime = { path = "../skippy-native-runtime", version = "0.80.0" }
+skippy-native-runtime = { path = "../skippy-native-runtime", version = "0.80.3" }
 sysinfo = "0.38"
 serde_json.workspace = true
 tempfile = "3"
