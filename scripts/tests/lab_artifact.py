@@ -20,6 +20,7 @@ SHA = "a" * 40
 
 def run(**changes):
     return dict({"id": 123, "run_attempt": 2, "head_sha": SHA, "head_branch": "main",
+                 "run_started_at": "2026-11-25T16:22:50Z",
                  "head_repository": {"full_name": lab.REPOSITORY}, "path": lab.WORKFLOW,
                  "event": "workflow_dispatch", "status": "completed", "conclusion": "success"}, **changes)
 
@@ -31,7 +32,8 @@ def github(path, **_kwargs):
         sha = path.removeprefix("compare/").split("...")[0]
         return {"status": "ahead", "merge_base_commit": {"sha": sha}}
     if "/jobs?" in path:
-        return {"total_count": 4, "jobs": [{"name": name, "conclusion": "success"}
+        return {"total_count": 4, "jobs": [{"name": name, "conclusion": "success",
+                                          "run_attempt": 2, "started_at": "2026-11-25T16:22:57Z"}
                 for name in ("plan", "quality", "package", "handoff")]}
     if "/status?" in path:
         return [{"statuses": [{"context": "lab/metal/123.2", "state": "pending"}]}]
@@ -86,6 +88,33 @@ class Admission(unittest.TestCase):
         with (patch.object(lab, "main_ancestor"), patch.object(lab, "api", side_effect=[run(), jobs]),
               self.assertRaisesRegex(ValueError, "handoff")):
             lab.ready(123)
+
+    def test_inherited_jobs_with_current_attempt_numbers_are_rejected(self):
+        # Observed on hosted run 45619344199, handoff-only rerun attempt 2:
+        # GitHub gave all four jobs attempt 2, but only handoff executed again.
+        for inherited in range(4):
+            jobs = github("/jobs?")
+            jobs["jobs"][inherited]["started_at"] = "2026-11-25T13:01:11Z"
+            with (self.subTest(inherited=inherited), patch.object(lab, "main_ancestor"),
+                  patch.object(lab, "api", side_effect=[run(), jobs]),
+                  self.assertRaisesRegex(ValueError, "partial reruns")):
+                lab.ready(123)
+        for timestamp in (run()["run_started_at"], "2026-11-25T16:22:57Z"):
+            jobs = github("/jobs?")
+            for job in jobs["jobs"]:
+                job["started_at"] = timestamp
+            with (patch.object(lab, "main_ancestor"),
+                  patch.object(lab, "api", side_effect=[run(), jobs])):
+                self.assertEqual(lab.ready(123)["attempt"], 2)
+
+    def test_missing_execution_timestamps_fail_closed(self):
+        for timestamp in (None, "", "invalid"):
+            jobs = github("/jobs?")
+            jobs["jobs"][0]["started_at"] = timestamp
+            for source, roster in ((run(run_started_at=timestamp), github("/jobs?")), (run(), jobs)):
+                with (self.subTest(timestamp=timestamp), patch.object(lab, "main_ancestor"),
+                      patch.object(lab, "api", side_effect=[source, roster]), self.assertRaises(ValueError)):
+                    lab.ready(123)
 
     def test_candidate_receipt_does_not_require_candidate_checkout(self):
         with tempfile.TemporaryDirectory() as directory:

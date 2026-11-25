@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 from . import ci_artifacts as artifacts
@@ -58,7 +59,9 @@ def main_ancestor(sha):
 
 
 def ready(run_id, *, rehearsal=None):
-    identity = admitted_run(api(f"actions/runs/{run_id}"), rehearsal=rehearsal)
+    run = api(f"actions/runs/{run_id}")
+    identity = admitted_run(run, rehearsal=rehearsal)
+    started = datetime.fromisoformat(run.get("run_started_at") or "")
     if rehearsal is None:
         main_ancestor(identity["source"])
     jobs = api(f'actions/runs/{run_id}/attempts/{identity["attempt"]}/jobs?per_page=100')
@@ -66,6 +69,10 @@ def ready(run_id, *, rehearsal=None):
     if (jobs["total_count"] != 4 or {job["name"] for job in jobs["jobs"]} != required
             or any(job.get("conclusion") != "success" for job in jobs["jobs"])):
         raise ValueError("all hosted jobs and the mode-specific handoff must succeed in this attempt")
+    # GitHub copies inherited jobs into the new attempt, with new IDs and
+    # run_attempt values but their original execution timestamps.
+    if any(datetime.fromisoformat(job.get("started_at") or "") < started for job in jobs["jobs"]):
+        raise ValueError("all hosted jobs must execute again; partial reruns cannot authorize lab input")
     return identity
 
 

@@ -169,7 +169,9 @@ becomes a required gate. A failed evidence publication cannot mark the lab green
 
 After reporting, repeat qualification with a **new workflow run/attempt**, not by
 overwriting that run's status. Full reruns must execute all four hosted jobs;
-partial reruns do not inherit qualification authority. Run-specific contexts
+partial reruns do not inherit qualification authority. GitHub copies inherited jobs
+into its attempt-specific API response, so admission also requires every job's
+execution start to be at or after that attempt's start. Run-specific contexts
 preserve prior outcomes and prevent an old green from qualifying new bytes.
 They are intentionally not a stable branch-protection/release gate yet.
 
