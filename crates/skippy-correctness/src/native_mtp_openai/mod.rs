@@ -17,14 +17,15 @@ use serde_json::{Value, json};
 use crate::{
     cli::{NativeMtpOpenAiAbArgs, StageLoadMode},
     report::{NativeMtpOpenAiAbReport, NativeMtpOpenAiCaseReport},
-    runner::{native_mtp::normalize_runtime_layer_end, stage_runtime_plans},
+    runner::{native_mtp::normalize_runtime_layer_end, source_model_sha256, stage_runtime_plans},
     support::generate_run_id,
 };
 
 use metrics::read_metrics;
 use reporting::{emit_report, status};
 use stage_process::{
-    case_addr, spawn_stage, start_stage1, wait_openai_ready, wait_stage1_ready, write_stage_config,
+    case_addr, spawn_stage, start_stage1, wait_openai_ready, wait_stage1_ready,
+    write_model_stage_config, write_stage_config,
 };
 
 pub(super) const BATCHED_VERIFY_ENV: &str = "SKIPPY_NATIVE_MTP_BATCHED_VERIFY";
@@ -91,10 +92,12 @@ pub fn native_mtp_openai_ab(args: NativeMtpOpenAiAbArgs) -> Result<()> {
         .build()
         .context("failed to build HTTP client")?;
 
+    let source_digest = source_model_sha256(&args.runtime.model)?;
     let baseline = run_openai_case(
         &args,
         &client,
         &model_id,
+        &source_digest,
         OpenAiCaseConfig {
             case: "baseline",
             native_mtp_enabled: false,
@@ -120,6 +123,7 @@ pub fn native_mtp_openai_ab(args: NativeMtpOpenAiAbArgs) -> Result<()> {
         &args,
         &client,
         &model_id,
+        &source_digest,
         OpenAiCaseConfig {
             case: "n1",
             native_mtp_enabled: true,
@@ -145,6 +149,7 @@ pub fn native_mtp_openai_ab(args: NativeMtpOpenAiAbArgs) -> Result<()> {
         &args,
         &client,
         &model_id,
+        &source_digest,
         OpenAiCaseConfig {
             case: "batched",
             native_mtp_enabled: true,
@@ -211,6 +216,7 @@ fn run_openai_case(
     args: &NativeMtpOpenAiAbArgs,
     client: &Client,
     model_id: &str,
+    source_digest: &str,
     case: OpenAiCaseConfig,
 ) -> Result<NativeMtpOpenAiCaseReport> {
     fs::create_dir_all(&case.root)
@@ -234,7 +240,7 @@ fn run_openai_case(
         1,
     )?;
 
-    write_stage_config(
+    write_model_stage_config(
         &stage0_config_path,
         &stage_config_json(
             args,
@@ -256,8 +262,10 @@ fn run_openai_case(
                 runtime_plan: &runtime_plans[0],
             },
         ),
+        &args.runtime.model,
+        source_digest,
     )?;
-    write_stage_config(
+    write_model_stage_config(
         &stage1_config_path,
         &stage_config_json(
             args,
@@ -279,6 +287,8 @@ fn run_openai_case(
                 runtime_plan: &runtime_plans[1],
             },
         ),
+        &args.runtime.model,
+        source_digest,
     )?;
     write_stage_config(
         &topology_path,
@@ -308,7 +318,7 @@ fn run_openai_case(
         }),
     )?;
 
-    let (stage1, stage1_launch) = start_stage1(
+    let (mut stage1, stage1_launch) = start_stage1(
         args,
         &case.run_id,
         &stage1_config_path,
@@ -318,12 +328,12 @@ fn run_openai_case(
         case.batched_verify_enabled,
     )?;
     wait_stage1_ready(
-        &stage1,
+        &mut stage1,
         case.stage1_endpoint_addr,
         args.server.startup_timeout_secs,
     )
     .context("stage 1 binary server did not become ready")?;
-    let stage0 = spawn_stage(
+    let mut stage0 = spawn_stage(
         args,
         &stage0_config_path,
         Some(case.openai_bind_addr),
@@ -336,6 +346,8 @@ fn run_openai_case(
         client,
         case.openai_bind_addr,
         args.server.startup_timeout_secs,
+        &mut stage0,
+        &stage0_log,
     )
     .context("stage 0 OpenAI server did not become ready")?;
 
