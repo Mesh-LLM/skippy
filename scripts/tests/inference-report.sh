@@ -66,7 +66,7 @@ reject() {
 }
 
 report
-jq -e '.body | contains("Lab Qualification: Passed") and contains("| 500.0 | Unavailable | 100.0 | Unavailable |") and contains("/jobs/job_test") and contains("/attempts/2")' "$fixture/posted.json" > /dev/null
+jq -e '.body | contains("Lab Qualification: Passed") and contains("| 500.0 | Unavailable | 100.0 | Unavailable |") and contains("/job/1") and (contains("pilot.jianyang.cloud") | not) and (contains("Lab record") | not) and contains("/attempts/2")' "$fixture/posted.json" > /dev/null
 grep -q 'POST$' "$fixture/mutation"
 cmp "$GITHUB_STEP_SUMMARY" <(jq -rj .body "$fixture/posted.json")
 

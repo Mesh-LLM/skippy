@@ -88,7 +88,7 @@ class ReadRecoveryTests(unittest.TestCase):
         sha = "a" * 40
         succeeded = {"status": "succeeded", "repo_rev": sha, "formation_id": "frm_test"}
         replies = [RemoteDisconnected("connection closed"), io.BytesIO(b'{"status":"running"}'),
-                   io.BytesIO(json.dumps(succeeded).encode()), io.BytesIO(b'{"status":"succeeded"}')]
+                   io.BytesIO(json.dumps(succeeded).encode()), io.BytesIO(b'{"status":"succeeded","members":[]}')]
         with TemporaryDirectory() as tmp, patch.object(self.pilot.opener, "open", side_effect=replies) as send:
             dispatch, mocks = self.dispatch()
             with patch.dict(dispatch.__globals__, mocks):
@@ -97,7 +97,7 @@ class ReadRecoveryTests(unittest.TestCase):
             mocks["cancel"].assert_not_called()
             self.assertTrue(all(item.args[0].method == "GET" for item in send.call_args_list))
             self.assertEqual(json.loads((Path(tmp) / "model-split-formation.json").read_text()),
-                             {"status": "succeeded"})
+                             {"status": "succeeded", "members": []})
 
     def test_exhausted_polling_still_cancels_the_native_job(self):
         with TemporaryDirectory() as tmp, \

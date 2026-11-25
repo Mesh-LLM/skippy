@@ -111,6 +111,10 @@ The admitted profile distinguishes a scheduled Release call from the scheduled
 nightly ladder: only the nightly ladder adds smoke rows, collects public metrics
 and requires nightly report publication in its summary.
 The syntax/dependency classifier and offline replay command have been removed.
+Native attempt logs stream into the qualification Actions step, including both
+split members and retries. The evidence artifact retains per-attempt JSONL logs
+and capture-gap diagnostics. Results comments direct readers to GitHub Actions
+logs and saved evidence, not an external lab console.
 The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
 `gh` and `jq`; it needs no Rust setup or compilation. It checks receipt source,
 configuration and native-attempt identity, updates only its bot-owned comment,
