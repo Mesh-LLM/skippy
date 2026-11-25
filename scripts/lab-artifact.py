@@ -64,7 +64,7 @@ def hardware():
 def qualify(directory):
     receipt = verify_input(directory)
     harness = artifacts.source()
-    if capture(["git", "status", "--porcelain", "--untracked-files=all", "--", "scripts", "ci", "Justfile"]).strip():
+    if capture(["git", "status", "--porcelain", "--untracked-files=all", "--", "scripts", "ci", "Justfile", "justfile"]).strip():
         raise ValueError("installed harness must have no modified or untracked policy/code")
     hosts, runtimes = targets()
     runtime = runtimes[VARIANT]
@@ -92,7 +92,7 @@ def qualify(directory):
                       median_end_to_end_tokens_per_second=statistics.median(
                           sample["end_to_end_tokens_per_second"] for sample in samples))
     except (Exception, KeyboardInterrupt) as error:
-        result["error"] = str(error)
+        result["error"] = str(error)[:2000]
         raise
     finally:
         result["evidence"] = artifacts.files(output)

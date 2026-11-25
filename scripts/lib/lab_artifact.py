@@ -16,13 +16,13 @@ WORKFLOW = ".github/workflows/hosted-lab.yml"
 VARIANT = "darwin-aarch64-metal"
 
 
-def api(path, *, body=None, method="GET"):
+def api(path, *, body=None, method="GET", paginate=False):
     args = ["gh", "api", f"repos/{REPOSITORY}/{path}", "--method", method]
     if body is not None:
         result = subprocess.run([*args, "--input", "-"], input=json.dumps(body),
                                 capture_output=True, text=True, check=True, timeout=60)
         return json.loads(result.stdout)
-    return json.loads(capture(args))
+    return json.loads(capture([*args, *(["--paginate", "--slurp"] if paginate else [])]))
 
 
 def admitted_run(run):
@@ -155,7 +155,8 @@ def report(directory):
     evidence.pop("lab-result.json", None)
     if result.get("evidence") != evidence:
         raise ValueError("qualification evidence changed")
-    statuses = api(f'commits/{receipt["source"]}/status?per_page=100')["statuses"]
+    pages = api(f'commits/{receipt["source"]}/status?per_page=100', paginate=True)
+    statuses = [row for page in pages for row in page["statuses"]]
     status = next((row for row in statuses if row["context"] == f"lab/metal/{key}"), None)
     if status is None or status["state"] != "pending":
         raise ValueError("requires pending handoff; dispatch a fresh run after a reported result")
@@ -163,13 +164,21 @@ def report(directory):
     description = f"Metal {result['status']}; archive sha256:{receipt['archive_sha256']}"
     # Checks output makes the structured result remotely readable. Full logs
     # remain on the lab; include device lines and their complete file hashes.
-    details = {path.name: artifacts.read_json(path) for path in (directory / "evidence").glob("*.json")}
+    details = {"lab-result.json": result}
+    for name in ("smoke.json", "quality.json", "performance.json"):
+        path = directory / "evidence" / name
+        if path.exists():
+            value = artifacts.read_json(path)
+            serialized = json.dumps(value, ensure_ascii=True)
+            details[name] = value if len(serialized) < 10000 else {
+                "truncated": True, "preview": serialized[:6000], "sha256": artifacts.digest(path),
+            }
     for name in ("stdout.log", "stderr.log"):
         path = directory / "evidence" / name
         if path.exists():
             lines = path.read_text(errors="replace").splitlines()
             details[name] = "\n".join(line for line in lines if "backend_device_selected" in line or "offloaded" in line)[-6000:]
-    text = "```json\n" + json.dumps(details, indent=2) + "\n```"
+    text = "```json\n" + json.dumps(details) + "\n```"
     if len(text.encode()) > 60000:
         raise ValueError("structured lab evidence exceeds GitHub check output limit")
     current(receipt)

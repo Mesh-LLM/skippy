@@ -34,7 +34,7 @@ def github(path, **_kwargs):
         return {"total_count": 4, "jobs": [{"name": name, "conclusion": "success"}
                 for name in ("plan", "quality", "package", "handoff")]}
     if "/status?" in path:
-        return {"statuses": [{"context": "lab/metal/123.2", "state": "pending"}]}
+        return [{"statuses": [{"context": "lab/metal/123.2", "state": "pending"}]}]
     if path == "check-runs":
         return {"html_url": "https://github.com/Mesh-LLM/skippy/runs/456"}
     return run()
@@ -163,6 +163,47 @@ class Downloads(unittest.TestCase):
             zipped.writestr(link, "outside")
         with self.assertRaises(ValueError):
             lab.unpack_download(self.zip, self.root / "unpacked")
+
+    def report_fixture(self):
+        identity = self.fetch()
+        output = self.destination / "evidence"
+        output.mkdir()
+        artifacts.write_json(output / "quality.json", {"response": "x" * 70000})
+        artifacts.write_json(output / "lab-result.json", {
+            "input": identity, "status": "failed", "harness_source": SHA,
+            "evidence": artifacts.files(output),
+        })
+
+    def test_large_evidence_is_readable_and_status_search_paginates(self):
+        self.report_fixture()
+
+        def pages(path, **kwargs):
+            if "/status?" in path:
+                self.assertTrue(kwargs["paginate"])
+                return [{"statuses": []}, *github(path)]
+            return github(path, **kwargs)
+
+        with patch.object(lab, "api", side_effect=pages) as api:
+            lab.report(self.destination)
+            check = next(call.kwargs["body"] for call in api.call_args_list if call.args == ("check-runs",))
+            summary = check["output"]["summary"]
+            self.assertLess(len(summary.encode()), 60000)
+            self.assertIn('"truncated": true', summary)
+
+    def test_completed_status_or_failed_evidence_upload_cannot_publish_green(self):
+        self.report_fixture()
+        for terminal in (True, False):
+            def reject(path, **kwargs):
+                if terminal and "/status?" in path:
+                    return [{"statuses": [{"context": "lab/metal/123.2", "state": "failure"}]}]
+                if path == "check-runs":
+                    raise RuntimeError("publication unavailable")
+                return github(path, **kwargs)
+
+            with patch.object(lab, "api", side_effect=reject) as api:
+                with self.assertRaises((ValueError, RuntimeError)):
+                    lab.report(self.destination)
+                self.assertFalse(any(call.args[0].startswith("statuses/") for call in api.call_args_list))
 
     def test_failed_and_successful_results_are_bound_to_inputs_and_evidence(self):
         identity = self.fetch()

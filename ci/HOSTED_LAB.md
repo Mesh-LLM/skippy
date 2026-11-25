@@ -77,9 +77,11 @@ outside the harness checkout and preserve it after failures. A result is written
 on ordinary failure and cancellation; a power loss can leave only partial logs.
 Such an interruption leaves GitHub pending and must not be represented as success.
 
-Use a repository-scoped fine-grained token or GitHub App credential with
+Use a repository-scoped **GitHub App installation token** with
 **Contents read, Actions read, Checks write, and Commit statuses write** for the
-control operations. Do not install publication credentials on the lab. Supply
+control operations. Creating the evidence check requires that App credential;
+an ordinary `gh auth login` is not the supported reporting setup. Do not install
+publication credentials on the lab. Supply
 credentials at invocation time; the executable's `--version` and inference
 processes receive a minimal environment and temporary HOME, not the controller's
 environment. This does **not** prevent a process running under the same OS user
@@ -106,7 +108,9 @@ its recorded commit to be on protected main too.
 
 Report rechecks the source/attempt and evidence hashes, requires the pending
 handoff status, publishes structured JSON plus device-log excerpts as a GitHub
-check, and links the run-specific commit status to it. A successful hosted build
+check, and links the run-specific commit status to it. Oversized structured
+responses are published as explicitly truncated previews; their complete file
+hashes and full local files remain available. A successful hosted build
 is therefore visibly distinct from lab success. Complete logs stay in the
 operator's evidence directory; their hashes are published. GitHub permissions,
 artifact retrieval and report publication need a live rehearsal before this
