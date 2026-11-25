@@ -51,10 +51,10 @@ def request(model, prompt, maximum, timeout, stream=False, *, endpoint=ENDPOINT)
                  endpoint + "/v1/chat/completions"], timeout)
 
 
-def score(coordinate, output, profile, *, endpoint=ENDPOINT):
+def score(coordinate, output, profile, *, endpoint=ENDPOINT, cases=Path("ci/inference-quality.json")):
     evidence = []
     timeout, maximum = (60, 64) if profile == "pr" else (300, 256)
-    for case in read_json(Path("ci/inference-quality.json")):
+    for case in read_json(cases):
         first = json.loads(request(coordinate, case["prompt"], maximum, timeout, endpoint=endpoint))
         second = json.loads(request(coordinate, case["prompt"], maximum, timeout, endpoint=endpoint))
         text = first["choices"][0]["message"]["content"]

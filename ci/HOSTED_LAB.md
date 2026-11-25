@@ -31,13 +31,23 @@ flowchart TD
   this workflow. Source and package builds retain existing read-only permissions.
 - The **lab** receives the exact packaged CLI/native libraries. A preinstalled,
   trusted harness verifies provenance, runs Qwen3 GPU smoke with positive Metal
-  offload, reuses the scored arithmetic/JSON/code repeat checks, and measures
+  offload, scores the fixture-specific arithmetic/JSON/code repeat checks, and measures
   three serial requests after one warm-up. It builds nothing, installs no test
   dependencies, fetches no model and executes no scripts from the artifact.
 - A **credentialed controller** fetches and reports. This can be the existing
   operator/control host; it need not be the execution machine. A one-shot pull
   command is provided, not a new daemon or Actions runner. An existing scheduler
   can invoke it; scheduling and credential provisioning are external setup.
+
+`ci/lab-quality.json` belongs to the pinned Qwen3-0.6B Q8_0 fixture, not the
+larger-model Spark ladder. It retains exact expected text, identical repeats and
+positive token counts. Arithmetic asks for a completed equation; JSON explicitly
+specifies spacing. These cases passed twice each on CPU (`--n-gpu-layers 0`) and
+Metal with the same pinned GGUF and hosted `557bbea` bundle before admission.
+This is a CPU-backend reference, not an independent runtime implementation.
+The initial [rehearsal failure](https://github.com/Mesh-LLM/skippy/commit/557bbea324b4aa2f66733de670867dda6502c11b#commitcomment-211813926)
+remains published: reusing the larger-model prompts failed strict formatting.
+Neither `ci/inference-quality.json` nor its default scoring behavior changes.
 
 The measurement is **warm end-to-end HTTP output tokens/second**, including
 prefill and potentially warm prefix caches. It is not decode-only speed, a

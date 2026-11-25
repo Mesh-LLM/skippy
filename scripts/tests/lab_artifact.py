@@ -345,6 +345,37 @@ class Harness(unittest.TestCase):
             self.assertEqual(curl.call_count, 2)
             self.assertEqual(curl.call_args.args[0][-1], "http://127.0.0.1:9000/v1/chat/completions")
 
+    def test_lab_cases_preserve_exact_correctness_and_repeat_checks(self):
+        cases = ROOT / "ci/lab-quality.json"
+        fixtures = artifacts.read_json(cases)
+        self.assertEqual([row["id"] for row in fixtures], ["arithmetic", "json", "code"])
+
+        def response(text, tokens=1):
+            return json.dumps({"choices": [{"message": {"content": text}}],
+                               "usage": {"completion_tokens": tokens}})
+
+        replies = [response(row["expected"]) for row in fixtures for _ in range(2)]
+        with (tempfile.TemporaryDirectory() as directory,
+              patch.object(inference_checks, "request", side_effect=replies) as request):
+            inference_checks.score("qwen3-ci", Path(directory), "pr", cases=cases)
+            self.assertEqual(request.call_count, 6)
+            self.assertTrue(all(row["passed"] for row in artifacts.read_json(Path(directory) / "quality.json")))
+        expected = fixtures[0]["expected"]
+        for first, second in ((response("17 + 25 = 43"), response("17 + 25 = 43")),
+                              (response(expected + ". Explanation"), response(expected + ". Explanation")),
+                              (response(expected), response("42")),
+                              (response(expected, 0), response(expected))):
+            with (self.subTest(first=first, second=second), tempfile.TemporaryDirectory() as directory,
+                  patch.object(inference_checks, "request", side_effect=[first, second]),
+                  self.assertRaisesRegex(ValueError, "scored quality")):
+                inference_checks.score("qwen3-ci", Path(directory), "pr", cases=cases)
+
+    def test_score_keeps_spark_cases_by_default(self):
+        with (tempfile.TemporaryDirectory() as directory,
+              patch.object(inference_checks, "read_json", return_value=[]) as read):
+            inference_checks.score("spark-model", Path(directory), "pr")
+            read.assert_called_once_with(Path("ci/inference-quality.json"))
+
     def test_performance_is_bounded_and_excludes_warmup(self):
         reply = json.dumps({"usage": {"completion_tokens": 8}, "choices": [{"message": {"content": "1,2,3"}}]})
         with (tempfile.TemporaryDirectory() as directory,
@@ -355,6 +386,7 @@ class Harness(unittest.TestCase):
             self.assertEqual(len(samples), 3)
             self.assertEqual(request.call_count, 4)
             self.assertEqual(score.call_args.kwargs["endpoint"], "http://127.0.0.1:9000")
+            self.assertEqual(score.call_args.kwargs["cases"], Path("ci/lab-quality.json"))
             self.assertTrue(all(row["end_to_end_tokens_per_second"] == 8 for row in samples))
 
     def test_workflow_has_no_lab_runner_or_dispatch_credentials(self):

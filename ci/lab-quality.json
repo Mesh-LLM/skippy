@@ -1,0 +1,5 @@
+[
+  {"id":"arithmetic","prompt":"Complete the equation. Reply with the equation only: 17 + 25 =","expected":"17 + 25 = 42"},
+  {"id":"json","prompt":"Return a JSON object with one field named ok set to true. Use one space after the colon. No Markdown or explanation.","expected":"{\"ok\": true}"},
+  {"id":"code","prompt":"Write exactly one line of Python assigning the integer 3 to the variable result. Use one space around the equals sign. No Markdown or explanation.","expected":"result = 3"}
+]

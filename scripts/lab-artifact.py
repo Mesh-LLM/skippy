@@ -22,7 +22,7 @@ from lib.lab_artifact import VARIANT, fetch, report, verify_input
 
 def probe(endpoint, output):
     endpoint = endpoint.removesuffix("/v1")
-    score("qwen3-ci", output, "pr", endpoint=endpoint)
+    score("qwen3-ci", output, "pr", endpoint=endpoint, cases=Path("ci/lab-quality.json"))
     samples = []
     first_text = None
     # One warm-up followed by three serial requests. This includes HTTP,
