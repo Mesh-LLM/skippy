@@ -1,5 +1,9 @@
 # Offline automation and reporting recipes; no native build inputs.
 
+# Explicit hardware rehearsal; never a dependency of offline checks.
+ci-rocm-preflight:
+    @bash scripts/ci-rocm-preflight.sh
+
 inference-contracts:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/jy_read_recovery.py

@@ -196,6 +196,41 @@ a compatible NVIDIA driver. Linux ROCm users need a matching ROCm runtime
 visible to the system loader. Inference qualification is pending for these
 five variants.
 
+### ROCm rehearsal
+
+`rocm-rehearsal.yml` builds and runs the Linux x86_64 ROCm package on the JY
+GitHub runner pool `jy-rnr_gsxt2m73mgpcbbh`. The pool admits the two Radeon 8060S
+machines in `james-lab`, with capacity two and access scoped to this repository.
+Its native runners carry `self-hosted`, `Linux`, `X64`, `skippy-ephemeral`, and
+`rocm` labels. Native JY reservations exclude overlapping native/CI work.
+
+Pushes to `rehearsal/rocm-smoke` exercise the proposed workflow before merge;
+manual dispatch is also supported once GitHub registers it on main. There are
+no PR or schedule triggers. Only trusted repository pushes/dispatches use the
+persistent lab hosts. The rehearsal does not change nightly or release gates,
+the target roster, or the Linux ROCm archive-only release policy.
+
+A hosted job resolves the published ROCm compiler image to its immutable
+digest. A native JY runner starts an Actions job container from that image with
+`/dev/kfd` and `/dev/dri` access, eight CPUs and 32 GiB RAM. JY's managed Actions
+container profile currently exposes NVIDIA passthrough only; using a native
+runner to start the job container supplies AMD device access without changing
+the host toolchain. The container and its processes are removed at job end.
+The workflow has read-only contents/packages permissions and no publication
+credentials. Runner-group access is restricted to this repository and selected
+workflow refs: the rehearsal on its dedicated branch or main, and `ci.yml` on
+main for later nightly/release integration.
+
+`just ci-rocm-preflight` requires Linux x86_64, the manifest's pinned ROCm
+version, the AMD device nodes, and successful HIP device discovery. The shared
+package action builds the platform CLI and complete manifest architecture set,
+then runs the pinned Qwen3 smoke against the exact archive. Setting
+`SKIPPY_CI_ROCM_DEVICE_SMOKE=1` retains the checksum-pinned BLAS device kernels
+that archive-only builders omit. ROCm smoke requires a ROCm/HIP device event,
+positive GPU layer offload, a nonempty completion and graceful shutdown.
+CPU fallback and other GPU backend events cannot satisfy it. Preflight logs,
+the tested package and smoke evidence are retained as Actions artifacts.
+
 ### Depot runners
 
 The repository Actions variable `SKIPPY_DEPOT_RUNNERS_ENABLED=true` selects

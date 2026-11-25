@@ -6,8 +6,10 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from lib import ci_artifacts, ci_smoke, ci_targets
@@ -18,6 +20,34 @@ SOURCE = "a" * 40
 HOST = {"id": "linux-x86_64", "target": "x86_64-unknown-linux-gnu",
         "os": "linux", "arch": "x86_64"}
 RUNTIME = {"id": "linux-x86_64-cpu", "backend": "cpu", "gpu_architectures": ""}
+
+
+class DeviceSmokeContract(unittest.TestCase):
+    def assert_device(self, backend, device, *, offload=True, passes=True):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "server.log"
+            selected = {"type": "backend_device_selected", "data": {"detail": device}}
+            log.write_text(json.dumps(selected) + "\n" +
+                           ("offloaded 29/29 layers to GPU\n" if offload else ""))
+            server = SimpleNamespace(poll=lambda: None)
+            with patch.object(ci_smoke.time, "sleep"):
+                if passes:
+                    ci_smoke.require_device([log], server, time.monotonic() + 0.01, backend)
+                else:
+                    with self.assertRaisesRegex(RuntimeError, "GPU device and positive layer offload"):
+                        ci_smoke.require_device([log], server, time.monotonic() + 0.01, backend)
+
+    def test_each_gpu_backend_requires_its_own_device_and_positive_offload(self):
+        for backend, device in (("rocm", "ROCm0: AMD Radeon 8060S"), ("rocm", "HIP0"),
+                                ("cuda", "CUDA0"), ("metal", "MTL0")):
+            with self.subTest(backend=backend, device=device):
+                self.assert_device(backend, device)
+                self.assert_device(backend, device, offload=False, passes=False)
+
+    def test_rocm_rejects_cpu_fallback_and_other_gpu_backends(self):
+        for device in ("CPU", "CUDA0", "MTL0", "Vulkan0"):
+            with self.subTest(device=device):
+                self.assert_device("rocm", device, passes=False)
 
 
 class TargetPlannerContract(unittest.TestCase):

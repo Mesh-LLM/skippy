@@ -1,0 +1,87 @@
+name: ROCm rehearsal
+on:
+  # Exercise the proposed workflow before it reaches main. Only repository
+  # writers can push this branch; never execute fork/PR source on the lab hosts.
+  push:
+    branches: [rehearsal/rocm-smoke]
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: read
+concurrency:
+  group: skippy-rocm-rehearsal-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  SKIPPY_CI_PROFILE: full
+  SKIPPY_ARTIFACT_SCOPE: rocm-rehearsal
+  CARGO_PROFILE_RELEASE_DEBUG: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+jobs:
+  image:
+    name: Resolve ROCm compiler image
+    if: github.repository == 'Mesh-LLM/skippy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
+    steps:
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=$(docker buildx imagetools inspect ghcr.io/mesh-llm/skippy-ci-rocm:latest)
+          digest=$(awk '$1 == "Digest:" {print $2; exit}' <<< "$manifest")
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+  smoke:
+    name: Build, package and smoke · Linux x64 ROCm
+    needs: image
+    runs-on:
+      group: jy-rnr_gsxt2m73mgpcbbh
+      labels: [self-hosted, skippy-ephemeral, Linux, X64, rocm]
+    timeout-minutes: 240
+    container:
+      image: ghcr.io/mesh-llm/skippy-ci-rocm@${{ needs.image.outputs.digest }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      # Native JY runners own the host reservation; Actions removes this job
+      # container (and its processes) after success, failure or cancellation.
+      options: --user 0 --device=/dev/kfd --device=/dev/dri --cpus=8 --memory=32g --pids-limit=4096
+    defaults:
+      run:
+        shell: bash
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '8'
+      CARGO_BUILD_JOBS: '8'
+      LD_LIBRARY_PATH: /opt/rocm/lib
+      SKIPPY_CI_ROCM_DEVICE_SMOKE: '1'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify real AMD device access and pinned toolkit
+        run: just ci-rocm-preflight
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: linux-x86_64-rocm
+          host-id: linux-x86_64
+          build-cli: 'true'
+          smoke: inference
+          containerized: 'true'
+          compiler-image-digest: ${{ needs.image.outputs.digest }}
+      - name: Upload ROCm preflight evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: rocm-rehearsal-device
+          path: target/ci-evidence/rocm-preflight.log
+          if-no-files-found: warn
+          retention-days: 14
