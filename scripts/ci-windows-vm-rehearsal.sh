@@ -50,6 +50,9 @@ cleanup() {
   trap - EXIT INT TERM
   if [[ -d "$work/shared/output" ]]; then
     cp -a "$work/shared/output/." "$evidence/" || status=1
+    if [[ "$status" != 0 && -f "$work/shared/output/guest.log" ]]; then
+      tail -80 "$work/shared/output/guest.log"
+    fi
   fi
   if [[ "$acquired" == true ]]; then
     "$manager" release --lease "$lease" --gpu "$gpu" --journal "$evidence/host-lifecycle.json" || { status=1; restored=false; }
@@ -64,7 +67,7 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 acquired=true
-"$manager" acquire --lease "$lease" --gpu "$gpu" --journal "$evidence/host-lifecycle.json"
+"$manager" acquire --lease "$lease" --gpu "$gpu" --work "$work" --journal "$evidence/host-lifecycle.json"
 just --justfile "$recipe/justfile" run --image "$image" --base "$base" \
   --backend "$WINDOWS_BACKEND" --gpu "$gpu" --lease "$lease" \
   --input "$input" --work "$work" --timeout 3600
