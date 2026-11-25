@@ -6,7 +6,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -30,12 +29,13 @@ class DeviceSmokeContract(unittest.TestCase):
             log.write_text(json.dumps(selected) + "\n" +
                            ("offloaded 29/29 layers to GPU\n" if offload else ""))
             server = SimpleNamespace(poll=lambda: None)
-            with patch.object(ci_smoke.time, "sleep"):
+            with (patch.object(ci_smoke.time, "sleep"),
+                  patch.object(ci_smoke.time, "monotonic", side_effect=[0.0, 2.0])):
                 if passes:
-                    ci_smoke.require_device([log], server, time.monotonic() + 0.01, backend)
+                    ci_smoke.require_device([log], server, 1.0, backend)
                 else:
                     with self.assertRaisesRegex(RuntimeError, "GPU device and positive layer offload"):
-                        ci_smoke.require_device([log], server, time.monotonic() + 0.01, backend)
+                        ci_smoke.require_device([log], server, 1.0, backend)
 
     def test_each_gpu_backend_requires_its_own_device_and_positive_offload(self):
         for backend, device in (("rocm", "ROCm0: AMD Radeon 8060S"), ("rocm", "HIP0"),

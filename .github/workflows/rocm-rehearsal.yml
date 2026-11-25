@@ -67,6 +67,8 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Trust the host-owned checkout inside the job container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Verify real AMD device access and pinned toolkit
         run: just ci-rocm-preflight
       - uses: ./.github/actions/ci-package

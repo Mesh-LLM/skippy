@@ -11,7 +11,8 @@ rocm="${ROCM_PATH:-/opt/rocm}"
 expected=$(jq -er '.runtimes[] | select(.id == "linux-x86_64-rocm") | .toolkit' ci/targets.json)
 installed=$(<"$rocm/.info/version")
 test "${installed%%-*}" = "$expected"
-printf 'Runner: %s\nSource: %s\nROCm: %s\n' "${RUNNER_NAME:-local}" "$(git rev-parse HEAD)" "$installed"
+source_sha=$(git rev-parse HEAD)
+printf 'Runner: %s\nSource: %s\nROCm: %s\n' "${RUNNER_NAME:-local}" "$source_sha" "$installed"
 hipcc --version
 
 probe=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/skippy-rocm-probe.XXXXXX")
