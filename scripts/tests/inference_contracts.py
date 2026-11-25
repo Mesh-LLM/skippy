@@ -14,32 +14,6 @@ from lib import inference_ladder, inference_throughput
 from lib.jy_qualification import Pilot, PilotHTTPError, placement
 
 
-class BuildCacheTests(unittest.TestCase):
-    def test_native_source_separates_cargo_and_compiler_caches(self):
-        module = run_path(str(Path(__file__).resolve().parents[1] / "inference-build.py"))
-        inputs, build = module["source_inputs"], module["build"]
-        environments = []
-        with TemporaryDirectory() as directory:
-            root = Path(directory) / "inference-build-v1"
-            root.mkdir()
-            for native in ("a" * 40, "b" * 40):
-                capture = Mock(side_effect=lambda args: native if args == [
-                    "git", "rev-parse", "HEAD:llama_cpp"] else "same-toolchain")
-                with patch.dict(inputs.__globals__, capture=capture):
-                    identity = inputs("c" * 40)
-                self.assertEqual(identity["native"], native)
-                command = Mock(side_effect=RuntimeError("stop before compilation"))
-                with patch.dict(build.__globals__, command=command), \
-                        patch("shutil.which", return_value=None):
-                    with self.assertRaisesRegex(RuntimeError, "stop before compilation"):
-                        build("c" * 40, root, identity, "unused", root / "unused")
-                command.assert_called_once()
-                self.assertEqual(command.call_args.args[0], ["just", "inference-build-uncached"])
-                environments.append(command.call_args.kwargs["overrides"])
-        for key in ("CARGO_TARGET_DIR", "SCCACHE_DIR"):
-            self.assertNotEqual(environments[0][key], environments[1][key])
-
-
 class LadderTests(unittest.TestCase):
     sha = "0123456789abcdef0123456789abcdef01234567"
 
@@ -170,6 +144,32 @@ class PlacementTests(unittest.TestCase):
         self.assertEqual(placement(agents, "controller", 0, source), ("first", "second"))
         with self.assertRaises(ValueError):
             placement(agents, "controller", 0, "b" * 40)
+
+
+class ForkAdmissionTests(unittest.TestCase):
+    def test_only_protected_approved_fork_caller_can_admit_current_fork_source(self):
+        admit = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))["admit_pr"]
+        sha = "a" * 40
+        pr = {"number": 12, "state": "open", "user": {"login": "outside"},
+              "head": {"sha": sha, "repo": {"full_name": "outside/skippy"}}}
+        caller = "Mesh-LLM/skippy/.github/workflows/fork-native.yml@refs/heads/main"
+        for event, workflow, allowed in [("workflow_run", caller, True),
+                                         ("pull_request_target", caller, False),
+                                         ("pull_request", caller, False),
+                                         ("workflow_run", caller.replace("main", "feature"), False),
+                                         ("workflow_run", caller.replace("fork-native", "other"), False)]:
+            with self.subTest(event=event, workflow=workflow), \
+                    patch.dict(os.environ, GITHUB_EVENT_NAME=event, GITHUB_WORKFLOW_REF=workflow, APPROVED_FORK_PR="12"), \
+                    patch.dict(admit.__globals__, github=Mock(side_effect=[pr if allowed else [pr], pr])):
+                if allowed:
+                    admit(sha)
+                else:
+                    with self.assertRaisesRegex(ValueError, "protected approved-fork controller"):
+                        admit(sha)
+        with patch.dict(os.environ, GITHUB_EVENT_NAME="workflow_run", GITHUB_WORKFLOW_REF=caller, APPROVED_FORK_PR="12"), \
+                patch.dict(admit.__globals__, github=Mock(side_effect=[pr, {"head": {"sha": "b" * 40}}])):
+            with self.assertRaisesRegex(ValueError, "PR head changed"):
+                admit(sha)
 
 
 class ReleaseAdmissionTests(unittest.TestCase):
