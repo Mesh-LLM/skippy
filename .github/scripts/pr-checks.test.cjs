@@ -361,6 +361,18 @@ test('protected fork completion wakes the aggregate for the candidate, not main,
     { ...forkJobs()[1], id: 200, run_attempt: 2, conclusion: 'skipped' }], forkRuns: [forkRun({ run_attempt: 2 })] })).state, 'failure');
 });
 
+test('a fork run held for maintainer approval is pending, not failed (real #222 context)', async () => {
+  const fork = { head: { sha, repo: { id: 7 } }, base: { repo: { id: 42 } } };
+  const held = run('ci.yml', 1, { event: 'pull_request', conclusion: 'action_required' });
+  const result = await evaluate({ pr: fork, runs: [held] });
+  assert.equal(result.state, 'pending');
+  assert.equal(result.calls.at(-1).description, 'Waiting for a maintainer to approve workflows');
+  assert.deepEqual(result.failures, []);
+  // A real failure beside the held run still blocks.
+  const failed = await evaluate({ pr: fork, runs: [held, run('docs.yml', 2, { conclusion: 'failure' })] });
+  assert.equal(failed.state, 'failure');
+});
+
 test('base Depot configuration does not change any fork producer (real #218 context)', async () => {
   const files = [inferenceChange, { filename: 'ci/Dockerfile' }, { filename: 'docs-site/index.mdx' }];
   for (const depot of [false, true]) {
