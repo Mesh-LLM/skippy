@@ -1,7 +1,9 @@
 """Drive one load point with the pinned AIPerf and read back what it measured."""
 
 import json
+import shutil
 import subprocess
+import tempfile
 from collections import Counter
 from pathlib import Path
 
@@ -95,11 +97,19 @@ def rejection(directory, requests):
 def run_point(endpoint, point, coordinate, tokenizer_path, warmup, directory: Path, *, may_reject):
     """One point's metrics, or null metrics and what the server rejected where it may reject."""
     failure = None
+    # AIPerf stages its ZeroMQ event bus under TMPDIR, and a workspace path longer
+    # than the 103-byte unix-socket limit (this Mac's "Application Support" tree)
+    # or holding a space breaks the ipc:// endpoints before a request is sent, so
+    # every AIPerf run gets its own short, space-free TMPDIR.
+    short_tmp = Path(tempfile.mkdtemp(prefix="aiperf-tmp-"))
     try:
-        command(profile_args(endpoint, point, coordinate, tokenizer_path, warmup, directory), timeout=5400)
+        command(profile_args(endpoint, point, coordinate, tokenizer_path, warmup, directory),
+                timeout=5400, overrides={"TMPDIR": str(short_tmp)})
     except subprocess.CalledProcessError as error:
         # AIPerf exits non-zero, with no summary export, when every measured request failed.
         failure = error
+    finally:
+        shutil.rmtree(short_tmp, ignore_errors=True)
     rejected = rejection(directory, point["requests"]) if may_reject else None
     if rejected is not None:
         return dict.fromkeys(METRICS), rejected
