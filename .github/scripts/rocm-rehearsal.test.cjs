@@ -24,10 +24,10 @@ function ownership(env = {}, { uid = 1000, status = 0 } = {}) {
   return calls;
 }
 
-test('ROCm cleanup records the native owner and repairs only root-owned workspace files', () => {
+test('ROCm cleanup restores the native workspace owner without following symlinks', () => {
   assert.deepEqual(ownership(), [['state', 'owner=1000:1000\n']]);
   assert.deepEqual(ownership({ STATE_owner: '1000:1000' }), [
-    ['chown', '-R', '--no-dereference', '--from=0', '1000:1000', '/__w'],
+    ['chown', '-R', '--no-dereference', '1000:1000', '/__w'],
   ]);
   assert.throws(() => ownership({ GITHUB_WORKSPACE: '/other/repo' }), /root job container/);
   assert.throws(() => ownership({}, { uid: 0 }), /Cannot identify/);

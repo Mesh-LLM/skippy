@@ -216,7 +216,8 @@ digest. A native JY runner starts an Actions job container from that image with
 container profile currently exposes NVIDIA passthrough only; using a native
 runner to start the job container supplies AMD device access without changing
 the host toolchain. The container and its processes are removed at job end.
-An early workspace action restores root-created files to the native account
+Cache extraction ignores archived numeric owners. An early workspace action
+restores all workspace files, including restored caches, to the native account
 in its post hook, after package/cache post hooks; this lets JY replace the
 ephemeral runner without permission failures. Git trusts only the mounted
 checkout path inside the container. The workflow has read-only contents/packages permissions and no publication
