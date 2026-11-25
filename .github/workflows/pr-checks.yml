@@ -39,6 +39,8 @@ jobs:
         env:
           DEPOT_RUNNERS_ENABLED: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED }}
         with:
+          # A dropped GitHub API call must not paint the PR red (real #224 context).
+          retries: 3
           script: |
             await require('./.github/scripts/pr-checks.cjs')({
               github, context, core, depot: process.env.DEPOT_RUNNERS_ENABLED === 'true'
