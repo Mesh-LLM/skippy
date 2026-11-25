@@ -39,9 +39,9 @@ def graceful_stop(child):
         except ProcessLookupError:
             pass
         except PermissionError:
-            # A recycled pgid names a group we cannot signal; once the child
-            # has exited there is nothing of ours left to signal.
-            if child.poll() is None:
+            # A recycled pgid, or a group whose members are all exiting, cannot be
+            # signalled; that is only an error while a process of ours is still in it.
+            if live_member(child.pid):
                 raise
 
 
@@ -54,9 +54,23 @@ def force_stop(child):
         except ProcessLookupError:
             pass
         except PermissionError:
-            if child.poll() is None:
+            if live_member(child.pid):
                 raise
     child.wait(timeout=10)
+
+
+def live_member(group):
+    """Whether a process of ours that can still run is in `group`. Zombies cannot
+    execute, and a process of another user's means the pgid was recycled."""
+    rows = subprocess.check_output(
+        ["ps", "-axo", "pgid=,uid=,stat="], timeout=5, text=True, env=environment(),
+    )
+    uid = os.getuid()
+    for row in rows.splitlines():
+        pgid, owner, state = row.split(None, 2)
+        if int(pgid) == group and int(owner) == uid and not state.startswith(("Z", "X")):
+            return True
+    return False
 
 
 def group_alive(child):
@@ -68,23 +82,13 @@ def group_alive(child):
     except ProcessLookupError:
         return False
     except PermissionError:
-        if not exited:
-            raise
-        # EPERM on signal-0 means the pgid now holds processes we cannot
-        # signal: the id was recycled after our group exited.
-        return False
+        # Darwin answers EPERM for a group whose members are all exiting, which can
+        # happen between the poll above and the signal, as well as for a recycled pgid.
+        return live_member(child.pid)
     if not exited:
         return True
-    # A group containing only unreaped descendants can still be visible to
-    # killpg. Zombies cannot execute and may be owned by another reaper.
-    rows = subprocess.check_output(
-        ["ps", "-axo", "pgid=,stat="], timeout=5, text=True, env=environment(),
-    )
-    for row in rows.splitlines():
-        group, state = row.split(None, 1)
-        if int(group) == child.pid and not state.startswith(("Z", "X")):
-            return True
-    return False
+    # A group containing only unreaped descendants can still be visible to killpg.
+    return live_member(child.pid)
 
 
 def stop(child):

@@ -10,9 +10,9 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from lib import ci_artifacts, ci_smoke
+from lib import ci_artifacts, ci_process, ci_smoke
 from lib.ci_process import command
 from lib.graph_contracts import MANIFEST
 from lib.upgrade_source import git, restore_at
@@ -455,6 +455,26 @@ class CargoDownloadsCache(unittest.TestCase):
         self.assertTrue(any('"$cargo_home"' in line and '"$GITHUB_WORKSPACE"' in line
                             for line in lines),
                         "layout digest must cover both the cargo home and the workspace")
+
+
+class ProcessGroups(unittest.TestCase):
+    """Darwin's killpg answers EPERM for an exiting group and for a recycled pgid."""
+
+    def alive(self, ps, exited):
+        child = Mock(pid=4242)
+        child.poll.return_value = 0 if exited else None
+        with patch.object(ci_process.os, "killpg", side_effect=PermissionError), \
+             patch.object(ci_process.subprocess, "check_output", return_value=ps):
+            return ci_process.group_alive(child)
+
+    def test_a_group_exiting_after_the_poll_is_not_alive(self):
+        self.assertFalse(self.alive(f"4242 {os.getuid()} Z\n", exited=False))
+
+    def test_a_recycled_pgid_is_not_our_group(self):
+        self.assertFalse(self.alive(f"4242 {os.getuid() + 1} S\n", exited=True))
+
+    def test_a_running_process_of_ours_keeps_the_group_alive(self):
+        self.assertTrue(self.alive(f"  99 {os.getuid()} S\n4242 {os.getuid()} R+\n", exited=False))
 
 
 if __name__ == "__main__":
