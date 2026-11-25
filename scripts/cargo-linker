@@ -18,6 +18,16 @@ for ((index = 0; index < ${#raw_link_args[@]}; index++)); do
             # versions may still inject their default lld preference.
             continue
             ;;
+        -nodefaultlibs)
+            # The repository driver owns default-library policy on macOS: rustc
+            # passes -nodefaultlibs with its own library list, which drops the
+            # clang_rt availability helper that patched Metal code calls
+            # (__isPlatformVersionAtLeast). Other platforms keep rustc's contract.
+            if [[ "$(uname -s)" == "Darwin" ]]; then
+                continue
+            fi
+            link_args+=("$argument")
+            ;;
         -arch|-target|-isysroot)
             link_args+=("$argument")
             if ((index + 1 < ${#raw_link_args[@]})); then
