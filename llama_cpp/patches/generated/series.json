@@ -1,5 +1,5 @@
 {
-  "full_patch_sha256": "38ac059a3e658248ec7d8c2d24e83a96cf7b7f5ba1c6b0a8cb45b85b500f00e2",
+  "full_patch_sha256": "0bff8f0f1c8c0aa0497ff8edd91d1ab710cdaf399d53c3138f93a0be4e0ad24b",
   "generator_version": "0.5.0",
   "schema_version": 1,
   "shards": [
@@ -325,7 +325,7 @@
         "granite-swa"
       ],
       "file": "0032-family-granite-swa.patch",
-      "sha256": "b3d2ff7e2f8de217736bd897f4b0cbcacc5d2e2bf751dd10344c0861b28877ed",
+      "sha256": "d5a4757c7240907c04dead201c4809926b58dd163b9481478f547c5f26304c56",
       "sources": [
         "src/models/granite-swa.cpp"
       ]
@@ -335,7 +335,7 @@
         "granite-switch"
       ],
       "file": "0033-family-granite-switch.patch",
-      "sha256": "a16556ebede7989d28d316a9110767a55d6eebf2fa1421849fb57e906b3048f1",
+      "sha256": "85e3193e9b0c2a9456c2b34811582af51a701c9ddcb2509df1b02f2af90c491d",
       "sources": [
         "src/models/granite-switch.cpp"
       ]
@@ -559,7 +559,7 @@
         "minimax-m3"
       ],
       "file": "0055-family-minimax-m3.patch",
-      "sha256": "b17326d91c29bd286a1045a4f4a8914262a2ad32f98d819ff1ed6ca08e10837c",
+      "sha256": "4865e0aff8b385b6cc1d65e0d3be78ecbce4aa7a405684653cde105419be997d",
       "sources": [
         "src/models/minimax-m3.cpp"
       ]
