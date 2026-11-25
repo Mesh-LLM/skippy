@@ -1,7 +1,7 @@
 name: Inference qualification
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'crates/**'
       - 'skippy_api/src/**'
@@ -86,13 +86,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
 jobs:
   plan:
-    # PR qualification is manual: it runs only when the `qualify` label is
-    # present, so atomic Spark pairs are reserved on request rather than by
-    # every inference-path push. The workflow still triggers on path matches
-    # so an intentionally skipped run satisfies the PR checks aggregate.
-    if: >-
-      github.event_name != 'pull_request_target' ||
-      contains(github.event.pull_request.labels.*.name, 'qualify')
+    # Matching PR paths always require admission and native qualification.
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 20
     outputs:
@@ -229,26 +223,20 @@ jobs:
           script: |
             const { SOURCE_SHA: sha, PROFILE: profile, PLAN: plan, RESULT: result, PUBLICATION: publication, RUN_URL: url } = process.env;
             if (!/^[a-f0-9]{40}$/i.test(sha)) throw new Error('Invalid qualification source SHA');
-            // A skipped plan is an intentional opt-out: the PR carries no
-            // qualify label, so no Spark pair was reserved. Report it green
-            // instead of failing unlabeled PRs.
-            const skipped = plan === 'skipped';
             // A reusable call from a scheduled Release also inherits schedule.
             const nightly = context.eventName === 'schedule' && profile === 'nightly';
             const passed = plan === 'success' && result === 'success' &&
               (!nightly || publication === 'success');
             const description = passed
               ? 'Native Spark lab qualification'
-              : skipped
-              ? 'Intentionally skipped (no qualify label)'
               : nightly
               ? 'Nightly qualification or publication incomplete or failed'
               : 'Inference admission or qualification incomplete or failed';
             await github.rest.repos.createCommitStatus({
               ...context.repo, sha, context: 'Inference qualification',
-              state: passed || skipped ? 'success' : 'failure', description, target_url: url
+              state: passed ? 'success' : 'failure', description, target_url: url
             });
-            if (!passed && !skipped) core.setFailed(description);
+            if (!passed) core.setFailed(description);
 
   report:
     needs: [plan, qualification, summary]

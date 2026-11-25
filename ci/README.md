@@ -12,7 +12,11 @@ execution, model inputs or lab credentials. It re-evaluates on PR events and
 producer workflow starts/completions, including reruns. Failed, cancelled,
 timed-out and startup-failed runs fail the gate; queued/running or missing
 applicable workflows leave it pending. Successful, neutral and intentionally
-skipped results are accepted. Results bind to the current PR head; older runs
+skipped results are accepted except for required inference qualification. Its
+latest run must contain successful plan, summary and every PR matrix job selected
+by the protected inference ladder. Each job's latest execution governs, including
+successful jobs inherited by partial reruns; a green workflow with skipped jobs
+does not count. Results bind to the current PR head; older runs
 and attempts cannot override newer results. It includes additional automatic PR
 workflows and independent checks/statuses, rather than requiring their names
 in branch protection. The aggregate reads the native PR trigger paths for CI,
@@ -51,7 +55,7 @@ and no exclusion. The routes are independent; mixed PRs run all applicable work.
 | `automation` | Hosted offline Python, Node and shell contracts, including report/publication tests. No Rust setup, native source, compiler image or model inputs. |
 | `code` | Quality canary: formatting, Clippy, FFI, Rust and C++ tests, after automation passes. |
 | `packages` | Linux ARM64 CUDA 13 and macOS ARM64 Metal builds and packaged inference on real devices, after automation and any applicable source checks pass. |
-| `inference` | The separate qualification workflow, using its native trigger list and the existing manual PR policy. |
+| `inference` | Automatic qualification on each matching PR head, using the separate workflow's native trigger list. |
 
 On PRs, runtime source and package/build/smoke inputs select device package smoke.
 Qualification planning, dispatch, scoring, baselines and publication select
@@ -88,10 +92,11 @@ require all thirteen packages and Graph Contracts. Main merges do not start the
 separate Spark qualification ladder.
 
 The protected inference workflow has its own qualification paths, separate from
-package smoke. PR qualification is manual: it runs only when the PR carries the
-`qualify` label. The workflow still triggers on matching paths so its intentional
-skip satisfies the `PR checks` aggregate. The label does not control package smoke.
-Manual qualification may queue behind another PR's atomic Spark pair; the PR
+package smoke. Matching PRs automatically run qualification on opening,
+synchronization, reopening and readiness for review; no `qualify` label is needed.
+Label changes do not restart or cancel qualification. Skipped admission or matrix
+jobs fail qualification and cannot satisfy `PR checks`.
+Qualification may queue behind another PR's atomic Spark pair; the PR
 budget waits for placement instead of failing fast. Relevant PRs retain
 same-repository/collaborator admission, a fresh-head check and all seven GPU
 smoke configurations. The credentialed controller runs only protected source.
@@ -126,7 +131,7 @@ just inference-render-report summary "$examples/examples.json" --run pr-pass
 
 The scheduled inference workflow runs the twelve nightly AgentX configurations
 and the seven PR-profile smoke configurations. The smoke runs use the same
-harness as labeled PRs. PR smoke, nightly, and release qualification allow
+harness as automatically qualified PRs. PR smoke, nightly, and release qualification allow
 experimental split admission, retain the actual admission status, and require
 the full checks for their profile.
 

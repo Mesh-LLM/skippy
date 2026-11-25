@@ -12,7 +12,10 @@ contract; no downstream product's workflow topology applies here.
   aggregate on the repository's selected Ubuntu runner. Protected-main code reads
   workflow/check/status results without executing candidate code or using lab
   credentials. Failures/cancellations fail it; pending or missing applicable work
-  stays pending; success/neutral/intentional skips pass. Producer starts and
+  stays pending; success/neutral/intentional skips pass except required inference
+  qualification, whose plan, summary and complete protected PR roster must
+  succeed in the latest run, using each job's latest execution (partial reruns
+  may inherit successful jobs). Producer starts and
   completions re-evaluate reruns; latest exact-head results govern. Add new PR
   producer workflows to its event list. Activate the one-check branch rule only
   after the controller reaches main and its real aggregate is verified; preserve
@@ -38,10 +41,9 @@ contract; no downstream product's workflow topology applies here.
   and failed pushes cannot hide untested inputs. If previous coverage cannot
   be verified, require both device smokes and Graph Contracts. The protected
   inference workflow uses its separate qualification paths in its native
-  trigger for the seven Spark configurations. PR qualification is manual: the
-  jobs run only when the PR carries the `qualify` label, while the workflow
-  still triggers on path matches so an intentionally skipped run satisfies
-  the `PR checks` aggregate; nightly and releases stay automatic. Main pushes
+  trigger for the seven Spark configurations. Matching PRs automatically run
+  qualification on each head without a label. Skipped admission or matrix jobs
+  cannot satisfy qualification or `PR checks`; nightly and releases stay automatic. Main pushes
   do not start the Spark ladder. `PR checks` reads protected trigger paths to determine
   which runs it expects. Hosted offline
   automation gates Quality canary and package jobs; Quality canary gates package
