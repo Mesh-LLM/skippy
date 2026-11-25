@@ -142,3 +142,18 @@ test('protected trigger and title admit ordinary fork CI even with base Depot en
     }
   }
 });
+
+
+test('approved fork Cargo cache keys and restores stay outside main and branch namespaces', () => {
+  const cache = readFileSync(join(__dirname, '../actions/cache/action.yml'), 'utf8');
+  const keys = cache.split('\n').filter(line => /cargo-(downloads|build)-v1-/.test(line));
+  assert.equal(keys.length, 4); // save and restore for downloads and build snapshots
+  for (const line of keys) {
+    const expression = line.match(/\$\{\{ (github.event_name.*?) \}\}/)[1];
+    const prefix = new Function('github', `return (${expression})`);
+    for (const [event_name, expected] of [
+      ['workflow_run', 'approved-fork-pr-'], ['pull_request_target', 'same-repo-pr-'],
+      ['pull_request', ''], ['push', ''], ['schedule', ''], ['workflow_dispatch', ''],
+    ]) assert.equal(prefix({ event_name }), expected, `${event_name}: ${line}`);
+  }
+});

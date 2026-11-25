@@ -93,6 +93,8 @@ proof that a maintainer approved it under some weaker setting.
    evidence that those tests ran. Branch routing and nightly/release profiles are
    unchanged. Dispatch credentials stay in the protected inference controller;
    candidate-running CI receives only read permissions and no publisher secrets.
+   Cargo download/build cache keys and restore prefixes use `approved-fork-pr-`,
+   separate from main/release and `same-repo-pr-`; sccache remains read-only.
 4. `PR checks` requires the protected controller's admission, CI gate and complete
    selected inference roster. Missing/pending work stays pending; skipped or failed
    required work cannot green the PR. Its source-bound workflow title identifies
