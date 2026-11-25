@@ -14,6 +14,32 @@ from lib import inference_ladder, inference_throughput
 from lib.jy_qualification import Pilot, PilotHTTPError, placement
 
 
+class BuildCacheTests(unittest.TestCase):
+    def test_native_source_separates_cargo_and_compiler_caches(self):
+        module = run_path(str(Path(__file__).resolve().parents[1] / "inference-build.py"))
+        inputs, build = module["source_inputs"], module["build"]
+        environments = []
+        with TemporaryDirectory() as directory:
+            root = Path(directory) / "inference-build-v1"
+            root.mkdir()
+            for native in ("a" * 40, "b" * 40):
+                capture = Mock(side_effect=lambda args: native if args == [
+                    "git", "rev-parse", "HEAD:llama_cpp"] else "same-toolchain")
+                with patch.dict(inputs.__globals__, capture=capture):
+                    identity = inputs("c" * 40)
+                self.assertEqual(identity["native"], native)
+                command = Mock(side_effect=RuntimeError("stop before compilation"))
+                with patch.dict(build.__globals__, command=command), \
+                        patch("shutil.which", return_value=None):
+                    with self.assertRaisesRegex(RuntimeError, "stop before compilation"):
+                        build("c" * 40, root, identity, "unused", root / "unused")
+                command.assert_called_once()
+                self.assertEqual(command.call_args.args[0], ["just", "inference-build-uncached"])
+                environments.append(command.call_args.kwargs["overrides"])
+        for key in ("CARGO_TARGET_DIR", "SCCACHE_DIR"):
+            self.assertNotEqual(environments[0][key], environments[1][key])
+
+
 class LadderTests(unittest.TestCase):
     sha = "0123456789abcdef0123456789abcdef01234567"
 
