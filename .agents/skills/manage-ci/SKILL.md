@@ -57,6 +57,11 @@ contract; no downstream product's workflow topology applies here.
   full CI and on releases. The short plan validates the whole manifest and
   excludes those five full-only jobs. The package jobs verify their toolchains.
   The lightweight CI gate checks the validated matrix and requires all applicable results.
+- `.github/workflows/fork-native.yml` handles approved fork CI completion using
+  protected code and the same CI/inference reusable workflows. The PR aggregate
+  requires its actual admission/CI/inference jobs, not a fork-controlled job name.
+  Its run title is the candidate SHA; GitHub records main in `workflow_run` run
+  metadata. Keep aggregate wake routing and concurrency bound to that title.
 - `.github/workflows/docs.yml` directly validates `docs-site/**` changes on PRs
   and deploys to beta on protected-main pushes. The protected PR aggregate
   expects this workflow when docs paths match. Tagged release validation calls
@@ -154,8 +159,15 @@ contract; no downstream product's workflow topology applies here.
   must verify the source repository and contributor's collaborator status using
   GitHub; a branch name or same-repository check alone is not a trust decision.
   Dispatch and admission policy run from protected code, never from PR source.
-  Fork and other untrusted PRs require isolated ephemeral execution and receive
-  no native lab dispatch credentials.
+  Fork PRs enter native execution only through `fork-native.yml`, after the
+  expected fork `pull_request` CI run succeeds under the repository's required
+  `all_external_contributors` workflow-approval policy. Maintainers must review
+  the complete candidate, including workflow/build changes, before approving:
+  approval admits it to the same native trust boundary as a trusted branch.
+  The protected controller checks producer path, repository, event, attempt,
+  source and live PR identity, and repeats selected CI rather than trusting fork
+  artifacts or test claims. Unapproved code remains on the isolated route.
+  Fork jobs receive no native lab dispatch or publication credentials.
 - Trusted native PR jobs may use the standard JY account and its existing host
   permissions. Do not pass publication credentials or other jobs' secrets. Use a
   fresh source-pinned workspace, read-only admitted model inputs, exclusive JY
