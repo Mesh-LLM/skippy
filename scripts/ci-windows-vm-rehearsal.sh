@@ -46,14 +46,15 @@ PY
 acquired=false
 cleanup() {
   local status=$?
+  local restored=true
   trap - EXIT INT TERM
   if [[ -d "$work/shared/output" ]]; then
     cp -a "$work/shared/output/." "$evidence/" || status=1
   fi
   if [[ "$acquired" == true ]]; then
-    "$manager" release --lease "$lease" --gpu "$gpu" --journal "$evidence/host-lifecycle.json" || status=1
+    "$manager" release --lease "$lease" --gpu "$gpu" --journal "$evidence/host-lifecycle.json" || { status=1; restored=false; }
   fi
-  if [[ "$status" == 0 && -d "$work" ]]; then
+  if [[ "$restored" == true && -d "$work" ]]; then
     rm -rf -- "$work" || status=1
   fi
   rm -f "$profile_file"

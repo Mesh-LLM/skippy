@@ -87,8 +87,8 @@ only that lease's labeled guests, restores original bindings and display service
 and verifies native GPU discovery before resuming claims. Operator configuration
 changes or recovery failures preserve quarantine.
 
-The golden Windows base remains on NFS. Disposable QCOW2 overlays and admitted
-payloads use local scratch space; only guest writes occupy the smaller host disk.
+The golden Windows base remains on NFS. Disposable QCOW2 overlays use local scratch where capacity permits; smaller
+hosts keep their writable overlays on NFS. The approved profile selects the path.
 The launcher requires 10 GiB free and stops below a 2 GiB reserve. Collect guest
 and lifecycle evidence before deleting a successful attempt. Host-specific
 configuration, Windows disks, signed drivers and the prepared launcher archive
@@ -119,3 +119,9 @@ directly; root inside a container with the explicit KVM device could. No account
 PCI binding, boot option, display service or existing Linux pool was changed.
 These probes establish topology, KVM availability and media-cache admission only.
 They do not establish GPU detach/reset/restore or Windows inference qualification.
+
+The cached OS pins a small bootstrap; per-run driver/task scripts are hash-admitted
+from the pinned public recipe. Bootstrap changes require a newly prepared base.
+Vendor installers are copied and checksum-verified on the guest local disk before
+execution. Detect the PCI PnP entity before installation and require successful
+driver initialization after reboot.
