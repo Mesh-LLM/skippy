@@ -39,8 +39,14 @@ variables contain host paths and a supplied driver checksum:
 }
 ```
 
+For APU hosts requiring their own VBIOS and a paired audio UEFI ROM, add
+`"firmware": "host"`. Each installed lifecycle manager supplies that machine's
+`rom`, `rom_sha256`, `audio_rom` and `audio_rom_sha256` fields through
+`describe --backend rocm --firmware`. Admission verifies the files before GPU
+acquisition and passes each path/hash as a distinct launcher argument.
+
 The site-local Windows cache root is `/mnt/model-store/ci/windows` in both labs.
-Base and attempt paths must resolve to NFS; a missing mount must not silently
+Base paths must resolve to NFS; a missing mount must not silently
 consume the RTX host's small root filesystem. Base preparation needs an admitted
 Windows 11 ISO and its trusted checksum, plus at least 64 GiB available on NFS.
 The public recipe's README documents preparation and driver provisioning.
@@ -87,6 +93,12 @@ only that lease's labeled guests, restores original bindings and display service
 and verifies native GPU discovery before resuming claims. Operator configuration
 changes or recovery failures preserve quarantine.
 
+ROCm guests use a multifunction PCIe root port and unload the assigned AMD GPU
+before shutdown. Host recovery requires the matching Windows disabled-device
+receipt before rebinding an initialized allocation to Linux. Missing release
+confirmation retains VFIO quarantine. After a host restart, recovery can resume
+only when original driver bindings and native discovery already succeed.
+
 The golden Windows base remains on NFS. Disposable QCOW2 overlays use local scratch where capacity permits; smaller
 hosts keep their writable overlays on NFS. The approved profile selects the path.
 The launcher requires 10 GiB free and stops below a 2 GiB reserve. Collect guest
@@ -125,3 +137,10 @@ from the pinned public recipe. Bootstrap changes require a newly prepared base.
 Vendor installers are copied and checksum-verified on the guest local disk before
 execution. Detect the PCI PnP entity before installation and require successful
 driver initialization after reboot.
+
+Actual Windows initialization passed on NVIDIA and on AMD with the paired
+firmware/PCIe configuration. The AMD return to Linux failed and the test host
+became unresponsive; its allocation remains quarantined. Windows ROCm rehearsal
+capacity is disabled while the guest release fix awaits hardware validation.
+Packaged inference and post-initialization cancellation/reset recovery remain
+required before adoption.

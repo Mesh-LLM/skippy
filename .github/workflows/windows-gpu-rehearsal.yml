@@ -14,7 +14,7 @@ env:
   SKIPPY_CI_PROFILE: full
   SKIPPY_ARTIFACT_SCOPE: windows-rehearsal
   SKIPPY_CI_SOURCE_REF: ${{ github.sha }}
-  WINDOWS_RECIPE_SHA: 04804d4123f65c42af381256d8b8e21486fe1412
+  WINDOWS_RECIPE_SHA: 5aa20bc5e79f459506187c7113fb62033a9e3b96
 jobs:
   task_syntax:
     name: Parse Windows smoke task
@@ -65,6 +65,9 @@ jobs:
               }
               if (!/^[a-f0-9]{64}$/.test(profile.driver_sha256)) {
                 throw new Error(`${backend}: driver_sha256 must pin the supplied Windows installer`);
+              }
+              if (profile.firmware !== undefined && profile.firmware !== 'host') {
+                throw new Error(`${backend}: firmware must select the installed host profile`);
               }
             }
   windows_cpu:

@@ -10,6 +10,42 @@ import sys
 from pathlib import Path
 
 
+def file_sha256(path):
+    state = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            state.update(block)
+    return state.hexdigest()
+
+
+def firmware_arguments(profile, backend):
+    if profile.get('firmware') is None:
+        return []
+    if profile['firmware'] != 'host':
+        raise ValueError('firmware must select the installed host profile')
+    value = json.loads(subprocess.run(
+        [profile['lifecycle_manager'], 'describe', '--backend', backend, '--firmware'],
+        check=True, capture_output=True, text=True,
+    ).stdout)
+    if not isinstance(value, dict) or set(value) not in (
+            {'rom', 'rom_sha256'}, {'rom', 'rom_sha256', 'audio_rom', 'audio_rom_sha256'}):
+        raise ValueError('host firmware must supply a pinned GPU ROM and optional paired audio ROM')
+    result = []
+    for name in ('rom', 'audio_rom'):
+        if name not in value:
+            continue
+        path, digest = value[name], value[name + '_sha256']
+        if (not isinstance(path, str) or not Path(path).is_absolute() or
+                any(c in path for c in ('\r', '\n', ',')) or
+                not isinstance(digest, str) or not re.fullmatch('[a-f0-9]{64}', digest)):
+            raise ValueError('invalid host firmware path or SHA-256')
+        if file_sha256(path) != digest:
+            raise ValueError('host firmware checksum mismatch')
+        result.extend(['--' + name.replace('_', '-'), path,
+                       '--' + name.replace('_', '-') + '-sha256', digest])
+    return result
+
+
 def main():
     profile = json.loads(os.environ["WINDOWS_HOST_PROFILE"])
     backend = os.environ["WINDOWS_BACKEND"]
@@ -45,16 +81,14 @@ def main():
         ).stdout.split()
         if set(filesystem) - {"autofs"} not in ({"nfs"}, {"nfs4"}):
             raise ValueError(f"{name} must be on the lab's mounted NFS cache")
-    driver = Path(profile["driver"])
-    state = hashlib.sha256()
-    with driver.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            state.update(block)
-    if state.hexdigest() != profile["driver_sha256"]:
+    if file_sha256(profile["driver"]) != profile["driver_sha256"]:
         raise ValueError("Windows GPU driver checksum mismatch")
+    firmware = firmware_arguments(profile, backend)
     Path(profile["work_root"]).mkdir(parents=True, exist_ok=True)
     for name in ("base", "driver", "driver_sha256", "gpu", "work_root", "lifecycle_manager"):
         print(profile[name])
+    for argument in firmware:
+        print(argument)
 
 
 if __name__ == "__main__":

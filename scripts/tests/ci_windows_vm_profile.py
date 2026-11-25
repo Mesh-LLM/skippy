@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -66,6 +67,39 @@ class WindowsHostProfile(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("checksum mismatch", result.stderr)
         self.assertFalse((self.root / "work").exists())
+
+    def set_firmware(self, value):
+        self.profile['firmware'] = 'host'
+        path = self.root / 'firmware.json'
+        path.write_text(json.dumps(value))
+        Path(self.profile['lifecycle_manager']).write_text('#!/bin/sh\ncat ' + shlex.quote(str(path)) + '\n')
+
+    def test_admits_host_specific_pinned_firmware_as_distinct_arguments(self):
+        rom = self.root / 'host GPU.rom'
+        rom.write_bytes(b'\x55\xaa' + b'host ROM fixture')
+        digest = hashlib.sha256(rom.read_bytes()).hexdigest()
+        self.set_firmware({'rom': str(rom), 'rom_sha256': digest,
+                           'audio_rom': str(rom), 'audio_rom_sha256': digest})
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines()[6:], ['--rom', str(rom), '--rom-sha256', digest,
+                                                        '--audio-rom', str(rom), '--audio-rom-sha256', digest])
+
+    def test_rejects_missing_host_firmware(self):
+        self.set_firmware({})
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('pinned GPU ROM', result.stderr)
+        self.assertFalse((self.root / 'work').exists())
+
+    def test_rejects_firmware_tampering_before_creating_work(self):
+        rom = self.root / 'host.rom'
+        rom.write_bytes(b'changed')
+        self.set_firmware({'rom': str(rom), 'rom_sha256': '0' * 64})
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('firmware checksum mismatch', result.stderr)
+        self.assertFalse((self.root / 'work').exists())
 
     def test_rejects_missing_lifecycle_manager(self):
         self.profile["lifecycle_manager"] = str(self.root / "absent")

@@ -11,7 +11,8 @@ profile_file=$(mktemp)
 trap 'rm -f "$profile_file"' EXIT
 python3 scripts/ci-windows-vm-profile.py > "$profile_file"
 mapfile -t profile < "$profile_file"
-test "${#profile[@]}" -eq 6
+[[ "${#profile[@]}" == 6 || "${#profile[@]}" == 10 || "${#profile[@]}" == 14 ]]
+firmware=("${profile[@]:6}")
 base=${profile[0]}
 driver=${profile[1]}
 driver_sha256=${profile[2]}
@@ -70,4 +71,4 @@ acquired=true
 "$manager" acquire --lease "$lease" --gpu "$gpu" --work "$work" --journal "$evidence/host-lifecycle.json"
 just --justfile "$recipe/justfile" run --image "$image" --base "$base" \
   --backend "$WINDOWS_BACKEND" --gpu "$gpu" --lease "$lease" \
-  --input "$input" --work "$work" --timeout 3600
+  --input "$input" --work "$work" --timeout 3600 "${firmware[@]}"
