@@ -12,7 +12,7 @@ contract; no downstream product's workflow topology applies here.
   aggregate on the repository's selected Ubuntu runner. Protected-main code reads
   workflow/check/status results without executing candidate code or using lab
   credentials. Failures/cancellations fail it; pending or missing applicable work
-  stays pending; success/neutral/intentional skips pass except required inference
+  stays pending, as does a fork run GitHub holds for maintainer workflow approval; success/neutral/intentional skips pass except required inference
   qualification, whose plan, summary and complete protected PR roster must
   succeed in the latest run, using each job's latest execution (partial reruns
   may inherit successful jobs). Producer starts and
