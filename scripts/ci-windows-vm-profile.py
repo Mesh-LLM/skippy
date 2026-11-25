@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,6 +30,16 @@ def main():
         raise ValueError("the host GPU lifecycle manager is not installed/executable")
     if not Path(profile["base"], "base.json").is_file():
         raise ValueError("Windows base image and its receipt must be prepared first")
+    for name in ("base", "work_root"):
+        path = Path(profile[name])
+        while not path.exists():
+            path = path.parent
+        filesystem = subprocess.run(
+            ["findmnt", "--noheadings", "--output", "FSTYPE", "--target", str(path)],
+            check=True, capture_output=True, text=True,
+        ).stdout.split()
+        if set(filesystem) - {"autofs"} not in ({"nfs"}, {"nfs4"}):
+            raise ValueError(f"{name} must be on the lab's mounted NFS cache")
     driver = Path(profile["driver"])
     state = hashlib.sha256()
     with driver.open("rb") as stream:
@@ -44,5 +55,5 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (OSError, ValueError, KeyError) as error:
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         sys.exit(str(error))

@@ -23,15 +23,30 @@ class WindowsHostProfile(unittest.TestCase):
         manager = self.root / "manager"
         manager.write_text("#!/bin/sh\nexit 1\n")
         manager.chmod(0o700)
+        (self.root / "bin").mkdir()
+        findmnt = self.root / "bin/findmnt"
+        findmnt.write_text('#!/bin/sh\nprintf "%s\\n" "${FIXTURE_FILESYSTEM:-nfs}"\n')
+        findmnt.chmod(0o700)
         self.profile = {"base": str(self.root / "base"), "driver": str(self.root / "driver.exe"),
                         "driver_sha256": hashlib.sha256(b"driver fixture").hexdigest(),
                         "gpu": "0000:01:00.0", "work_root": str(self.root / "work"),
                         "lifecycle_manager": str(manager)}
 
-    def invoke(self):
+    def invoke(self, **environment):
         return subprocess.run([sys.executable, str(SCRIPT)], text=True, capture_output=True,
                               env={**os.environ, "WINDOWS_HOST_PROFILE": json.dumps(self.profile),
-                                   "WINDOWS_BACKEND": "cuda"})
+                                   "WINDOWS_BACKEND": "cuda", "PATH": str(self.root / "bin") + os.pathsep + os.environ["PATH"],
+                                   **environment})
+
+    def test_rejects_local_disk_fallback(self):
+        result = self.invoke(FIXTURE_FILESYSTEM="ext4")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("mounted NFS", result.stderr)
+        self.assertFalse((self.root / "work").exists())
+
+    def test_accepts_nfs_behind_automount_stub(self):
+        result = self.invoke(FIXTURE_FILESYSTEM="autofs\nnfs")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_accepts_complete_pinned_profile(self):
         result = self.invoke()

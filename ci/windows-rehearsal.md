@@ -29,19 +29,50 @@ variables contain host paths and a supplied driver checksum:
 
 ```json
 {
-  "base": "/var/lib/mesh-windows/base-v1",
-  "driver": "/var/lib/mesh-windows/media/vendor-windows-driver.exe",
+  "base": "/mnt/model-store/ci/windows/bases/base-v1",
+  "driver": "/mnt/model-store/ci/windows/media/vendor-windows-driver.exe",
   "driver_sha256": "<trusted SHA-256>",
   "gpu": "0000:01:00.0",
-  "work_root": "/var/lib/mesh-windows/attempts",
+  "work_root": "/mnt/model-store/ci/windows/attempts",
   "lifecycle_manager": "/usr/local/libexec/windows-vm-gpu"
 }
 ```
 
-Paths are illustrative. Base preparation needs a supplied Windows 11 ISO and its
-trusted checksum, plus at least 64 GiB available for disk preparation/execution.
+The site-local Windows cache root is `/mnt/model-store/ci/windows` in both labs.
+Base and attempt paths must resolve to NFS; a missing mount must not silently
+consume the RTX host's small root filesystem. Base preparation needs an admitted
+Windows 11 ISO and its trusted checksum, plus at least 64 GiB available on NFS.
 The public recipe's README documents preparation and driver provisioning.
 Missing configuration fails admission rather than creating successful skips.
+
+## Site-local installation media cache
+
+Use each lab's existing NFS export, with the same relative directory layout:
+
+| Network | Mounted store | Windows cache |
+| --- | --- | --- |
+| `dan-lab` | `10.1.1.10:/var/nfs/shared/Models` at `/mnt/model-store` | `/mnt/model-store/ci/windows` |
+| `james-lab` | `10.2.1.10:/var/nfs/shared/Models` at `/mnt/model-store` | `/mnt/model-store/ci/windows` |
+
+The roots contain `media`, `bases` and `attempts` directories. They keep Windows
+media apart from the existing `huggingface` cache. The ISO is admitted under
+`media/sha256/<trusted-sha256>/windows11.iso` on both NFS servers. Prepared base
+disks are reused read-only; every run gets its own attempt directory.
+
+Microsoft's consumer ISO links expire after 24 hours. Use a fresh browser-generated
+link only when populating a lab cache; retain no URL in source, profile variables,
+receipts or CI logs. The public recipe's `cache-iso` command uses curl redirects
+and resume, verifies the selected ISO checksum and atomically publishes it.
+Subsequent preparation/CI reads cached bytes without requiring the link. A copy
+transferred between labs must be admitted against the same trusted checksum.
+
+Example, run once in each lab with a private temporary URL file:
+
+```sh
+just --justfile windows/justfile cache-iso \
+  --cache /mnt/model-store/ci/windows --require-nfs \
+  --sha256 "$WINDOWS_ISO_SHA256" --url-file /private/windows-iso-url.txt
+```
 
 ## Host lifecycle prerequisite
 
