@@ -327,11 +327,11 @@ def execute():
     plan = native_plan()
     entry = BACKENDS[plan["backend"]]
     built = read_json(BUILT)
-    if [(entry["label"], entry["sha"]) for entry in built] != [(arm["label"], arm["sha"]) for arm in plan["arms"]]:
+    if [(arm["label"], arm["sha"]) for arm in built] != [(arm["label"], arm["sha"]) for arm in plan["arms"]]:
         raise ValueError("built arms differ from the admitted plan")
-    for entry in built:
-        if digest(Path(entry["binary"])) != entry["binary_sha256"]:
-            raise ValueError(f'{entry["label"]} binary changed after it was built')
+    for arm in built:
+        if digest(Path(arm["binary"])) != arm["binary_sha256"]:
+            raise ValueError(f'{arm["label"]} binary changed after it was built')
     output = Path(os.environ["JIANYANG_ARTIFACT_DIR"])
     output.mkdir(parents=True, exist_ok=True)
     for log in WORK.glob("build-*.log"):
