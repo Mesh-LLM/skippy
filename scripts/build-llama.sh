@@ -322,7 +322,11 @@ fi
 # embedded source/build paths so the archived link closure does not retain a
 # producer-local workspace path.
 if [[ "$LLAMA_LINK_MODE" == "static" ]]; then
-  PREFIX_MAP_FLAGS="-ffile-prefix-map=$ROOT=/skippy -fdebug-prefix-map=$ROOT=/skippy -fmacro-prefix-map=$ROOT=/skippy"
+  # CMake splits CMAKE_<LANG>_FLAGS on spaces without shell quoting, so a
+  # workspace under a path such as "Library/Application Support" would hand
+  # clang the map's path as several arguments and fail the compiler test.
+  # Each flag carries its own quotes inside the CMake variable instead.
+  PREFIX_MAP_FLAGS="\"-ffile-prefix-map=$ROOT=/skippy\" \"-fdebug-prefix-map=$ROOT=/skippy\" \"-fmacro-prefix-map=$ROOT=/skippy\""
   case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*)
       # Setting CMAKE_<LANG>_FLAGS replaces CMake's platform defaults, which
