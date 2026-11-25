@@ -51,6 +51,31 @@ class DeviceSmokeContract(unittest.TestCase):
 
 
 class TargetPlannerContract(unittest.TestCase):
+    def test_rocm_scheduling_policy_is_validated_even_in_the_short_profile(self):
+        original = json.loads((SCRIPTS.parent / "ci/targets.json").read_text())
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "ci").mkdir()
+            (root / "scripts").mkdir()
+            shutil.copyfile(SCRIPTS / "ci-plan.sh", root / "scripts/ci-plan.sh")
+            (root / "Justfile").write_text("ci-plan:\n    @bash scripts/ci-plan.sh\n")
+            for profile in ("pr", "full"):
+                for field, value in (("full_only", False), ("full_only", "true"),
+                                     ("full_only", None), ("validation", "artifact")):
+                    with self.subTest(profile=profile, field=field, value=value):
+                        manifest = json.loads(json.dumps(original))
+                        row = next(row for row in manifest["runtimes"] if row["id"] == "linux-x86_64-rocm")
+                        if value is None:
+                            row.pop(field)
+                        else:
+                            row[field] = value
+                        (root / "ci/targets.json").write_text(json.dumps(manifest))
+                        result = subprocess.run(["just", "ci-plan"], cwd=root,
+                            env={**os.environ, "SKIPPY_CI_PROFILE": profile, "GITHUB_OUTPUT": ""},
+                            capture_output=True, text=True)
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("runtime", result.stderr)
+
     def test_windows_launches_bash_by_its_resolved_path(self):
         bash = r"C:\Program Files\Git\usr\bin\bash.exe"
         plan = '{"hosts":{"include":[]},"runtimes":{"include":[]}}'

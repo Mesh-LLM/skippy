@@ -53,9 +53,15 @@ contract; no downstream product's workflow topology applies here.
   uses two device jobs and checks the three remaining CUDA archives on hosted
   compiler-image runners.
   Tagged releases add device smoke on those exact archives, including x64 CUDA 13.
-  Windows x64 CPU, CUDA and ROCm plus Linux x64 ROCm require archive smoke in
-  full CI and on releases. The short plan validates the whole manifest and
-  excludes those five full-only jobs. The package jobs verify their toolchains.
+  Windows x64 CPU, CUDA and ROCm require archive smoke in full CI and on
+  releases. Linux x64 ROCm builds and smokes on the native JY ROCm pool using
+  the digest-pinned compiler container and the CPU job's verified CLI. Its
+  inference evidence is embedded in the tested product; no separate smoke
+  job or duplicate CLI build is needed. Restore candidate source before HIP
+  preflight, retain BLAS device kernels, normalize cached numeric owners, and
+  restore native workspace ownership after cache post hooks. The short plan
+  validates the whole manifest and excludes those five `full_only` jobs
+  independently of their smoke evidence policy. The package jobs verify their toolchains.
   The lightweight CI gate checks the validated matrix and requires all applicable results.
 - `.github/workflows/docs.yml` directly validates `docs-site/**` changes on PRs
   and deploys to beta on protected-main pushes. The protected PR aggregate

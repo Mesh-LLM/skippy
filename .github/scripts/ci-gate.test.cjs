@@ -29,7 +29,7 @@ function results({ automation = true, code = true, packages = false, native = fa
   needs.changes.outputs = { automation: String(automation), code: String(code), packages: String(packages), native: String(native), hosted_requires_native: String(hostedRequiresNative) };
   if (selected) needs.plan.outputs = {
     profile: full ? 'full' : 'pr',
-    runtimes: JSON.stringify({ include: full ? rows : rows.filter(row => row.validation !== 'artifact') }),
+    runtimes: JSON.stringify({ include: full ? rows : rows.filter(row => !row.full_only) }),
   };
   return needs;
 }
@@ -98,7 +98,7 @@ test('crates.io publishes from the verified stable tag when enabled', () => {
   assert.match(crates, /just release-crates publish "\$RELEASE_TAG" "\$SOURCE_SHA"/);
 });
 
-test('PR plans exclude full-only archive targets but still require both device packages', () => {
+test('PR plans exclude full-only targets independently of their smoke evidence', () => {
   const plan = profile => JSON.parse(execFileSync('just', ['ci-plan'], {
     cwd: join(__dirname, '../..'), encoding: 'utf8',
     env: { ...process.env, SKIPPY_CI_PROFILE: profile, GITHUB_OUTPUT: '' },
@@ -108,12 +108,17 @@ test('PR plans exclude full-only archive targets but still require both device p
   assert.equal(pr.length, 8);
   assert.equal(full.length, 13);
   assert.ok(pr.every(row => row.validation === 'inference'));
-  assert.deepEqual(full.filter(row => row.validation !== 'artifact'), pr);
+  assert.deepEqual(full.filter(row => !row.full_only), pr);
+  const rocm = full.find(row => row.id === 'linux-x86_64-rocm');
+  assert.equal(rocm.validation, 'inference');
+  assert.equal(rocm.full_only, true);
+  assert.equal(full.filter(row => row.validation === 'artifact').length, 4);
+  assert.ok(!pr.some(row => row.id === rocm.id));
   const release = results({ full: true, release: true });
   release.plan.outputs.runtimes = JSON.stringify({ include: full });
   assert.doesNotThrow(() => gate(release, true));
   // An eight-package controller must reject a thirteen-package candidate.
-  for (const row of full.filter(row => row.validation === 'artifact')) {
+  for (const row of full.filter(row => row.full_only)) {
     delete release['package_' + row.id.replaceAll('-', '_')];
   }
   assert.throws(() => gate(release, true), /active runtime matrix/);

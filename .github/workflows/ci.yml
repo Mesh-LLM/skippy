@@ -665,10 +665,12 @@ jobs:
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
   package_linux_x86_64_rocm:
-    name: Build and verify archive · Linux x64 ROCm
+    name: Build, package, and smoke · Linux x64 ROCm
     needs: [plan, quality, package_linux_x86_64_cpu]
     if: needs.plan.outputs.profile == 'full'
-    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    runs-on:
+      group: jy-rnr_gsxt2m73mgpcbbh
+      labels: [self-hosted, skippy-ephemeral, Linux, X64, rocm]
     permissions:
       contents: read
       packages: read
@@ -677,26 +679,41 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+      options: --user 0 --device=/dev/kfd --device=/dev/dri --cpus=8 --memory=32g --pids-limit=4096
     timeout-minutes: 240
     env:
       SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
-      CMAKE_BUILD_PARALLEL_LEVEL: '2'
-      CARGO_BUILD_JOBS: '2'
+      CMAKE_BUILD_PARALLEL_LEVEL: '8'
+      CARGO_BUILD_JOBS: '8'
       LD_LIBRARY_PATH: /opt/rocm/lib
+      SKIPPY_CI_ROCM_DEVICE_SMOKE: '1'
+      TAR_OPTIONS: --no-same-owner
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           persist-credentials: false
+      - uses: ./.github/actions/rocm-workspace
+      - name: Trust the host-owned checkout inside the job container
+        shell: bash
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: ./.github/actions/ci-package
         with:
           runtime-id: linux-x86_64-rocm
           host-id: linux-x86_64
-          smoke: artifact
+          smoke: inference
           containerized: 'true'
           compiler-image-digest: ${{ needs.plan.outputs.rocm_digest }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
+      - name: Upload ROCm preflight evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-rocm-device
+          path: target/ci-evidence/rocm-preflight.log
+          if-no-files-found: warn
+          retention-days: 14
   package_linux_aarch64_cpu:
     name: Build, package, and smoke · Linux ARM64 CPU
     needs: [plan, quality]
