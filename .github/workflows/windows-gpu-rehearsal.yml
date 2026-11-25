@@ -14,7 +14,7 @@ env:
   SKIPPY_CI_PROFILE: full
   SKIPPY_ARTIFACT_SCOPE: windows-rehearsal
   SKIPPY_CI_SOURCE_REF: ${{ github.sha }}
-  WINDOWS_RECIPE_SHA: 0f96c11a3f1fd57665db26398d1f7a1aea9871aa
+  WINDOWS_RECIPE_SHA: 4c1cbd24d0a1b751a52913ea10f54f9b2c33b774
 jobs:
   task_syntax:
     name: Parse Windows smoke task

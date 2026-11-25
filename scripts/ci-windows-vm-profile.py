@@ -21,6 +21,11 @@ def main():
             raise ValueError(f"invalid or missing Windows profile field: {name}")
     if not re.fullmatch(r"[a-f0-9]{64}", profile["driver_sha256"]):
         raise ValueError("driver SHA-256 must pin the supplied Windows installer")
+    if profile["gpu"] == "auto":
+        profile["gpu"] = subprocess.run(
+            [profile["lifecycle_manager"], "describe", "--backend", backend],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
     if not re.fullmatch(r"[a-f0-9]{4}:[a-f0-9]{2}:[a-f0-9]{2}\.[0-7]", profile["gpu"]):
         raise ValueError("GPU must be a full PCI address")
     for name in ("base", "driver", "work_root", "lifecycle_manager"):
@@ -30,7 +35,7 @@ def main():
         raise ValueError("the host GPU lifecycle manager is not installed/executable")
     if not Path(profile["base"], "base.json").is_file():
         raise ValueError("Windows base image and its receipt must be prepared first")
-    for name in ("base", "work_root"):
+    for name in ("base",):
         path = Path(profile[name])
         while not path.exists():
             path = path.parent

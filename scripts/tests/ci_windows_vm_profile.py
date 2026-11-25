@@ -53,6 +53,13 @@ class WindowsHostProfile(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(result.stdout.splitlines()), 6)
 
+    def test_resolves_gpu_from_installed_host_approval(self):
+        self.profile['gpu'] = 'auto'
+        Path(self.profile['lifecycle_manager']).write_text('#!/bin/sh\nprintf "0000:01:00.0\\n"\n')
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines()[3], '0000:01:00.0')
+
     def test_rejects_bad_checksum_before_creating_work(self):
         self.profile["driver_sha256"] = "0" * 64
         result = self.invoke()

@@ -33,8 +33,8 @@ variables contain host paths and a supplied driver checksum:
   "base": "/mnt/model-store/ci/windows/bases/base-v1",
   "driver": "/mnt/model-store/ci/windows/media/vendor-windows-driver.exe",
   "driver_sha256": "<trusted SHA-256>",
-  "gpu": "0000:01:00.0",
-  "work_root": "/mnt/model-store/ci/windows/attempts",
+  "gpu": "auto",
+  "work_root": "/var/tmp/mesh-windows-attempts",
   "lifecycle_manager": "/usr/local/libexec/windows-vm-gpu"
 }
 ```
@@ -74,22 +74,29 @@ just --justfile windows/justfile cache-iso \
 
 ## Host lifecycle prerequisite
 
-The public launcher consumes VFIO devices and does not unbind host GPUs itself.
-The host manager is **not implemented or installed by this rehearsal PR**. It is
-an explicit prerequisite that must be proved on both GPU types before activation.
-Its adapter accepts `acquire|release --lease ID --gpu BDF --journal PATH`.
+The public recipe now supplies `host.py` and `install-host.sh`. The installed
+root helper accepts `acquire|release --lease ID --gpu BDF --journal PATH` and
+`describe --backend cuda|rocm`. Set `gpu` to `auto` to resolve the operator-approved
+PCI address from that host's installed configuration.
 
-Acquisition must verify that the current JY reservation exclusively owns the
-host, persist original bindings before changes, refuse active GPU users and
-unrelated IOMMU devices, and bind the intended GPU/audio functions to VFIO.
-Release must stop any surviving guest, restore every original binding and verify
-native GPU discovery. Partial acquisition must be releasable. Cleanup failure
-must quarantine the allocation in JY before returning; the agent must reconcile
-the crash journal after cancellation, restart or lease expiry before new claims.
-A shell trap alone does not establish that guarantee.
+The helper verifies a connected single-slot scheduler and the current native
+reservation or accepted GitHub worker. Before changing a binding it journals
+original drivers and persists `jy off`. An independent root systemd timer
+reconciles abandoned or expired leases after cancellation and reboot. It stops
+only that lease's labeled guests, restores original bindings and display services,
+and verifies native GPU discovery before resuming claims. Operator configuration
+changes or recovery failures preserve quarantine.
 
-Until that manager, prepared Windows bases and vendor installers are available,
-the workflow is a draft rehearsal and cannot establish Windows qualification.
+The golden Windows base remains on NFS. Disposable QCOW2 overlays and admitted
+payloads use local scratch space; only guest writes occupy the smaller host disk.
+The launcher requires 10 GiB free and stops below a 2 GiB reserve. Collect guest
+and lifecycle evidence before deleting a successful attempt. Host-specific
+configuration, Windows disks, signed drivers and the prepared launcher archive
+remain operator-controlled artifacts outside Git.
+
+Installation and offline checks do not establish GPU qualification. Both actual
+Windows GPU smokes and cancellation/reset restoration must succeed before the
+rehearsal is considered ready.
 
 ## Initial host probes
 

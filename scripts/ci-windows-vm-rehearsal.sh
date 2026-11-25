@@ -53,6 +53,9 @@ cleanup() {
   if [[ "$acquired" == true ]]; then
     "$manager" release --lease "$lease" --gpu "$gpu" --journal "$evidence/host-lifecycle.json" || status=1
   fi
+  if [[ "$status" == 0 && -d "$work" ]]; then
+    rm -rf -- "$work" || status=1
+  fi
   rm -f "$profile_file"
   exit "$status"
 }
