@@ -15,6 +15,7 @@ SKIPPY = "https://github.com/Mesh-LLM/skippy.git"
 LLAMA = "https://github.com/ggml-org/llama.cpp.git"
 SHA = re.compile(r"[0-9a-f]{40}")
 PULL_REQUEST = re.compile(r"pr:([1-9][0-9]{0,6})")
+BRANCH = re.compile(r"branch:([A-Za-z0-9._/-]{1,200})")
 NODE = re.compile(r"[A-Za-z0-9._-]{1,64}")
 RESERVE_GIB = 16
 MAX_ROUNDS = 9
@@ -62,6 +63,12 @@ def pull_request_number(ref):
     """`pr:N` names the head of pull request N; any other ref names a commit on main."""
     match = PULL_REQUEST.fullmatch(ref)
     return int(match[1]) if match else None
+
+
+def branch_name(ref):
+    """`branch:NAME` names the head of a branch of this repository, measured as off main."""
+    match = BRANCH.fullmatch(ref)
+    return match[1] if match else None
 
 
 def pull_request_head(pull, repository):

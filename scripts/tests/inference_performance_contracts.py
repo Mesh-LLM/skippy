@@ -69,11 +69,23 @@ class PlanTests(unittest.TestCase):
                 return pull if path.endswith("/pulls/130") else {"permission": permission}
             with patch.dict(resolve.__globals__, github=github):
                 if permission in {"write", "maintain", "admin"}:
-                    self.assertEqual(resolve("pr:130"), (self.candidate, 130))
+                    self.assertEqual(resolve("pr:130"), (self.candidate, 130, None))
                 else:
                     with self.assertRaisesRegex(ValueError, "collaborator"):
                         resolve("pr:130")
             self.assertEqual(calls[-1], "repos/Mesh-LLM/skippy/collaborators/author/permission")
+
+    def test_an_arm_can_be_a_branch_of_this_repository(self):
+        resolve = run_path(str(Path(__file__).resolve().parents[1] / "inference-performance.py"))["resolve"]
+        calls = []
+        def github(path):
+            calls.append(path)
+            return {"commit": {"sha": self.candidate}}
+        with patch.dict(resolve.__globals__, github=github):
+            self.assertEqual(resolve("branch:team/gen-ai"), (self.candidate, None, "team/gen-ai"))
+        self.assertEqual(calls, ["repos/Mesh-LLM/skippy/branches/team%2Fgen-ai"])
+        for ref in ("branch:", "branch:a b", "branches:x", "pr:130"):
+            self.assertIsNone(performance_plan.branch_name(ref))
 
     def test_every_arm_leads_one_round(self):
         arm_list = performance_plan.arms(self.candidate, self.baseline, self.pin)
@@ -372,8 +384,12 @@ class ReportTests(unittest.TestCase):
                   "diagnostic": {"samples": [{**measured, "round": None}]}}
         row, pulled = performance_report.rows(record, shape, {"b" * 40: "2026-11-20T10:16:30Z"}, "job_1",
                                               {"candidate": 130, "baseline": None})
+        branched, _ = performance_report.rows(record, shape, {}, "job_1", {"candidate": None, "baseline": None},
+                                              {"baseline": "team/gen-ai", "candidate": None})
+        self.assertEqual((branched["on_main"], branched["branch"], branched["pull_request"]),
+                         (False, "team/gen-ai", None))
         self.assertEqual((row["sha"], row["committed_at"], row["round"]), ("b" * 40, "2026-11-20T10:16:30Z", 2))
-        self.assertEqual((row["on_main"], row["pull_request"]), (True, None))
+        self.assertEqual((row["on_main"], row["pull_request"], row["branch"]), (True, None, None))
         self.assertEqual((pulled["sha"], pulled["on_main"], pulled["pull_request"]), ("a" * 40, False, 130))
         self.assertEqual((row["lanes"], row["concurrency"], row["depth"]),
                          (server["lanes"], point["concurrency"], point["depth"]))

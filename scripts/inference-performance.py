@@ -26,7 +26,7 @@ from lib.inference_inputs import fixture
 from lib.jy_qualification import ORIGIN, Pilot
 from lib.performance_arms import build, capabilities, may_reject, server_args, supports
 from lib.performance_load import run_point, tokenizer
-from lib.performance_plan import (SCENARIO, arms, job_spec, models, nodes, pull_request_head,
+from lib.performance_plan import (SCENARIO, arms, branch_name, job_spec, models, nodes, pull_request_head,
                                   pull_request_number, round_order, scenario)
 from lib.performance_report import markdown, rows, summarize
 
@@ -56,23 +56,30 @@ def resolve_main(ref):
 
 
 def resolve(ref):
-    """A commit on main, or with `pr:N` an open pull request's head, as (commit, N or None)."""
+    """A commit on main, with `pr:N` an open pull request's head, or with `branch:NAME` a branch's head, as
+    (commit, N or None, NAME or None). Only collaborators with write access can push a branch here, which is
+    the same bar `pr:N` sets for its author."""
+    branch = branch_name(ref)
+    if branch is not None:
+        return github(f"repos/{REPO}/branches/{quote(branch, safe='')}")["commit"]["sha"], None, branch
     number = pull_request_number(ref)
     if number is None:
-        return resolve_main(ref), None
+        return resolve_main(ref), None, None
     pull = github(f"repos/{REPO}/pulls/{number}")
     sha = pull_request_head(pull, REPO)
     login = pull["user"]["login"]
     permission = github(f"repos/{REPO}/collaborators/{quote(login, safe='')}/permission")["permission"]
     if permission not in {"admin", "maintain", "write"}:
         raise ValueError("native performance PR author must be a repository collaborator with write access")
-    return sha, number
+    return sha, number, None
 
 
-def off_main(pull_requests):
-    """A line for each arm taken from a pull request, so no report reads as main's."""
-    return "".join(f"The {label} is the head of #{number}, not a commit on main.\n\n"
-                   for label, number in pull_requests.items() if number is not None)
+def off_main(pull_requests, branches=None):
+    """A line for each arm taken from a pull request or a branch, so no report reads as main's."""
+    return "".join([*(f"The {label} is the head of #{number}, not a commit on main.\n\n"
+                      for label, number in pull_requests.items() if number is not None),
+                    *(f"The {label} is the head of branch {name}, not a commit on main.\n\n"
+                      for label, name in (branches or {}).items() if name is not None)])
 
 
 def reference_pin(sha):
@@ -88,9 +95,10 @@ def committed_at(arm_list):
 
 def admit(evidence):
     harness = capture(["git", "rev-parse", "HEAD"]).strip()
-    candidate, candidate_pull = resolve(os.environ["CANDIDATE"])
-    baseline, baseline_pull = resolve(os.environ["BASELINE"])
+    candidate, candidate_pull, candidate_branch = resolve(os.environ["CANDIDATE"])
+    baseline, baseline_pull, baseline_branch = resolve(os.environ["BASELINE"])
     pull_requests = {"candidate": candidate_pull, "baseline": baseline_pull}
+    branches = {"candidate": candidate_branch, "baseline": baseline_branch}
     with_reference = os.environ.get("REFERENCE", "true") == "true"
     trace = os.environ.get("TRACE", "false") == "true"
     arm_list = arms(candidate, baseline, reference_pin(candidate) if with_reference else None)
@@ -103,10 +111,11 @@ def admit(evidence):
     evidence.mkdir(parents=True, exist_ok=True)
     write_json(evidence / "plan.json", {"harness": harness, "arms": arm_list, "models": keys,
                                         "rounds": rounds, "trace": trace, "pull_requests": pull_requests,
+                                        "branches": branches,
                                         "committed_at": committed_at(arm_list), "jobs": jobs})
     for arm in arm_list:
         print(f'{arm["label"]}: {arm["kind"]} {arm["sha"]}')
-    print(off_main(pull_requests), end="")
+    print(off_main(pull_requests, branches), end="")
     print(f"{len(jobs)} job(s), {len(keys)} model(s), {rounds} round(s); nothing has run yet")
 
 
@@ -169,7 +178,8 @@ def collect(pilot, job, plan, label, evidence):
     write_json(evidence / f"{label}-performance.json", result)
     (evidence / f"{label}-rows.jsonl").write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n"
-                for row in rows(result, scenario(), plan["committed_at"], job["id"], plan["pull_requests"])),
+                for row in rows(result, scenario(), plan["committed_at"], job["id"], plan["pull_requests"],
+                                     plan.get("branches"))),
         encoding="utf-8")
     if plan["trace"]:
         download(pilot, run_id, "traces.tar.gz", evidence / f"{label}-traces.tar.gz")
@@ -203,7 +213,7 @@ def dispatch(evidence):
             failures.append(f'{spec["label"]}: {job["status"]}')
             continue
         reports.append(collect(pilot, job, plan, spec["label"], evidence))
-    report = off_main(plan["pull_requests"]) + "\n".join(reports)
+    report = off_main(plan["pull_requests"], plan.get("branches")) + "\n".join(reports)
     (evidence / "summary.md").write_text(report, encoding="utf-8")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:

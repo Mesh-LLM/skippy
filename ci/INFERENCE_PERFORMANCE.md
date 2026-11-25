@@ -18,8 +18,8 @@ gh workflow run inference-performance.yml -f candidate=main \
 
 | input | meaning |
 |---|---|
-| `candidate` | ref or SHA on main to measure, or `pr:N` for the head of open pull request N; default `main` |
-| `baseline` | ref, SHA or `pr:N` to compare against; passing the candidate again gives an A/A noise run |
+| `candidate` | ref or SHA on main to measure, `pr:N` for the head of open pull request N, or `branch:NAME` for a branch's head; default `main` |
+| `baseline` | ref, SHA, `pr:N` or `branch:NAME` to compare against; passing the candidate again gives an A/A noise run |
 | `reference` | add llama.cpp's `llama-server` at the candidate's `llama_cpp/upstream.txt` pin; default on |
 | `models` | `ci/inference-ladder.json` ids; shards are the hash-pinned files in `ci/inference-artifacts.json` |
 | `nodes` | Metal nodes, one job each; empty runs one job on any Metal Mac with room for the largest model plus 16 GiB |
@@ -28,7 +28,9 @@ gh workflow run inference-performance.yml -f candidate=main \
 
 Both commits must be on protected main, unless an arm is `pr:N`: the head of an
 open pull request from this repository, never a fork's, authored by a collaborator with write access, so only code that could
-already run on trusted CI reaches the lab. Such an arm is reported, and stored,
+already run on trusted CI reaches the lab. An arm can also be `branch:NAME`, the head of a
+branch of this repository, for a line of work that tracks main without a pull request: only
+collaborators with write access can push one, the bar `pr:N` sets for its author. Such an arm is reported, and stored,
 as not on main; with `pr:N` as the baseline, a change stacked on another pull
 request is measured against that one alone. The controller and the harness
 always come from main, so every arm is driven by the same scripts and scenario,
@@ -121,7 +123,8 @@ committed, the model revision, the server's lanes and pool, the point's
 concurrency, depth and token counts, the round, and each metric as its own column.
 A rejected point keeps its row, with null metrics and the `rejected` entry as JSON text.
 An arm taken from a pull request has `on_main` false and its number in
-`pull_request`; llama.cpp's server has `on_main` null. Rows from every run can
+`pull_request`; one taken from a branch has `on_main` false and its name in `branch`;
+llama.cpp's server has `on_main` null. Rows from every run can
 share one table. With DuckDB, over a folder per run, main's history alone:
 
 ```sql
