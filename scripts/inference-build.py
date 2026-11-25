@@ -35,6 +35,8 @@ def source_inputs(sha):
         "cuda": capture(["nvcc", "--version"]), "cxx": capture(["c++", "--version"]),
         "cmake": capture(["cmake", "--version"]), "backend": "cuda", "architectures": "121",
         "link": "static", "debug": 0, "environment": environment,
+        # The llama.cpp pin and patch queues: builds of different native sources must not share output.
+        "native": capture(["git", "rev-parse", "HEAD:llama_cpp"]).strip(),
     }
 
 
@@ -51,7 +53,8 @@ def build(sha, root, inputs, key, cached):
     with lock(cargo_root / f"{dependency_key}.lock"):
         cargo_target = cargo_root / dependency_key
         environment = {
-            "CARGO_TARGET_DIR": str(cargo_target), "SCCACHE_DIR": str(root.parent / "compiler"),
+            "CARGO_TARGET_DIR": str(cargo_target),
+            "SCCACHE_DIR": str(root.parent / f"compiler-{inputs['native'][:12]}"),
             "SCCACHE_BASEDIRS": str(Path.cwd()), "CARGO_INCREMENTAL": "0", "SCCACHE_SERVER_PORT": "4227",
             "SCCACHE_CACHE_SIZE": "20G", "CARGO_PROFILE_DEV_DEBUG": "0",
         }
