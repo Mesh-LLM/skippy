@@ -67,10 +67,6 @@ on:
         default: pr
   workflow_call:
     inputs:
-      approved_fork_pr:
-        description: PR number supplied by the protected approved-fork controller.
-        type: string
-        default: ''
       release_candidate:
         description: Exact version commit staged by the protected Release workflow.
         type: string
@@ -86,17 +82,15 @@ permissions:
   pull-requests: read
   statuses: write
 concurrency:
-  group: inference-${{ github.event.pull_request.number || inputs.approved_fork_pr || github.ref }}-${{ github.event_name }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request_target' || github.event_name == 'workflow_run' }}
+  group: inference-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
 jobs:
   plan:
-    # Forks wait for the approved-fork controller, not this ungated target event.
-    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.id == github.event.repository.id
     # Matching PR paths always require admission and native qualification.
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 20
     outputs:
-      source: ${{ steps.admission.outputs.source || github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.sha }}
+      source: ${{ steps.admission.outputs.source || github.event.pull_request.head.sha || github.sha }}
       profile: ${{ steps.admission.outputs.profile || 'pr' }}
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
@@ -112,7 +106,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           QUALIFICATION_PROFILE: ${{ inputs.profile || 'release' }}
           RELEASE_CANDIDATE: ${{ inputs.release_candidate }}
-          APPROVED_FORK_PR: ${{ inputs.approved_fork_pr }}
         run: just inference-admit
       - id: matrix
         env:
@@ -212,7 +205,7 @@ jobs:
             just inference-publish-nightly target/ci-evidence/nightly-inference
   summary:
     needs: [plan, qualification, nightly_publish]
-    if: always() && needs.plan.result != 'skipped'
+    if: always()
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
@@ -220,7 +213,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ needs.plan.outputs.source || github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.sha }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source || github.event.pull_request.head.sha || github.sha }}
           PROFILE: ${{ needs.plan.outputs.profile }}
           PLAN: ${{ needs.plan.result }}
           RESULT: ${{ needs.qualification.result }}
