@@ -174,15 +174,16 @@ on Ubuntu 24.04 for compatibility with the compiler images. Each backend
 job waits for its matching CPU job. Linux x64 CUDA 12 and 13 and Linux ARM64
 CUDA 12 run on Ubuntu in the corresponding compiler images and check the
 packaged CLI and runtime artifact without a device. Linux ARM64 CUDA 13 and
-macOS Metal run device smoke on ephemeral JY runners. Tagged
-releases add device smoke for the other three CUDA packages using their exact
+macOS Metal run device smoke on ephemeral JY runners. Full CI also builds and
+smokes Linux x64 ROCm on the JY ROCm pool, reusing the CPU job's verified CLI.
+Tagged releases add device smoke for the other three CUDA packages using their exact
 archives. JY hardware jobs declare literal runner groups and labels. The routine
 CUDA device job uses the existing ARM64 CUDA 13 runner group to use the larger
 Spark pool; x64 CUDA 13 device coverage remains required for releases. The full
 CI gate matches all package jobs to the plan and checks required device results.
 
 Full CI and releases also require archive checks for Windows x64 CPU, CUDA 12,
-CUDA 13 and ROCm 7.2.0, and Linux x64 ROCm 7.2.4. The Windows jobs use Windows
+CUDA 13 and ROCm 7.2.0. The Windows jobs use Windows
 Server 2022 for the pinned SDKs and compatible MSVC toolset. CUDA
 components and the HIP SDK are downloaded from checksum-pinned inputs. The
 Windows CUDA installer includes the NVML development component for both pinned
@@ -190,11 +191,50 @@ toolkits and requires a nonempty `include/nvml.h` before exposing the toolkit
 to package builds. This supplies headers for llama.cpp's driver-library lookup.
 The Linux ROCm job uses the published compiler image resolved to a digest and
 adds the SHA-256-pinned ROCm 7.2.4 BLAS libraries to a job-local prefix for
-compilation and archive smoke.
+compilation and packaged GPU inference smoke.
 Windows users need the Microsoft Visual C++ x64 Redistributable and, for CUDA,
 a compatible NVIDIA driver. Linux ROCm users need a matching ROCm runtime
-visible to the system loader. Inference qualification is pending for these
-five variants.
+visible to the system loader. Inference qualification is pending for the four
+Windows variants.
+
+### Linux ROCm device smoke
+
+The existing `package_linux_x86_64_rocm` job builds, packages and runs the
+pinned Qwen3 GPU smoke on `jy-rnr_gsxt2m73mgpcbbh`. The pool admits the two
+Linux x86_64 Radeon 8060S machines in `james-lab`, with capacity two, repository
+access scoped to Skippy, and workflow access restricted to `ci.yml` on main.
+Native runners carry `self-hosted`, `Linux`, `X64`, `skippy-ephemeral`, and
+`rocm` labels. JY reservations exclude overlapping native/CI work.
+
+The job remains full-only: nightly, manual full CI, release candidates and
+llama-upgrade full validation require it; routine PR and main-push checks do
+not run it. The short plan retains eight runtimes and full CI retains thirteen.
+`full_only` selects scheduling independently of the manifest's `validation`
+evidence requirement. Linux ROCm requires inference evidence; the four Windows
+runtimes remain archive-only. No package or release smoke jobs are added, and
+the standalone rehearsal workflow has been removed.
+
+The existing plan resolves the ROCm compiler image to a digest. The ROCm job
+uses that image in an Actions job container with `/dev/kfd` and `/dev/dri`,
+eight CPUs and 32 GiB RAM. It downloads the same-source verified Linux x86_64
+CLI from the CPU job, builds the complete ROCm architecture set, packages it,
+and smokes the exact archive before uploading the product and evidence.
+Release inventory requires that product's source/archive-bound `smoke.json`;
+archive-only evidence cannot satisfy the Linux ROCm release requirement.
+
+`just ci-rocm-preflight` runs after exact candidate source restoration. It
+requires Linux x86_64, the manifest's pinned ROCm version, AMD device nodes and
+successful HIP device discovery. `SKIPPY_CI_ROCM_DEVICE_SMOKE=1` retains the
+checksum-pinned BLAS device kernels needed for real inference. Smoke requires
+a ROCm/HIP device event, positive GPU layer offload, a nonempty completion and
+graceful shutdown. Missing devices, CPU fallback or other backend events fail.
+
+Cache extraction ignores archived numeric owners. The `rocm-workspace` action
+restores workspace ownership to the native account after package/cache post
+hooks, so JY can replace its ephemeral runner. Git trusts the exact mounted
+checkout. Actions removes the job container and its processes after every
+outcome. Preflight logs are uploaded even when the build fails. The job has
+read-only contents/packages permissions and no publication credentials.
 
 ### Depot runners
 
@@ -482,7 +522,7 @@ This command sets the path for subsequent Actions steps; locally export the path
 before running `just ci-smoke`. Default `just test` does not download models.
 
 Inference smoke executes the bundled CLI and runtime, checks generated tokens
-in a completion, and verifies graceful shutdown. Metal and CUDA require
+in a completion, and verifies graceful shutdown. Metal, CUDA and ROCm require
 observed device selection and positive layer offload. Missing required fixtures
 or devices fail the job. Compiler-only CUDA rows validate the extracted package's source, hashes,
 runtime metadata and native dependency closure, then check CLI startup. This
@@ -495,9 +535,9 @@ smoke commands use Python 3.9 or later. Release inventory uses Python
 3.11 or later for TOML parsing. With uv installed, Justfile recipes run Python
 on the interpreter `.python-version` names. Set `SKIPPY_PYTHON` to select
 another. The shell scripts read it too. Both profiles validate the full
-manifest. The short plan lists the eight runtime rows classified for inference,
-and the full plan adds the five archive-only rows. When package checks are
-selected, short CI builds and runs device smoke for macOS ARM64 Metal and Linux
+manifest. The short plan lists eight runtimes; the full plan adds the five
+`full_only` rows: Linux ROCm with GPU inference and four Windows archive checks.
+When package checks are selected, short CI builds and runs device smoke for macOS ARM64 Metal and Linux
 ARM64 CUDA 13. The Linux x64 CUDA packages build in full CI and receive device
 smoke during release validation.
 
@@ -517,10 +557,11 @@ workflow and roster from the same protected revision.
 3. Release-only device jobs download the exact compiler-only CUDA archives,
    run inference, and upload `release-device-evidence-*`. Release verification
    checks each result against the SHA-256 of the corresponding product archive.
-   The five Windows and ROCm variants supply archive smoke evidence.
+   Linux ROCm supplies inference evidence in its product artifact, without a
+   separate device job. The four Windows variants supply archive smoke evidence.
 4. Release verification prepares the complete asset directory once. The publisher
    checks its roster, hashes, and catalog against the separately transferred
-   candidate receipt before promotion. Release notes identify the five variants
+   candidate receipt before promotion. Release notes identify the four Windows variants
    awaiting inference qualification.
 5. The hosted CI gate reads the dependency results and the validated plan
    without checkout or Rust setup. Required work must pass and unselected work

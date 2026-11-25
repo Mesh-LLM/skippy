@@ -128,10 +128,16 @@
       "backend": "rocm",
       "toolkit": "7.2.4",
       "gpu_architectures": "gfx90a;gfx942;gfx1100;gfx1101;gfx1151;gfx1200;gfx1201",
-      "validation": "artifact",
+      "validation": "inference",
       "runner": [
-        "ubuntu-24.04"
-      ]
+        "self-hosted",
+        "skippy-ephemeral",
+        "Linux",
+        "X64",
+        "rocm"
+      ],
+      "full_only": true,
+      "runner_group": "jy-rnr_gsxt2m73mgpcbbh"
     },
     {
       "id": "linux-aarch64-cpu",
@@ -188,7 +194,8 @@
       "validation": "artifact",
       "runner": [
         "windows-2022"
-      ]
+      ],
+      "full_only": true
     },
     {
       "id": "windows-x86_64-cuda12",
@@ -200,7 +207,8 @@
       "validation": "artifact",
       "runner": [
         "windows-2022"
-      ]
+      ],
+      "full_only": true
     },
     {
       "id": "windows-x86_64-cuda13",
@@ -212,7 +220,8 @@
       "validation": "artifact",
       "runner": [
         "windows-2022"
-      ]
+      ],
+      "full_only": true
     },
     {
       "id": "windows-x86_64-rocm",
@@ -224,7 +233,8 @@
       "validation": "artifact",
       "runner": [
         "windows-2022"
-      ]
+      ],
+      "full_only": true
     }
   ]
 }
