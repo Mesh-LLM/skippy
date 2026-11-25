@@ -36,12 +36,12 @@ const script = summary.split('          script: |\n')[1].replace(/^ {12}/gm, '')
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 const evaluate = new AsyncFunction('process', 'context', 'github', 'core', script);
 
-async function status(profile, publication, result = 'success') {
+async function status(profile, publication, result = 'success', plan = 'success', eventName = 'schedule') {
   const statuses = [], failures = [];
   await evaluate({ env: {
-    SOURCE_SHA: 'a'.repeat(40), PROFILE: profile, PLAN: 'success', RESULT: result,
+    SOURCE_SHA: 'a'.repeat(40), PROFILE: profile, PLAN: plan, RESULT: result,
     PUBLICATION: publication, RUN_URL: 'https://example.invalid/run',
-  } }, { eventName: 'schedule', repo: { owner: 'Mesh-LLM', repo: 'skippy' } }, {
+  } }, { eventName, repo: { owner: 'Mesh-LLM', repo: 'skippy' } }, {
     rest: { repos: { createCommitStatus: async value => statuses.push(value) } },
   }, { setFailed: message => failures.push(message) });
   return { state: statuses[0].state, failures };
@@ -53,4 +53,25 @@ test('scheduled release success does not require nightly publication, while nigh
   assert.deepEqual(await status('nightly', 'success'), { state: 'success', failures: [] });
   assert.equal((await status('nightly', 'skipped')).state, 'failure');
   assert.equal((await status('release', 'skipped', 'failure')).state, 'failure');
+});
+
+test('matching PRs always plan qualification without a label or label-change event', () => {
+  const trigger = workflow.split('\n  schedule:\n')[0];
+  assert.match(trigger, /types: \[opened, synchronize, reopened, ready_for_review\]/);
+  const plan = workflow.split('\n  plan:\n')[1].split('\n  qualification:\n')[0];
+  assert.doesNotMatch(plan, /^    if:/m);
+  assert.doesNotMatch(plan, /qualify|labels/);
+  assert.match(plan, /run: just inference-admit/);
+  assert.match(plan, /just inference-matrix/);
+});
+
+test('PR summary requires successful admission and matrix; skipped plans cannot report qualification', async () => {
+  assert.equal((await status('pr', 'skipped', 'success', 'success', 'pull_request_target')).state, 'success');
+  for (const result of ['skipped', 'failure', 'cancelled', '']) {
+    for (const [plan, matrix] of [[result, 'success'], ['success', result]]) {
+      const outcome = await status('pr', 'skipped', matrix, plan, 'pull_request_target');
+      assert.equal(outcome.state, 'failure', `${plan}/${matrix}`);
+      assert.equal(outcome.failures.length, 1);
+    }
+  }
 });

@@ -74,6 +74,38 @@ class Repair(unittest.TestCase):
             write_native_recipe(root)
             self.assertNotEqual(read_json(root / "crates/skippy-api/src/native-recipe.json")["patch_queue_sha256"], before)
 
+    def test_agent_recipe_update_is_discarded_before_controller_recomputes_identity(self):
+        from lib.native_recipe import write_native_recipe
+        for existing in (False, True):
+            with self.subTest(existing=existing), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                self.checkout(root)
+                for kind in ("model_support", "generated"):
+                    directory = root / "llama_cpp/patches" / kind
+                    directory.mkdir(parents=True)
+                    (directory / "series").write_text("")
+                recipe = root / "crates/skippy-api/src/native-recipe.json"
+                recipe.parent.mkdir(parents=True)
+                if existing:
+                    write_native_recipe(root)
+                before = recipe.read_bytes() if existing else None
+                git(root, "add", ".")
+                git(root, "-c", "user.name=Fixture", "-c", "user.email=fixture@skippy.local",
+                    "-c", "commit.gpgsign=false", "commit", "-m", "recipe fixture")
+                def agent(*_args, **_kwargs):
+                    (root / "llama_cpp/patches/0001.patch").write_text("repaired native queue\n")
+                    recipe.write_text('{"patch_queue_sha256": "agent-supplied-value"}')
+                    git(root, "add", ".")
+                with patch.dict(os.environ, SKIPPY_UPGRADE_REPAIR_COMMAND='["agent"]'), \
+                     patch("lib.upgrade_repair.command", side_effect=agent):
+                    repair(root, root)
+                self.assertEqual(recipe.read_bytes() if recipe.exists() else None, before)
+                write_native_recipe(root)
+                result = read_json(recipe)
+                self.assertEqual(result["llama_upstream_sha"], SHA)
+                self.assertRegex(result["patch_queue_sha256"], r"^[0-9a-f]{64}$")
+                self.assertNotEqual(recipe.read_bytes(), before)
+
     def checkout(self, root):
         git(root, "init", "--initial-branch=main")
         (root / "llama_cpp").mkdir()

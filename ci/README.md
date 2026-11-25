@@ -12,7 +12,11 @@ execution, model inputs or lab credentials. It re-evaluates on PR events and
 producer workflow starts/completions, including reruns. Failed, cancelled,
 timed-out and startup-failed runs fail the gate; queued/running or missing
 applicable workflows leave it pending. Successful, neutral and intentionally
-skipped results are accepted. Results bind to the current PR head; older runs
+skipped results are accepted except for required inference qualification. Its
+latest run must contain successful plan, summary and every PR matrix job selected
+by the protected inference ladder. Each job's latest execution governs, including
+successful jobs inherited by partial reruns; a green workflow with skipped jobs
+does not count. Results bind to the current PR head; older runs
 and attempts cannot override newer results. It includes additional automatic PR
 workflows and independent checks/statuses, rather than requiring their names
 in branch protection. The aggregate reads the native PR trigger paths for CI,
@@ -51,7 +55,7 @@ and no exclusion. The routes are independent; mixed PRs run all applicable work.
 | `automation` | Hosted offline Python, Node and shell contracts, including report/publication tests. No Rust setup, native source, compiler image or model inputs. |
 | `code` | Quality canary: formatting, Clippy, FFI, Rust and C++ tests, after automation passes. |
 | `packages` | Linux ARM64 CUDA 13 and macOS ARM64 Metal builds and packaged inference on real devices, after automation and any applicable source checks pass. |
-| `inference` | The separate qualification workflow, using its native trigger list and the existing manual PR policy. |
+| `inference` | Automatic qualification on each matching PR head, using the separate workflow's native trigger list. |
 
 On PRs, runtime source and package/build/smoke inputs select device package smoke.
 Qualification planning, dispatch, scoring, baselines and publication select
@@ -88,10 +92,11 @@ require all thirteen packages and Graph Contracts. Main merges do not start the
 separate Spark qualification ladder.
 
 The protected inference workflow has its own qualification paths, separate from
-package smoke. PR qualification is manual: it runs only when the PR carries the
-`qualify` label. The workflow still triggers on matching paths so its intentional
-skip satisfies the `PR checks` aggregate. The label does not control package smoke.
-Manual qualification may queue behind another PR's atomic Spark pair; the PR
+package smoke. Matching PRs automatically run qualification on opening,
+synchronization, reopening and readiness for review; no `qualify` label is needed.
+Label changes do not restart or cancel qualification. Skipped admission or matrix
+jobs fail qualification and cannot satisfy `PR checks`.
+Qualification may queue behind another PR's atomic Spark pair; the PR
 budget waits for placement instead of failing fast. Relevant PRs retain
 same-repository/collaborator admission, a fresh-head check and all seven GPU
 smoke configurations. The credentialed controller runs only protected source.
@@ -126,7 +131,7 @@ just inference-render-report summary "$examples/examples.json" --run pr-pass
 
 The scheduled inference workflow runs the twelve nightly AgentX configurations
 and the seven PR-profile smoke configurations. The smoke runs use the same
-harness as labeled PRs. PR smoke, nightly, and release qualification allow
+harness as automatically qualified PRs. PR smoke, nightly, and release qualification allow
 experimental split admission, retain the actual admission status, and require
 the full checks for their profile.
 
@@ -180,7 +185,10 @@ Full CI and releases also require archive checks for Windows x64 CPU, CUDA 12,
 CUDA 13 and ROCm 7.2.0, and Linux x64 ROCm 7.2.4. The Windows jobs use Windows
 Server 2022 for the pinned SDKs and compatible MSVC toolset. CUDA
 components and the HIP SDK are downloaded from checksum-pinned inputs. The
-Linux ROCm job uses the published compiler image resolved to a digest and
+Windows CUDA installer includes the NVML development component for both pinned
+toolkits and requires a nonempty `include/nvml.h` before exposing the toolkit
+to package builds. This supplies headers for llama.cpp's driver-library lookup.
+The Linux ROCm job uses the published compiler image resolved to a digest and
 adds the SHA-256-pinned ROCm 7.2.4 BLAS libraries to a job-local prefix for
 compilation and archive smoke.
 Windows users need the Microsoft Visual C++ x64 Redistributable and, for CUDA,
@@ -688,6 +696,25 @@ also apply. Verification runs real preparation, native builds, generation,
 bindings, graph coverage and recipe generation before freezing the candidate.
 Full CI then validates its exact SHA. A failed full CI candidate enters the same
 preparation loop with its retained CI evidence before receiving fresh full CI.
+Before either initial preparation or a returned repair can freeze its candidate,
+the controller runs the same CPU `just lint`, `just test` and `just llama-check`
+gates used by ordinary CI. These include Rust link checks and native graph
+contract compilation/execution. They use the regenerated native tree, static
+CPU libraries and one shared verification deadline. Every failure returns its
+command and logs to the same named Goose session. These gates use offline
+fixtures; they do not add a live-model inference battery.
+
+Independent full CI can evaluate at most three candidates: the initial bundle,
+then up to two repaired bundles. Both repair rounds reuse
+`llama-upgrade-repair.yml`, restore the latest candidate and collect only the
+preceding round's logs and evidence. Known runner/image failures, including a
+missing NVML development header, stop source repair and record their reason in
+`ci-failure.json`. Failures outside candidate build/test steps also stop repair.
+The result controller selects exactly one successful full-CI candidate and its
+matching artifact; no successful round, ambiguous success or an invalid source
+identity prevents publication. Each repair job keeps the existing 11h30 coding,
+12h verification and 23h40 outer budgets. Goose sessions are local to each JY
+job; cross-job repair continues from the immutable bundle and CI diagnostics.
 Failed-job log collection uses paginated `gh --jq` output supported by JY's
 installed GitHub CLI. ANSI log output is enabled only when that CLI supports
 the flag. Individual download failures are recorded in
@@ -702,7 +729,9 @@ including native commits not yet exported to patches. Missing native bases use
 a full tracked-tree patch. Manifests record bases and heads; tracked patches and
 untracked inputs each have a 256 MiB capture limit. Recovery errors are reported
 without replacing the original outcome. Failure/cancellation uploads recovery
-before verbose diagnostics. Hard runner loss can still prevent a final capture;
+before verbose diagnostics. Successful local preparation also uploads its
+unverified checkpoints so downstream CI failure does not discard recovery.
+Hard runner loss can still prevent a final capture;
 completed checkpoints remain available. These files are diagnostic recovery
 inputs, never successful qualification evidence or publication authority.
 
