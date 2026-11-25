@@ -6,7 +6,8 @@ builders. Two native Linux JY jobs boot disposable Windows guests: one tests bot
 CUDA products, the other tests ROCm. They use the existing source/archive-bound
 Qwen3 smoke, GPU selection/offload and shutdown contract. The Windows launcher
 and provisioning source live in public `Mesh-LLM/mesh-llm-runner-images/windows`;
-private Skippy source, model input, Windows disks and job credentials do not.
+consumer payloads, model input, Windows disks and job credentials stay outside
+the public launcher image.
 
 This is an unqualified rehearsal. Production CI, release verification and target
 validation policies are unchanged. Remove the branch-only workflow before merging
@@ -47,12 +48,9 @@ Missing configuration fails admission rather than creating successful skips.
 
 ## Site-local installation media cache
 
-Use each lab's existing NFS export, with the same relative directory layout:
-
-| Network | Mounted store | Windows cache |
-| --- | --- | --- |
-| `dan-lab` | `10.1.1.10:/var/nfs/shared/Models` at `/mnt/model-store` | `/mnt/model-store/ci/windows` |
-| `james-lab` | `10.2.1.10:/var/nfs/shared/Models` at `/mnt/model-store` | `/mnt/model-store/ci/windows` |
+Use each lab's existing NFS export mounted at `/mnt/model-store`, with the same
+relative cache root `ci/windows`. Keep actual export addresses and host inventory
+in operator configuration rather than the public source tree.
 
 The roots contain `media`, `bases` and `attempts` directories. They keep Windows
 media apart from the existing `huggingface` cache. The ISO is admitted under
@@ -90,26 +88,27 @@ must quarantine the allocation in JY before returning; the agent must reconcile
 the crash journal after cancellation, restart or lease expiry before new claims.
 A shell trap alone does not establish that guarantee.
 
-Until that manager, Windows media/storage and vendor installers are available,
+Until that manager, prepared Windows bases and vendor installers are available,
 the workflow is a draft rehearsal and cannot establish Windows qualification.
 
 ## Initial host probes
 
-On 2026-11-25, bounded read-only JY jobs inspected one host of each type:
+Bounded read-only probes inspected an x86_64 RTX 5080 host and an x86_64 Radeon
+8060S host. Both passed KVM API 12 through a root container. The NVIDIA GPU's
+IOMMU group contained only GPU/audio functions and the boot display was on a
+separate iGPU. The AMD GPU was isolated in its own group. The launcher image
+built successfully and created/stopped a paused Q35/KVM guest on both host types.
 
-| Host | KVM through root container | GPU IOMMU group | Current native driver | Storage observation |
-| --- | --- | --- | --- | --- |
-| `lab-a33338`, RTX 5080 | API 12 | Group 12: GPU `0000:01:00.0` and audio only; host boot display is a separate AMD iGPU | `nvidia` | About 27 GiB free on the Linux work filesystem; also an unmounted 734 GiB NTFS partition, left untouched |
-| `lab-003827`, Radeon 8060S | API 12 | Group 19: GPU `0000:c2:00.0` alone | `amdgpu` | About 1.7 TiB free on the Linux work filesystem |
-
-Topology probe jobs: `job_7z87yxawqbc2fw4`, `job_f3hy4wzcw8vb09p`.
-Successful root-container KVM probes: `job_qhq4havjr9zv775`, `job_t7b7sssr0mceq44`.
-The public launcher build and its own KVM probe succeeded in
-`job_kf7rdzgjnjkwm7k`, run `run_fwq6d8pxny2crj3`, using public source
-`acfa02e50004644e324715c02737f3216d13d83b`.
+Both lab NFS caches now contain the same Microsoft Windows 11 26H2 English x64
+ISO, 9,047,330,816 bytes, verified against the published digest pinned in the
+public launcher's `windows/media.json`. Cache directory read/write/cleanup checks
+passed in both labs, as did root-container file creation followed by host cleanup.
+The exports remap numeric ownership, so dedicated cache directories must not
+rely on sticky-bit ownership checks. Prepared driver staging avoids restoring
+archive owners and makes its disposable working tree owner-writable before pruning.
 
 The enrolled account and non-root compiler image users could not open KVM
 directly; root inside a container with the explicit KVM device could. No account,
 PCI binding, boot option, display service or existing Linux pool was changed.
-These probes establish topology and KVM availability only. No Windows boot,
-GPU detach/reset/restore or Windows inference smoke has run.
+These probes establish topology, KVM availability and media-cache admission only.
+They do not establish GPU detach/reset/restore or Windows inference qualification.
