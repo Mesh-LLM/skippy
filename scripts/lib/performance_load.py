@@ -40,6 +40,9 @@ def tokenizer(fixture):
 def profile_args(endpoint, point, coordinate, tokenizer_path, warmup, directory):
     args = [
         *AIPERF, "--ui", "simple", "--url", endpoint, "--endpoint-type", "chat", "--streaming",
+        # Nothing here reads AIPerf's server metrics or GPU telemetry, and under load their
+        # optional collectors miss heartbeats, which marks the whole run incomplete.
+        "--no-server-metrics", "--no-gpu-telemetry",
         "--model", coordinate, "--tokenizer", str(tokenizer_path), "--random-seed", "42",
         "--use-server-token-count", "--concurrency", str(point["concurrency"]),
         "--request-count", str(point["requests"]), "--warmup-request-count", str(warmup),
