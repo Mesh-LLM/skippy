@@ -14,6 +14,7 @@ inference-publication-test:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_publication.py
 
 automation-contracts: inference-contracts
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/lab_artifact.py
     @"{{ automation_python }}" scripts/tests/ci_cuda_license.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_windows_cuda.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_process_environment.py
@@ -42,3 +43,8 @@ ci-automation-setup directory:
 # Explicit model-backed controller rehearsal; excluded from offline defaults.
 upgrade-goose-rehearsal:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_goose_rehearsal.py
+
+# Run from an installed trusted checkout, never from the downloaded candidate.
+[positional-arguments]
+lab-artifact *args:
+    @"{{ automation_python }}" scripts/lab-artifact.py "$@"

@@ -41,22 +41,22 @@ def offload(log):
     raise ValueError("server log has no positive GPU-layer offload evidence")
 
 
-def request(model, prompt, maximum, timeout, stream=False):
+def request(model, prompt, maximum, timeout, stream=False, *, endpoint=ENDPOINT):
     payload = {"model": model, "messages": [{"role": "user", "content": prompt}],
                "temperature": 0, "seed": 42, "max_tokens": maximum,
                "chat_template_kwargs": {"enable_thinking": False}}
     if stream:
         payload["stream"] = True
     return curl(["-H", "Content-Type: application/json", "--data-binary", json.dumps(payload),
-                 ENDPOINT + "/v1/chat/completions"], timeout)
+                 endpoint + "/v1/chat/completions"], timeout)
 
 
-def score(coordinate, output, profile):
+def score(coordinate, output, profile, *, endpoint=ENDPOINT):
     evidence = []
     timeout, maximum = (60, 64) if profile == "pr" else (300, 256)
     for case in read_json(Path("ci/inference-quality.json")):
-        first = json.loads(request(coordinate, case["prompt"], maximum, timeout))
-        second = json.loads(request(coordinate, case["prompt"], maximum, timeout))
+        first = json.loads(request(coordinate, case["prompt"], maximum, timeout, endpoint=endpoint))
+        second = json.loads(request(coordinate, case["prompt"], maximum, timeout, endpoint=endpoint))
         text = first["choices"][0]["message"]["content"]
         tokens = first["usage"]["completion_tokens"]
         passed = (text.strip() == case["expected"] and text == second["choices"][0]["message"]["content"]

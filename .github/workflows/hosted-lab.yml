@@ -1,0 +1,160 @@
+name: Hosted build for lab
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_PROFILE_RELEASE_DEBUG: '0'
+  CARGO_PROFILE_BENCH_DEBUG: '0'
+  SKIPPY_CI_PROFILE: full
+  SKIPPY_REQUIRE_SCCACHE: '1'
+  SCCACHE_GHA_ENABLED: 'true'
+  SKIPPY_ARTIFACT_SCOPE: hosted-lab-${{ github.run_id }}-${{ github.run_attempt }}
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - run: just ci-automation-setup "$RUNNER_TEMP/automation"
+      - run: just ci-automation
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/skippy-ci-cpu"
+          manifest=$(docker buildx imagetools inspect "$name:latest")
+          digest=$(awk '$1 == "Digest:" {print $2; exit}' <<< "$manifest")
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "image=$name@$digest" >> "$GITHUB_OUTPUT"
+  quality:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.plan.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      CTEST_PARALLEL_LEVEL: '2'
+      CC: /usr/lib/llvm-22/bin/clang
+      CXX: /usr/lib/llvm-22/bin/clang++
+      SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
+      LIBCLANG_PATH: /usr/lib/llvm-22/lib
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Verify compiler image identity
+        run: |
+          set -euo pipefail
+          rustc --version
+          just --version
+          "$CC" --version
+          "$CXX" --version
+          test -r "$SKIPPY_REWRITER_LLVM_PREFIX/lib/cmake/llvm/LLVMConfig.cmake"
+          test -r "$SKIPPY_REWRITER_LLVM_PREFIX/lib/cmake/clang/ClangConfig.cmake"
+          image_id=$(cat /etc/skippy-ci-image-id)
+          test -n "$image_id"
+          echo "SKIPPY_TOOLCHAIN_CACHE_KEY=$image_id" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/cache
+        with:
+          scope: hosted-lab-quality-${{ needs.plan.outputs.image }}
+          download-scope: quality-container
+          build-paths: |
+            target/debug
+            skippy-api-rs/target/debug
+      - uses: ./.github/actions/sccache
+        with:
+          scope: hosted-lab-quality-${{ needs.plan.outputs.image }}
+      - uses: ./.github/actions/native-source
+      - run: just llama-prepare
+      - run: just skippy-ffi-bindgen-check
+      - run: just lint
+      - run: just test
+      - run: just llama-check
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-quality
+          path: |
+            target/ci-evidence/**
+            target/skippy-stage-rewriter-check/report*
+            target/skippy-api-build/Testing/**
+            target/skippy-llama-api-build/Testing/**
+          if-no-files-found: warn
+          retention-days: 14
+  package:
+    needs: quality
+    runs-on: macos-15
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: darwin-aarch64-metal
+          host-id: darwin-aarch64
+          build-cli: 'true'
+          setup-host: 'true'
+          smoke: artifact
+      - name: Prepare binary-only lab input
+        shell: bash
+        run: |
+          mkdir lab-input
+          cp dist/products/darwin-aarch64-metal/skippy-darwin-aarch64-metal.tar.gz{,.sha256} lab-input/
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-input
+          path: lab-input/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+  handoff:
+    # This job creates a pending status, not a successful lab result. The lab
+    # pulls the artifact later; no Actions job waits on or connects to it.
+    needs: [quality, package]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      statuses: write
+    steps:
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          script: |
+            const key = `${context.runId}.${process.env.GITHUB_RUN_ATTEMPT}`;
+            await github.rest.repos.createCommitStatus({
+              ...context.repo, sha: context.sha, context: `lab/metal/${key}`,
+              state: 'pending',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: 'Hosted bundle ready; artifact-only lab qualification pending'
+            });

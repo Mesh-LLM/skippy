@@ -1,5 +1,10 @@
 # Skippy continuous integration
 
+An opt-in [hosted-build / artifact-only lab pilot](HOSTED_LAB.md) is available in
+`hosted-lab.yml`. It builds and tests on GitHub-hosted runners, then lets an
+installed trusted lab harness pull the Metal bundle. It does not replace the
+standard PR, inference, or release gates described below.
+
 `ci.yml` reports `CI` for automation, code checks and selected PR/main package smoke, and
 `Full CI gate` for the complete package roster and Graph Contracts. Release callers
 require the full workflow result independently

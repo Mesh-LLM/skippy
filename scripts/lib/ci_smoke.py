@@ -15,12 +15,12 @@ from .ci_process import command, environment, start, stop
 from .ci_targets import require_host, validate_native_identity
 
 
-def verify_product(host, runtime, product_input, product):
+def verify_product(host, runtime, product_input, product, *, expected_source=None, child_env=None):
     require_host(host)
     artifacts.unpack(product_input, product)
-    artifacts.verify(product, "product", host["target"], runtime["id"])
+    artifacts.verify(product, "product", host["target"], runtime["id"], expected_source=expected_source)
     binary = artifacts.binary(product.resolve(), host["os"])
-    env = environment()
+    env = environment() if child_env is None else child_env.copy()
     for key in ("LD_LIBRARY_PATH", "LD_PRELOAD", "DYLD_LIBRARY_PATH",
                 "DYLD_FALLBACK_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES"):
         env.pop(key, None)
@@ -129,7 +129,7 @@ def completion(server, endpoint, deadline):
     return response
 
 
-def smoke(host, runtime, product_input):
+def smoke(host, runtime, product_input, *, expected_source=None, probe=None, child_env=None):
     model_path = os.environ.get("SKIPPY_CI_MODEL")
     if not model_path:
         raise ValueError("SKIPPY_CI_MODEL must point at the pinned Qwen3 dense fixture")
@@ -140,7 +140,10 @@ def smoke(host, runtime, product_input):
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         product = root / "product"
-        binary = str(verify_product(host, runtime, product_input, product))
+        binary = str(verify_product(host, runtime, product_input, product,
+                                    expected_source=expected_source, child_env=child_env))
+        if expected_source is not None:
+            validate_native_identity(product / "native-runtimes" / variant, host, runtime)
         digest = model_digest(model)
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
@@ -154,13 +157,16 @@ def smoke(host, runtime, product_input):
         output.mkdir(parents=True, exist_ok=True)
         logs = [output / "stdout.log", output / "stderr.log"]
         with logs[0].open("wb") as stdout, logs[1].open("wb") as stderr:
-            with start(argv, {"HF_HUB_OFFLINE": "1", "HOME": tmp, "USERPROFILE": tmp},
+            overrides = {**(child_env or {}), "HF_HUB_OFFLINE": "1", "HOME": tmp, "USERPROFILE": tmp}
+            with start(argv, overrides, inherit_env=child_env is None,
                        stdout=stdout, stderr=stderr) as server:
                 try:
                     deadline = time.monotonic() + 850
                     response = completion(server, "http://" + address + "/v1", deadline)
                     if gpu:
                         require_device(logs, server, deadline, backend)
+                    if probe is not None:
+                        probe("http://" + address + "/v1", output)
                     if server.poll() is not None:
                         raise RuntimeError("packaged server exited before shutdown")
                 finally:
@@ -168,7 +174,8 @@ def smoke(host, runtime, product_input):
                 if server.returncode != 0:
                     raise RuntimeError(f"packaged server exited with status {server.returncode}")
         artifacts.write_json(output / "smoke.json", {
-            "source": artifacts.source(), "variant": variant, "backend": backend,
+            "source": expected_source if expected_source is not None else artifacts.source(),
+            "variant": variant, "backend": backend,
             "archive_sha256": artifacts.digest(product_input / f"skippy-{variant}.tar.gz"),
             "gpu_offload_required": gpu, "model_sha256": digest, "response": response,
         })

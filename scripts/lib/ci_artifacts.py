@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import re
 import shutil
 import tarfile
 from pathlib import Path, PurePosixPath
@@ -62,11 +63,14 @@ def receipt(root, kind, target, variant):
     })
 
 
-def verify(root, kind, target, variant):
+def verify(root, kind, target, variant, *, expected_source=None):
     value = read_json(root / "provenance.json")
     actual = files(root)
     actual.pop("provenance.json", None)
-    identity = {"schema_version": 1, "source": source(), "kind": kind,
+    expected_source = source() if expected_source is None else expected_source
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_source):
+        raise ValueError("expected artifact source must be a full commit SHA")
+    identity = {"schema_version": 1, "source": expected_source, "kind": kind,
                 "target": target, "variant": variant}
     if type(value) is not dict or set(value) != {*identity, "files"} or any(
         type(value[key]) is not type(expected) or value[key] != expected
