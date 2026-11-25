@@ -61,9 +61,11 @@ def hardware():
     }
 
 
-def qualify(directory):
-    receipt = verify_input(directory)
+def qualify(directory, *, rehearsal=None):
+    receipt = verify_input(directory, rehearsal=rehearsal)
     harness = artifacts.source()
+    if rehearsal is not None and harness != rehearsal:
+        raise ValueError("rehearsal harness must match the explicitly approved SHA")
     if capture(["git", "status", "--porcelain", "--untracked-files=all", "--", "scripts", "ci", "Justfile", "justfile"]).strip():
         raise ValueError("installed harness must have no modified or untracked policy/code")
     hosts, runtimes = targets()
@@ -106,18 +108,23 @@ def main():
     download = commands.add_parser("fetch")
     download.add_argument("run_id", type=int)
     download.add_argument("directory", type=Path)
+    parsers = [download]
     for name in ("run", "report"):
-        commands.add_parser(name).add_argument("directory", type=Path)
+        subparser = commands.add_parser(name)
+        subparser.add_argument("directory", type=Path)
+        parsers.append(subparser)
+    for subparser in parsers:
+        subparser.add_argument("--rehearsal", metavar="SHA", help="explicitly approve this exact rehearsal source/harness SHA")
     args = parser.parse_args()
     directory = args.directory.resolve()
     if args.command == "fetch":
         if args.run_id <= 0:
             raise ValueError("run id must be positive")
-        print(json.dumps(fetch(args.run_id, directory), indent=2))
+        print(json.dumps(fetch(args.run_id, directory, rehearsal=args.rehearsal), indent=2))
     elif args.command == "run":
-        qualify(directory)
+        qualify(directory, rehearsal=args.rehearsal)
     else:
-        report(directory)
+        report(directory, rehearsal=args.rehearsal)
 
 
 if __name__ == "__main__":

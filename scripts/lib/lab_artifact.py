@@ -25,18 +25,24 @@ def api(path, *, body=None, method="GET", paginate=False):
     return json.loads(capture([*args, *(["--paginate", "--slurp"] if paginate else [])]))
 
 
-def admitted_run(run):
-    # This first route admits manual protected-main builds only. It does not
-    # change existing PR/fork admission or introduce a new isolation policy.
-    if (run.get("path") != WORKFLOW or run.get("event") != "workflow_dispatch"
-            or run.get("head_branch") != "main" or run.get("status") != "completed"
+def admitted_run(run, *, rehearsal=None):
+    if rehearsal is not None:
+        if (not re.fullmatch(r"[0-9a-f]{40}", rehearsal)
+                or run.get("event") != "push"
+                or not (run.get("head_branch") or "").startswith("lab-rehearsal/")
+                or run.get("head_sha") != rehearsal):
+            raise ValueError("rehearsal requires an explicitly approved exact SHA on a rehearsal push")
+    elif run.get("event") != "workflow_dispatch" or run.get("head_branch") != "main":
+        raise ValueError("requires a successful protected-main hosted-lab dispatch")
+    if (run.get("path") != WORKFLOW or run.get("status") != "completed"
             or run.get("conclusion") != "success"
             or run.get("head_repository", {}).get("full_name") != REPOSITORY
             or not re.fullmatch(r"[0-9a-f]{40}", run.get("head_sha", ""))
             or type(run.get("id")) is not int or run["id"] <= 0
             or type(run.get("run_attempt")) is not int or run["run_attempt"] <= 0):
         raise ValueError("requires a successful protected-main hosted-lab dispatch")
-    return {"run_id": run["id"], "attempt": run["run_attempt"], "source": run["head_sha"]}
+    return {"run_id": run["id"], "attempt": run["run_attempt"], "source": run["head_sha"],
+            "mode": "rehearsal" if rehearsal is not None else "production"}
 
 
 def main_ancestor(sha):
@@ -51,19 +57,20 @@ def main_ancestor(sha):
         raise ValueError("commit is not on protected main")
 
 
-def ready(run_id):
-    identity = admitted_run(api(f"actions/runs/{run_id}"))
-    main_ancestor(identity["source"])
+def ready(run_id, *, rehearsal=None):
+    identity = admitted_run(api(f"actions/runs/{run_id}"), rehearsal=rehearsal)
+    if rehearsal is None:
+        main_ancestor(identity["source"])
     jobs = api(f'actions/runs/{run_id}/attempts/{identity["attempt"]}/jobs?per_page=100')
     required = {"plan", "quality", "package", "handoff"}
     if (jobs["total_count"] != 4 or {job["name"] for job in jobs["jobs"]} != required
             or any(job.get("conclusion") != "success" for job in jobs["jobs"])):
-        raise ValueError("all hosted jobs and the main-only handoff must succeed in this attempt")
+        raise ValueError("all hosted jobs and the mode-specific handoff must succeed in this attempt")
     return identity
 
 
-def current(receipt):
-    identity = ready(receipt["run_id"])
+def current(receipt, *, rehearsal=None):
+    identity = ready(receipt["run_id"], rehearsal=rehearsal)
     if any(receipt.get(key) != value for key, value in identity.items()):
         raise ValueError("run identity changed or attempt superseded")
     return identity
@@ -93,10 +100,10 @@ def unpack_download(archive, destination):
                     shutil.copyfileobj(source, output)
 
 
-def fetch(run_id, destination):
+def fetch(run_id, destination, *, rehearsal=None):
     if destination.exists():
         raise ValueError("download destination must not exist")
-    identity = ready(run_id)
+    identity = ready(run_id, rehearsal=rehearsal)
     if identity["run_id"] != run_id:
         raise ValueError("unexpected workflow run id")
     name = f'hosted-lab-{run_id}-{identity["attempt"]}-input'
@@ -125,14 +132,18 @@ def fetch(run_id, destination):
         identity.update(variant=VARIANT, artifact_id=item["id"], artifact_digest=item["digest"],
                         archive_sha256=artifacts.digest(product))
         # Reruns during download cannot authorize the previous attempt.
-        current(identity)
+        current(identity, rehearsal=rehearsal)
         artifacts.write_json(stage / "lab-input.json", identity)
         stage.rename(destination)
     return identity
 
 
-def verify_input(directory):
+def verify_input(directory, *, rehearsal=None):
     receipt = artifacts.read_json(directory / "lab-input.json")
+    mode = "production" if rehearsal is None else "rehearsal"
+    if (receipt.get("mode") != mode
+            or (rehearsal is not None and receipt.get("source") != rehearsal)):
+        raise ValueError("receipt mode/source differs from explicit operator approval")
     if (receipt.get("variant") != VARIANT
             or not re.fullmatch(r"[0-9a-f]{40}", receipt.get("source", ""))):
         raise ValueError("invalid lab input identity")
@@ -143,26 +154,32 @@ def verify_input(directory):
     return receipt
 
 
-def report(directory):
-    receipt = verify_input(directory)
-    current(receipt)
+def report(directory, *, rehearsal=None):
+    receipt = verify_input(directory, rehearsal=rehearsal)
+    current(receipt, rehearsal=rehearsal)
     result = artifacts.read_json(directory / "evidence/lab-result.json")
     if result.get("input") != receipt or result.get("status") not in ("passed", "failed"):
         raise ValueError("qualification receipt differs from admitted artifact")
-    main_ancestor(result["harness_source"])
+    if rehearsal is None:
+        main_ancestor(result["harness_source"])
+    elif result["harness_source"] != rehearsal:
+        raise ValueError("rehearsal harness must match the explicitly approved SHA")
     key = f'{receipt["run_id"]}.{receipt["attempt"]}'
+    prefix = "lab-rehearsal" if rehearsal is not None else "lab"
+    context = f"{prefix}/metal/{key}"
     evidence = artifacts.files(directory / "evidence")
     evidence.pop("lab-result.json", None)
     if result.get("evidence") != evidence:
         raise ValueError("qualification evidence changed")
     pages = api(f'commits/{receipt["source"]}/status?per_page=100', paginate=True)
     statuses = [row for page in pages for row in page["statuses"]]
-    status = next((row for row in statuses if row["context"] == f"lab/metal/{key}"), None)
+    status = next((row for row in statuses if row["context"] == context), None)
     if status is None or status["state"] != "pending":
         raise ValueError("requires pending handoff; dispatch a fresh run after a reported result")
     state = "success" if result["status"] == "passed" else "failure"
-    description = f"Metal {result['status']}; archive sha256:{receipt['archive_sha256']}"
-    # Checks output makes the structured result remotely readable. Full logs
+    label = "REHEARSAL, not certification" if rehearsal is not None else "Metal"
+    description = f"{label} {result['status']}; sha256:{receipt['archive_sha256']}"
+    # The commit comment makes the structured result remotely readable. Full logs
     # remain on the lab; include device lines and their complete file hashes.
     details = {"lab-result.json": result}
     for name in ("smoke.json", "quality.json", "performance.json"):
@@ -178,17 +195,13 @@ def report(directory):
         if path.exists():
             lines = path.read_text(errors="replace").splitlines()
             details[name] = "\n".join(line for line in lines if "backend_device_selected" in line or "offloaded" in line)[-6000:]
-    text = "```json\n" + json.dumps(details) + "\n```"
+    text = f"### {label} evidence / {key}\n\n```json\n" + json.dumps(details) + "\n```"
     if len(text.encode()) > 60000:
-        raise ValueError("structured lab evidence exceeds GitHub check output limit")
-    current(receipt)
-    check = api("check-runs", method="POST", body={
-        "name": f"Lab Metal evidence / {key}", "head_sha": receipt["source"],
-        "external_id": f"hosted-lab:{key}", "status": "completed", "conclusion": state,
-        "output": {"title": description, "summary": text},
-    })
-    current(receipt)
+        raise ValueError("structured lab evidence exceeds GitHub comment limit")
+    current(receipt, rehearsal=rehearsal)
+    comment = api(f'commits/{receipt["source"]}/comments', method="POST", body={"body": text})
+    current(receipt, rehearsal=rehearsal)
     api(f'statuses/{receipt["source"]}', method="POST", body={
-        "context": f"lab/metal/{key}", "state": state, "description": description,
-        "target_url": check["html_url"],
+        "context": context, "state": state, "description": description,
+        "target_url": comment["html_url"],
     })

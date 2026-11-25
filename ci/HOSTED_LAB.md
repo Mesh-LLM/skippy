@@ -2,12 +2,13 @@
 
 This is an **opt-in alternative**, initially for macOS ARM64 Metal. It does not
 replace `ci.yml`, PR admission, Spark inference, releases, or their required
-checks. It is deliberately a manual, protected-main pilot: no PR or fork binary
-is admitted by this route. Existing lab accounts and isolation remain unchanged.
+checks. Production admission is manual and protected-main only. An explicit
+exact-SHA rehearsal route permits pre-merge testing from this repository, with
+separate non-certification statuses. Existing lab accounts and isolation remain unchanged.
 
 ```mermaid
 flowchart TD
-  D[Manual dispatch] --> P[Hosted Ubuntu: offline automation and compiler image digest]
+  D[Main dispatch or dedicated rehearsal branch push] --> P[Hosted Ubuntu: offline automation and compiler image digest]
   P --> Q[Hosted Ubuntu compiler container: lint, full unit/native tests]
   Q --> B[Hosted macOS: build CLI and Metal runtime, verify archive]
   B --> A[Immutable Actions artifact: tarball and checksum only]
@@ -15,7 +16,7 @@ flowchart TD
   A --> F[Operator: fetch verified artifact]
   F --> L[Lab: installed trusted harness executes bundle, no build or candidate checkout]
   L --> E[Local receipt, scored correctness, performance samples and device logs]
-  E --> R[Credentialed controller: publish structured evidence and status to GitHub]
+  E --> R[Credentialed controller: publish evidence comment and status to GitHub]
 ```
 
 ## What runs where
@@ -45,7 +46,7 @@ or the full family/Spark certification suite. No hardware success is inferred
 from compilation or an offline test. Missing hardware/model or failed cleanup
 fails the attempt.
 
-## Operator commands
+## Production operator commands
 
 Install a reviewed, clean harness checkout from protected main on the control
 and execution machines. Python 3.12, Just, Git and curl are harness prerequisites;
@@ -77,11 +78,11 @@ outside the harness checkout and preserve it after failures. A result is written
 on ordinary failure and cancellation; a power loss can leave only partial logs.
 Such an interruption leaves GitHub pending and must not be represented as success.
 
-Use a repository-scoped **GitHub App installation token** with
-**Contents read, Actions read, Checks write, and Commit statuses write** for the
-control operations. Creating the evidence check requires that App credential;
-an ordinary `gh auth login` is not the supported reporting setup. Do not install
-publication credentials on the lab. Supply
+Control operations need **Actions read, Contents write** (commit comments), and
+**Commit statuses write** on this repository. An existing operator `gh` login
+with private-repository access can publish comments/statuses; a new GitHub App
+is not required. Fetch needs only read access. Keep these credentials on the
+control host, never in the bundle or execution environment. Supply
 credentials at invocation time; the executable's `--version` and inference
 processes receive a minimal environment and temporary HOME, not the controller's
 environment. This does **not** prevent a process running under the same OS user
@@ -89,14 +90,54 @@ from reading that user's files: keep a persistent `gh` login on the control host
 not the execution account. This is credential placement, not a new isolation
 requirement. No credentials are embedded in repository files or artifacts.
 
+## Pre-merge rehearsal (same PR, no main push)
+
+An operator deliberately pushes the reviewed candidate to `lab-rehearsal/**`.
+This runs the **same** plan, quality, package and handoff jobs from that commit;
+it does not create another PR or require workflow registration on main. Only
+repository writers can push there. Fork events and ordinary branch pushes are
+not admitted. The handoff creates `lab-rehearsal/metal/<run>.<attempt>`, never
+`lab/metal/...`.
+
+```sh
+# From the reviewed PR worktree. This also pins the harness for this attempt.
+sha=$(git rev-parse HEAD)
+git push origin "$sha":refs/heads/lab-rehearsal/217
+# Select that exact successful Actions run, then approve its SHA explicitly:
+just lab-artifact fetch 123456 /absolute/evidence/123456 --rehearsal "$sha"
+# Existing transport takes only the verified bundle to the reserved machine.
+SKIPPY_CI_MODEL=/absolute/models/pinned-qwen3.gguf \
+  just lab-artifact run /absolute/evidence/123456 --rehearsal "$sha"
+# Back on the control host, publish success OR failure:
+just lab-artifact report /absolute/evidence/123456 --rehearsal "$sha"
+```
+
+The operator must review and install the harness at that **same approved SHA**
+on the execution machine before running it. This is a deliberate exception to
+the production main-only harness policy, not permission to execute scripts
+shipped in the artifact or automatically update the harness from a branch.
+Installing the harness needs no candidate build or model/dependency download.
+A changed harness requires a fresh hosted build and new explicit SHA approval.
+Each command requires `--rehearsal`; omitting it cannot promote rehearsal input
+into production. Run rejects a different harness SHA before starting the binary.
+
+Published evidence says **REHEARSAL, not certification**. The real download,
+archive verification, GPU smoke, correctness, throughput and publication paths
+are shared with production. A successful rehearsal proves that path for its
+recorded candidate and hardware, not every platform or release readiness.
+Existing credentials, accounts and isolation are unchanged. Link the evidence comment in the PR and retain the rehearsal branch through
+review so the tested commit remains reachable, including after a squash merge.
+Remove the temporary branch only once its evidence is durably retained.
+
 ## Admission and evidence
 
-Fetch requires a successful `workflow_dispatch` from this repository, the exact
+Production fetch requires a successful `workflow_dispatch` from this repository, the exact
 workflow path, a source SHA on protected `refs/heads/main`, and successful plan,
 quality, package and main-only handoff jobs in the **current attempt**. A tag
 named `main`, a skipped handoff, expired artifact, changed attempt or a branch
-build cannot substitute for these checks. Hosted-only branch dispatches may be
-used for build rehearsal, but are never admitted to the lab.
+build cannot substitute for these checks. The separately named rehearsal push route above is never admitted as production.
+A new workflow cannot be dispatched before its file reaches the default branch;
+the dedicated push trigger avoids that bootstrap dependency.
 
 The artifact name binds run and attempt; GitHub's ZIP SHA-256, the product
 checksum, its full file roster, native platform/backend and expected source SHA
@@ -104,11 +145,11 @@ are verified. Only the tarball and checksum enter the lab directory; producer
 reports cannot masquerade as lab evidence. Model identity, harness commit,
 chip/model/memory, OS build, workload, samples, device logs and archive digest
 are retained. The trusted harness may be newer than the binary; report requires
-its recorded commit to be on protected main too.
+its recorded commit to be on protected main too (or the explicitly approved rehearsal SHA).
 
 Report rechecks the source/attempt and evidence hashes, requires the pending
 handoff status, publishes structured JSON plus device-log excerpts as a GitHub
-check, and links the run-specific commit status to it. Oversized structured
+commit comment, and links the run-specific commit status to it. Oversized structured
 responses are published as explicitly truncated previews; their complete file
 hashes and full local files remain available. A successful hosted build
 is therefore visibly distinct from lab success. Complete logs stay in the
@@ -128,7 +169,7 @@ They are intentionally not a stable branch-protection/release gate yet.
 failure/reporting, endpoint-routing and bounded-performance contracts. These
 fixtures do not establish hardware operation or hosted image capacity.
 
-Before expanding or switching over: dispatch main, collect a real hosted bundle,
+Before expanding or switching over: rehearse the candidate, collect a real hosted bundle,
 qualify it on Metal, publish the receipt, demonstrate a failed result and a stale
 attempt rejection, then design the CUDA/ROCm/Windows and full certification lanes
 around the same binary boundary. Release promotion must ultimately consume the

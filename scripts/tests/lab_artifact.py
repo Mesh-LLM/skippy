@@ -35,14 +35,14 @@ def github(path, **_kwargs):
                 for name in ("plan", "quality", "package", "handoff")]}
     if "/status?" in path:
         return [{"statuses": [{"context": "lab/metal/123.2", "state": "pending"}]}]
-    if path == "check-runs":
-        return {"html_url": "https://github.com/Mesh-LLM/skippy/runs/456"}
+    if path.endswith("/comments"):
+        return {"html_url": "https://github.com/Mesh-LLM/skippy/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#commitcomment-456"}
     return run()
 
 
 class Admission(unittest.TestCase):
     def test_only_successful_main_dispatches(self):
-        self.assertEqual(lab.admitted_run(run()), {"run_id": 123, "attempt": 2, "source": SHA})
+        self.assertEqual(lab.admitted_run(run()), {"run_id": 123, "attempt": 2, "source": SHA, "mode": "production"})
         for key, values in {
             "head_branch": ["topic", "refs/heads/main"], "head_sha": ["main", "a" * 39],
             "head_repository": [{"full_name": "fork/skippy"}, {}], "path": ["ci.yml"],
@@ -53,6 +53,22 @@ class Admission(unittest.TestCase):
             for value in values:
                 with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                     lab.admitted_run(run(**{key: value}))
+
+    def test_rehearsal_requires_explicit_exact_sha_push_and_own_repository(self):
+        candidate = run(event="push", head_branch="lab-rehearsal/217")
+        with self.assertRaises(ValueError):
+            lab.admitted_run(candidate)
+        self.assertEqual(lab.admitted_run(candidate, rehearsal=SHA)["mode"], "rehearsal")
+        for changes, approved in (({}, "b" * 40), ({}, "main"),
+                                  ({"event": "workflow_dispatch"}, SHA),
+                                  ({"head_branch": "topic"}, SHA),
+                                  ({"head_branch": None}, SHA),
+                                  ({"head_repository": {"full_name": "fork/skippy"}}, SHA)):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                lab.admitted_run(dict(candidate, **changes), rehearsal=approved)
+        with patch.object(lab, "api", side_effect=[candidate, github("/jobs?")]), \
+                patch.object(lab, "main_ancestor", side_effect=AssertionError("not main")):
+            self.assertEqual(lab.ready(123, rehearsal=SHA)["source"], SHA)
 
     def test_rerun_invalidates_old_receipt(self):
         with patch.object(lab, "ready", return_value=lab.admitted_run(run(run_attempt=3))):
@@ -120,6 +136,9 @@ class Downloads(unittest.TestCase):
     def test_exact_artifact_and_archive_identity(self):
         identity = self.fetch()
         self.assertEqual(identity["archive_sha256"], artifacts.digest(self.product))
+        with patch.object(CLI, "smoke") as smoke, self.assertRaisesRegex(ValueError, "operator approval"):
+            CLI.qualify(self.destination, rehearsal=SHA)
+        smoke.assert_not_called()
         self.assertEqual(lab.verify_input(self.destination), identity)
         with self.assertRaisesRegex(ValueError, "must not exist"):
             self.fetch()
@@ -185,8 +204,8 @@ class Downloads(unittest.TestCase):
 
         with patch.object(lab, "api", side_effect=pages) as api:
             lab.report(self.destination)
-            check = next(call.kwargs["body"] for call in api.call_args_list if call.args == ("check-runs",))
-            summary = check["output"]["summary"]
+            check = next(call.kwargs["body"] for call in api.call_args_list if call.args[0].endswith("/comments"))
+            summary = check["body"]
             self.assertLess(len(summary.encode()), 60000)
             self.assertIn('"truncated": true', summary)
 
@@ -196,7 +215,7 @@ class Downloads(unittest.TestCase):
             def reject(path, **kwargs):
                 if terminal and "/status?" in path:
                     return [{"statuses": [{"context": "lab/metal/123.2", "state": "failure"}]}]
-                if path == "check-runs":
+                if path.endswith("/comments"):
                     raise RuntimeError("publication unavailable")
                 return github(path, **kwargs)
 
@@ -245,13 +264,63 @@ class Downloads(unittest.TestCase):
                     body = api.call_args.kwargs["body"]
                     self.assertEqual(body["context"], "lab/metal/123.2")
                     self.assertEqual(body["state"], "failure" if failure else "success")
-                    self.assertEqual(body["target_url"], "https://github.com/Mesh-LLM/skippy/runs/456")
-                    published = next(call.kwargs["body"] for call in api.call_args_list if call.args == ("check-runs",))
-                    self.assertIn(identity["archive_sha256"], published["output"]["summary"])
+                    self.assertEqual(body["target_url"], "https://github.com/Mesh-LLM/skippy/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#commitcomment-456")
+                    published = next(call.kwargs["body"] for call in api.call_args_list if call.args[0].endswith("/comments"))
+                    self.assertIn(identity["archive_sha256"], published["body"])
                 (output / "extra.log").write_text("changed after qualification")
                 with patch.object(lab, "api", side_effect=github), self.assertRaisesRegex(ValueError, "evidence changed"):
                     lab.report(self.destination)
                 (output / "extra.log").unlink()
+
+    def rehearsal_api(self, path, **kwargs):
+        if path.startswith("actions/runs/") and "/" not in path.removeprefix("actions/runs/"):
+            return run(event="push", head_branch="lab-rehearsal/217")
+        if "/status?" in path:
+            return [{"statuses": [{"context": "lab-rehearsal/metal/123.2", "state": "pending"}]}]
+        return self.api(path) if not kwargs else github(path, **kwargs)
+
+    def test_rehearsal_fetch_and_report_use_separate_evidence_and_context(self):
+        with (patch.object(lab, "api", side_effect=self.rehearsal_api),
+              patch.object(lab.subprocess, "run", side_effect=self.download)):
+            identity = lab.fetch(123, self.destination, rehearsal=SHA)
+        self.assertEqual(identity["mode"], "rehearsal")
+        output = self.destination / "evidence"
+        output.mkdir()
+        artifacts.write_json(output / "lab-result.json", {
+            "input": identity, "status": "passed", "harness_source": SHA, "evidence": {},
+        })
+        for approved in (None, "b" * 40):
+            with self.assertRaises(ValueError):
+                lab.verify_input(self.destination, rehearsal=approved)
+        with patch.object(lab, "api", side_effect=self.rehearsal_api) as api:
+            lab.report(self.destination, rehearsal=SHA)
+            status = api.call_args.kwargs["body"]
+            self.assertEqual(status["context"], "lab-rehearsal/metal/123.2")
+            self.assertIn("not certification", status["description"])
+            self.assertLessEqual(len(status["description"]), 140)
+        # Editing the receipt cannot turn a push into a protected-main dispatch.
+        identity["mode"] = "production"
+        artifacts.write_json(self.destination / "lab-input.json", identity)
+        with patch.object(lab, "api", side_effect=self.rehearsal_api) as api, self.assertRaises(ValueError):
+            lab.report(self.destination)
+        self.assertFalse(any(call.kwargs.get("method") == "POST" for call in api.call_args_list))
+
+    def test_rehearsal_rejects_different_harness_before_execution_and_reporting(self):
+        with (patch.object(lab, "api", side_effect=self.rehearsal_api),
+              patch.object(lab.subprocess, "run", side_effect=self.download)):
+            identity = lab.fetch(123, self.destination, rehearsal=SHA)
+        with (patch.object(CLI.artifacts, "source", return_value="b" * 40),
+              patch.object(CLI, "smoke") as smoke, self.assertRaisesRegex(ValueError, "harness")):
+            CLI.qualify(self.destination, rehearsal=SHA)
+        smoke.assert_not_called()
+        output = self.destination / "evidence"
+        output.mkdir()
+        artifacts.write_json(output / "lab-result.json", {
+            "input": identity, "status": "passed", "harness_source": "b" * 40, "evidence": {},
+        })
+        with patch.object(lab, "api", side_effect=self.rehearsal_api) as api, self.assertRaisesRegex(ValueError, "harness"):
+            lab.report(self.destination, rehearsal=SHA)
+        self.assertFalse(any(call.kwargs.get("method") == "POST" for call in api.call_args_list))
 
 
 class Harness(unittest.TestCase):

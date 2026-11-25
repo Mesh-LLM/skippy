@@ -1,6 +1,8 @@
 name: Hosted build for lab
 on:
   workflow_dispatch:
+  push:
+    branches: ["lab-rehearsal/**"]
 permissions:
   contents: read
 env:
@@ -142,7 +144,7 @@ jobs:
     # This job creates a pending status, not a successful lab result. The lab
     # pulls the artifact later; no Actions job waits on or connects to it.
     needs: [quality, package]
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/lab-rehearsal/'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -152,9 +154,11 @@ jobs:
         with:
           script: |
             const key = `${context.runId}.${process.env.GITHUB_RUN_ATTEMPT}`;
+            const rehearsal = context.eventName === "push";
+            const prefix = rehearsal ? "lab-rehearsal" : "lab";
             await github.rest.repos.createCommitStatus({
-              ...context.repo, sha: context.sha, context: `lab/metal/${key}`,
+              ...context.repo, sha: context.sha, context: `${prefix}/metal/${key}`,
               state: 'pending',
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              description: 'Hosted bundle ready; artifact-only lab qualification pending'
+              description: rehearsal ? 'REHEARSAL, not certification; bundle ready for lab' : 'Hosted bundle ready; artifact-only lab qualification pending'
             });
