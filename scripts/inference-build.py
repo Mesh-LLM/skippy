@@ -67,6 +67,7 @@ def build(sha, root, inputs, key, cached):
     with lock(cargo_root / f"{dependencies}.lock"):
         cargo_target = cargo_root / dependencies
         native_identity = Path("target/inference-native-inputs.json").resolve()
+        native_identity.parent.mkdir(parents=True, exist_ok=True)
         write_json(native_identity, {"schema": 2, "native_inputs_sha256": inputs["native_inputs_sha256"]})
         extra_files = [*filter(None, os.environ.get("SCCACHE_EXTRAFILES", "").split(os.pathsep)),
                        str(native_identity)]

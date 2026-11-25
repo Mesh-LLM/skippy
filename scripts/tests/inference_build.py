@@ -2,6 +2,7 @@
 
 import os
 import unittest
+from contextlib import chdir
 from pathlib import Path
 from runpy import run_path
 from tempfile import TemporaryDirectory
@@ -38,10 +39,10 @@ class NativeCacheTests(unittest.TestCase):
             calls.append((args, overrides))
             # The command helper merges overrides into the complete inherited environment.
             self.assertEqual(os.environ["PROVIDER_CONFIGURATION"], "retained")
-        with TemporaryDirectory() as tmp, patch.dict(os.environ, {
+        with TemporaryDirectory() as tmp, chdir(tmp), patch.dict(os.environ, {
             "SCCACHE_EXTRAFILES": "/existing/input", "PROVIDER_CONFIGURATION": "retained",
         }), patch.dict(build.__globals__, command=command, install_binaries=lambda _: None,
-                       identity=lambda _: {}, write_json=lambda *args: None), \
+                       identity=lambda _: {}), \
                 patch("shutil.which", return_value="/bin/sccache"), \
                 patch("shutil.copy"), patch("pathlib.Path.rename"):
             root = Path(tmp) / "inference-build-v2"
