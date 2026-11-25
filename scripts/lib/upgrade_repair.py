@@ -35,12 +35,15 @@ def repair(checkout, diagnostics, *, session=None, timeout=41400):
         "Keep preparation stamps (.skippy-*) out of native commits and patches. "
         "Validate replay with just llama-prepare, which creates those stamps, not bare git am. "
         "Keep generated patches compiler-generated; the controller regenerates them after your turn. "
-        "Return after focused checks; the controller owns complete regeneration and full CI. "
+        "The controller also owns crates/skippy-api/src/native-recipe.json and recomputes its source hash; "
+        "leave that generated metadata to verification. "
+        "Return after focused checks; the controller owns complete regeneration, CPU graph contracts, "
+        "lint and offline Rust/C++ tests after every turn, and independent full platform CI. "
         "Leave outer repository changes uncommitted. Allowed paths: " + ", ".join(ALLOWED) + "."
     )
     before = git(checkout, "rev-parse", "HEAD")
-    generated = {path: (checkout / path).read_bytes() if (checkout / path).exists() else None
-                 for path in ("crates/skippy-api/src/native-recipe.json",)}
+    recipe = checkout / "crates/skippy-api/src/native-recipe.json"
+    generated = recipe.read_bytes() if recipe.exists() else None
     pin = (checkout / "llama_cpp/upstream.txt").read_bytes()
     # Match Mesh's 11h30 coding budget. The workflow's 23h50 job cap also
     # covers setup, regeneration and candidate export; full CI runs separately.
@@ -50,9 +53,12 @@ def repair(checkout, diagnostics, *, session=None, timeout=41400):
     if git(checkout, "rev-parse", "HEAD") != before or (checkout / "llama_cpp/upstream.txt").read_bytes() != pin:
         raise ValueError("repair changed the candidate history or selected upstream pin")
     check_changes(checkout, "HEAD")
-    restricted = {"crates/skippy-api/src/native-recipe.json"}
-    if any(((checkout / path).read_bytes() if (checkout / path).exists() else None) != generated[path]
-           for path in restricted):
-        raise ValueError("repair changed generated qualification admission inputs")
+    # The next verification pass derives this identity from the actual queue.
+    # Discard agent-authored metadata rather than trusting it or rejecting an
+    # otherwise valid repair merely for keeping its generated hash consistent.
+    if generated is None:
+        recipe.unlink(missing_ok=True)
+    else:
+        recipe.write_bytes(generated)
     if not git(checkout, "status", "--porcelain", "--untracked-files=normal"):
         raise ValueError("repair agent produced no changes")

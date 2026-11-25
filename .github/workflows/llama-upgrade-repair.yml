@@ -1,0 +1,127 @@
+name: Repair llama upgrade candidate
+on:
+  workflow_call:
+    inputs:
+      upstream_sha:
+        type: string
+        required: true
+      candidate_artifact:
+        type: string
+        required: true
+      output_artifact:
+        type: string
+        required: true
+      ci_scope:
+        type: string
+        required: true
+      ci_prefix:
+        type: string
+        required: true
+    outputs:
+      candidate_sha:
+        value: ${{ jobs.repair.outputs.candidate_sha }}
+permissions:
+  contents: read
+  actions: read
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_PROFILE_RELEASE_DEBUG: '0'
+  CARGO_PROFILE_BENCH_DEBUG: '0'
+  SCCACHE_GHA_ENABLED: 'true'
+  SKIPPY_REQUIRE_SCCACHE: '1'
+jobs:
+  repair:
+    permissions:
+      contents: read
+      actions: read
+    if: github.ref == 'refs/heads/main'
+    runs-on:
+      group: jy-rnr_vfnz8k5p4yrh334
+      labels: [self-hosted, jy-linux-docker, Linux]
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 1430
+    outputs:
+      candidate_sha: ${{ steps.prepare.outputs.candidate_sha }}
+    env:
+      CARGO_BUILD_JOBS: '4'
+      CMAKE_BUILD_PARALLEL_LEVEL: '4'
+      SKIPPY_REWRITER_LLVM_PREFIX: /usr/lib/llvm-22
+      LIBCLANG_PATH: /usr/lib/llvm-22/lib
+      GOOSE_MODE: auto
+      GOOSE_DISABLE_SESSION_NAMING: 'true'
+      SKIPPY_UPGRADE_REPAIR_COMMAND: ${{ vars.SKIPPY_UPGRADE_REPAIR_COMMAND || '["goose","run","--with-builtin","developer","--text"]' }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - name: Check runner GitHub CLI
+        run: gh --version
+      - name: Check JY native tools and repair agent
+        run: just automation-run upgrade runner-check
+      - uses: ./.github/actions/cache
+        with:
+          scope: upgrade-candidate-jy-llvm22
+          download-scope: upgrade-candidate
+      - uses: ./.github/actions/sccache
+        id: compiler_cache
+        with:
+          scope: upgrade-candidate-jy-${{ runner.os }}-${{ runner.arch }}-llvm22
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ inputs.candidate_artifact }}
+          path: target/llama-repair/candidate
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: ${{ inputs.ci_scope }}-*-evidence
+          path: target/llama-repair/diagnostics
+      - name: Collect and classify this CI round
+        id: failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_PREFIX: ${{ inputs.ci_prefix }}
+        run: just automation-run upgrade diagnostics target/llama-repair/diagnostics --ci-prefix "$CI_PREFIX"
+      - name: Repair failed candidate and prepare a fresh bundle
+        id: prepare
+        if: steps.failure.outputs.repairable == 'true'
+        env:
+          UPSTREAM_SHA: ${{ inputs.upstream_sha }}
+        run: >-
+          just automation-run upgrade prepare "$UPSTREAM_SHA"
+          --repair-bundle target/llama-repair/candidate/candidate.bundle --diagnostics target/llama-repair/diagnostics
+      - uses: ./.github/actions/report-sccache
+        if: ${{ !cancelled() && steps.compiler_cache.outcome == 'success' }}
+        with:
+          artifact-prefix: ${{ inputs.output_artifact }}-preparation
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: steps.prepare.outcome == 'success'
+        with:
+          name: ${{ inputs.output_artifact }}
+          path: |
+            target/llama-upgrade/candidate.bundle
+            target/llama-upgrade/candidate.json
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: ${{ always() }}
+        with:
+          name: ${{ inputs.output_artifact }}-recovery
+          path: target/llama-upgrade/diagnostics/recovery
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: ${{ always() }}
+        with:
+          name: ${{ inputs.output_artifact }}-diagnostics
+          path: |
+            target/llama-upgrade/diagnostics
+            target/llama-repair/diagnostics
+          if-no-files-found: warn
+          retention-days: 14

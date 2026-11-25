@@ -1,6 +1,7 @@
 # Offline automation and reporting recipes; no native build inputs.
 
 inference-contracts:
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_build.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/jy_read_recovery.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_markdown.py
@@ -11,12 +12,14 @@ inference-publication-test:
 
 automation-contracts: inference-contracts
     @"{{ automation_python }}" scripts/tests/ci_cuda_license.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_windows_cuda.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_process_environment.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/automation_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_process_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_product_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_diagnostics.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_verification.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_lifecycle.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_rehearsal.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/graph_contracts.py

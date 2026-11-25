@@ -91,7 +91,7 @@ jobs:
       artifact_only: ${{ steps.inventory.outputs.artifact_only }}
     needs: [admission, validation, inference, documentation_validation]
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -111,6 +111,9 @@ jobs:
         env:
           RELEASE_TAG: ${{ needs.admission.outputs.tag }}
         run: just release-prepare-candidate "$RELEASE_TAG" release-artifacts
+      - name: Verify crates.io packages
+        if: needs.admission.outputs.prerelease != 'true'
+        run: just release-crates package release-artifacts/release-product-linux-x86_64-cpu
       - name: Transfer the prepared release assets
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: ${{ !inputs.canary }}
@@ -241,6 +244,41 @@ jobs:
             notes+=$'\n\n'"Build and archive checks only. Inference qualification is pending for $ARTIFACT_ONLY."
           fi
           gh release edit "$RELEASE_TAG" --draft=false --prerelease="$PRERELEASE" --notes "$notes"
+  publish_crates:
+    needs: [admission, publish]
+    if: ${{ !inputs.canary && needs.admission.outputs.prerelease != 'true' && vars.SKIPPY_PUBLISH_CRATES == 'true' }}
+    environment: release
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 190
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: refs/tags/${{ needs.admission.outputs.tag }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - name: Select crates.io authentication
+        id: registry-auth
+        env:
+          BOOTSTRAP_TOKEN: ${{ secrets.SKIPPY_CRATES_BOOTSTRAP_TOKEN }}
+        run: |
+          if [[ -n "$BOOTSTRAP_TOKEN" ]]; then
+            echo 'bootstrap=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+        id: crates-io
+        if: steps.registry-auth.outputs.bootstrap != 'true'
+      - name: Publish verified crates
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.SKIPPY_CRATES_BOOTSTRAP_TOKEN || steps.crates-io.outputs.token }}
+          SKIPPY_CRATES_BOOTSTRAP: ${{ steps.registry-auth.outputs.bootstrap }}
+          RELEASE_TAG: ${{ needs.admission.outputs.tag }}
+          SOURCE_SHA: ${{ needs.admission.outputs.source }}
+        run: just release-crates publish "$RELEASE_TAG" "$SOURCE_SHA"
   documentation:
     needs: [admission, publish]
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}

@@ -1,6 +1,7 @@
 """Failed-CI evidence collection across the JY and current GitHub CLIs."""
 
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from contextlib import redirect_stdout
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('diagnostics', ROOT / 'scripts/upgrade-diagnostics.py')
@@ -30,9 +32,9 @@ class Diagnostics(unittest.TestCase):
             'if args==["api","--help"]:\n'
             '    print("--allow-escape-sequences" if modern else "--paginate --jq")\n'
             'elif "--paginate" in args:\n'
-            '    assert args[args.index("--jq")+1]==\'.jobs[] | select(.conclusion == "failure") | .id\'\n'
+            '    assert args[args.index("--jq")+1]==\'.jobs[] | select(.conclusion == "failure") | {id, name, steps} | tojson\'\n'
             '    if fail=="listing": sys.exit(1)\n'
-            '    print("137156371637\\n137362147708")\n'
+            '    for identifier in (137156371637,137362147708): print(json.dumps({"id":identifier,"name":"qualify / Quality canary","steps":[{"name":"Run just test","conclusion":"failure"}]}))\n'
             'else:\n'
             '    assert ("--allow-escape-sequences" in args)==modern\n'
             '    if fail=="first-log" and "137156371637" in args[-1]: sys.exit(1)\n'
@@ -42,7 +44,8 @@ class Diagnostics(unittest.TestCase):
         output.mkdir()
         (output / 'quality-evidence.txt').write_text('existing downloaded artifact\n')
         with patch.dict(os.environ, GITHUB_RUN_ID='45296606108', PATH=str(binary) + os.pathsep + os.environ['PATH']):
-            diagnostics.collect(output)
+            with redirect_stdout(io.StringIO()):
+                diagnostics.collect(output)
         return output, json.loads((output / 'actions-log-collection.json').read_text())
 
     @unittest.skipIf(os.name == 'nt', 'Unix executable fixture matches the JY runner')
@@ -75,10 +78,28 @@ class Diagnostics(unittest.TestCase):
     def test_invalid_job_identity_is_not_used_as_a_log_path(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, GITHUB_RUN_ID='123'):
             for value in ('"../escape"', 'true', '0'):
-                with self.subTest(value=value), patch.object(diagnostics, 'gh', side_effect=['--jq', value]) as gh:
+                with self.subTest(value=value), patch.object(diagnostics, 'gh', side_effect=['--jq', json.dumps({'id': json.loads(value), 'name': 'qualify / test', 'steps': []})]) as gh:
                     with self.assertRaisesRegex(ValueError, 'invalid workflow job ID'):
                         diagnostics.collect(Path(tmp))
                     self.assertEqual(gh.call_count, 2)
+
+    def test_later_round_excludes_stale_failures_and_exports_its_own_verdict(self):
+        jobs = [
+            {'id': 1, 'name': 'qualify / Quality canary', 'steps': [{'name': 'Run just test', 'conclusion': 'failure'}]},
+            {'id': 2, 'name': 'requalify / Graph Contracts', 'steps': [{'name': 'Run just llama-check', 'conclusion': 'failure'}]},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp)
+            with patch.dict(os.environ, GITHUB_RUN_ID='123', GITHUB_OUTPUT=str(output / 'outputs')), \
+                 patch.object(diagnostics, 'gh', side_effect=['--jq', '\n'.join(map(json.dumps, jobs)),
+                                                            'error: undeclared LLM_FUSED_OP_LIGHTNING_INDEXER']) as gh, \
+                 redirect_stdout(io.StringIO()):
+                diagnostics.collect(output, 'requalify / ')
+            self.assertEqual(json.loads((output / 'actions-log-collection.json').read_text())['downloaded_jobs'], [2])
+            self.assertTrue(json.loads((output / 'ci-failure.json').read_text())['repairable'])
+            self.assertIn('repairable=true', (output / 'outputs').read_text())
+            self.assertEqual(gh.call_count, 3)
+            self.assertTrue(gh.call_args.args[-1].endswith('/2/logs'))
 
 
 if __name__ == '__main__':
