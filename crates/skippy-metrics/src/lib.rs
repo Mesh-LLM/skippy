@@ -81,3 +81,15 @@ pub mod metric {
     pub const KV_PEER_TRANSFER_ATTEMPTS: &str = "skippy.kv.peer_transfer_attempts";
     pub const KV_PEER_TRANSFER_ERRORS: &str = "skippy.kv.peer_transfer_errors";
 }
+
+/// OpenTelemetry semantic-convention keys, for trace backends that read the
+/// standard names rather than Skippy's own.
+pub mod semconv {
+    pub const GEN_AI_OPERATION_NAME: &str = "gen_ai.operation.name";
+    pub const GEN_AI_PROVIDER_NAME: &str = "gen_ai.provider.name";
+    pub const GEN_AI_RESPONSE_MODEL: &str = "gen_ai.response.model";
+    pub const GEN_AI_USAGE_INPUT_TOKENS: &str = "gen_ai.usage.input_tokens";
+    pub const GEN_AI_USAGE_OUTPUT_TOKENS: &str = "gen_ai.usage.output_tokens";
+    pub const GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS: &str = "gen_ai.usage.cache_read.input_tokens";
+    pub const SESSION_ID: &str = "session.id";
+}

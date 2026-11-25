@@ -2,6 +2,7 @@ mod cache_hints;
 mod concurrency;
 mod draft_runner;
 mod execution;
+mod gen_ai_semconv;
 mod http_request_span;
 mod incremental_text;
 mod live_request_defaults;
@@ -43,6 +44,7 @@ pub(in crate::frontend) use cache_hints::{
 pub(in crate::frontend) use concurrency::*;
 pub(in crate::frontend) use draft_runner::*;
 pub(in crate::frontend) use execution::{generation_ids, run_blocking_generation_worker};
+pub(in crate::frontend) use gen_ai_semconv::{GenAiOperation, GenAiUsage, gen_ai_attrs};
 #[cfg(test)]
 pub(in crate::frontend) use incremental_text::recorded_fixture;
 pub(in crate::frontend) use parsing::*;

@@ -1,12 +1,14 @@
 use crate::frontend::generation::{
-    EmbeddedStageZeroGeneration, GeneratedText, GenerationTokenLimit, InferenceBackendMode,
-    InferenceGenerationIds, LocalGeneration, PhaseTimer, PreparedGenerationPrompt,
-    PreparedTextPrompt, StageOpenAiBackend, TextGenerationCollector, emulation_generation_active,
+    EmbeddedStageZeroGeneration, GenAiOperation, GenAiUsage, GeneratedText, GenerationTokenLimit,
+    InferenceBackendMode, InferenceGenerationIds, LocalGeneration, PhaseTimer,
+    PreparedGenerationPrompt, PreparedTextPrompt, StageOpenAiBackend, TextGenerationCollector,
+    emulation_generation_active, gen_ai_attrs,
 };
 use crate::frontend::util::{generation_stop_values, openai_backend_error};
-use serde_json::json;
+use serde_json::{Value, json};
 use skippy_inference_api::{InferenceError, InferenceResult, generation::GenerationRequest};
 use skippy_runtime::{ModelWorkload, SamplingConfig};
+use std::collections::BTreeMap;
 use std::time::Instant;
 
 pub(super) fn resident_capacity_target_tokens(prompt_token_count: usize) -> u64 {
@@ -362,7 +364,47 @@ impl StageOpenAiBackend {
         };
 
         let mut output = collector.finish(prompt_token_ids.len(), cache_stats)?;
-        let mut summary_attrs = self.openai_attrs(&ids);
+        // Offset from this span's start, so a reader can place it absolutely.
+        let first_token_ms = first_token_at.map(|at| {
+            at.duration_since(generation_timer.start_instant)
+                .as_secs_f64()
+                * 1000.0
+        });
+        let summary_attrs =
+            self.generation_summary_attrs(&output, &ids, prompt.shape, first_token_ms);
+        let total_ms = self.emit_openai_summary(
+            "stage.openai_generation_summary",
+            generation_timer,
+            summary_attrs,
+        );
+        // A logprobs request ran with speculation stood down above: its decode
+        // rate must not count toward the speculative window.
+        self.record_speculation_outcome(&output, speculating && sampling.top_logprobs.is_none());
+        if crate::generation_stats::observer_installed() {
+            output.generation_stats = Some(self.generation_stats(
+                &output,
+                GenerationStatsInputs {
+                    speculative_strategy: &gated_speculative.effective_strategy,
+                    speculation_allowed: speculating && sampling.top_logprobs.is_none(),
+                    speculation: speculation_summary,
+                    request_shape: prompt.shape,
+                    total_ms,
+                },
+            ));
+        }
+        Ok(output)
+    }
+
+    /// What `stage.openai_generation_summary` reports: Skippy's own counts
+    /// and timings, and the GenAI attributes trace backends read.
+    fn generation_summary_attrs(
+        &self,
+        output: &GeneratedText,
+        ids: &InferenceGenerationIds,
+        shape: crate::generation_stats::RequestShape,
+        first_token_ms: Option<f64>,
+    ) -> BTreeMap<String, Value> {
+        let mut summary_attrs = self.openai_attrs(ids);
         summary_attrs.insert(
             "llama_stage.prompt_token_count".to_string(),
             json!(output.prompt_tokens),
@@ -371,16 +413,10 @@ impl StageOpenAiBackend {
             "llama_stage.completion_token_count".to_string(),
             json!(output.completion_tokens),
         );
-        // Offset from this span's start, so a reader can place it absolutely.
-        if let Some(first_token_at) = first_token_at {
+        if let Some(first_token_ms) = first_token_ms {
             summary_attrs.insert(
                 "llama_stage.first_token_ms".to_string(),
-                json!(
-                    first_token_at
-                        .duration_since(generation_timer.start_instant)
-                        .as_secs_f64()
-                        * 1000.0
-                ),
+                json!(first_token_ms),
             );
         }
         summary_attrs.insert("skippy.kv.status".to_string(), json!(output.cache_status));
@@ -412,27 +448,17 @@ impl StageOpenAiBackend {
             "llama_stage.eog_check_ms".to_string(),
             json!(output.eog_check_ms),
         );
-        let total_ms = self.emit_openai_summary(
-            "stage.openai_generation_summary",
-            generation_timer,
-            summary_attrs,
-        );
-        // A logprobs request ran with speculation stood down above: its decode
-        // rate must not count toward the speculative window.
-        self.record_speculation_outcome(&output, speculating && sampling.top_logprobs.is_none());
-        if crate::generation_stats::observer_installed() {
-            output.generation_stats = Some(self.generation_stats(
-                &output,
-                GenerationStatsInputs {
-                    speculative_strategy: &gated_speculative.effective_strategy,
-                    speculation_allowed: speculating && sampling.top_logprobs.is_none(),
-                    speculation: speculation_summary,
-                    request_shape: prompt.shape,
-                    total_ms,
-                },
-            ));
-        }
-        Ok(output)
+        summary_attrs.extend(gen_ai_attrs(
+            GenAiOperation::of(shape),
+            &self.model_id,
+            &GenAiUsage {
+                input_tokens: output.prompt_tokens,
+                output_tokens: output.completion_tokens,
+                cache_read_input_tokens: output.cached_prompt_tokens,
+            },
+            ids,
+        ));
+        summary_attrs
     }
 }
 
