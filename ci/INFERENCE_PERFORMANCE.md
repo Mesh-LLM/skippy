@@ -66,11 +66,13 @@ GitHub workflow still dispatches Metal only.
 unified memory. A plan must name exactly one node and targets it bare — the lab's ROCm
 agents report no `os` facts, and a selector holding an `os` key never matches them —
 and the job pins GPU 0 with `HIP_VISIBLE_DEVICES=0`; no `HSA_OVERRIDE_GFX_VERSION` or
-other override is set. Both
-arms read the first GPU agent's `gfx` target from `rocminfo` at build time: Skippy as
-`LLAMA_STAGE_AMDGPU_TARGETS`, the reference as `-DGGML_HIP=ON -DAMDGPU_TARGETS=<gfx>`,
-the variable the pinned llama.cpp's `ggml-hip/CMakeLists.txt` forwards to
-`CMAKE_HIP_ARCHITECTURES`. No optional HIP feature is enabled in either build. The tool
+other override is set. Both builds carry the pinned target `gfx1151`: the job env sets
+`SKIPPY_AMDGPU_TARGETS=gfx1151` (which `scripts/build-llama.sh` falls back to) and puts
+`/opt/rocm/bin` on `PATH` and `/opt/rocm/lib` on `LD_LIBRARY_PATH`, which the job shell
+does not inherit on its own; the reference arm configures with
+`-DGGML_HIP=ON -DAMDGPU_TARGETS=gfx1151`, the variable the pinned llama.cpp's
+`ggml-hip/CMakeLists.txt` forwards to `CMAKE_HIP_ARCHITECTURES`. No optional HIP
+feature is enabled in either build. The tool
 check runs `rocminfo` and requires `rocm-smi` or `amd-smi`; the host facts record the
 GPU's name and `gfx` target, the ROCm version from `/opt/rocm/.info/version`, the amdgpu
 driver version, VRAM and GTT total and used, the OS release and kernel. Admission is the

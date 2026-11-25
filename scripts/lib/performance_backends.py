@@ -136,15 +136,18 @@ def rocm_gfx():
     return rocm_agent()[0]
 
 
+ROCM_GFX_TARGET = "gfx1151"
+
+
 def rocm_skippy_env():
     return {"LLAMA_STAGE_BACKEND": "rocm", "LLAMA_STAGE_LINK_MODE": "static",
-            "LLAMA_STAGE_AMDGPU_TARGETS": rocm_gfx()}
+            "LLAMA_STAGE_AMDGPU_TARGETS": ROCM_GFX_TARGET}
 
 
 def rocm_reference_cmake():
     # The pinned llama.cpp's ggml-hip/CMakeLists.txt forwards AMDGPU_TARGETS to
     # CMAKE_HIP_ARCHITECTURES, so this is the variable Skippy's build also sets.
-    return ["-DGGML_HIP=ON", f"-DAMDGPU_TARGETS={rocm_gfx()}"]
+    return ["-DGGML_HIP=ON", f"-DAMDGPU_TARGETS={ROCM_GFX_TARGET}"]
 
 
 def rocm_tool_check():
@@ -280,6 +283,8 @@ BACKENDS = {
         "device_prefixes": ("ROCm", "HIP"),
         "facts": rocm_facts,
         "free_memory": rocm_free,
-        "env": {"HIP_VISIBLE_DEVICES": "0"},
+        "env": {"HIP_VISIBLE_DEVICES": "0", "SKIPPY_AMDGPU_TARGETS": ROCM_GFX_TARGET,
+                "PATH": "/opt/rocm/bin:/usr/local/bin:/usr/bin:/bin",
+                "LD_LIBRARY_PATH": "/opt/rocm/lib"},
     },
 }
