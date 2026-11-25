@@ -105,7 +105,10 @@ def run_point(endpoint, point, coordinate, tokenizer_path, warmup, directory: Pa
         return dict.fromkeys(METRICS), rejected
     if failure is not None:
         raise failure
-    exports = list(directory.rglob("profile_export_aiperf.json"))
-    if len(exports) != 1:
-        raise ValueError(f'{point["id"]}: expected one AIPerf export, found {len(exports)}')
-    return measurements(read_json(exports[0])), None
+    # AIPerf 0.13.0 writes the summary at the artifact root and each phase under
+    # phases/, so a recursive search sees three exports; the summary is the file
+    # this point's numbers come from.
+    export = directory / "profile_export_aiperf.json"
+    if not export.is_file():
+        raise ValueError(f'{point["id"]}: no AIPerf export in {directory}')
+    return measurements(read_json(export)), None
