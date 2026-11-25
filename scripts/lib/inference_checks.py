@@ -32,16 +32,17 @@ def numerical(model, coordinate, fixture, output):
         command(args, timeout=1800, overrides={"CUDA_VISIBLE_DEVICES": ""})
 
 
-def offload(log):
+def offload(log, prefixes=("MTL",)):
+    devices = "|".join(prefixes)
     with log.open(encoding="utf-8") as stream:
         for line in stream:
             match = re.search(r"offloaded ([0-9]+)/[^\n]*GPU", line)
             if match and int(match[1]) > 0:
                 return
             # Skippy's structured status log does not forward llama.cpp's
-            # offload line; a Metal backend device selection is its GPU
-            # evidence, with the harness having applied --n-gpu-layers.
-            if '"type":"backend_device_selected"' in line and re.search(r'"detail":"MTL', line):
+            # offload line; a backend device selection is its GPU evidence,
+            # with the harness having applied --n-gpu-layers.
+            if '"type":"backend_device_selected"' in line and re.search(rf'"detail":"(?:{devices})', line):
                 return
     raise ValueError("server log has no positive GPU-layer offload evidence")
 

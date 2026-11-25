@@ -8,6 +8,7 @@ from pathlib import Path
 from .ci_artifacts import digest, read_json
 from .inference_inputs import fixture
 from .inference_ladder import ladder_models
+from .performance_backends import BACKENDS
 
 ROOT = Path(__file__).resolve().parents[2]
 SCENARIO = ROOT / "ci/inference-performance.json"
@@ -17,7 +18,6 @@ SHA = re.compile(r"[0-9a-f]{40}")
 PULL_REQUEST = re.compile(r"pr:([1-9][0-9]{0,6})")
 BRANCH = re.compile(r"branch:([A-Za-z0-9._/-]{1,200})")
 NODE = re.compile(r"[A-Za-z0-9._-]{1,64}")
-RESERVE_GIB = 16
 MAX_ROUNDS = 9
 POINT_FIELDS = {"id", "concurrency", "depth", "input_tokens", "output_tokens", "requests"}
 
@@ -104,18 +104,13 @@ def models(keys):
     return keys
 
 
-def memory_floor(keys):
-    largest = max(sum(file["size"] for file in fixture(key)["files"]) for key in keys)
-    return math.ceil(largest / 1024**3) + RESERVE_GIB
-
-
 def nodes(values):
     if len(set(values)) != len(values) or not all(NODE.fullmatch(value) for value in values):
         raise ValueError("nodes must be distinct JY node names")
     return values
 
 
-def job_spec(harness, arm_list, keys, rounds, node, label, *, trace=False):
+def job_spec(harness, arm_list, keys, rounds, node, label, *, trace=False, backend="metal"):
     """`trace` adds one diagnostic pass of the candidate with debug telemetry, kept out
     of the measurements: tracing costs time, so a traced arm is not a comparable one."""
     count(rounds, "rounds")
@@ -123,20 +118,28 @@ def job_spec(harness, arm_list, keys, rounds, node, label, *, trace=False):
         raise ValueError("trace must be true or false")
     if rounds > MAX_ROUNDS:
         raise ValueError(f"at most {MAX_ROUNDS} rounds fit the job's time budget")
+    if backend not in BACKENDS:
+        raise ValueError(f"unknown backend {backend!r}; the table holds {', '.join(sorted(BACKENDS))}")
     shape = scenario()
-    target = {"executor": "lab", "num_nodes": 1, "selector": {
-        "os": {"family": "macos"}, "accelerator": {"backend": "metal"},
-        "memory": {"system_gib": {"min": memory_floor(keys)}}}}
+    entry = BACKENDS[backend]
+    if entry["pin_required"] and node is None:
+        raise ValueError(f"a {backend} plan must name exactly one node: its GPUs differ between hosts")
+    largest = max(sum(file["size"] for file in fixture(key)["files"]) for key in keys)
+    selector = {key: value for key, value in entry["selector"].items() if key != "memory"}
+    selector["memory"] = {entry["memory_key"]: {"min": math.ceil(largest / 1024**3) + entry["reserve_gib"]},
+                          **entry["selector"].get("memory", {})}
+    target = {"executor": "lab", "num_nodes": 1, "selector": selector}
     if node is not None:
         target["nodes"] = [node]
     repos = [{"url": SKIPPY, "rev": harness, "path": "harness"}] + [
         {"url": SKIPPY if arm["kind"] == "skippy" else LLAMA, "rev": arm["sha"], "path": arm["path"]}
         for arm in arm_list]
-    plan = {"harness": harness, "arms": arm_list, "models": keys, "rounds": rounds, "trace": trace}
+    plan = {"harness": harness, "backend": backend, "arms": arm_list, "models": keys,
+            "rounds": rounds, "trace": trace}
     points = [point for server in shape["servers"] for point in server["points"]]
     return {
         "name": f"skippy-inference-performance-{label}",
-        "description": "Same-host Metal comparison of " + ", ".join(
+        "description": entry["description"] + " of " + ", ".join(
             f'{arm["label"]} {arm["sha"][:12]}' for arm in arm_list) + f" on {', '.join(keys)}.",
         "priority": 50,
         "target": target,
@@ -145,7 +148,8 @@ def job_spec(harness, arm_list, keys, rounds, node, label, *, trace=False):
                               "sha256": fixture(keys[0])["files"][0]["sha256"], "egress": "lab_only"},
             "workspace": {"repos": repos, "build": "cd harness && just inference-performance-build",
                           "retain": "on_failure"},
-            "env": {"SKIPPY_PERFORMANCE_PLAN": json.dumps(plan, separators=(",", ":"))},
+            "env": {"SKIPPY_PERFORMANCE_PLAN": json.dumps(plan, separators=(",", ":")),
+                    **entry["env"]},
             "command": "cd harness && just inference-performance-execute",
         },
         "harness": {

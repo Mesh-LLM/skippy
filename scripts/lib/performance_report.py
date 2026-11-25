@@ -74,7 +74,8 @@ def report_view(host, rows, record):
         key = row["model"], row["server"], row["point"]
         configuration = configurations.setdefault(key, {
             "id": "/".join(key), "label": " · ".join(key), "group": host,
-            "workload": f'Controlled Metal · {host} · {row["server"]} · {row["point"]}',
+            "workload": f'Controlled {((record.get("host") or {}).get("backend") or "metal")} · {host}'
+                        f' · {row["server"]} · {row["point"]}',
             "outcome": "passed", "metrics": [],
         })
         arms = row["arms"]
@@ -131,9 +132,12 @@ def rows(record, shape, committed_at, job, pull_requests, branches=None):
         branch = (branches or {}).get(sample["arm"])
         server, point = points[(sample["server"], sample["point"])]
         yield {
-            "schema_version": 1, "job": job, "started_at": record.get("started_at"),
+            "schema_version": 2, "job": job, "started_at": record.get("started_at"),
             "harness": record["harness"], "scenario_sha256": record["scenario_sha256"],
-            "chip": host["chip"], "macos": host.get("macos"), "node": host.get("node"),
+            "backend": host.get("backend"), "gpu": host.get("gpu"), "chip": host.get("chip"),
+            "macos": host.get("macos"), "os": host.get("os"), "os_version": host.get("os_version"),
+            "kernel": host.get("kernel"), "driver_version": host.get("driver_version"),
+            "toolkit_version": host.get("toolkit_version"), "node": host.get("node"),
             "metal_working_set_bytes": host.get("metal_working_set_bytes"),
             "arm": sample["arm"], "kind": arm["kind"], "sha": arm["sha"],
             "committed_at": committed_at.get(arm["sha"]), "binary_sha256": arm["binary_sha256"],

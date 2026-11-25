@@ -4,9 +4,10 @@ import json
 import unittest
 from pathlib import Path
 from runpy import run_path
+from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
-from lib import performance_plan
+from lib import performance_arms, performance_plan
 from lib.performance_arms import REQUIRED, capabilities, may_reject, server_args
 from lib.performance_load import measurements, rejection, run_point
 from lib import performance_report
@@ -114,6 +115,26 @@ class PlanTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], performance_plan.MAX_ROUNDS + 1, None, "x")
 
+    def test_a_cuda_plan_targets_a_dgx_spark(self):
+        arm_list = performance_plan.arms(self.candidate, self.baseline, self.pin)
+        spec = performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 3, "spark-000137", "sp",
+                                         backend="cuda")
+        selector = spec["target"]["selector"]
+        self.assertEqual(selector["os"], {"family": "linux"})
+        self.assertEqual(selector["arch"], {"in": ["aarch64"]})
+        self.assertEqual(selector["accelerator"], {"backend": "cuda", "model": {"in": ["NVIDIA GB10"]}})
+        self.assertIs(selector["memory"]["unified"], True)
+        self.assertGreaterEqual(selector["memory"]["system_gib"]["min"], 18)
+        self.assertEqual(spec["target"]["nodes"], ["spark-000137"])
+        self.assertIn("Same-host CUDA comparison", spec["description"])
+        self.assertEqual(json.loads(spec["runtime"]["env"]["SKIPPY_PERFORMANCE_PLAN"])["backend"], "cuda")
+
+    def test_an_unknown_backend_is_refused_at_plan_time(self):
+        arm_list = performance_plan.arms(self.candidate, self.baseline, self.pin)
+        with self.assertRaisesRegex(ValueError, "unknown backend"):
+            performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 3, None, "any",
+                                      backend="space-heater")
+
     def test_models_must_be_ladder_ids(self):
         with self.assertRaises(ValueError):
             performance_plan.models(["qwen35-4b", "qwen35-4b"])
@@ -200,6 +221,45 @@ class ServerTests(unittest.TestCase):
         self.assertEqual([point["id"] for server, point in cells if may_reject(reference, server, point)],
                          ["c16-depth4096", "c4-depth4096-pool16k"])
         self.assertFalse(any(may_reject(self.skippy, server, point) for server, point in cells))
+
+
+class BackendTests(unittest.TestCase):
+    """The backend table drives every arm's build; one entry changes no other entry's commands."""
+    skippy = {"label": "candidate", "kind": "skippy", "sha": "a" * 40, "path": "candidate"}
+    reference = {"label": "reference", "kind": "llama-server", "sha": "c" * 40, "path": "reference"}
+
+    def build(self, arm, backend):
+        calls = []
+        with TemporaryDirectory() as directory:
+            with patch("lib.performance_arms.checkout", return_value=Path(directory)), \
+                 patch("lib.performance_arms.command",
+                       side_effect=lambda args, **kwargs: calls.append((args, kwargs)) or None), \
+                 patch("lib.performance_arms.toolkit_overrides", return_value={"CUDACXX": "/c/bin/nvcc"}), \
+                 patch("lib.performance_arms.digest", return_value="0" * 64):
+                built = performance_arms.build(arm, Path(directory) / "build.log", backend)
+        return calls, built
+
+    def test_the_cuda_entry_builds_both_arms_for_a_gb10(self):
+        calls, _ = self.build(self.skippy, "cuda")
+        just, cargo = calls[0], calls[1]
+        self.assertEqual(just[0][:2], ["just", "llama-build"])
+        self.assertEqual((just[1]["overrides"]["LLAMA_STAGE_BACKEND"], just[1]["overrides"]["LLAMA_STAGE_LINK_MODE"],
+                          just[1]["overrides"]["LLAMA_STAGE_CUDA_ARCHITECTURES"]), ("cuda", "static", "121"))
+        self.assertEqual(cargo[0][:3], ["cargo", "build", "--locked"])
+        self.assertEqual(cargo[1]["overrides"], just[1]["overrides"])
+        calls, _ = self.build(self.reference, "cuda")
+        configure, make = calls[0], calls[1]
+        self.assertIn("-DGGML_CUDA=ON", configure[0])
+        self.assertIn("-DCMAKE_CUDA_ARCHITECTURES=121", configure[0])
+        self.assertNotIn("-DGGML_METAL=ON", configure[0])
+        self.assertEqual(configure[1]["overrides"], {"CUDACXX": "/c/bin/nvcc"})
+        self.assertEqual(make[1]["overrides"], {"CUDACXX": "/c/bin/nvcc"})
+
+    def test_the_metal_entry_builds_the_reference_without_a_toolkit_environment(self):
+        calls, _ = self.build(self.reference, "metal")
+        self.assertIn("-DGGML_METAL=ON", calls[0][0])
+        self.assertNotIn("-DGGML_CUDA=ON", calls[0][0])
+        self.assertIsNone(calls[0][1]["overrides"])
 
 
 class RejectionTests(unittest.TestCase):

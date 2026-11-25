@@ -240,7 +240,7 @@ inference-performance-cancel ledger="target/ci-evidence/inference-performance/jo
     @"{{ automation_python }}" scripts/inference-performance.py cancel "$@"
 
 inference-performance-build:
-    @command -v hf uv cmake ninja cargo && xcrun --find swift
+    @command -v hf uv cmake ninja cargo && {{ automation_python }} scripts/inference-performance.py toolcheck
     @"{{ automation_python }}" scripts/inference-performance.py build
 
 inference-performance-execute:

@@ -26,6 +26,24 @@ gh workflow run inference-performance.yml -f candidate=main \
 | `rounds` | rounds per arm, at most 9; default 3 |
 | `trace` | after the rounds, one diagnostic pass of the candidate with debug telemetry; default off |
 
+## Backends
+
+`admit` reads `BACKEND` (default `metal`) and refuses any value that has no entry in the
+backend table, `scripts/lib/performance_backends.py`. The plan records the backend; build
+and execute read it from the plan and never infer it from the host, so a job always
+measures the machine it was planned for. Each entry holds the selector fragment of the JY
+target, the Skippy build overrides, the reference build's accelerator CMake flags, the
+tool check that runs before any build, the script that resolves a native toolkit for the
+reference build when it needs one, the device prefixes that count as GPU offload evidence,
+and the functions that prove the host and measure its free memory. A backend without a
+complete entry fails at plan time, not partway through a job.
+
+The table holds `metal` (any Apple M-series Mac whose Metal device is its own GPU) and
+`cuda` (a DGX Spark: Linux aarch64, an NVIDIA GB10, unified memory, CUDA architecture
+121). The Spark's reference arm builds with `-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=121`,
+configuring with the same toolkit environment `scripts/lib/cuda-toolkit.sh` resolves for
+Skippy's build. The GitHub workflow still dispatches Metal only.
+
 Both commits must be on protected main, unless an arm is `pr:N`: the head of an
 open pull request from this repository, never a fork's, authored by a collaborator with write access, so only code that could
 already run on trusted CI reaches the lab. An arm can also be `branch:NAME`, the head of a
@@ -39,16 +57,17 @@ and an older commit is never asked to run code it does not have.
 ## What one job does
 
 1. Builds each arm from its own checkout with release settings: `just
-   llama-build` with Metal static linking, then `cargo build --release -p
+   llama-build` with the backend's build overrides, then `cargo build --release -p
    skippy-cli`; the reference builds `llama-server` with CMake. Qualification
    uses debug builds; a comparison measures what ships.
 2. Admits each model through the same hash-verified cache as qualification and
-   checks the weights plus 16 GiB against the lesser of free and inactive
-   memory and Metal's working-set limit, as qualification does.
+   checks the weights plus the backend's reserve against the backend's free memory:
+   the lesser of free and inactive memory and Metal's working-set limit on `metal`,
+   `MemAvailable` on `cuda`.
 
-Any Apple M-series Mac whose Metal device is its own GPU can run a job, not
-only the M3 Ultra that qualification requires: arms are compared on one host,
-never across hosts. The job refuses to run as root.
+Any Apple M-series Mac whose Metal device is its own GPU, or a DGX Spark, can
+run a job, not only the hardware qualification requires: arms are compared on
+one host, never across hosts. The job refuses to run as root.
 3. For each model and round, runs every arm in rotated order (each arm leads one
    round in three), and for each arm starts one server per entry in
    `ci/inference-performance.json`, then drives each of its points with the
@@ -93,7 +112,9 @@ writes nothing.
 ## Evidence
 
 The job writes `performance.json` with the harness commit, scenario digest,
-host chip, macOS version and Metal working-set limit, every arm's commit and binary SHA-256, the model
+the host facts the backend records (chip, macOS version and Metal working-set limit on
+`metal`; GPU, driver, CUDA version, OS release and kernel on `cuda`), every arm's commit
+and binary SHA-256, the model
 shards, and one sample per model, round, arm and point. Each sample holds output
 tokens per second, requests per second, time to first token (p50 and p95),
 inter-token latency (p50), request latency (p50) and mean output tokens. A sample

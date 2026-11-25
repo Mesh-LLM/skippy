@@ -5,14 +5,17 @@ from pathlib import Path
 
 from .ci_artifacts import digest
 from .ci_process import capture, command
+from .performance_backends import BACKENDS
+from .performance_plan import ROOT
 
 PORT = 9337
 REQUIRED = ("--startup-timeout-secs", "--bind-addr", "--model-id", "--ctx-size",
             "--n-gpu-layers", "--model-path")
-METAL = {"LLAMA_STAGE_BACKEND": "metal", "LLAMA_STAGE_LINK_MODE": "static"}
 # llama.cpp files its library's INFO lines under trace, and the offload line the
 # startup check reads is one of them.
 REFERENCE_VERBOSITY = 4
+TOOLKIT_ENV = ("PATH", "CUDACXX", "NVCC", "CUDAToolkit_ROOT", "CUDA_HOME", "CUDA_PATH",
+               "CUDA_LIBRARY_PATH", "LIBRARY_PATH", "LD_LIBRARY_PATH")
 
 
 def checkout(arm):
@@ -23,24 +26,40 @@ def checkout(arm):
     return path.resolve()
 
 
-def build(arm, log):
+def toolkit_overrides(script):
+    """The toolkit environment Skippy's own build exports, so the reference arm configures
+    the same native toolkit rather than whatever an unpackaged CMake happens to find."""
+    text = capture(["bash", "-c", f'source "{script}" && configure_cuda_toolkit_env && env -0'])
+    found = {key: value for item in text.split("\0") if "=" in item
+             for key, value in (item.split("=", 1),) if key in TOOLKIT_ENV}
+    if not found:
+        raise ValueError("the native toolkit environment did not resolve; the reference build cannot find it")
+    return found
+
+
+def build(arm, log, backend="metal"):
     """Every arm is a release build: the comparison measures what ships, not a debug harness."""
+    entry = BACKENDS[backend]
     path = checkout(arm)
     with log.open("wb") as stream:
         if arm["kind"] == "skippy":
-            command(["just", "llama-build"], timeout=7200, overrides=METAL, cwd=path,
+            command(["just", "llama-build"], timeout=7200, overrides=entry["skippy_env"], cwd=path,
                     stdout=stream, stderr=stream)
             command(["cargo", "build", "--locked", "--release", "-p", "skippy-cli"], timeout=7200,
-                    overrides=METAL, cwd=path, stdout=stream, stderr=stream)
+                    overrides=entry["skippy_env"], cwd=path, stdout=stream, stderr=stream)
             binary = path / "target/release/skippy"
         else:
+            overrides = None
+            if entry["toolkit_script"]:
+                overrides = toolkit_overrides(ROOT / entry["toolkit_script"])
             build_dir = path / "build"
             command(["cmake", "-S", str(path), "-B", str(build_dir), "-G", "Ninja",
-                     "-DCMAKE_BUILD_TYPE=Release", "-DGGML_METAL=ON", "-DLLAMA_BUILD_TESTS=OFF",
+                     "-DCMAKE_BUILD_TYPE=Release", *entry["reference_cmake"],
+                     "-DLLAMA_BUILD_TESTS=OFF",
                      "-DLLAMA_BUILD_EXAMPLES=OFF", "-DLLAMA_BUILD_SERVER=ON"], timeout=1800,
-                    cwd=path, stdout=stream, stderr=stream)
+                    cwd=path, overrides=overrides, stdout=stream, stderr=stream)
             command(["cmake", "--build", str(build_dir), "--target", "llama-server", "--parallel"],
-                    timeout=7200, cwd=path, stdout=stream, stderr=stream)
+                    timeout=7200, cwd=path, overrides=overrides, stdout=stream, stderr=stream)
             binary = build_dir / "bin/llama-server"
     return {"label": arm["label"], "kind": arm["kind"], "sha": arm["sha"], "binary": str(binary),
             "binary_sha256": digest(binary)}

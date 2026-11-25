@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare Skippy commits, and llama.cpp's own server, on one Metal host at a time."""
+"""Compare Skippy commits, and llama.cpp's own server, on one host of any backend in the table."""
 
 import argparse
 import base64
@@ -19,12 +19,12 @@ from urllib.request import Request
 from lib.ci_artifacts import digest, read_json, write_json
 from lib.ci_process import cancel_on_signal, capture, command, start, stop
 from lib.ci_smoke import curl
-from lib import inference_metal
 from lib.inference_checks import ENDPOINT, offload
 from lib.inference_inputs import admit as admit_model
 from lib.inference_inputs import fixture
 from lib.jy_qualification import ORIGIN, Pilot
 from lib.performance_arms import build, capabilities, may_reject, server_args, supports
+from lib.performance_backends import BACKENDS
 from lib.performance_load import run_point, tokenizer
 from lib.performance_plan import (SCENARIO, arms, branch_name, job_spec, models, nodes, pull_request_head,
                                   pull_request_number, round_order, scenario)
@@ -37,7 +37,6 @@ BUILT = WORK / "built.json"
 # Outside the artifact directory: artifact names are flat, so the traces travel as one archive.
 TRACES = WORK / "traces"
 TERMINAL = {"succeeded", "failed", "cancelled", "expired"}
-RESERVE = 16 * 1024**3
 
 
 def github(path):
@@ -101,22 +100,25 @@ def admit(evidence):
     branches = {"candidate": candidate_branch, "baseline": baseline_branch}
     with_reference = os.environ.get("REFERENCE", "true") == "true"
     trace = os.environ.get("TRACE", "false") == "true"
+    backend = os.environ.get("BACKEND") or "metal"
     arm_list = arms(candidate, baseline, reference_pin(candidate) if with_reference else None)
     keys = models([key.strip() for key in os.environ["MODELS"].split(",") if key.strip()])
     pins = nodes([node.strip() for node in os.environ.get("NODES", "").split(",") if node.strip()])
     rounds = int(os.environ.get("ROUNDS") or 3)
     jobs = [{"label": node or "any",
-             "spec": job_spec(harness, arm_list, keys, rounds, node, node or "any", trace=trace)}
+             "spec": job_spec(harness, arm_list, keys, rounds, node, node or "any",
+                              trace=trace, backend=backend)}
             for node in (pins or [None])]
     evidence.mkdir(parents=True, exist_ok=True)
-    write_json(evidence / "plan.json", {"harness": harness, "arms": arm_list, "models": keys,
+    write_json(evidence / "plan.json", {"harness": harness, "backend": backend, "arms": arm_list,
+                                        "models": keys,
                                         "rounds": rounds, "trace": trace, "pull_requests": pull_requests,
                                         "branches": branches,
                                         "committed_at": committed_at(arm_list), "jobs": jobs})
     for arm in arm_list:
         print(f'{arm["label"]}: {arm["kind"]} {arm["sha"]}')
     print(off_main(pull_requests, branches), end="")
-    print(f"{len(jobs)} job(s), {len(keys)} model(s), {rounds} round(s); nothing has run yet")
+    print(f"backend {backend}: {len(jobs)} job(s), {len(keys)} model(s), {rounds} round(s); nothing has run yet")
 
 
 def resource_id(identifier):
@@ -183,7 +185,8 @@ def collect(pilot, job, plan, label, evidence):
         encoding="utf-8")
     if plan["trace"]:
         download(pilot, run_id, "traces.tar.gz", evidence / f"{label}-traces.tar.gz")
-    host = f'{result["host"]["chip"]} ({result["host"].get("node") or "unknown node"})'
+    host = f'{result["host"].get("gpu") or result["host"].get("chip") or "unknown device"}' \
+           f' ({result["host"].get("node") or "unknown node"})'
     return markdown(f"Inference performance: {label}", host, summarize(result["samples"]), result)
 
 
@@ -229,18 +232,25 @@ def native_plan():
         raise ValueError("harness checkout differs from the admitted harness commit")
     labels = {arm["label"]: arm["sha"] for arm in plan["arms"]}
     expected = arms(labels["candidate"], labels["baseline"], labels.get("reference"))
+    if plan.get("backend") not in BACKENDS:
+        raise ValueError(f'performance plan backend {plan.get("backend")!r} has no entry in the table')
     if (plan["arms"] != expected or plan["models"] != models(plan["models"])
             or type(plan.get("trace")) is not bool):
         raise ValueError("performance plan arms, models or trace flag are malformed")
     return plan
 
 
+def toolcheck():
+    """The backend's tool check, before any build spends an hour on a host without its tools."""
+    command(BACKENDS[native_plan()["backend"]]["tool_check"], timeout=120, capture_stdout=True)
+
+
 def build_arms():
     plan = native_plan()
-    inference_metal.chip()
     WORK.mkdir(parents=True, exist_ok=True)
     try:
-        write_json(BUILT, [build(arm, WORK / f'build-{arm["label"]}.log') for arm in plan["arms"]])
+        write_json(BUILT, [build(arm, WORK / f'build-{arm["label"]}.log', plan["backend"])
+                           for arm in plan["arms"]])
     finally:
         # execute() is the only other place build logs reach the artifact
         # directory, and it never runs after a build failure.
@@ -275,7 +285,8 @@ def traced(built, help_text, args, applied, missing, trace):
             "SKIPPY_TELEMETRY_OTLP_METRICS_FILE": str(trace.parent / f"{trace.name}.metrics.jsonl")}
 
 
-def measure(built, help_text, model, inputs, key, index, server, shape, output, trace=None):
+def measure(built, help_text, model, inputs, key, index, server, shape, output, trace=None,
+            prefixes=("MTL",)):
     """`index` is the round, or None for a diagnostic pass that writes `trace`."""
     coordinate = f'{inputs["repo"]}@{inputs["revision"]}'
     args, applied, missing = server_args(built, help_text, model, coordinate,
@@ -289,7 +300,7 @@ def measure(built, help_text, model, inputs, key, index, server, shape, output, 
         process = start(args, overrides, stdin=subprocess.DEVNULL, stdout=stream, stderr=stream)
         try:
             ready(process, 900)
-            offload(log)
+            offload(log, prefixes)
             for point in server["points"]:
                 metrics, rejected = run_point(ENDPOINT, point, coordinate, inputs["tokenizer_path"],
                                               shape["warmup_requests"], WORK / "aiperf" / name / point["id"],
@@ -309,8 +320,8 @@ def measure(built, help_text, model, inputs, key, index, server, shape, output, 
 def execute():
     if os.geteuid() == 0:
         raise ValueError("native inference must not execute as root")
-    plan, chip = native_plan(), inference_metal.chip()
-    working_set = inference_metal.working_set(chip)
+    plan = native_plan()
+    entry = BACKENDS[plan["backend"]]
     built = read_json(BUILT)
     if [(entry["label"], entry["sha"]) for entry in built] != [(arm["label"], arm["sha"]) for arm in plan["arms"]]:
         raise ValueError("built arms differ from the admitted plan")
@@ -324,8 +335,8 @@ def execute():
     shape, helps = scenario(), {entry["label"]: capabilities(entry) for entry in built}
     record = {"schema_version": 1, "harness": plan["harness"], "scenario_sha256": digest(SCENARIO),
               "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-              "host": {"chip": chip, "macos": capture(["sw_vers", "-productVersion"]).strip(),
-                       "metal_working_set_bytes": working_set, "node": os.environ.get("JIANYANG_NODE")},
+              "host": {"node": os.environ.get("JIANYANG_NODE"), "backend": plan["backend"],
+                       **entry["facts"]()},
               "arms": built, "rounds": plan["rounds"], "models": {}, "samples": []}
     if plan["trace"]:
         # Tracing slows the arm it runs on, so its samples never join the comparison.
@@ -334,25 +345,27 @@ def execute():
     try:
         for key in plan["models"]:
             inputs = fixture(key)
-            available = inference_metal.available_memory(capture(["vm_stat"]), working_set)
-            if available < sum(file["size"] for file in inputs["files"]) + RESERVE:
-                raise ValueError(f"{key}: insufficient Metal working set or free memory for weights and reserve")
+            available = entry["free_memory"](record["host"])
+            reserve = entry["reserve_gib"] * 1024**3
+            if available < sum(file["size"] for file in inputs["files"]) + reserve:
+                raise ValueError(f"{key}: insufficient {plan['backend']} free memory for weights and reserve")
             model = admit_model(key, inputs)
             inputs = {**inputs, "tokenizer_path": tokenizer(inputs)}
             record["models"][key] = {"repo": inputs["repo"], "revision": inputs["revision"],
                                      "files": inputs["files"]}
             for index in range(plan["rounds"]):
-                for entry in round_order(built, index):
+                for arm in round_order(built, index):
                     for server in shape["servers"]:
-                        record["samples"] += measure(entry, helps[entry["label"]], model, inputs, key,
-                                                     index, server, shape, output)
+                        record["samples"] += measure(arm, helps[arm["label"]], model, inputs, key,
+                                                     index, server, shape, output,
+                                                     prefixes=entry["device_prefixes"])
                         write_json(output / "performance.json", record)
             if plan["trace"]:
-                candidate = next(entry for entry in built if entry["label"] == "candidate")
+                candidate = next(arm for arm in built if arm["label"] == "candidate")
                 for server in shape["servers"]:
                     record["diagnostic"]["samples"] += measure(
                         candidate, helps["candidate"], model, inputs, key, None, server, shape, output,
-                        trace=TRACES / f'{key}-{server["id"]}')
+                        trace=TRACES / f'{key}-{server["id"]}', prefixes=entry["device_prefixes"])
                     write_json(output / "performance.json", record)
     finally:
         write_json(output / "performance.json", record)
@@ -370,6 +383,7 @@ def main():
     for name in ("admit", "dispatch"):
         actions.add_parser(name).add_argument("evidence", type=Path)
     actions.add_parser("cancel").add_argument("ledger", type=Path)
+    actions.add_parser("toolcheck")
     actions.add_parser("build")
     actions.add_parser("execute")
     args = parser.parse_args()
@@ -379,6 +393,8 @@ def main():
         dispatch(args.evidence)
     elif args.action == "cancel":
         cancel(Pilot(), args.ledger)
+    elif args.action == "toolcheck":
+        toolcheck()
     elif args.action == "build":
         build_arms()
     else:
