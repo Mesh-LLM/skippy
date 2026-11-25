@@ -17,7 +17,7 @@ use crate::{
 };
 
 use super::{
-    BATCHED_VERIFY_ENV, NATIVE_MTP_ENABLED_ENV,
+    MtpCaseMode,
     remote::{RemoteStageGuard, spawn_remote_stage1},
 };
 
@@ -53,8 +53,7 @@ pub(super) fn start_stage1(
     config_path: &Path,
     topology_path: &Path,
     log_path: &Path,
-    native_mtp_enabled: bool,
-    batched_verify_enabled: bool,
+    mode: MtpCaseMode,
 ) -> Result<(StageHandle, Stage1LaunchReport)> {
     if args.external_stage1 {
         fs::write(log_path, "stage 1 was externally managed by the caller\n")
@@ -71,27 +70,12 @@ pub(super) fn start_stage1(
     }
 
     if let Some(host) = args.stage1_ssh_host.as_deref() {
-        let (remote, report) = spawn_remote_stage1(
-            args,
-            host,
-            run_id,
-            config_path,
-            topology_path,
-            native_mtp_enabled,
-            batched_verify_enabled,
-        )?;
+        let (remote, report) =
+            spawn_remote_stage1(args, host, run_id, config_path, topology_path, mode)?;
         return Ok((StageHandle::Remote(remote), report));
     }
 
-    let local = spawn_stage(
-        args,
-        config_path,
-        None,
-        topology_path,
-        log_path,
-        native_mtp_enabled,
-        batched_verify_enabled,
-    )?;
+    let local = spawn_stage(args, config_path, None, topology_path, log_path, mode)?;
     Ok((
         StageHandle::Local(local),
         Stage1LaunchReport {
@@ -109,8 +93,7 @@ pub(super) fn spawn_stage(
     openai_bind_addr: Option<SocketAddr>,
     topology_path: &Path,
     log_path: &Path,
-    native_mtp_enabled: bool,
-    batched_verify_enabled: bool,
+    mode: MtpCaseMode,
 ) -> Result<ChildGuard> {
     let log = File::create(log_path)
         .with_context(|| format!("failed to create {}", log_path.display()))?;
@@ -138,16 +121,7 @@ pub(super) fn spawn_stage(
         command.arg("--worker-only");
     }
     command.env("SKIPPY_TELEMETRY_STDERR", "1");
-    if native_mtp_enabled {
-        command.env(NATIVE_MTP_ENABLED_ENV, "1");
-    } else {
-        command.env(NATIVE_MTP_ENABLED_ENV, "0");
-    }
-    if batched_verify_enabled {
-        command.env_remove(BATCHED_VERIFY_ENV);
-    } else {
-        command.env(BATCHED_VERIFY_ENV, "0");
-    }
+    command.args(mode.cli_args());
     command.stdout(Stdio::from(log.try_clone()?));
     command.stderr(Stdio::from(log));
     ChildGuard::spawn(command)
