@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import traceback
 import tarfile
 import time
 from datetime import datetime, timezone
@@ -411,4 +412,5 @@ if __name__ == "__main__":
             main()
     except (OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.SubprocessError,
             KeyboardInterrupt) as error:
+        traceback.print_exc()
         sys.exit(str(error))
