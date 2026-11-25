@@ -1,0 +1,7 @@
+name: Preserve the native ROCm runner workspace
+description: Restore host workspace ownership after all package/cache post actions.
+runs:
+  using: node24
+  main: ownership.cjs
+  post: ownership.cjs
+  post-if: always()

@@ -67,6 +67,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: ./.github/actions/rocm-rehearsal-workspace
       - name: Trust the host-owned checkout inside the job container
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Verify real AMD device access and pinned toolkit

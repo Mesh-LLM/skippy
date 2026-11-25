@@ -216,7 +216,10 @@ digest. A native JY runner starts an Actions job container from that image with
 container profile currently exposes NVIDIA passthrough only; using a native
 runner to start the job container supplies AMD device access without changing
 the host toolchain. The container and its processes are removed at job end.
-The workflow has read-only contents/packages permissions and no publication
+An early workspace action restores root-created files to the native account
+in its post hook, after package/cache post hooks; this lets JY replace the
+ephemeral runner without permission failures. Git trusts only the mounted
+checkout path inside the container. The workflow has read-only contents/packages permissions and no publication
 credentials. Runner-group access is restricted to this repository and selected
 workflow refs: the rehearsal on its dedicated branch, and `ci.yml` on main for
 later nightly/release integration. After merging the workflow, add its main
