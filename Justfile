@@ -192,6 +192,11 @@ inference-plan profile source output="target/ci-evidence/inference-plan.json":
 process-supervision-test:
     @cargo test --locked -p skippy-subprocess
 
+# Memory-tier and prefill-compute benchmark (tools/tierbench) for one backend.
+[unix]
+tierbench backend="" cuda_arch="" rocm_arch="":
+    @scripts/build-tierbench.sh --backend "{{ backend }}" --cuda-arch "{{ cuda_arch }}" --rocm-arch "{{ rocm_arch }}"
+
 [positional-arguments]
 inference-dispatch profile source output="target/ci-evidence/inference" *configuration:
     @"{{ automation_python }}" scripts/inference-dispatch.py dispatch "$@"
