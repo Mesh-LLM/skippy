@@ -97,11 +97,11 @@ def rejection(directory, requests):
 def run_point(endpoint, point, coordinate, tokenizer_path, warmup, directory: Path, *, may_reject):
     """One point's metrics, or null metrics and what the server rejected where it may reject."""
     failure = None
-    # AIPerf stages its ZeroMQ event bus under TMPDIR, and a workspace path longer
-    # than the 103-byte unix-socket limit (this Mac's "Application Support" tree)
-    # or holding a space breaks the ipc:// endpoints before a request is sent, so
-    # every AIPerf run gets its own short, space-free TMPDIR.
-    short_tmp = Path(tempfile.mkdtemp(prefix="aiperf-tmp-"))
+    # AIPerf stages its ZeroMQ event bus under TMPDIR, and the job's own TMPDIR
+    # lives under the workspace, whose path can exceed the 103-byte unix-socket
+    # limit (this Mac's "Application Support" tree) before AIPerf adds its own
+    # nesting. Anchor a short, space-free TMPDIR at /tmp instead.
+    short_tmp = Path(tempfile.mkdtemp(prefix="aiperf-tmp-", dir="/tmp"))
     try:
         command(profile_args(endpoint, point, coordinate, tokenizer_path, warmup, directory),
                 timeout=5400, overrides={"TMPDIR": str(short_tmp)})
