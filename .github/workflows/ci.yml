@@ -144,6 +144,10 @@ env:
   SCCACHE_GHA_ENABLED: 'true'
   SKIPPY_REQUIRE_SCCACHE: '1'
   SKIPPY_CUDA_ARCHITECTURE_MODE: ${{ inputs.cuda_architecture_mode || 'native' }}
+  # actions/checkout refuses fork code in a workflow_run workflow. Every checkout
+  # of this ref opts in with allow-unsafe-pr-checkout, only when the protected
+  # approved-fork controller supplied the PR; that caller has a read-only token
+  # and forwards no secrets.
   SKIPPY_CI_SOURCE_REF: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || inputs.source_ref || github.sha }}
   SKIPPY_ARTIFACT_SCOPE: ${{ inputs.artifact_scope || 'ci' }}
   # Release builds report anonymous usage; every other build is keyless and
@@ -292,6 +296,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/setup
         with:
@@ -350,6 +355,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/source
@@ -424,6 +430,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/source
         with:
@@ -509,6 +516,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/source
         with:
@@ -559,6 +567,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -587,6 +596,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -608,6 +618,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -637,6 +648,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -659,6 +671,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-smoke
         with:
@@ -686,6 +699,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -724,6 +738,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/rocm-workspace
       - name: Trust the host-owned checkout inside the job container
@@ -758,6 +773,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -787,6 +803,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -809,6 +826,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-smoke
         with:
@@ -835,6 +853,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -855,6 +874,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-smoke
         with:
@@ -874,6 +894,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -896,6 +917,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -918,6 +940,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -940,6 +963,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
