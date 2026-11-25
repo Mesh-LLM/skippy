@@ -100,7 +100,15 @@ Qualification may queue behind another PR's atomic Spark pair; the PR
 budget waits for placement instead of failing fast. Relevant PRs retain
 same-repository/collaborator admission, a fresh-head check and all seven GPU
 smoke configurations. The credentialed controller runs only protected source.
-Python admission verifies trust and source identity.
+Python admission verifies trust and source identity. A green native PR run therefore
+cannot validate changes to that controller. The candidate's `just ci-automation`
+runs a credential-free streaming rehearsal in `Automation checks`: synthetic API
+pages exercise the real controller and log forwarder through a buffered subprocess
+pipe. Standalone, leader and worker lines must arrive before the parent permits
+completion, and saved log contents must match. Look for `[stream-proof-` lines and
+`STREAMING PROOF PASSED` in the Actions output. This proves incremental candidate
+output reaches Actions before merge; it does not qualify the live lab API or
+artifact upload. Verify those on a real qualification run after merge.
 Release candidates are admitted only from scheduled or manually dispatched
 protected-main Release runs, with their exact source parent, candidate ref and
 run trailer verified. JY reads retry transient disconnects, timeouts and HTTP
