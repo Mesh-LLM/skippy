@@ -186,7 +186,13 @@ impl KvStageIntegration {
         let active_tokens = runtime.session_stats().total_session_tokens;
         let (inflight_reservations, inflight_outstanding_tokens) =
             self.outstanding_resident_capacity_demand(runtime);
-        let request_tokens = request_tokens.max(inflight_outstanding_tokens);
+        // The cache shares the pool with admitted requests, so it keeps only
+        // what the generation budget has not promised them. Otherwise finished
+        // prefixes fill the cells concurrent decodes still need, and native
+        // decode fails with `failed to find a memory slot`.
+        let request_tokens = request_tokens
+            .max(inflight_outstanding_tokens)
+            .max(runtime.unmaterialized_generation_tokens());
         if capacity_tokens == 0 {
             self.notify_kv_lifecycle(KvLifecycleEvent::CapacityApproachingLimit {
                 admission_deficit_tokens: request_tokens,

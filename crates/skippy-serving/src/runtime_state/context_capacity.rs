@@ -64,6 +64,22 @@ impl RuntimeState {
     pub fn context_tokens_per_lane(&self) -> u32 {
         self.context_capacity.per_lane_tokens
     }
+
+    /// KV cells the generation budget has promised to admitted requests beyond
+    /// what their sessions hold now: unprefilled prompt and bounded decode
+    /// headroom. Zero when no frontend admits against this pool.
+    pub(crate) fn unmaterialized_generation_tokens(&self) -> u64 {
+        let Some(budget) = self.generation_token_budget.as_ref() else {
+            return 0;
+        };
+        let materialized = self
+            .session_token_counts
+            .values()
+            .fold(0u64, |total, tokens| total.saturating_add(*tokens));
+        u64::try_from(budget.active_tokens())
+            .unwrap_or(u64::MAX)
+            .saturating_sub(materialized)
+    }
 }
 
 /// Encoder output is context-global, so native admits only one execution lane

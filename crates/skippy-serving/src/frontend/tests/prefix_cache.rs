@@ -116,6 +116,43 @@ fn resident_capacity_keeps_decode_watermark_separate_from_prompt_reservation() {
 }
 
 #[test]
+fn resident_capacity_yields_the_cells_promised_to_admitted_generations() {
+    use crate::frontend::admission::{GenerationTokenBudget, GenerationTokenBudgetRequest};
+
+    let config = prefix_cache_test_config();
+    let kv = KvStageIntegration::from_test_state(&config, skippy_runtime::ModelStateKind::Dense)
+        .unwrap()
+        .expect("resident prefix cache enabled");
+    let mut runtime = crate::runtime_state::RuntimeState::new_modelless_with_capacity_for_test(
+        config.lane_count,
+        8_192,
+    );
+    // Finished requests leave 8,160 resident cells: 32 free in an 8,192 pool.
+    for index in 0..5 {
+        let mut base = prefix_cache_test_base();
+        base.chat_template_id = Some(format!("finished-{index}"));
+        let tokens = (0..1_632).collect::<Vec<_>>();
+        seed_resident_prefix(&kv, &kv.prefill_identity(&config, &base, 0, &tokens));
+    }
+    // A prefilled request still owed 128 decode tokens by the budget.
+    let budget = std::sync::Arc::new(GenerationTokenBudget::new(8_192));
+    let _decoding = budget
+        .try_reserve(GenerationTokenBudgetRequest::new(2_000, 128))
+        .unwrap()
+        .expect("reservation fits the pool");
+    runtime.track_session_tokens_for_test("decoding", 2_000);
+    runtime.generation_token_budget = Some(budget);
+
+    let decision = kv
+        .admit_resident_capacity(&mut runtime, "decoding", 0, 0, 0, None)
+        .unwrap();
+
+    assert!(decision.admitted);
+    assert_eq!(decision.request_tokens, 128);
+    assert_eq!(decision.evicted_entries, 1);
+}
+
+#[test]
 fn resident_capacity_admission_evicts_for_the_aggregate_active_four_wave() {
     let config = StageConfig {
         ctx_size: 131_072,

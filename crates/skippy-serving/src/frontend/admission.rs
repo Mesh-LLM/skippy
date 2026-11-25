@@ -214,11 +214,11 @@ impl GenerationTokenBudget {
         )))
     }
 
-    #[cfg(test)]
-    pub(super) fn active_tokens(&self) -> usize {
+    /// Prompt and bounded decode tokens held by admitted requests.
+    pub(crate) fn active_tokens(&self) -> usize {
         self.state
             .lock()
-            .expect("generation token budget lock")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .active_tokens
     }
 }
