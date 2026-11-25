@@ -4,6 +4,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# shellcheck disable=SC1091
+source "$REPO_ROOT/scripts/lib/cuda-toolkit.sh"
+
 BACKEND=""
 CUDA_ARCH=""
 ROCM_ARCH=""
@@ -33,6 +36,10 @@ flags=(-DCMAKE_BUILD_TYPE=Release)
 case "$BACKEND" in
     metal|cpu) ;;
     cuda)
+        if ! configure_cuda_toolkit_env; then
+            echo "CUDA toolkit compiler was not found; set CUDACXX, CMAKE_CUDA_COMPILER, NVCC, or put nvcc on PATH" >&2
+            exit 1
+        fi
         flags+=(-DTIERBENCH_CUDA=ON)
         if [[ -n "$CUDA_ARCH" ]]; then flags+=("-DCMAKE_CUDA_ARCHITECTURES=$CUDA_ARCH"); fi
         ;;
