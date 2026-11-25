@@ -482,7 +482,12 @@ void* setup_io(std::uint64_t bytes, const tierbench_env* env, tierbench_error* e
         id<MTLDevice> device = work->gpu->device;
         work->io = [device newIOCommandQueueWithDescriptor:[MTLIOCommandQueueDescriptor new] error:&why];
         if (work->io) {
-            work->file = [device newIOFileHandleWithURL:[NSURL fileURLWithPath:@(work->path.c_str())] error:&why];
+            NSURL* url = [NSURL fileURLWithPath:@(work->path.c_str())];
+            if (@available(macOS 14.0, *)) {
+                work->file = [device newIOFileHandleWithURL:url error:&why];
+            } else {
+                work->file = [device newIOHandleWithURL:url error:&why];
+            }
         }
         if (!work->io || !work->file) {
             say(error, describe(why));
