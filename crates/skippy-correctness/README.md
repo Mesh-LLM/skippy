@@ -232,7 +232,7 @@ same activation/cache contracts without requiring a monolithic full GGUF.
   `--allow-mismatch` only for diagnostic payloads such as recurrent-only.
 - `native-mtp-open-ai-ab` launches a real two-stage `skippy-serving
   serve-binary` split three times through the embedded OpenAI frontend. The
-  baseline run selects `--native-mtp false --speculative-strategy disabled`.
+  baseline run selects `--native-mtp=false --speculative-strategy disabled`.
   The n=1 run selects native MTP with `--mtp-max-tokens 1`; the batched run
   selects native MTP with its configured default proposal limit. Both MTP
   cases use the current transactional batched verifier, including for one

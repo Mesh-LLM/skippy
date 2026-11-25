@@ -121,7 +121,11 @@ pub(super) fn spawn_stage(
         command.arg("--worker-only");
     }
     command.env("SKIPPY_TELEMETRY_STDERR", "1");
-    command.args(mode.cli_args());
+    command.args(if openai_bind_addr.is_some() {
+        mode.frontend_cli_args()
+    } else {
+        mode.worker_cli_args()
+    });
     command.stdout(Stdio::from(log.try_clone()?));
     command.stderr(Stdio::from(log));
     ChildGuard::spawn(command)

@@ -122,7 +122,7 @@ fn remote_stage_command(args: RemoteStageCommand<'_>) -> String {
     command.push_str(&args.startup_timeout_secs.to_string());
     command.push(' ');
     // These arguments come only from the closed internal case modes.
-    command.push_str(&args.mode.cli_args().join(" "));
+    command.push_str(&args.mode.worker_cli_args().join(" "));
     command.push_str(" --telemetry-level debug > ");
     command.push_str(&shell_quote(args.remote_log));
     command.push_str(" 2>&1 < /dev/null & pid=$!; echo $pid > ");
@@ -255,10 +255,9 @@ mod tests {
 
         assert!(command.contains("cd '/tmp/work dir' && "));
         assert!(command.contains(" --startup-timeout-secs 790 "));
-        assert!(
-            command
-                .contains("--native-mtp true --speculative-strategy native-mtp --mtp-max-tokens 1")
-        );
+        assert!(command.contains("--native-mtp=true"));
+        assert!(!command.contains("--speculative-strategy"));
+        assert!(!command.contains("--mtp-max-tokens"));
         assert!(command.contains(
             "'target/debug/skippy' serve --stage-transport binary --worker-only --config"
         ));
@@ -277,7 +276,7 @@ mod tests {
                 mode: MtpCaseMode::Disabled,
             }
         });
-        assert!(batched_command.contains("--native-mtp true --speculative-strategy native-mtp"));
+        assert!(batched_command.contains("--native-mtp=true"));
         assert!(!batched_command.contains("--mtp-max-tokens"));
     }
 }
