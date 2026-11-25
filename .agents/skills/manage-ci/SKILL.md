@@ -12,7 +12,7 @@ contract; no downstream product's workflow topology applies here.
   aggregate on the repository's selected Ubuntu runner. Protected-main code reads
   workflow/check/status results without executing candidate code or using lab
   credentials. Failures/cancellations fail it; pending or missing applicable work
-  stays pending; success/neutral/intentional skips pass except required inference
+  stays pending, as does a fork run GitHub holds for maintainer workflow approval; success/neutral/intentional skips pass except required inference
   qualification, whose plan, summary and complete protected PR roster must
   succeed in the latest run, using each job's latest execution (partial reruns
   may inherit successful jobs). Producer starts and
@@ -173,6 +173,9 @@ contract; no downstream product's workflow topology applies here.
   The protected controller checks producer path, repository, event, attempt,
   source and live PR identity, and repeats selected CI rather than trusting fork
   artifacts or test claims. Unapproved code remains on the isolated route.
+  Checkouts of the candidate in `ci.yml` set `allow-unsafe-pr-checkout` only
+  when that controller supplied the PR; `actions/checkout` refuses fork code in
+  a `workflow_run` workflow without it.
   Fork jobs receive no native lab dispatch or publication credentials.
 - Trusted native PR jobs may use the standard JY account and its existing host
   permissions. Do not pass publication credentials or other jobs' secrets. Use a
