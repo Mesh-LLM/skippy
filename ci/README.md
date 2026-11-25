@@ -218,8 +218,9 @@ runner to start the job container supplies AMD device access without changing
 the host toolchain. The container and its processes are removed at job end.
 The workflow has read-only contents/packages permissions and no publication
 credentials. Runner-group access is restricted to this repository and selected
-workflow refs: the rehearsal on its dedicated branch or main, and `ci.yml` on
-main for later nightly/release integration.
+workflow refs: the rehearsal on its dedicated branch, and `ci.yml` on main for
+later nightly/release integration. After merging the workflow, add its main
+ref to the runner-group allowlist before dispatching a rehearsal from main.
 
 `just ci-rocm-preflight` requires Linux x86_64, the manifest's pinned ROCm
 version, the AMD device nodes, and successful HIP device discovery. The shared
