@@ -6,12 +6,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use serde_json::Value;
+use serde_json::{Value, json};
+use skippy_metrics::semconv;
 
 use super::{
     OpenSpans, Telemetry, TelemetryLevel, now_unix_nanos,
     resource_metrics::SpanWindow,
-    sink::{SpanRecord, SpanStart},
+    sink::{SpanRecord, SpanStart, SpanStatus},
     trace_context::{self, Entered, Frame, SpanContext},
 };
 
@@ -45,6 +46,7 @@ pub(crate) struct ActiveSpan {
     started: Instant,
     attributes: BTreeMap<String, Value>,
     links: Vec<SpanContext>,
+    status: SpanStatus,
 }
 
 impl ActiveSpan {
@@ -108,6 +110,7 @@ impl ActiveSpan {
             started: Instant::now(),
             attributes: BTreeMap::new(),
             links: Vec::new(),
+            status: SpanStatus::Unset,
         }
     }
 
@@ -139,6 +142,14 @@ impl ActiveSpan {
         attributes: impl IntoIterator<Item = (String, Value)>,
     ) {
         self.attributes.extend(attributes);
+    }
+
+    /// Mark the operation failed. `error_type` is OTel's `error.type`: a
+    /// low-cardinality class such as an HTTP status code, never a message.
+    pub(crate) fn fail(&mut self, error_type: &str) {
+        self.attributes
+            .insert(semconv::ERROR_TYPE.to_string(), json!(error_type));
+        self.status = SpanStatus::Error;
     }
 
     /// Link to a span this one served, such as a request in a batch.
@@ -175,6 +186,7 @@ impl ActiveSpan {
             self.start_unix_nanos.saturating_add(elapsed),
         );
         record.links = std::mem::take(&mut self.links);
+        record.status = self.status;
         telemetry.end_span(open, &self.frame, record);
     }
 }

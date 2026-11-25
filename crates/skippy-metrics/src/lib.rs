@@ -85,6 +85,7 @@ pub mod metric {
 /// OpenTelemetry semantic-convention keys, for trace backends that read the
 /// standard names rather than Skippy's own.
 pub mod semconv {
+    pub const ERROR_TYPE: &str = "error.type";
     pub const GEN_AI_OPERATION_NAME: &str = "gen_ai.operation.name";
     pub const GEN_AI_PROVIDER_NAME: &str = "gen_ai.provider.name";
     pub const GEN_AI_RESPONSE_MODEL: &str = "gen_ai.response.model";

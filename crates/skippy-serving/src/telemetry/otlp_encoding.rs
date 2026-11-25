@@ -5,14 +5,17 @@ use std::{collections::BTreeMap, sync::atomic::Ordering};
 use opentelemetry_proto::tonic::{
     common::v1::{AnyValue, ArrayValue, InstrumentationScope, KeyValue, KeyValueList, any_value},
     resource::v1::Resource,
-    trace::v1::{ResourceSpans, ScopeSpans, Span, span},
+    trace::v1::{ResourceSpans, ScopeSpans, Span, Status, span, status::StatusCode},
 };
 use serde_json::{Value, json};
 use skippy_metrics::metric;
 use skippy_protocol::StageConfig;
 
 use super::{
-    TelemetryCounters, resource_attrs::resource_attrs, sink::SpanRecord, span_components::component,
+    TelemetryCounters,
+    resource_attrs::resource_attrs,
+    sink::{SpanRecord, SpanStatus},
+    span_components::component,
 };
 
 /// One stage's spans, one resource per system component (see
@@ -105,7 +108,18 @@ pub(super) fn event_to_span(event: &SpanRecord, stats: &TelemetryCounters) -> Sp
             })
             .collect(),
         dropped_links_count: 0,
-        status: None,
+        status: otlp_status(event.status),
+    }
+}
+
+/// No message: the span's `error.type` already says what failed.
+fn otlp_status(status: SpanStatus) -> Option<Status> {
+    match status {
+        SpanStatus::Unset => None,
+        SpanStatus::Error => Some(Status {
+            message: String::new(),
+            code: StatusCode::Error as i32,
+        }),
     }
 }
 
@@ -140,4 +154,25 @@ fn json_to_any_value(value: Value) -> AnyValue {
         Value::Null => any_value::Value::StringValue(String::new()),
     };
     AnyValue { value: Some(value) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::telemetry::trace_context::Frame;
+
+    #[test]
+    fn a_failed_span_exports_error_status() {
+        let mut record =
+            SpanRecord::of_frame(&Frame::child(), "stage.request", BTreeMap::new(), 1, 2);
+        let counters = TelemetryCounters::default();
+        assert_eq!(event_to_span(&record, &counters).status, None);
+
+        record.status = SpanStatus::Error;
+        let status = event_to_span(&record, &counters).status;
+        assert_eq!(
+            status.map(|status| status.code),
+            Some(StatusCode::Error as i32)
+        );
+    }
 }

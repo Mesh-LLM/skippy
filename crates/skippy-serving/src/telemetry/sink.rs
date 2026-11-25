@@ -13,6 +13,14 @@ use serde_json::Value;
 use super::active_span::SpanLevel;
 use super::trace_context::{Frame, SpanContext, SpanEvent};
 
+/// Whether the operation a span measured failed. Unset unless it did: OTel
+/// keeps `Ok` for an explicit override, which Skippy never makes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SpanStatus {
+    Unset,
+    Error,
+}
+
 /// A finished span, placed in the process trace.
 #[derive(Clone)]
 pub(crate) struct SpanRecord {
@@ -24,6 +32,7 @@ pub(crate) struct SpanRecord {
     pub(crate) end_time_unix_nanos: u64,
     pub(crate) links: Vec<SpanContext>,
     pub(crate) events: Vec<SpanEvent>,
+    pub(crate) status: SpanStatus,
 }
 
 impl SpanRecord {
@@ -43,6 +52,7 @@ impl SpanRecord {
             end_time_unix_nanos: end_time_unix_nanos.max(start_time_unix_nanos.saturating_add(1)),
             links: Vec::new(),
             events: Vec::new(),
+            status: SpanStatus::Unset,
         }
     }
 }

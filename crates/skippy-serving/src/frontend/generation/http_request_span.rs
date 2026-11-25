@@ -41,12 +41,17 @@ pub(in crate::frontend) async fn openai_http_telemetry(
     let response = trace_context::in_task(span.frame().clone(), next.run(request)).await;
     telemetry.record_resources_on(span.frame(), "request_response");
     let streamed = is_event_stream(&response);
+    let status = response.status();
+    // A 4xx is the client's mistake; only a 5xx is this server failing.
+    if status.is_server_error() {
+        span.fail(status.as_str());
+    }
     span.extend_attributes([
         ("llama_stage.http_method".to_string(), json!(method)),
         ("llama_stage.http_path".to_string(), json!(path)),
         (
             "llama_stage.http_status".to_string(),
-            json!(response.status().as_u16()),
+            json!(status.as_u16()),
         ),
         // Time to response headers; the span itself runs to the body's end.
         (
@@ -92,8 +97,9 @@ impl Stream for SpannedBody {
 
 #[cfg(test)]
 mod tests {
-    use axum::{Router, middleware, routing::get};
+    use axum::{Router, http::StatusCode, middleware, routing::get};
     use serde_json::json;
+    use skippy_metrics::semconv;
     use tower::ServiceExt;
 
     use super::*;
@@ -116,6 +122,11 @@ mod tests {
                 }),
             )
             .route("/json", get(|| async { "{}" }))
+            .route("/rejected", get(|| async { StatusCode::BAD_REQUEST }))
+            .route(
+                "/failed",
+                get(|| async { StatusCode::INTERNAL_SERVER_ERROR }),
+            )
             .layer(middleware::from_fn_with_state(
                 telemetry,
                 openai_http_telemetry,
@@ -157,5 +168,22 @@ mod tests {
         let span = rx.try_recv().expect("span ends with the response");
         assert_eq!(span.attributes["llama_stage.http_streamed"], json!(false));
         assert_eq!(span.attributes["llama_stage.http_status"], json!(200));
+    }
+
+    #[tokio::test]
+    async fn only_a_server_error_fails_its_request_span() {
+        let (telemetry, rx) = Telemetry::captured(capture_stage_config(), TelemetryLevel::Summary);
+        let app = router(telemetry);
+        let _rejected = app
+            .clone()
+            .oneshot(get_request("/rejected"))
+            .await
+            .expect("response");
+        let _failed = app.oneshot(get_request("/failed")).await.expect("response");
+
+        let rejected = rx.try_recv().expect("rejected span");
+        assert!(!rejected.attributes.contains_key(semconv::ERROR_TYPE));
+        let failed = rx.try_recv().expect("failed span");
+        assert_eq!(failed.attributes[semconv::ERROR_TYPE], json!("500"));
     }
 }
