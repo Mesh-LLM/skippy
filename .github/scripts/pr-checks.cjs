@@ -1,6 +1,7 @@
 // Protected-main controller. It reads candidate metadata but never executes it.
 const expectedWorkflows = require('./pr-trigger-paths.cjs');
 const validateAcceptance = require('./pr-acceptance.cjs');
+const requireInferenceJobs = require('./pr-inference-checks.cjs');
 const workflowPath = run => run.path?.split('@')[0];
 const automaticPR = run => ['pull_request', 'pull_request_target'].includes(run.event);
 const accepted = new Set(['success', 'skipped', 'neutral']);
@@ -52,9 +53,11 @@ module.exports = async function aggregate({ github, context, core, depot = false
       let pending = false;
       for (const run of latest.values()) {
         const path = workflowPath(run);
+        const requiredInference = path === '.github/workflows/inference.yml' && expected.get(path) === run.event;
         if (expected.get(path) === run.event) expected.delete(path);
         if (run.status !== 'completed') pending = true;
         else if (!accepted.has(run.conclusion)) throw new Error(`${run.name}: ${run.conclusion || 'incomplete'}`);
+        else if (requiredInference) await requireInferenceJobs(github, repo, run);
       }
       // Include checks from other providers, and independent commit statuses.
       const checks = await github.paginate(github.rest.checks.listForRef,
