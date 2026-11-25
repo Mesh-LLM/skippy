@@ -62,6 +62,22 @@ GitHub workflow still dispatches Metal only.
   a 32K pool and 16 lanes) plus both arms' compute buffers. The host record also lists any
   other compute process already on GPU 0.
 
+`rocm` is AMD ROCm on Linux x86_64, written for the lab's Strix-Halo-class hosts with
+unified memory. A plan must name exactly one node, and the job pins GPU 0 with
+`HIP_VISIBLE_DEVICES=0`; no `HSA_OVERRIDE_GFX_VERSION` or other override is set. Both
+arms read the first GPU agent's `gfx` target from `rocminfo` at build time: Skippy as
+`LLAMA_STAGE_AMDGPU_TARGETS`, the reference as `-DGGML_HIP=ON -DAMDGPU_TARGETS=<gfx>`,
+the variable the pinned llama.cpp's `ggml-hip/CMakeLists.txt` forwards to
+`CMAKE_HIP_ARCHITECTURES`. No optional HIP feature is enabled in either build. The tool
+check runs `rocminfo` and requires `rocm-smi` or `amd-smi`; the host facts record the
+GPU's name and `gfx` target, the ROCm version from `/opt/rocm/.info/version`, the amdgpu
+driver version, VRAM and GTT total and used, the OS release and kernel. Admission is the
+unified rule: the weights plus 16 GiB must fit in the smaller of `MemAvailable` and free
+VRAM plus free GTT, since the GPU allocates from its carve-out plus GTT and the kernel
+caps GTT; a smoke job records the figures beside the device memory `llama-server` prints
+at load. No CI exercises Skippy's Linux ROCm build, so a performance smoke job is its
+first run.
+
 Both commits must be on protected main, unless an arm is `pr:N`: the head of an
 open pull request from this repository, never a fork's, authored by a collaborator with write access, so only code that could
 already run on trusted CI reaches the lab. An arm can also be `branch:NAME`, the head of a

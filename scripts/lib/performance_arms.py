@@ -70,7 +70,8 @@ def build(arm, log, backend="metal"):
             binary = build_dir / "bin/llama-server"
     built = {"label": arm["label"], "kind": arm["kind"], "sha": arm["sha"], "binary": str(binary),
              "binary_sha256": digest(binary)}
-    architecture = skippy_env.get("LLAMA_STAGE_CUDA_ARCHITECTURES")
+    architecture = (skippy_env.get("LLAMA_STAGE_CUDA_ARCHITECTURES")
+                    or skippy_env.get("LLAMA_STAGE_AMDGPU_TARGETS"))
     if architecture:
         built["gpu_architecture"] = architecture
     return built

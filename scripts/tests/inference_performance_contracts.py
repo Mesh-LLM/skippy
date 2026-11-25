@@ -151,6 +151,21 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(spec["target"]["nodes"], ["lab-a33338"])
         self.assertEqual(spec["runtime"]["env"].get("CUDA_VISIBLE_DEVICES"), "0")
 
+    def test_a_rocm_plan_targets_one_pinned_unified_host(self):
+        arm_list = performance_plan.arms(self.candidate, self.baseline, self.pin)
+        with self.assertRaisesRegex(ValueError, "must name exactly one node"):
+            performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 3, None, "any",
+                                      backend="rocm")
+        spec = performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 3, "lab-004309", "r",
+                                         backend="rocm")
+        selector = spec["target"]["selector"]
+        self.assertEqual(selector["arch"], {"in": ["x86_64"]})
+        self.assertEqual(selector["accelerator"], {"backend": "rocm"})
+        self.assertIs(selector["memory"]["unified"], True)
+        self.assertGreaterEqual(selector["memory"]["system_gib"]["min"], 18)
+        self.assertEqual(spec["target"]["nodes"], ["lab-004309"])
+        self.assertEqual(spec["runtime"]["env"].get("HIP_VISIBLE_DEVICES"), "0")
+
     def test_models_must_be_ladder_ids(self):
         with self.assertRaises(ValueError):
             performance_plan.models(["qwen35-4b", "qwen35-4b"])
@@ -302,6 +317,36 @@ class BackendTests(unittest.TestCase):
                 path.return_value.read_text.return_value = meminfo
                 self.assertEqual(performance_backends.cuda_x86_free(
                     {"gpu_memory_free_bytes": free_vram}), expected)
+
+    def test_the_rocm_entry_builds_both_arms_for_the_hosts_gfx_target(self):
+        calls = []
+        with patch("lib.performance_backends.rocm_gfx", return_value="gfx1151"):
+            with TemporaryDirectory() as directory:
+                with patch("lib.performance_arms.checkout", return_value=Path(directory)), \
+                     patch("lib.performance_arms.command",
+                           side_effect=lambda args, **kwargs: calls.append((args, kwargs)) or None), \
+                     patch("lib.performance_arms.digest", return_value="0" * 64):
+                    built = performance_arms.build(self.skippy, Path(directory) / "b.log", "rocm")
+                    self.assertEqual(calls[0][1]["overrides"]["LLAMA_STAGE_BACKEND"], "rocm")
+                    self.assertEqual(calls[0][1]["overrides"]["LLAMA_STAGE_AMDGPU_TARGETS"], "gfx1151")
+                    self.assertEqual(built["gpu_architecture"], "gfx1151")
+                    del calls[:]
+                    performance_arms.build(self.reference, Path(directory) / "r.log", "rocm")
+            self.assertIn("-DGGML_HIP=ON", calls[0][0])
+            self.assertIn("-DAMDGPU_TARGETS=gfx1151", calls[0][0])
+            self.assertNotIn("-DGGML_CUDA=ON", calls[0][0])
+            self.assertIsNone(calls[0][1]["overrides"])
+
+    def test_rocm_admission_takes_the_lesser_of_memory_and_free_vram_plus_gtt(self):
+        gib = 1024**3
+        host = {"vram_total_bytes": 90 * gib, "vram_used_bytes": 10 * gib,
+                "gtt_total_bytes": 80 * gib, "gtt_used_bytes": 20 * gib}
+        with patch("lib.performance_backends.Path") as path:
+            path.return_value.read_text.return_value = "MemAvailable: 104857600 kB\n"  # 100 GiB
+            self.assertEqual(performance_backends.rocm_free(host), 100 * gib)
+        with patch("lib.performance_backends.Path") as path:
+            path.return_value.read_text.return_value = "MemAvailable: 209715200 kB\n"  # 200 GiB
+            self.assertEqual(performance_backends.rocm_free(host), 140 * gib)
 
 
 class RejectionTests(unittest.TestCase):

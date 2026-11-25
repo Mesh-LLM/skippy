@@ -242,7 +242,11 @@ def native_plan():
 
 def toolcheck():
     """The backend's tool check, before any build spends an hour on a host without its tools."""
-    command(BACKENDS[native_plan()["backend"]]["tool_check"], timeout=120, capture_stdout=True)
+    check = BACKENDS[native_plan()["backend"]]["tool_check"]
+    if callable(check):
+        check()
+    else:
+        command(check, timeout=120, capture_stdout=True)
 
 
 def build_arms():

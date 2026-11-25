@@ -12,6 +12,8 @@ A backend without a complete entry therefore fails at plan time, not partway thr
 
 import platform
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 from . import inference_metal
@@ -115,6 +117,94 @@ def cuda_x86_free(host):
     return min(host["gpu_memory_free_bytes"], cuda_free(host))
 
 
+def rocm_agent():
+    """The first GPU agent rocminfo lists: its gfx target and marketing name."""
+    gfx, name = None, None
+    for line in capture(["rocminfo"]).splitlines():
+        key, _, value = line.partition(":")
+        key, value = key.strip(), value.strip()
+        if key == "Name" and re.fullmatch(r"gfx[0-9a-z]+", value or "") and gfx is None:
+            gfx = value
+        elif key == "Marketing Name" and value and gfx is not None and name is None:
+            name = value
+    if gfx is None:
+        raise ValueError("rocminfo lists no GPU agent; the rocm backend needs one")
+    return gfx, name or gfx
+
+
+def rocm_gfx():
+    return rocm_agent()[0]
+
+
+def rocm_skippy_env():
+    return {"LLAMA_STAGE_BACKEND": "rocm", "LLAMA_STAGE_LINK_MODE": "static",
+            "LLAMA_STAGE_AMDGPU_TARGETS": rocm_gfx()}
+
+
+def rocm_reference_cmake():
+    # The pinned llama.cpp's ggml-hip/CMakeLists.txt forwards AMDGPU_TARGETS to
+    # CMAKE_HIP_ARCHITECTURES, so this is the variable Skippy's build also sets.
+    return ["-DGGML_HIP=ON", f"-DAMDGPU_TARGETS={rocm_gfx()}"]
+
+
+def rocm_tool_check():
+    capture(["rocminfo"])
+    if not shutil.which("rocm-smi") and not shutil.which("amd-smi"):
+        raise ValueError("the rocm backend requires rocm-smi or amd-smi for its memory figures")
+
+
+def _try_capture(args):
+    try:
+        return capture(args)
+    except subprocess.CalledProcessError:
+        return ""
+
+
+def rocm_memory():
+    """VRAM and GTT, total and used, from the first row rocm-smi reports, plus the GPU count."""
+    text = capture(["rocm-smi", "--showmeminfo", "vram", "gtt", "--csv"])
+    lines = [line for line in text.strip().splitlines() if line.strip()]
+    if len(lines) < 2:
+        raise ValueError(f"rocm-smi did not report vram and gtt: {text!r}")
+    header = [item.strip().lower() for item in lines[0].split(",")]
+
+    def field(*words):
+        for index, column in enumerate(header):
+            if all(word in column for word in words) and index < len(lines[1].split(",")):
+                return int(lines[1].split(",")[index].strip())
+        raise ValueError(f"rocm-smi columns for {words} not found in {header}")
+
+    return (*field("vram", "total"), *field("vram", "used"), *field("gtt", "total"),
+            *field("gtt", "used"), len(lines) - 1)
+
+
+def rocm_facts():
+    """A Linux x86_64 host with an AMD GPU through ROCm/HIP, described by its first GPU."""
+    if platform.system() != "Linux" or platform.machine() != "x86_64":
+        raise ValueError("the rocm backend requires Linux x86_64")
+    gfx, name = rocm_agent()
+    vram_total, vram_used, gtt_total, gtt_used, gpu_count = rocm_memory()
+    try:
+        rocm = Path("/opt/rocm/.info/version").read_text(encoding="utf-8").strip()
+    except OSError:
+        rocm = None
+    driver_text = _try_capture(["rocm-smi", "--showdriverversion", "--csv"]).strip()
+    last = driver_text.splitlines()[-1] if driver_text else ""
+    driver = last.split(",")[-1].strip() if last else ""
+    return {"gpu": name, "gpu_count": gpu_count, "gpu_used": 0, "gfx_target": gfx,
+            "vram_total_bytes": vram_total, "vram_used_bytes": vram_used,
+            "gtt_total_bytes": gtt_total, "gtt_used_bytes": gtt_used,
+            "driver_version": driver or None, "toolkit_version": rocm,
+            "os": "linux", "os_version": linux_release(), "kernel": capture(["uname", "-r"]).strip()}
+
+
+def rocm_free(host):
+    """Unified AMD memory: the GPU allocates from its carve-out (VRAM) plus GTT, and the
+    kernel caps GTT, so both pools and MemAvailable bound what a model gets."""
+    return min(cuda_free(host), (host["vram_total_bytes"] - host["vram_used_bytes"])
+               + (host["gtt_total_bytes"] - host["gtt_used_bytes"]))
+
+
 # The unified reserve, shared system memory for everything beside the weights.
 RESERVE_GIB = 16
 
@@ -170,5 +260,25 @@ BACKENDS = {
         "facts": cuda_x86_facts,
         "free_memory": cuda_x86_free,
         "env": {"CUDA_VISIBLE_DEVICES": "0"},
+    },
+    # AMD ROCm on Linux x86_64. The lab's hosts are Strix-Halo class — unified memory,
+    # the GPU allocating from its VRAM carve-out plus GTT — so admission takes the smaller
+    # of MemAvailable and free VRAM plus GTT, and the reserve is the unified 16 GiB. No CI
+    # exercises Skippy's Linux ROCm build; a performance smoke job is its first run.
+    "rocm": {
+        "description": "Same-host ROCm comparison",
+        "selector": {"os": {"family": "linux"}, "arch": {"in": ["x86_64"]},
+                     "accelerator": {"backend": "rocm"}, "memory": {"unified": True}},
+        "memory_key": "system_gib",
+        "reserve_gib": RESERVE_GIB,
+        "pin_required": True,
+        "skippy_env": rocm_skippy_env,
+        "reference_cmake": rocm_reference_cmake,
+        "tool_check": rocm_tool_check,
+        "toolkit_script": None,
+        "device_prefixes": ("ROCm", "HIP"),
+        "facts": rocm_facts,
+        "free_memory": rocm_free,
+        "env": {"HIP_VISIBLE_DEVICES": "0"},
     },
 }
