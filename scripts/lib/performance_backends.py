@@ -267,8 +267,9 @@ BACKENDS = {
     # exercises Skippy's Linux ROCm build; a performance smoke job is its first run.
     "rocm": {
         "description": "Same-host ROCm comparison",
-        "selector": {"os": {"family": "linux"}, "arch": {"in": ["x86_64"]},
-                     "accelerator": {"backend": "rocm"}, "memory": {"unified": True}},
+        # The lab's ROCm agents report no os facts and any selector holding an os
+        # key never matches them, so a rocm plan targets its pinned node bare.
+        "selector": {},
         "memory_key": "system_gib",
         "reserve_gib": RESERVE_GIB,
         "pin_required": True,

@@ -125,10 +125,15 @@ def job_spec(harness, arm_list, keys, rounds, node, label, *, trace=False, backe
     if entry["pin_required"] and node is None:
         raise ValueError(f"a {backend} plan must name exactly one node: its GPUs differ between hosts")
     largest = max(sum(file["size"] for file in fixture(key)["files"]) for key in keys)
-    selector = {key: value for key, value in entry["selector"].items() if key != "memory"}
-    selector["memory"] = {entry["memory_key"]: {"min": math.ceil(largest / 1024**3) + entry["reserve_gib"]},
-                          **entry["selector"].get("memory", {})}
-    target = {"executor": "lab", "num_nodes": 1, "selector": selector}
+    if entry["selector"]:
+        selector = {key: value for key, value in entry["selector"].items() if key != "memory"}
+        selector["memory"] = {entry["memory_key"]: {"min": math.ceil(largest / 1024**3) + entry["reserve_gib"]},
+                              **entry["selector"].get("memory", {})}
+        target = {"executor": "lab", "num_nodes": 1, "selector": selector}
+    else:
+        # An entry with no selector targets its pinned node bare: the selector's
+        # os and accelerator facts are exactly what some lab agents never report.
+        target = {"executor": "lab", "num_nodes": 1}
     if node is not None:
         target["nodes"] = [node]
     repos = [{"url": SKIPPY, "rev": harness, "path": "harness"}] + [

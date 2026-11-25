@@ -156,14 +156,10 @@ class PlanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must name exactly one node"):
             performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 3, None, "any",
                                       backend="rocm")
-        spec = performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 3, "lab-004309", "r",
+        spec = performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 3, "lab-003827", "r",
                                          backend="rocm")
-        selector = spec["target"]["selector"]
-        self.assertEqual(selector["arch"], {"in": ["x86_64"]})
-        self.assertEqual(selector["accelerator"], {"backend": "rocm"})
-        self.assertIs(selector["memory"]["unified"], True)
-        self.assertGreaterEqual(selector["memory"]["system_gib"]["min"], 18)
-        self.assertEqual(spec["target"]["nodes"], ["lab-004309"])
+        self.assertNotIn("selector", spec["target"])
+        self.assertEqual(spec["target"]["nodes"], ["lab-003827"])
         self.assertEqual(spec["runtime"]["env"].get("HIP_VISIBLE_DEVICES"), "0")
 
     def test_models_must_be_ladder_ids(self):

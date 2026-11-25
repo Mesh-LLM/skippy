@@ -63,8 +63,10 @@ GitHub workflow still dispatches Metal only.
   other compute process already on GPU 0.
 
 `rocm` is AMD ROCm on Linux x86_64, written for the lab's Strix-Halo-class hosts with
-unified memory. A plan must name exactly one node, and the job pins GPU 0 with
-`HIP_VISIBLE_DEVICES=0`; no `HSA_OVERRIDE_GFX_VERSION` or other override is set. Both
+unified memory. A plan must name exactly one node and targets it bare — the lab's ROCm
+agents report no `os` facts, and a selector holding an `os` key never matches them —
+and the job pins GPU 0 with `HIP_VISIBLE_DEVICES=0`; no `HSA_OVERRIDE_GFX_VERSION` or
+other override is set. Both
 arms read the first GPU agent's `gfx` target from `rocminfo` at build time: Skippy as
 `LLAMA_STAGE_AMDGPU_TARGETS`, the reference as `-DGGML_HIP=ON -DAMDGPU_TARGETS=<gfx>`,
 the variable the pinned llama.cpp's `ggml-hip/CMakeLists.txt` forwards to
