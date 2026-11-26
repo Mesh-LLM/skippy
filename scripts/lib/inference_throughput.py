@@ -8,7 +8,7 @@ from pathlib import Path
 from .ci_artifacts import read_json, write_json
 from .jy_qualification import PilotHTTPError
 from .inference_inputs import fixture
-from .inference_probe import validate_evidence
+from .inference_probe import WORKLOAD, validate_evidence
 
 ARTIFACT_RETRIES = 6
 ARTIFACT_RETRY_DELAY = 5
@@ -66,6 +66,7 @@ def collect(pilot, job, row, sha, output, key):
     d_tokens, d_ms = totals(decode)
     receipt = {
         "source_sha": sha, "configuration": row["id"], "job_id": job["id"], "run_id": run_id,
+        "workload": WORKLOAD,
         "requests": len(responses), "prefill_tokens": p_tokens, "prefill_ms": p_ms,
         "decode_tokens": d_tokens, "decode_ms": d_ms,
     }

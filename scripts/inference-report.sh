@@ -108,11 +108,14 @@ while IFS= read -r row; do
   if [[ $state == Passed && -f $rates ]]; then
     # Invalid current evidence remains a reporting failure, not an unavailable baseline.
     validate_rates "$rates" "$receipt" "$SOURCE_SHA" "$row" || fail 'Comment throughput evidence identity mismatch'
-    prefill=$(rate "$rates" prefill)
-    decode=$(rate "$rates" decode)
-    if baseline=$(baseline_for_row "$row" 2> /dev/null); then
-      prefill_delta=$(delta "$rates" "$baseline/$row-throughput.json" prefill "$receipt" "$baseline/$row-job.json")
-      decode_delta=$(delta "$rates" "$baseline/$row-throughput.json" decode "$receipt" "$baseline/$row-job.json")
+    # Producer and protected reporter can straddle a deployment. Never relabel legacy samples.
+    if jq -e '.workload == "DGX Spark warm probe v2"' "$rates" > /dev/null; then
+      prefill=$(rate "$rates" prefill)
+      decode=$(rate "$rates" decode)
+      if baseline=$(baseline_for_row "$row" 2> /dev/null); then
+        prefill_delta=$(delta "$rates" "$baseline/$row-throughput.json" prefill "$receipt" "$baseline/$row-job.json")
+        decode_delta=$(delta "$rates" "$baseline/$row-throughput.json" decode "$receipt" "$baseline/$row-job.json")
+      fi
     fi
   fi
   printf "| \`%s\` | %s | %s | %s | %s | %s | %s | %s |\n" "$row" "$state" "$prefill" "$prefill_delta" "$decode" "$decode_delta" "$action" "$lab" >> "$temporary/body.md"

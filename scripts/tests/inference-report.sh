@@ -52,7 +52,7 @@ row=$(jq -r '.[0]' "$fixture/rows.json")
 receipt="$fixture/evidence/$row-job.json"
 rates="$fixture/evidence/$row-throughput.json"
 jq -n --arg sha "$SOURCE_SHA" '{repo_rev:$sha,id:"job_test",status:"succeeded",runs:[{id:"run_test",status:"succeeded"}]}' > "$receipt"
-jq -n --arg sha "$SOURCE_SHA" --arg row "$row" '{source_sha:$sha,configuration:$row,job_id:"job_test",run_id:"run_test",requests:3,prefill_tokens:300,prefill_ms:600,decode_tokens:30,decode_ms:300}' > "$rates"
+jq -n --arg sha "$SOURCE_SHA" --arg row "$row" '{source_sha:$sha,configuration:$row,job_id:"job_test",run_id:"run_test",workload:"DGX Spark warm probe v2",requests:3,prefill_tokens:300,prefill_ms:600,decode_tokens:384,decode_ms:3840}' > "$rates"
 cp "$rates" "$fixture/good-rates.json"
 cp "$receipt" "$fixture/good-receipt.json"
 
@@ -69,6 +69,15 @@ report
 jq -e '.body | contains("Lab Qualification: Passed") and contains("| 500.0 | Unavailable | 100.0 | Unavailable |") and contains("/jobs/job_test") and contains("/attempts/2")' "$fixture/posted.json" > /dev/null
 grep -q 'POST$' "$fixture/mutation"
 cmp "$GITHUB_STEP_SUMMARY" <(jq -rj .body "$fixture/posted.json")
+
+# Old protected producers remain readable, but their short answers are never warm TPS.
+jq 'del(.workload) | .decode_tokens=11 | .decode_ms=400' "$fixture/good-rates.json" > "$rates"
+report
+jq -e '.body | contains("Lab Qualification: Passed") and contains("| Unavailable | Unavailable | Unavailable | Unavailable |")' "$fixture/posted.json" > /dev/null
+cp "$fixture/good-rates.json" "$rates"
+jq '.decode_tokens=11' "$fixture/good-rates.json" > "$rates"
+reject 'short answers mislabeled as warm probes'
+cp "$fixture/good-rates.json" "$rates"
 
 # Paginated comments: ignore forged markers and preserve newer generations.
 jq -n '[[],[
@@ -148,7 +157,7 @@ jq -n --arg sha "$BASELINE_SHA" --arg row "$row" '{schema_version:1,source_sha:$
 jq '.machine.host={arch:"aarch64",chip:"Cortex-X925",cpu_cores:20,gpu:"NVIDIA GB10",gpu_count:1}' "$receipt" > "$fixture/hardware-job.json"
 cp "$fixture/hardware-job.json" "$receipt"
 jq --arg sha "$BASELINE_SHA" '.repo_rev=$sha' "$receipt" > "$baseline/$row-job.json"
-jq --arg sha "$BASELINE_SHA" '.source_sha=$sha | .prefill_ms=1200 | .decode_ms=150' "$rates" > "$baseline/$row-throughput.json"
+jq --arg sha "$BASELINE_SHA" '.source_sha=$sha | .prefill_ms=1200 | .decode_ms=1920' "$rates" > "$baseline/$row-throughput.json"
 report
 jq -e '.body | contains("| 500.0 | +100.0% (main 250.0) | 100.0 | -50.0% (main 200.0) |") and contains("/runs/40/attempts/3") and contains("commit `2222222222222222222222222222222222222222`")' "$fixture/posted.json" > /dev/null
 cp "$baseline/$row-throughput.json" "$fixture/main-rates.json"
@@ -173,7 +182,7 @@ for changed in '.profile="nightly"' '.source_sha="wrong"' '.rows[0].mode="split"
   unavailable
 done
 cp "$fixture/main-plan.json" "$baseline/plan.json"
-for changed in '.source_sha="wrong"' '.run_id="run_wrong"' '.prefill_ms=0 | .decode_ms=0' '.prefill_tokens=301 | .decode_tokens=31'; do
+for changed in '.source_sha="wrong"' '.run_id="run_wrong"' '.prefill_ms=0 | .decode_ms=0' '.prefill_tokens=301 | .decode_tokens=31' 'del(.workload)'; do
   jq "$changed" "$fixture/main-rates.json" > "$baseline/$row-throughput.json"
   unavailable
 done
@@ -191,8 +200,8 @@ jq '.prefill_tokens=301' "$fixture/main-rates.json" > "$baseline/$row-throughput
 report
 jq -e '.body | contains("| 500.0 | Unavailable | 100.0 | -50.0% (main 200.0) |")' "$fixture/posted.json" > /dev/null
 # Use unrounded values: both decode rates display 100.0 but the delta is +0.1%.
-jq '.decode_ms=(30000 / 100.04)' "$fixture/good-rates.json" > "$rates"
-jq '.prefill_ms=600 | .decode_ms=(30000 / 99.98)' "$fixture/main-rates.json" > "$baseline/$row-throughput.json"
+jq '.decode_ms=(384000 / 100.04)' "$fixture/good-rates.json" > "$rates"
+jq '.prefill_ms=600 | .decode_ms=(384000 / 99.98)' "$fixture/main-rates.json" > "$baseline/$row-throughput.json"
 report
 jq -e '.body | contains("+0.0% (main 500.0)") and contains("100.0 | +0.1% (main 100.0)")' "$fixture/posted.json" > /dev/null
 cp "$fixture/good-rates.json" "$rates"
