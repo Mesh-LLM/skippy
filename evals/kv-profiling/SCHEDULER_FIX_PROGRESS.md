@@ -1555,3 +1555,21 @@ results were measured on the earlier source and cannot qualify this port.
 The [source attestation](pr-evidence/source-attestation.json) distinguishes
 identical patch bytes from pending port hardware qualification. Draft PR #233
 contains the four historical tables with an explicit UNPROVEN verdict.
+
+## 2026-11-26 21:31 UTC: current-main native replay harness repair
+
+The first offline `just native-full-replay metal` on the upgraded source exited
+8 after CTest selected `test-skippy-chat` but could not find its executable.
+The test had been registered by the native CMake queue; the full-replay
+`BUILD_TARGETS` list omitted it. The original log is retained at
+`target/scheduler-fixes/main-port-native-metal.log`. This is a harness build
+failure, not a passing test or model result. The remaining selected tests
+reported pass or the registered resident-checkpoint skip.
+
+`scripts/build-llama.sh` now includes `test-skippy-chat` for the platforms where
+CMake registers it. `bash -n` and `git diff --check` passed. An offline Just
+full-replay retry built the missing executable and is running CTest; its log is
+`target/scheduler-fixes/main-port-native-metal-retry.log`. Do not promote a
+native replay pass before that command exits zero. The current-head CI
+inference qualification jobs and quality canary have passed, but they do not
+establish matched performance or the prospective task-quality result.
