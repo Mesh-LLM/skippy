@@ -113,49 +113,11 @@ fn install() -> bool {
 }
 
 fn install_fns() -> Option<InstallFns> {
-    #[cfg(feature = "dynamic-native-runtime")]
-    {
-        Some(InstallFns {
-            set_span_callback: skippy_ffi::skippy_set_native_span_callback_fn()?,
-            set_gpu_callback: skippy_ffi::skippy_set_gpu_command_timing_callback_fn()?,
-            set_tag: skippy_ffi::skippy_set_trace_tag_fn()?,
-        })
-    }
-    #[cfg(not(feature = "dynamic-native-runtime"))]
-    {
-        let set_span_callback = linked_symbol(c"skippy_set_native_span_callback")?;
-        let set_gpu_callback = linked_symbol(c"skippy_set_gpu_command_timing_callback")?;
-        let set_tag = linked_symbol(c"skippy_set_trace_tag")?;
-        // SAFETY: each symbol, when linked, has exactly the transmuted signature.
-        unsafe {
-            Some(InstallFns {
-                set_span_callback: std::mem::transmute::<
-                    *mut std::ffi::c_void,
-                    SkippySetNativeSpanCallbackFn,
-                >(set_span_callback),
-                set_gpu_callback: std::mem::transmute::<
-                    *mut std::ffi::c_void,
-                    SkippySetGpuCommandTimingCallbackFn,
-                >(set_gpu_callback),
-                set_tag: std::mem::transmute::<*mut std::ffi::c_void, SkippySetTraceTagFn>(set_tag),
-            })
-        }
-    }
-}
-
-#[cfg(not(feature = "dynamic-native-runtime"))]
-fn linked_symbol(name: &CStr) -> Option<*mut std::ffi::c_void> {
-    #[cfg(unix)]
-    {
-        // SAFETY: looks up a symbol in the already-loaded process image.
-        let symbol = unsafe { libc::dlsym(libc::RTLD_DEFAULT, name.as_ptr()) };
-        (!symbol.is_null()).then_some(symbol)
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = name;
-        None
-    }
+    Some(InstallFns {
+        set_span_callback: skippy_ffi::skippy_set_native_span_callback_fn()?,
+        set_gpu_callback: skippy_ffi::skippy_set_gpu_command_timing_callback_fn()?,
+        set_tag: skippy_ffi::skippy_set_trace_tag_fn()?,
+    })
 }
 
 /// A NUL-terminated string the ABI gives static storage; `fallback` when null

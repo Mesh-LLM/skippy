@@ -9,7 +9,8 @@ use crate::{Error, Model, Opaque, RuntimeConfig, SkippyRuntimeEventReporterV1, S
 #[cfg(not(feature = "dynamic-runtime"))]
 use crate::{
     LlamaPerfContextData, LlamaPerfContextFn, SkippyDecodeStepSampledMtpFn,
-    SkippyModelAttachMtpDraftModelFn,
+    SkippyModelAttachMtpDraftModelFn, SkippySetGpuCommandTimingCallbackFn,
+    SkippySetNativeSpanCallbackFn, SkippySetTraceTagFn,
 };
 
 #[cfg(not(feature = "dynamic-runtime"))]
@@ -247,6 +248,46 @@ pub fn skippy_model_open_with_events_fn() -> Option<SkippyModelOpenWithEventsFn>
 pub fn skippy_model_open_from_parts_with_events_fn() -> Option<SkippyModelOpenFromPartsWithEventsFn>
 {
     Some(static_bindings::skippy_model_open_from_parts_with_events)
+}
+
+// The tracing setters, for the same reason: looked up in the process image
+// instead, they are found only in builds that happen to export them, and a
+// release build of skippy-cli does not, so native tracing never started.
+// The facade's callback types take its mirrors of the generated record
+// structs, which have the same layout.
+#[cfg(not(feature = "dynamic-runtime"))]
+pub fn skippy_set_native_span_callback_fn() -> Option<SkippySetNativeSpanCallbackFn> {
+    type Linked = unsafe extern "C" fn(
+        crate::bindings::skippy::skippy_native_span_callback,
+        *mut std::ffi::c_void,
+    ) -> Status;
+    // SAFETY: the two signatures differ only in the callback's record type,
+    // and the facade's record mirrors the generated one field for field.
+    Some(unsafe {
+        std::mem::transmute::<Linked, SkippySetNativeSpanCallbackFn>(
+            static_bindings::skippy_set_native_span_callback,
+        )
+    })
+}
+
+#[cfg(not(feature = "dynamic-runtime"))]
+pub fn skippy_set_gpu_command_timing_callback_fn() -> Option<SkippySetGpuCommandTimingCallbackFn> {
+    type Linked = unsafe extern "C" fn(
+        crate::bindings::skippy::skippy_gpu_command_timing_callback,
+        *mut std::ffi::c_void,
+    ) -> Status;
+    // SAFETY: as for the span callback: only the record type differs, and
+    // its mirror has the same layout.
+    Some(unsafe {
+        std::mem::transmute::<Linked, SkippySetGpuCommandTimingCallbackFn>(
+            static_bindings::skippy_set_gpu_command_timing_callback,
+        )
+    })
+}
+
+#[cfg(not(feature = "dynamic-runtime"))]
+pub fn skippy_set_trace_tag_fn() -> Option<SkippySetTraceTagFn> {
+    Some(static_bindings::skippy_set_trace_tag)
 }
 
 /// Graph reuse counters for a statically linked native runtime.
