@@ -1,8 +1,8 @@
-From ed124dd46a2902d7d968e5f2c6c365407f31b9da Mon Sep 17 00:00:00 2001
+From 0630a876c0b5dc803fc3841c12705faf1fbd3be8 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Wed, 18 Nov 2026 20:04:35 +1100
-Subject: [PATCH 37/39] ggml-metal: check every row-list entry before reading a
- block from the cache
+Subject: [PATCH] ggml-metal: check every row-list entry before reading a block
+ from the cache
 
 ggml_flash_attn_ext_rows accepts any row list. Two Metal paths decided from a
 block's first and last entries alone that the block was one consecutive
@@ -29,7 +29,7 @@ well as on the gather-free variant.
  3 files changed, 74 insertions(+), 33 deletions(-)
 
 diff --git a/ggml/src/ggml-metal/ggml-metal-ops.cpp b/ggml/src/ggml-metal/ggml-metal-ops.cpp
-index 9309f9994..9e68f20d9 100644
+index 56235817a..cd7397acf 100644
 --- a/ggml/src/ggml-metal/ggml-metal-ops.cpp
 +++ b/ggml/src/ggml-metal/ggml-metal-ops.cpp
 @@ -16,6 +16,7 @@
@@ -186,10 +186,10 @@ index dfc35bae4..4da7bc07b 100644
              }
  
 diff --git a/tests/test-backend-ops.cpp b/tests/test-backend-ops.cpp
-index 2420beb25..380ac8cd0 100644
+index 4b1994475..c4e5bf0b5 100644
 --- a/tests/test-backend-ops.cpp
 +++ b/tests/test-backend-ops.cpp
-@@ -9252,6 +9252,10 @@ struct test_flash_attn_ext_kv_rows_runs : public test_flash_attn_ext_kv_rows {
+@@ -9485,6 +9485,10 @@ struct test_flash_attn_ext_kv_rows_runs : public test_flash_attn_ext_kv_rows {
          LAYOUT_RUN_AT_CACHE_END,
          // consecutive blocks and scattered blocks in the same list
          LAYOUT_MIXED,
@@ -200,7 +200,7 @@ index 2420beb25..380ac8cd0 100644
      };
  
      const layout_t layout;
-@@ -9259,7 +9263,7 @@ struct test_flash_attn_ext_kv_rows_runs : public test_flash_attn_ext_kv_rows {
+@@ -9492,7 +9496,7 @@ struct test_flash_attn_ext_kv_rows_runs : public test_flash_attn_ext_kv_rows {
      static const int64_t block = 32;
  
      std::string vars() override {
@@ -209,7 +209,7 @@ index 2420beb25..380ac8cd0 100644
          return test_flash_attn_ext_kv_rows::vars() + ",layout=" + names[layout];
      }
  
-@@ -9316,6 +9320,14 @@ struct test_flash_attn_ext_kv_rows_runs : public test_flash_attn_ext_kv_rows {
+@@ -9549,6 +9553,14 @@ struct test_flash_attn_ext_kv_rows_runs : public test_flash_attn_ext_kv_rows {
                          }
                      }
                  } break;
@@ -224,7 +224,7 @@ index 2420beb25..380ac8cd0 100644
              }
          }
      }
-@@ -13126,7 +13138,8 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
+@@ -13529,7 +13541,8 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
      for (auto layout : { test_flash_attn_ext_kv_rows_runs::LAYOUT_CONSECUTIVE,
                           test_flash_attn_ext_kv_rows_runs::LAYOUT_RUNS_PADDED,
                           test_flash_attn_ext_kv_rows_runs::LAYOUT_RUN_AT_CACHE_END,
@@ -235,5 +235,5 @@ index 2420beb25..380ac8cd0 100644
              for (int64_t n_slices : {1, 4}) {
                  test_cases.emplace_back(new test_flash_attn_ext_kv_rows_runs(layout, 128, 8, 4, 4096,  512, nb, n_slices));
 -- 
-2.43.0
+2.56.1
 

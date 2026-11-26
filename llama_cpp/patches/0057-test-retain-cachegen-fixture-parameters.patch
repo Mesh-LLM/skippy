@@ -1,0 +1,27 @@
+From 044c14b507a133e9e20f14cffd2ee6bb25d2f8bf Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Wed, 25 Nov 2026 13:13:03 +1100
+Subject: [PATCH] test: retain CacheGen fixture parameters through cache
+ destruction
+
+---
+ tests/test-skippy-cachegen-import.cpp | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/tests/test-skippy-cachegen-import.cpp b/tests/test-skippy-cachegen-import.cpp
+index 3dcc05c64..094ec9769 100644
+--- a/tests/test-skippy-cachegen-import.cpp
++++ b/tests/test-skippy-cachegen-import.cpp
+@@ -189,7 +189,8 @@ bool populate(llama_kv_cache & kv, uint32_t n_tokens, bool spatial = false, bool
+ // A CacheGen decoder can fail after allocation. Only empty cells are safe:
+ // an SWA-reusable cell still belongs to another sequence until overwritten.
+ bool cachegen_slots_preserve_other_sequences(const llama_model & model) {
+-    auto kv = make_cache(model, make_hparams(false), 16);
++    const llama_hparams hparams = make_hparams(false);
++    auto kv = make_cache(model, hparams, 16);
+     if (!populate(*kv, kv_capacity)) { return false; }
+     llama_pos pos = kv_capacity;
+     llama_seq_id seq = 1;
+-- 
+2.56.0
+
