@@ -112,11 +112,8 @@ def build_runtime(host, runtime):
         })
     # The Windows build waits for its outputs, but toolchain helpers can stay
     # in the job after it exits. Drain the job before verifying those outputs.
-    # Cold Windows CUDA builds need headroom beyond three hours, inside the
-    # existing four-hour Actions job budget.
-    build_timeout = 12600 if host["os"] == "windows" and backend == "cuda" else 10800
     command(["just", "release-runtime-build", backend, host["target"]],
-            timeout=build_timeout, overrides=environment, terminate_descendants=host["os"] == "windows")
+            timeout=10800, overrides=environment, terminate_descendants=host["os"] == "windows")
     runtimes = [path.parent for path in Path("dist/native-runtimes").glob("*/manifest.json")]
     if len(runtimes) != 1:
         raise ValueError("native producer must emit exactly one runtime")

@@ -89,7 +89,7 @@ jobs:
   windows_products:
     name: Build Windows ${{ matrix.variant }} archive
     needs: windows_cpu
-    runs-on: windows-2022
+    runs-on: ${{ matrix.variant == 'cuda13' && vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-windows-2022-8' || 'windows-2022' }}
     timeout-minutes: 240
     strategy:
       fail-fast: false

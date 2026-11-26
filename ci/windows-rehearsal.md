@@ -9,6 +9,11 @@ and provisioning source live in public `Mesh-LLM/mesh-llm-runner-images/windows`
 consumer payloads, model input, Windows disks and job credentials stay outside
 the public launcher image.
 
+CUDA 13 uses the same configured eight-core Depot Windows runner as full CI
+when `SKIPPY_DEPOT_RUNNERS_ENABLED` is true; other archive producers retain
+`windows-2022`. The rehearsal retains the shared native build deadline and cache
+identity rather than creating a separate builder pool or recipe namespace.
+
 The Windows CUDA 12.9.2 package includes `sm_120` so the RTX 5080 rehearsal host
 can exercise both CUDA 12 and CUDA 13 products. Runtime admission still requires
 the detected GPU architecture to match the compiled package metadata.
