@@ -364,22 +364,53 @@ fn default_build_dir(workspace_root: &std::path::Path, backend: &str) -> std::pa
 }
 
 /// A path printed by the build scripts, as this platform reads it. A Windows
-/// bash prints `/c/Users/...`, which Windows takes for a path relative to the
-/// current drive's root, so the drive letter is put back.
-fn native_path(path: &str) -> std::path::PathBuf {
+/// bash prints a POSIX path, which Windows takes for a path relative to the
+/// current drive's root: `/c/Users/...` from Git Bash and MSYS2,
+/// `/cygdrive/c/Users/...` from Cygwin. The shell that printed it converts it
+/// with its own `cygpath -w`, which also knows its mount points; the drive
+/// prefixes are converted directly if that fails.
+pub(super) fn native_path(path: &str) -> std::path::PathBuf {
     #[cfg(windows)]
-    {
-        let bytes = path.as_bytes();
-        if bytes.len() >= 2
-            && bytes[0] == b'/'
-            && bytes[1].is_ascii_alphabetic()
-            && (bytes.len() == 2 || bytes[2] == b'/')
-        {
-            let drive = (bytes[1] as char).to_ascii_uppercase();
-            return std::path::PathBuf::from(format!("{drive}:/{}", path.get(3..).unwrap_or("")));
+    if path.starts_with('/') {
+        if let Some(converted) = cygpath_windows(path) {
+            return converted;
+        }
+        if let Some(converted) = posix_drive_path(path) {
+            return std::path::PathBuf::from(converted);
         }
     }
     std::path::PathBuf::from(path)
+}
+
+#[cfg(windows)]
+fn cygpath_windows(path: &str) -> Option<std::path::PathBuf> {
+    let output = bash_command()
+        .args(["-c", "cygpath -w \"$1\"", "cygpath", path])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let converted = String::from_utf8(output.stdout).ok()?;
+    let converted = converted.trim();
+    let converted = std::path::PathBuf::from(converted);
+    converted.is_absolute().then_some(converted)
+}
+
+/// `/c/...` or `/cygdrive/c/...` as `C:/...`.
+#[cfg(windows)]
+pub(super) fn posix_drive_path(path: &str) -> Option<String> {
+    let rest = path.strip_prefix("/cygdrive").unwrap_or(path);
+    let bytes = rest.as_bytes();
+    let is_drive = bytes.len() >= 2
+        && bytes[0] == b'/'
+        && bytes[1].is_ascii_alphabetic()
+        && (bytes.len() == 2 || bytes[2] == b'/');
+    if !is_drive {
+        return None;
+    }
+    let drive = (bytes[1] as char).to_ascii_uppercase();
+    Some(format!("{drive}:/{}", rest.get(3..).unwrap_or("")))
 }
 
 fn default_backend(target: &str) -> &'static str {
@@ -491,7 +522,7 @@ fn bash_command() -> std::process::Command {
 }
 
 #[cfg(windows)]
-fn windows_bash() -> Option<std::path::PathBuf> {
+pub(super) fn windows_bash() -> Option<std::path::PathBuf> {
     let windows_dir = std::env::var_os("SystemRoot")
         .or_else(|| std::env::var_os("windir"))
         .map(|dir| dir.to_string_lossy().to_lowercase());
