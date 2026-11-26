@@ -120,7 +120,7 @@ done < "$temporary/rows.txt"
 
 cat >> "$temporary/body.md" <<'EOF'
 
-TPS describes the first response of each of three short scored smoke cases at concurrency 1; deterministic repeats are excluded. Each rate is total tokens / total server-reported phase time, not an average of request rates. Prefill excludes cached prompt tokens. These short samples include startup/warmup effects and are not sustained benchmarks or controlled speedup comparisons. Missing or invalid timings show as Unavailable.
+TPS comes from three separate warmed, uncached probes at concurrency 1, each generating exactly 128 tokens. The scored correctness answers and each probe's 64-token warmup are excluded. Each rate is total tokens / total server-reported phase time, not an average of request rates. Client elapsed times and raw responses are retained in throughput-probe.json. These bounded samples are not sustained benchmarks or controlled speedup comparisons. Legacy short-answer receipts and missing or invalid probe evidence show as Unavailable.
 
 Deltas use unrounded rates from matching PR-profile smoke receipts on the latest successful main run, including the nightly smoke evidence. Positive means faster. Changed workload inputs, different serving host classes, unequal phase token counts or missing evidence show Unavailable. Physical Spark placement and runtime conditions can differ; deltas are descriptive, not controlled speedup claims.
 

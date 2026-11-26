@@ -10,7 +10,8 @@ from tempfile import TemporaryDirectory
 from urllib.error import HTTPError
 from unittest.mock import Mock, patch
 
-from lib import inference_ladder, inference_throughput
+from lib import inference_ladder, inference_throughput, inference_probe
+from lib.inference_inputs import fixture
 from lib.jy_qualification import Pilot, PilotHTTPError, placement
 
 
@@ -85,12 +86,29 @@ class ThroughputTests(unittest.TestCase):
         response = {"timings": {"prompt_n": 3, "prompt_ms": 2, "predicted_n": 1, "predicted_ms": 3},
                     "usage": {"prompt_tokens_details": {"cached_tokens": 1}}}
         samples = [{"case": case, "response": response, "passed": True} for case in cases]
+        inputs = fixture(model)
+        coordinate = f'{inputs["repo"]}@{inputs["revision"]}'
+        probes = {"schema_version": 1, "workload": inference_probe.WORKLOAD,
+                  "status": "passed", "samples": []}
+        for index in range(3):
+            pair = {}
+            for warmup in (True, False):
+                payload = inference_probe.payload(coordinate, index, warmup)
+                pair["warmup" if warmup else "measured"] = {
+                    "payload": payload, "client_ms": 10,
+                    "response": {"choices": [{"message": {"content": "answer"}}],
+                                 "timings": {"prompt_n": 200 + index, "prompt_ms": 2,
+                                             "predicted_n": payload["max_tokens"], "predicted_ms": 3},
+                                 "usage": {"prompt_tokens": 200 + index,
+                                           "completion_tokens": payload["max_tokens"],
+                                           "prompt_tokens_details": {"cached_tokens": 0}}}}
+            probes["samples"].append(pair)
         quality_path = self.prefix + "quality.json"
         missing = HTTPError("https://pilot.jianyang.cloud" + quality_path, 404, "Not Found", {},
                             io.BytesIO(b'{"error":"not_found","message":"artifact not found"}'))
         pilot = Pilot()
         replies = [io.BytesIO(json.dumps(qualification).encode()), missing,
-                   io.BytesIO(json.dumps(samples).encode())]
+                   io.BytesIO(json.dumps(samples).encode()), io.BytesIO(json.dumps(probes).encode())]
         with TemporaryDirectory() as directory, patch.object(pilot, "auth", return_value="test"), \
                 patch.object(pilot.opener, "open", side_effect=replies) as send, \
                 patch.object(inference_throughput.time, "sleep") as sleep:
@@ -100,10 +118,12 @@ class ThroughputTests(unittest.TestCase):
 
         self.assertEqual(receipt["run_id"], self.run_id)
         self.assertEqual(receipt["requests"], len(cases))
-        self.assertEqual(receipt["prefill_tokens"], 2 * len(cases))
+        self.assertEqual(receipt["prefill_tokens"], 603)
+        self.assertEqual(receipt["decode_tokens"], 384)
         self.assertEqual(receipt["decode_ms"], 3 * len(cases))
         self.assertEqual([call.args[0].selector for call in send.call_args_list],
-                         [self.prefix + "qualification.json", quality_path, quality_path])
+                         [self.prefix + "qualification.json", quality_path, quality_path,
+                          self.prefix + "throughput-probe.json"])
         sleep.assert_called_once_with(inference_throughput.ARTIFACT_RETRY_DELAY)
 
     def test_persistent_404_stops_and_names_the_artifact(self):
