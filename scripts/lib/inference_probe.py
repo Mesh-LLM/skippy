@@ -64,13 +64,16 @@ def validate_evidence(evidence, model):
     return responses
 
 
-def send(request):
+def send(request, sample):
+    sample["payload"] = request
     body = json.dumps(request)
     started = time.perf_counter_ns()
-    response = json.loads(curl(["-H", "Content-Type: application/json", "--data-binary", body,
-                                ENDPOINT + "/v1/chat/completions"], 180))
-    return {"payload": request, "response": response,
-            "client_ms": (time.perf_counter_ns() - started) / 1_000_000}
+    try:
+        sample["raw_body"] = curl(["-H", "Content-Type: application/json", "--data-binary", body,
+                                    ENDPOINT + "/v1/chat/completions"], 180)
+        sample["response"] = json.loads(sample["raw_body"])
+    finally:
+        sample["client_ms"] = (time.perf_counter_ns() - started) / 1_000_000
 
 
 def measure(model, output):
@@ -79,9 +82,11 @@ def measure(model, output):
         for index in range(len(PARAGRAPHS)):
             sample = {}
             evidence["samples"].append(sample)
-            sample["warmup"] = send(payload(model, index, True))
+            sample["warmup"] = {}
+            send(payload(model, index, True), sample["warmup"])
             validate_response(sample["warmup"], payload(model, index, True))
-            sample["measured"] = send(payload(model, index, False))
+            sample["measured"] = {}
+            send(payload(model, index, False), sample["measured"])
             validate_response(sample["measured"], payload(model, index, False))
         evidence["status"] = "passed"
         validate_evidence(evidence, model)
