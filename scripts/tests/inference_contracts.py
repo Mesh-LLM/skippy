@@ -146,6 +146,32 @@ class PlacementTests(unittest.TestCase):
             placement(agents, "controller", 0, "b" * 40)
 
 
+class ForkAdmissionTests(unittest.TestCase):
+    def test_only_protected_approved_fork_caller_can_admit_current_fork_source(self):
+        admit = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))["admit_pr"]
+        sha = "a" * 40
+        pr = {"number": 12, "state": "open", "user": {"login": "outside"},
+              "head": {"sha": sha, "repo": {"full_name": "outside/skippy"}}}
+        caller = "Mesh-LLM/skippy/.github/workflows/fork-native.yml@refs/heads/main"
+        for event, workflow, allowed in [("workflow_run", caller, True),
+                                         ("pull_request_target", caller, False),
+                                         ("pull_request", caller, False),
+                                         ("workflow_run", caller.replace("main", "feature"), False),
+                                         ("workflow_run", caller.replace("fork-native", "other"), False)]:
+            with self.subTest(event=event, workflow=workflow), \
+                    patch.dict(os.environ, GITHUB_EVENT_NAME=event, GITHUB_WORKFLOW_REF=workflow, APPROVED_FORK_PR="12"), \
+                    patch.dict(admit.__globals__, github=Mock(side_effect=[pr if allowed else [pr], pr])):
+                if allowed:
+                    admit(sha)
+                else:
+                    with self.assertRaisesRegex(ValueError, "protected approved-fork controller"):
+                        admit(sha)
+        with patch.dict(os.environ, GITHUB_EVENT_NAME="workflow_run", GITHUB_WORKFLOW_REF=caller, APPROVED_FORK_PR="12"), \
+                patch.dict(admit.__globals__, github=Mock(side_effect=[pr, {"head": {"sha": "b" * 40}}])):
+            with self.assertRaisesRegex(ValueError, "PR head changed"):
+                admit(sha)
+
+
 class ReleaseAdmissionTests(unittest.TestCase):
     def setUp(self):
         self.admission = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))

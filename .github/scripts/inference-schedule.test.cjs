@@ -59,7 +59,7 @@ test('matching PRs always plan qualification without a label or label-change eve
   const trigger = workflow.split('\n  schedule:\n')[0];
   assert.match(trigger, /types: \[opened, synchronize, reopened, ready_for_review\]/);
   const plan = workflow.split('\n  plan:\n')[1].split('\n  qualification:\n')[0];
-  assert.doesNotMatch(plan, /^    if:/m);
+  assert.match(plan, /if: github.event_name != 'pull_request_target' \|\| github.event.pull_request.head.repo.id == github.event.repository.id/);
   assert.doesNotMatch(plan, /qualify|labels/);
   assert.match(plan, /run: just inference-admit/);
   assert.match(plan, /just inference-matrix/);
@@ -74,4 +74,8 @@ test('PR summary requires successful admission and matrix; skipped plans cannot 
       assert.equal(outcome.failures.length, 1);
     }
   }
+});
+
+test('ungated fork target events cannot publish a failing qualification status before approval', () => {
+  assert.match(summary, /if: always\(\) && needs.plan.result != 'skipped'/);
 });

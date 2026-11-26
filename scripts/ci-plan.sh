@@ -67,7 +67,7 @@ result="$(jq -cer --arg profile "$profile" '
       or (valid_host_identity | not) or .runner != host_runner(.id))
     then error("invalid host identity or runner boundary") else . end
   | if any(.runtimes[];
-      (has_only_keys(["id", "display_name", "host", "backend", "toolkit", "gpu_architectures", "validation", "runner", "runner_group", "enabled"]) | not)
+      (has_only_keys(["id", "display_name", "host", "backend", "toolkit", "gpu_architectures", "validation", "full_only", "runner", "runner_group", "enabled"]) | not)
       or (has("id") | not) or (has("display_name") | not) or (has("host") | not)
       or (has("backend") | not) or (has("toolkit") | not) or (has("gpu_architectures") | not)
       or (has("runner") | not)
@@ -75,6 +75,7 @@ result="$(jq -cer --arg profile "$profile" '
       or (.host as $host | ($host | type != "string") or ([ $m.hosts[].id ] | index($host)) == null)
       or (.backend | type != "string") or (.toolkit | type != "string") or (.gpu_architectures | type != "string")
       or (has("validation") and .validation != "artifact" and .validation != "inference")
+      or (has("full_only") and (.full_only | type != "boolean"))
       or (.runner | type != "array" or any(.[]; type != "string"))
       or (has("enabled") and (.enabled | type != "boolean"))
       or (has("runner_group") and .runner_group != null and (.runner_group | type != "string"))
@@ -89,7 +90,8 @@ result="$(jq -cer --arg profile "$profile" '
         or ($variant == null)
         or ($r.id != "\($h.id)-\($variant)")
         or (($r.validation // "inference") !=
-            (if $h.os == "windows" or $variant == "rocm" then "artifact" else "inference" end))
+            (if $h.os == "windows" then "artifact" else "inference" end))
+        or (($r.full_only // false) != ($h.os == "windows" or $variant == "rocm"))
         or ($r.runner != expected_runtime_runner($h; $variant; ($r.validation // "inference"))))
     then error("unsupported backend/toolkit/OS combination or runtime runner labels") else . end
   | ([.runtimes[] as $r | ($m.hosts[] | select(.id == $r.host)) as $h | "\($r.host)/\(runtime_variant($r; $h))"] as $variants
@@ -107,8 +109,9 @@ result="$(jq -cer --arg profile "$profile" '
   | ([$m.runtimes[]
       | . as $runtime
       | select(($m.enabled_hosts == null or any($m.enabled_hosts[]; . == $runtime.host)) and $runtime.enabled != false)
-      # Archive-only targets run exclusively in full CI, not the PR profile.
-      | select($profile == "full" or ($runtime.validation // "inference") != "artifact")
+      # Evidence policy is independent of scheduling: Linux ROCm requires
+      # inference but stays full-only alongside the four Windows packages.
+      | select($profile == "full" or (($runtime.full_only // false) | not))
       | ($m.hosts[] | select(.id == $runtime.host)) as $host
       | . + {host_runner: $host.runner, enabled: true, validation: ($runtime.validation // "inference")}
       | if ($runtime.runner_group // null) != null

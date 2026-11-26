@@ -13,24 +13,24 @@ const inferenceJobs = () => ['plan', 'summary', ...JSON.parse(readFileSync(
   .map((name, index) => ({ id: index + 1, name, run_attempt: 1, status: 'completed', conclusion: 'success' }));
 const run = (path, id = 1, extra = {}) => ({
   id, workflow_id: path, path: `.github/workflows/${path}`, name: path,
-  event: path === 'inference.yml' ? 'pull_request_target' : 'pull_request',
+  event: ['ci.yml', 'inference.yml'].includes(path) ? 'pull_request_target' : 'pull_request',
   head_sha: sha, pull_requests: [{ number: 52 }],
   status: 'completed', conclusion: 'success', run_attempt: 1, ...extra
 });
 
 async function evaluate(options = {}) {
   const calls = [], failures = [], jobRequests = [];
-  const pr = { number: 52, state: 'open', head: { sha }, body };
+  const pr = { number: 52, state: 'open', head: { sha, repo: { id: 42 } }, base: { repo: { id: 42 } }, body };
   let reads = 0;
   const rest = {
-    pulls: { get: async () => ({ data: ++reads > 1 && options.current ? options.current : { ...pr, ...options.pr } }), listFiles: 'files' },
-    actions: { listWorkflowRunsForRepo: 'runs', listJobsForWorkflowRun: 'jobs' },
+    pulls: { list: 'prs', get: async () => ({ data: ++reads > 1 && options.current ? options.current : { ...pr, ...options.pr } }), listFiles: 'files' },
+    actions: { listWorkflowRunsForRepo: 'runs', listWorkflowRuns: 'forkruns', listJobsForWorkflowRun: 'jobs' },
     checks: { listForRef: 'checks' },
     repos: { listPullRequestsAssociatedWithCommit: 'prs', listCommitStatusesForRef: 'statuses',
       createCommitStatus: async value => calls.push(value) }
   };
   const data = { files: options.files || [inferenceChange], runs: options.runs || [run('ci.yml'), run('inference.yml')],
-    checks: options.checks || [], statuses: options.statuses || [], prs: [pr], jobs: options.jobs || inferenceJobs() };
+    forkruns: options.forkRuns || [], checks: options.checks || [], statuses: options.statuses || [], prs: [pr], jobs: options.jobs || inferenceJobs() };
   const github = { rest, paginate: async (method, parameters) => {
     if (options.apiError === method) throw new Error('GitHub API unavailable');
     if (method === 'jobs') jobRequests.push(parameters);
@@ -214,7 +214,7 @@ test('native CI and inference triggers match their independent route lists', () 
 
 test('same-repository PRs to any base wait for the protected CI producer', async () => {
   const pr = { head: { sha, repo: { id: 42 } }, base: { ref: 'codex/native-decode-port', repo: { id: 42 } } };
-  const ordinary = run('ci.yml');
+  const ordinary = run('ci.yml', 1, { event: 'pull_request' });
   const protectedCI = run('ci.yml', 3, { event: 'pull_request_target' });
   const inference = run('inference.yml', 2);
   assert.equal((await evaluate({ pr, depot: true, runs: [ordinary, inference] })).state, 'pending');
@@ -222,13 +222,13 @@ test('same-repository PRs to any base wait for the protected CI producer', async
   const fork = { ...pr, head: { ...pr.head, repo: { id: 43 } } };
   const forkCI = run('ci-pr.yml', 4);
   assert.equal((await evaluate({ pr: fork, depot: true, runs: [protectedCI, inference] })).state, 'pending');
-  assert.equal((await evaluate({ pr: fork, depot: true, runs: [forkCI, inference] })).state, 'success');
+  assert.equal((await evaluate({ pr: fork, depot: true, runs: [forkCI, inference] })).state, 'pending');
 });
 
 test('Depot PR checks require each protected producer rather than its legacy run', async () => {
   const files = [inferenceChange, { filename: 'ci/Dockerfile' }, { filename: 'docs-site/index.mdx' }];
   const legacy = [run('ci.yml'), run('inference.yml'), run('ci-images.yml'), run('docs.yml')];
-  const protectedRuns = [run('ci-pr.yml'), run('inference.yml'), run('ci-images-pr.yml'), run('docs-pr.yml')];
+  const protectedRuns = [run('ci.yml'), run('inference.yml'), run('ci-images-pr.yml'), run('docs-pr.yml')];
   assert.equal((await evaluate({ files, depot: true, runs: legacy })).state, 'pending');
   assert.equal((await evaluate({ files, depot: true, runs: protectedRuns })).state, 'success');
   assert.equal((await evaluate({ files, depot: true, runs: protectedRuns.slice(0, -1) })).state, 'pending');
@@ -319,4 +319,85 @@ test('description edits trigger the protected metadata-only controller', () => {
   const workflow = readFileSync(join(__dirname, '../workflows/pr-checks.yml'), 'utf8');
   assert.match(workflow, /pull_request_target:\n\s+types: \[[^\]]*\bedited\b/);
   assert.match(workflow, /ref: main/);
+});
+
+const forkPR = { head: { sha, repo: { id: 43 } }, base: { repo: { id: 42 } } };
+const forkRun = (extra = {}) => run('fork-native.yml', 100, {
+  event: 'workflow_run', head_sha: '2'.repeat(40), display_title: sha, ...extra,
+});
+const forkJobs = () => [{ id: 99, name: 'admission', run_attempt: 1, status: 'completed', conclusion: 'success' },
+  { id: 100, name: 'ci / CI', run_attempt: 1, status: 'completed', conclusion: 'success' },
+  ...inferenceJobs().map(job => ({ ...job, name: 'inference / ' + job.name }))];
+const forkOptions = () => ({ pr: forkPR, runs: [run('ci.yml', 1, { event: 'pull_request' })],
+  forkRuns: [forkRun()], jobs: forkJobs() });
+
+test('a fork cannot green itself with hosted CI alone; exact-source protected native results are required', async () => {
+  assert.equal((await evaluate(forkOptions())).state, 'success');
+  assert.equal((await evaluate({ ...forkOptions(), forkRuns: [] })).state, 'pending');
+  assert.equal((await evaluate({ ...forkOptions(), forkRuns: [forkRun({ display_title: '3'.repeat(40) })] })).state, 'pending');
+  assert.equal((await evaluate({ ...forkOptions(), forkRuns: [forkRun({ event: 'pull_request' })] })).state, 'pending');
+  for (const status of ['queued', 'waiting', 'in_progress']) {
+    assert.equal((await evaluate({ ...forkOptions(), forkRuns: [forkRun({ status })] })).state, 'pending');
+  }
+});
+
+test('fork admission, CI gate and every protected inference job must actually succeed', async () => {
+  for (const required of forkJobs()) {
+    for (const conclusion of ['skipped', 'failure', 'cancelled', 'neutral']) {
+      const jobs = forkJobs().map(job => job.name === required.name ? { ...job, conclusion } : job);
+      assert.equal((await evaluate({ ...forkOptions(), jobs })).state, 'failure', `${required.name}: ${conclusion}`);
+    }
+    assert.equal((await evaluate({ ...forkOptions(), jobs: forkJobs().filter(job => job.name !== required.name) })).state, 'failure');
+  }
+  for (const conclusion of ['skipped', 'neutral', 'failure', 'cancelled']) {
+    assert.equal((await evaluate({ ...forkOptions(), forkRuns: [forkRun({ conclusion })] })).state, 'failure');
+  }
+});
+
+test('protected fork completion wakes the aggregate for the candidate, not main, and latest reruns govern', async () => {
+  assert.equal((await evaluate({ ...forkOptions(), payload: { workflow_run: forkRun({ pull_requests: [] }) } })).state, 'success');
+  assert.equal((await evaluate({ ...forkOptions(), forkRuns: [forkRun(), forkRun({ id: 101, conclusion: 'failure' })] })).state, 'failure');
+  assert.equal((await evaluate({ ...forkOptions(), jobs: [...forkJobs(),
+    { ...forkJobs()[1], id: 200, run_attempt: 2, conclusion: 'skipped' }], forkRuns: [forkRun({ run_attempt: 2 })] })).state, 'failure');
+});
+
+test('a fork run held for maintainer approval is pending, not failed (real #222 context)', async () => {
+  const fork = { head: { sha, repo: { id: 7 } }, base: { repo: { id: 42 } } };
+  const held = run('ci.yml', 1, { event: 'pull_request', conclusion: 'action_required' });
+  const result = await evaluate({ pr: fork, runs: [held] });
+  assert.equal(result.state, 'pending');
+  assert.equal(result.calls.at(-1).description, 'Waiting for a maintainer to approve workflows');
+  assert.deepEqual(result.failures, []);
+  // A real failure beside the held run still blocks.
+  const failed = await evaluate({ pr: fork, runs: [held, run('docs.yml', 2, { conclusion: 'failure' })] });
+  assert.equal(failed.state, 'failure');
+});
+
+test('a fork PR links PR checks to its approved fork run and names the jobs it waits for (real #222 context)', async () => {
+  const url = id => `https://github.com/Mesh-LLM/skippy/actions/runs/${id}`;
+  const cuda = 'ci / Build, package, and smoke · Linux ARM64 CUDA 13';
+  const jobs = [...forkJobs(), { id: 300, name: cuda, run_attempt: 1, status: 'queued', conclusion: null }];
+  const running = (await evaluate({ ...forkOptions(), forkRuns: [forkRun({ status: 'in_progress', conclusion: null })], jobs })).calls.at(-1);
+  assert.deepEqual([running.state, running.description, running.target_url],
+    ['pending', `Approved fork CI: waiting for ${cuda}`, url(100)]);
+  assert.equal((await evaluate(forkOptions())).calls.at(-1).target_url, url(100));
+  // Before the approved run exists, and on same-repository PRs, the link stays on the aggregate's own run.
+  const before = (await evaluate({ ...forkOptions(), forkRuns: [] })).calls.at(-1);
+  assert.deepEqual([before.description, before.target_url], ['Waiting for applicable PR checks to finish', url(42)]);
+  assert.equal((await evaluate()).calls.at(-1).target_url, url(42));
+});
+
+test('base Depot configuration does not change any fork producer (real #218 context)', async () => {
+  const files = [inferenceChange, { filename: 'ci/Dockerfile' }, { filename: 'docs-site/index.mdx' }];
+  for (const depot of [false, true]) {
+    const expected = expectedWorkflows(files, false, depot);
+    assert.deepEqual([...expected.keys()].sort(), [
+      '.github/workflows/ci.yml', '.github/workflows/ci-images.yml',
+      '.github/workflows/docs.yml', '.github/workflows/fork-native.yml',
+    ].sort());
+    const runs = [...forkOptions().runs, run('ci-images.yml'), run('docs.yml')];
+    assert.equal((await evaluate({ ...forkOptions(), depot, files, runs })).state, 'success');
+    assert.equal((await evaluate({ ...forkOptions(), depot, files,
+      runs: [run('ci-pr.yml'), run('ci-images-pr.yml'), run('docs-pr.yml')] })).state, 'pending');
+  }
 });
