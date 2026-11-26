@@ -203,7 +203,7 @@
       "host": "windows-x86_64",
       "backend": "cuda",
       "toolkit": "12.9.2",
-      "gpu_architectures": "61;75;80;86;89;90",
+      "gpu_architectures": "61;75;80;86;89;90;120",
       "validation": "artifact",
       "runner": [
         "windows-2022"

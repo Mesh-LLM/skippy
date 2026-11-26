@@ -9,6 +9,10 @@ and provisioning source live in public `Mesh-LLM/mesh-llm-runner-images/windows`
 consumer payloads, model input, Windows disks and job credentials stay outside
 the public launcher image.
 
+The Windows CUDA 12.9.2 package includes `sm_120` so the RTX 5080 rehearsal host
+can exercise both CUDA 12 and CUDA 13 products. Runtime admission still requires
+the detected GPU architecture to match the compiled package metadata.
+
 This is an unqualified rehearsal. Production CI, release verification and target
 validation policies are unchanged. Remove the branch-only workflow before merging
 production integration, then disable its historical workflow entry and remove
