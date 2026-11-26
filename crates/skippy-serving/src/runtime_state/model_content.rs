@@ -25,9 +25,10 @@ struct FileStamp {
     created: Option<SystemTime>,
     #[cfg(unix)]
     identity: (u64, u64, i64, i64),
-    /// Volume serial number, 128-bit file ID and `ChangeTime`.
+    /// Volume serial number, 128-bit file ID and `ChangeTime`, absent on a
+    /// filesystem that keeps no change time (FAT, exFAT).
     #[cfg(windows)]
-    identity: (u64, u128, i64),
+    identity: Option<(u64, u128, i64)>,
 }
 
 impl FileStamp {
@@ -51,67 +52,52 @@ impl FileStamp {
                 metadata.ctime_nsec(),
             ),
             #[cfg(windows)]
-            identity: windows_file_identity(file)?,
+            identity: crate::file_identity::windows_strong_identity(file),
         })
     }
 
-    /// Stamps a regular file. The type is checked before opening, because
-    /// opening a FIFO that has no writer blocks.
     fn of_path(path: &Path) -> std::io::Result<Self> {
-        if !std::fs::metadata(path)?.is_file() {
-            return Err(std::io::Error::other(
-                "model content proof requires regular files",
-            ));
-        }
-        let file = File::open(path)?;
+        let file = open_regular(path)?;
         let metadata = file.metadata()?;
         Self::read(&file, &metadata)
     }
+
+    /// Whether the stamp alone proves the bytes are the ones hashed. Size and
+    /// last-write times do not: a same-size rewrite can restore them.
+    fn is_strong(&self) -> bool {
+        #[cfg(unix)]
+        {
+            true
+        }
+        #[cfg(windows)]
+        {
+            self.identity.is_some()
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            false
+        }
+    }
 }
 
-/// std exposes no device, inode or change time on Windows, so read them from
-/// the open handle: the volume serial number and 128-bit file ID (`FileIdInfo`,
-/// which also covers ReFS) identify the file, and `ChangeTime` advances on any
-/// content or metadata change, which is what lets a same-size rewrite with a
-/// restored last-write time be told apart. Unlike Unix ctime, a process with
-/// write-attributes access can set `ChangeTime`; like the rest of this proof
-/// it gates reuse of a verified hash and is not a defence against a local
-/// writer. `skippy-api`'s source registry reads the same identity.
-#[cfg(windows)]
-fn windows_file_identity(file: &File) -> std::io::Result<(u64, u128, i64)> {
-    use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Storage::FileSystem::{
-        FILE_BASIC_INFO, FILE_ID_INFO, FileBasicInfo, FileIdInfo, GetFileInformationByHandleEx,
-    };
-
-    let handle = file.as_raw_handle();
-    let mut id = FILE_ID_INFO::default();
-    let mut basic = FILE_BASIC_INFO::default();
-    // SAFETY: `handle` belongs to `file`, which outlives both calls, and each
-    // buffer is the structure its information class documents, passed with
-    // that structure's exact size.
-    let queried = unsafe {
-        GetFileInformationByHandleEx(
-            handle,
-            FileIdInfo,
-            (&raw mut id).cast(),
-            size_of::<FILE_ID_INFO>() as u32,
-        ) != 0
-            && GetFileInformationByHandleEx(
-                handle,
-                FileBasicInfo,
-                (&raw mut basic).cast(),
-                size_of::<FILE_BASIC_INFO>() as u32,
-            ) != 0
-    };
-    if !queried {
-        return Err(std::io::Error::last_os_error());
+/// Opens a regular file for the proof. On Unix the open does not block, so a
+/// path replaced by a FIFO after any earlier check cannot hang it, and the
+/// type is checked on the open handle.
+fn open_regular(path: &Path) -> std::io::Result<File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK);
     }
-    Ok((
-        id.VolumeSerialNumber,
-        u128::from_le_bytes(id.FileId.Identifier),
-        basic.ChangeTime,
-    ))
+    let file = options.open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::other(
+            "model content proof requires regular files",
+        ));
+    }
+    Ok(file)
 }
 
 impl VerifiedModelContent {
@@ -156,7 +142,6 @@ impl VerifiedModelContent {
         capture_files(files).map(Some)
     }
 
-    #[cfg(any(not(any(unix, windows)), test))]
     fn from_files(files: Vec<(String, PathBuf)>) -> Result<Self> {
         Self::from_observed(capture_files(files)?, &AtomicBool::new(false))
     }
@@ -173,13 +158,9 @@ impl VerifiedModelContent {
                 !cancelled.load(Ordering::Acquire),
                 "model content verification cancelled"
             );
-            let file = File::open(&path)
+            let file = open_regular(&path)
                 .with_context(|| format!("open model content {}", path.display()))?;
             let before = file.metadata()?;
-            ensure!(
-                before.is_file(),
-                "model content proof requires regular files"
-            );
             ensure!(
                 FileStamp::read(&file, &before)? == stamp,
                 "model content changed before verification"
@@ -235,17 +216,12 @@ impl VerifiedModelContent {
         if !unchanged {
             return false;
         }
-        #[cfg(any(unix, windows))]
-        {
-            true
-        }
-        #[cfg(not(any(unix, windows)))]
-        {
-            // Size and last-write timestamps are not a strong file identity on
-            // these platforms. Recheck actual content after model open and at
-            // backend construction rather than trusting preserved timestamps.
-            Self::from_files(files).is_ok_and(|current| current.digest == self.digest)
-        }
+        // Without a strong stamp (platforms other than Unix and Windows, or a
+        // Windows filesystem with no change time), recheck the actual content
+        // after model open and at backend construction rather than trust
+        // preserved timestamps.
+        self.files.iter().all(|(_, _, stamp)| stamp.is_strong())
+            || Self::from_files(files).is_ok_and(|current| current.digest == self.digest)
     }
 
     pub(crate) fn bind(&self, identity: &str) -> String {
@@ -370,7 +346,7 @@ mod tests {
         }
         #[cfg(windows)]
         {
-            let change_time = |path: &Path| FileStamp::of_path(path).unwrap().identity.2;
+            let change_time = |path: &Path| FileStamp::of_path(path).unwrap().identity.unwrap().2;
             let observed = change_time(path);
             let probe = path.with_extension("ctime-probe");
             let deadline = Instant::now() + std::time::Duration::from_secs(60);
@@ -425,6 +401,19 @@ mod tests {
         );
 
         assert!(!proof.still_matches(&config));
+    }
+
+    /// A FIFO with no writer would block a plain open forever.
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_is_refused_without_blocking() {
+        use std::os::unix::ffi::OsStrExt;
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("model.gguf");
+        let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        // SAFETY: `c_path` is a NUL-terminated path that outlives the call.
+        assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+        assert!(FileStamp::of_path(&path).is_err());
     }
 
     #[cfg(any(unix, windows))]
