@@ -28,7 +28,9 @@ def count(value, name, minimum=1):
     return value
 
 
-def scenario():
+def scenario(named=None):
+    """The checked scenario; with `named`, only those servers and their points, to rerun one
+    workload without the rest."""
     value = read_json(SCENARIO)
     if (set(value) != {"schema_version", "context_per_lane", "warmup_requests", "servers"}
             or value["schema_version"] != 1 or not value["servers"]):
@@ -56,6 +58,11 @@ def scenario():
                 raise ValueError(f'{point["id"]}: concurrency exceeds the server\'s lanes')
             if point["depth"] + point["input_tokens"] + point["output_tokens"] > context:
                 raise ValueError(f'{point["id"]}: one request exceeds a lane\'s context')
+    if named is not None:
+        unknown = set(named) - servers
+        if not named or unknown:
+            raise ValueError(f"unknown performance servers: {', '.join(sorted(unknown)) or 'none named'}")
+        value = {**value, "servers": [server for server in value["servers"] if server["id"] in named]}
     return value
 
 
@@ -110,7 +117,7 @@ def nodes(values):
     return values
 
 
-def job_spec(harness, arm_list, keys, rounds, node, label, *, trace=False, backend="metal"):
+def job_spec(harness, arm_list, keys, rounds, node, label, *, trace=False, backend="metal", servers=None):
     """`trace` adds one diagnostic pass of the candidate with debug telemetry, kept out
     of the measurements: tracing costs time, so a traced arm is not a comparable one."""
     count(rounds, "rounds")
@@ -120,7 +127,7 @@ def job_spec(harness, arm_list, keys, rounds, node, label, *, trace=False, backe
         raise ValueError(f"at most {MAX_ROUNDS} rounds fit the job's time budget")
     if backend not in BACKENDS:
         raise ValueError(f"unknown backend {backend!r}; the table holds {', '.join(sorted(BACKENDS))}")
-    shape = scenario()
+    shape = scenario(servers)
     entry = BACKENDS[backend]
     if entry["pin_required"] and node is None:
         raise ValueError(f"a {backend} plan must name exactly one node: its GPUs differ between hosts")
@@ -141,6 +148,8 @@ def job_spec(harness, arm_list, keys, rounds, node, label, *, trace=False, backe
         for arm in arm_list]
     plan = {"harness": harness, "backend": backend, "arms": arm_list, "models": keys,
             "rounds": rounds, "trace": trace}
+    if servers is not None:
+        plan["servers"] = servers
     points = [point for server in shape["servers"] for point in server["points"]]
     return {
         "name": f"skippy-inference-performance-{label}",

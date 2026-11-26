@@ -106,14 +106,16 @@ def admit(evidence):
     keys = models([key.strip() for key in os.environ["MODELS"].split(",") if key.strip()])
     pins = nodes([node.strip() for node in os.environ.get("NODES", "").split(",") if node.strip()])
     rounds = int(os.environ.get("ROUNDS") or 3)
+    servers = [server.strip() for server in os.environ.get("SERVERS", "").split(",") if server.strip()] or None
     jobs = [{"label": node or "any",
              "spec": job_spec(harness, arm_list, keys, rounds, node, node or "any",
-                              trace=trace, backend=backend)}
+                              trace=trace, backend=backend, servers=servers)}
             for node in (pins or [None])]
     evidence.mkdir(parents=True, exist_ok=True)
     write_json(evidence / "plan.json", {"harness": harness, "backend": backend, "arms": arm_list,
                                         "models": keys,
-                                        "rounds": rounds, "trace": trace, "pull_requests": pull_requests,
+                                        "rounds": rounds, "trace": trace, "servers": servers,
+                                        "pull_requests": pull_requests,
                                         "branches": branches,
                                         "committed_at": committed_at(arm_list), "jobs": jobs})
     for arm in arm_list:
@@ -337,7 +339,7 @@ def execute():
     output.mkdir(parents=True, exist_ok=True)
     for log in WORK.glob("build-*.log"):
         (output / log.name).write_bytes(log.read_bytes())
-    shape, helps = scenario(), {entry["label"]: capabilities(entry) for entry in built}
+    shape, helps = scenario(plan.get("servers")), {entry["label"]: capabilities(entry) for entry in built}
     record = {"schema_version": 1, "harness": plan["harness"], "scenario_sha256": digest(SCENARIO),
               "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
               "host": {"node": os.environ.get("JIANYANG_NODE"), "backend": plan["backend"],

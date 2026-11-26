@@ -35,6 +35,14 @@ class ScenarioTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     performance_plan.scenario()
 
+    def test_named_servers_keep_only_their_points(self):
+        first = performance_plan.scenario()["servers"][0]
+        shape = performance_plan.scenario([first["id"]])
+        self.assertEqual(shape["servers"], [first])
+        for names in ([], ["no-such-server"]):
+            with self.assertRaises(ValueError):
+                performance_plan.scenario(names)
+
 
 class PlanTests(unittest.TestCase):
     candidate, baseline, pin = "a" * 40, "b" * 40, "c" * 40
