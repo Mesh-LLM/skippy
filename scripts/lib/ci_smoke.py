@@ -111,7 +111,7 @@ def completion(server, endpoint, deadline):
         try:
             curl([endpoint + "/models"], 2)
             break
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             time.sleep(0.2)
     else:
         raise RuntimeError("server readiness deadline or early exit")
