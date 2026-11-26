@@ -2,7 +2,7 @@
 name = "skippy-coordinator"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 readme = "README.md"
 version.workspace = true
 description = "Coordination primitives for Skippy staged runtime execution"
