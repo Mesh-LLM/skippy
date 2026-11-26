@@ -10,8 +10,9 @@
 //!
 //! The struct layouts are generated from the pinned `include/llama.h`; this
 //! module keeps only the ergonomic aliases, the draft-context function table,
-//! and the symbol resolvers. The `llama-ext.h` entry points keep C++ linkage
-//! and are bound by their Itanium-mangled names.
+//! and the symbol resolvers. `include/llama.h` entry points keep C linkage and
+//! bind by their undecorated names; the remaining `src/llama-ext.h` staging
+//! entry points keep C++ linkage and are bound by their decorated names.
 
 use std::ffi::c_char;
 

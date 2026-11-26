@@ -383,6 +383,6 @@
   },
   "cell_metrics_sha256": "5d2a90f48a9c7086b291782b4a230308092a1e5df875855bbb3c01aaf5e1f9c1",
   "request_timings_sha256": "337d766e8516bb44c1328e2d610adfbe2a3a3fe7286fa4b44c17f619c3adb5cb",
-  "source_attestation_sha256": "3cea9fcf10e05ee41923a4d620abbb43ecc95d84db2089f70264617ee8e6c500",
+  "source_attestation_sha256": "5d935344c764d88045ea4f1e1e2cc0baef5693a5980436dace726a5a2918cb53",
   "table_audit_sha256": "f0d47dce5848933bd7c1eb80c599d8e10e8f02c66a696681fdc9117a80786793"
 }

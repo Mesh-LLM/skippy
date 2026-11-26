@@ -2,7 +2,7 @@
 name = "skippy-serving"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Embedded Skippy staged runtime server"
 repository = "https://github.com/Mesh-LLM/skippy"

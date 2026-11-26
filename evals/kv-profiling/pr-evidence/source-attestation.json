@@ -29,8 +29,11 @@
   "pr_native_patch_sha256": "7b9ff3fd8f0f5e9dec6d2800e6f95e5de449e178d4e570fbedfa443b71d733f0",
   "combined_server_binary_sha256": "d80dd044eb06c96e917945afa517470cb991082d259542ffe7d23fa8dc029d58",
   "native_component_report_sha256": "ad8644308d215ff214019c35d05e39eaa79fc7dece9b4f73251ae9f4f66450aa",
-  "native_build_script_sha256": "96d24b76f637a16a3e2ed9658ba5d39060c1b38c9f172f8197a3294fcb45666b",
-  "packaged_native_recipe_sha256": "9ed9c45a343959ffee169870f9155cb6ba4dea16a795c6092363ce261a1e7a87",
-  "packaged_patch_queue_sha256": "cd7c2ab9408da56d1ab9ca09daf15594c31b781fcda347f5cae18402a0fb830a",
-  "scope": "Source identity only; correctness and performance verdicts remain in model audits."
+  "native_build_script_sha256": "3f00462338c6550ed2bf3799a603add86d73699419cf3ecad0cffdde396e7286",
+  "packaged_native_recipe_sha256": "49eb77624007f08ccb369fd565b12d97e0de7962eb0421047316dc44e9481a44",
+  "packaged_patch_queue_sha256": "4995a13499973a2363764a678316cbdce3f825125b1253ecee13801e33497c51",
+  "ported_main_commit": "9c1528f39f427f52acd7897728983a21998bc0cb",
+  "ported_llama_upstream_sha": "5bacb7c868a2bc98682de15f447fc1ce17c9c49c",
+  "ported_runtime_hardware_qualified": false,
+  "scope": "PR Rust files match the tested patch and the native patch bytes are unchanged. The tested binary used the earlier source commit; the main upgrade needs a new hardware qualification. Correctness and performance verdicts remain in model audits."
 }

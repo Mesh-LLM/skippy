@@ -41,7 +41,7 @@ def main():
     rust_patch = root / "combined-logprob-u1.patch"
     native_build_patch = root / "q4-scale-native.patch"
     native_pr_patch = Path(
-        "llama_cpp/patches/0046-ggml-metal-preserve-q4-k-scales-before-nibble-adjustment.patch")
+        "llama_cpp/patches/0060-ggml-metal-preserve-q4-k-scales-before-nibble-adjustment.patch")
     combined = json.loads((root / "artifacts/combined-logprob-build/scheduler-fix-build.json").read_text())
     component = json.loads((root / "artifacts/q4-metal-components-v2/metal-components.json").read_text())
     subprocess.run(["git", "apply", "--reverse", "--check", str(rust_patch)], check=True)
@@ -63,7 +63,7 @@ def main():
         subprocess.run(["git", "apply", str(rust_patch.absolute())], cwd=scratch_root, check=True)
         if any((scratch_root / name).read_bytes() != Path(name).read_bytes() for name in paths):
             raise ValueError("current Rust file differs from tested patch output")
-    changed = subprocess.check_output(["git", "diff", combined["source"], "--name-only", "--", "crates"], text=True).splitlines()
+    changed = subprocess.check_output(["git", "diff", "origin/main", "--name-only", "--", "crates"], text=True).splitlines()
     added = subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard", "crates"],
                                     text=True).splitlines()
     if set(changed + added) != set(paths) | {"crates/skippy-api/src/native-recipe.json"}:
@@ -90,7 +90,10 @@ def main():
         "native_build_script_sha256": digest(Path("scripts/build-llama.sh")),
         "packaged_native_recipe_sha256": digest(recipe_path),
         "packaged_patch_queue_sha256": recipe["patch_queue_sha256"],
-        "scope": "Source identity only; correctness and performance verdicts remain in model audits.",
+        "ported_main_commit": subprocess.check_output(["git", "rev-parse", "origin/main"], text=True).strip(),
+        "ported_llama_upstream_sha": recipe["llama_upstream_sha"],
+        "ported_runtime_hardware_qualified": False,
+        "scope": "PR Rust files match the tested patch and the native patch bytes are unchanged. The tested binary used the earlier source commit; the main upgrade needs a new hardware qualification. Correctness and performance verdicts remain in model audits.",
     }
     destination = Path("evals/kv-profiling/pr-evidence/source-attestation.json")
     destination.write_text(json.dumps(record, indent=2) + "\n")

@@ -294,7 +294,13 @@ case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
     CMAKE_ARGS+=(-DCMAKE_OBJECT_PATH_MAX=180 -DGGML_AVX512=OFF -DGGML_BMI2=OFF)
     if [[ "${CXX:-}" == cl || "${CXX:-}" == *cl.exe ]]; then
-      CMAKE_ARGS+=("-DCMAKE_CXX_FLAGS_INIT=/DPATH_MAX=4096")
+      # Git Bash treats the slash form as a path when invoking native CMake.
+      CMAKE_ARGS+=("-DCMAKE_CXX_FLAGS_INIT=-DPATH_MAX=4096")
+    fi
+    if [[ ( "$LLAMA_BACKEND" == rocm || "$LLAMA_BACKEND" == hip ) && -n "${HIPCXX:-}" ]]; then
+      # ggml builds Windows HIP sources as CXX. CMake also needs Clang for C
+      # because its Windows toolchain rejects mixing the GNU and MSVC drivers.
+      CMAKE_ARGS+=("-DCMAKE_C_COMPILER=${HIPCC:-clang}" "-DCMAKE_CXX_COMPILER=$HIPCXX")
     fi
     ;;
 esac
@@ -385,6 +391,9 @@ case "$LLAMA_BACKEND" in
     ;;
   rocm|hip)
     CMAKE_ARGS+=(-DGGML_HIP=ON)
+    if [[ -n "${ROCM_PATH:-}" ]]; then
+      CMAKE_ARGS+=("-DCMAKE_PREFIX_PATH=$ROCM_PATH")
+    fi
     AMDGPU_TARGETS="${LLAMA_STAGE_AMDGPU_TARGETS:-${SKIPPY_AMDGPU_TARGETS:-}}"
     if [[ -n "$AMDGPU_TARGETS" ]]; then
       CMAKE_ARGS+=(-DAMDGPU_TARGETS="$AMDGPU_TARGETS")

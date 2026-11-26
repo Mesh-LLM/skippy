@@ -27,8 +27,11 @@ The [source attestation](source-attestation.json) confirms that every changed
 Rust crate file in this worktree exactly matches the isolated patch used for
 the tested combined server binary. It also binds the native Q4 Metal patch in
 the PR source tree to the patch used in the component rebuild. It also verifies
-the packaged native recipe against the ordered patch queue. This establishes
-tested source identity, not a four-model correctness or performance pass.
+the packaged native recipe against the ordered patch queue. The PR's Rust
+files and Q4 patch bytes match the earlier tested patch, while current main
+now uses a newer llama.cpp pin; the attestation explicitly marks that port as
+awaiting hardware qualification. It does not establish a four-model
+correctness or performance pass.
 
 | Model | Review files | Scope |
 |---|---|---|

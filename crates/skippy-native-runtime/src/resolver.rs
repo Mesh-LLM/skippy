@@ -789,7 +789,17 @@ fn best_candidate(evaluated: &[CandidateEvaluation]) -> Option<&CandidateEvaluat
 fn compare_candidates(left: &&CandidateEvaluation, right: &&CandidateEvaluation) -> Ordering {
     left.rank
         .cmp(&right.rank)
+        .then_with(|| cuda_toolkit_major(left).cmp(&cuda_toolkit_major(right)))
         .then_with(|| right.artifact.id.cmp(&left.artifact.id))
+}
+
+fn cuda_toolkit_major(candidate: &CandidateEvaluation) -> Option<u32> {
+    candidate
+        .artifact
+        .backend
+        .cuda
+        .as_ref()
+        .map(|cuda| cuda.toolkit_major)
 }
 
 #[cfg(test)]
@@ -1233,7 +1243,7 @@ mod tests {
     }
 
     #[test]
-    fn windows_gpu_covered_by_both_runtimes_keeps_the_cuda12_runtime() {
+    fn windows_gpu_covered_by_both_runtimes_prefers_the_cuda13_runtime() {
         let selected = select_native_runtime(
             &windows_cuda_manifest(),
             &windows_cuda_host("89", 13),
@@ -1244,8 +1254,21 @@ mod tests {
 
         assert_eq!(
             selected.artifact.id,
-            "meshllm-native-runtime-windows-x86_64-cuda12"
+            "meshllm-native-runtime-windows-x86_64-cuda13"
         );
+    }
+
+    #[test]
+    fn linux_cuda13_host_prefers_cuda13_over_equally_ranked_cuda12() {
+        let selected = select_native_runtime(
+            &cuda12_and_13_catalog(0),
+            &cuda12_and_13_host(),
+            "0.68.0",
+            &RuntimeSelection::Recommended,
+        )
+        .expect("a CUDA 13 host supports both runtimes");
+
+        assert_eq!(selected.artifact.id, "meshllm-runtime-linux-x86_64-cuda13");
     }
 
     #[test]
@@ -1734,7 +1757,7 @@ mod tests {
         let cache_root = tempfile::tempdir().unwrap();
         write_bundle_runtime(
             bundle.path(),
-            cuda_runtime("meshllm-runtime-linux-x86_64-cuda13", 13, &["sm_89"]),
+            cuda_runtime("meshllm-runtime-linux-x86_64-cuda12", 12, &["sm_89"]),
         );
 
         let resolution = NativeRuntimeResolver::new(
@@ -1750,7 +1773,7 @@ mod tests {
 
         assert_eq!(
             resolution.selected.id,
-            "meshllm-runtime-linux-x86_64-cuda13"
+            "meshllm-runtime-linux-x86_64-cuda12"
         );
         assert_eq!(
             resolution.source,
@@ -1766,7 +1789,7 @@ mod tests {
         let cache_root = tempfile::tempdir().unwrap();
         write_bundle_runtime(
             staged.path(),
-            cuda_runtime("meshllm-runtime-linux-x86_64-cuda13", 13, &["sm_89"]),
+            cuda_runtime("meshllm-runtime-linux-x86_64-cuda12", 12, &["sm_89"]),
         );
         let cache = NativeRuntimeCache::new(cache_root.path());
         cache.install_from_dir(staged.path()).unwrap();
@@ -1783,7 +1806,7 @@ mod tests {
 
         assert_eq!(
             resolution.selected.id,
-            "meshllm-runtime-linux-x86_64-cuda13"
+            "meshllm-runtime-linux-x86_64-cuda12"
         );
         assert!(matches!(
             resolution.source,

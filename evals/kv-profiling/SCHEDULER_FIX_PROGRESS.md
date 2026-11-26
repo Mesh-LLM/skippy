@@ -1534,3 +1534,24 @@ Model-specific 512-effective-token materialization, quality runs, balanced versi
 non-regression claim have **not** occurred. Three Coder screen staging jobs
 remain queued while the host runs unrelated CI; no model job has been
 submitted for that screen.
+
+## 2026-11-26 20:40 UTC: current-main port and Coder screen
+
+The three Coder transport stages later succeeded; their fetched receipts
+match all three sealed chunk hashes. The registered $0 balanced screen was
+submitted once as `job_trqshv7hbbqdmzv`, spec SHA256
+`5ed0241dd4743447ccaad72c12df3f2a07237391c599a7c437ef588c8d15a204`.
+It is running on `macstudio-2l0352`; no result is yet promoted.
+
+Current `main` upgraded llama.cpp to `5bacb7c868a2bc98682de15f447fc1ce17c9c49c`.
+The Q4 Metal patch is carried unchanged in ordered slot `0060`, with the
+native recipe regenerated at patch-queue digest
+`4995a13499973a2363764a678316cbdce3f825125b1253ecee13801e33497c51`.
+Offline `GIT_ALLOW_PROTOCOL=file just llama-prepare` passed without a download.
+Offline `just lint` passed on the merged source. Serial offline Rust workspace
+tests passed 4,869 tests in 114 groups with 314 ignored; the native Metal full
+replay is still running on an M5 Max. The previously quoted M1 Ultra model
+results were measured on the earlier source and cannot qualify this port.
+The [source attestation](pr-evidence/source-attestation.json) distinguishes
+identical patch bytes from pending port hardware qualification. Draft PR #233
+contains the four historical tables with an explicit UNPROVEN verdict.

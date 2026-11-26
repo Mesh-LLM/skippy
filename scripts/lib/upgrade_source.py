@@ -9,6 +9,8 @@ from .ci_process import command
 PIN = "llama_cpp/upstream.txt"
 WORKFLOW = "Mesh-LLM/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main"
 ALLOWED = (PIN, "llama_cpp/patches", "crates/skippy-ffi/src/bindings", "docs/native-api.md",
+           "crates/skippy-ffi/src/static_bindings.rs", "crates/skippy-ffi/src/dynamic.rs",
+           "crates/skippy-ffi/src/llama_draft.rs",
            "crates/skippy-api/src/native-recipe.json")
 
 

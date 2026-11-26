@@ -2,7 +2,7 @@
 name = "skippy-api"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Shared Skippy model preparation and serving lifecycle API"
 repository = "https://github.com/Mesh-LLM/skippy"
@@ -15,7 +15,7 @@ dynamic-native-runtime = ["skippy-runtime/dynamic-native-runtime", "skippy-servi
 [dependencies]
 skippy-topology = { path = "../skippy-topology", version = "0.80.0" }
 skippy-coordinator = { path = "../skippy-coordinator", version = "0.80.0" }
-process-supervision = { path = "../../tools/process-supervision" }
+skippy-subprocess = { path = "../../tools/process-supervision", version = "0.80.0" }
 thiserror = "2"
 tempfile = "3"
 reqwest = { version = "0.13", features = ["json"] }
