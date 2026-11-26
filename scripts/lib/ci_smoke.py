@@ -73,7 +73,8 @@ def curl(args, seconds, *, local=True):
     )
 
 
-def require_device(logs, server, deadline):
+def require_device(logs, server, deadline, backend):
+    prefixes = {"cuda": ("CUDA",), "metal": ("MTL", "Metal"), "rocm": ("ROCm", "HIP")}[backend]
     readers = [path.open("rb") for path in logs]
     selected = offloaded = False
     try:
@@ -93,7 +94,7 @@ def require_device(logs, server, deadline):
                     if isinstance(event, dict) and event.get("type") == "backend_device_selected":
                         data = event.get("data")
                         detail = data.get("detail") if isinstance(data, dict) else None
-                        if isinstance(detail, str) and detail.startswith(("CUDA", "MTL")):
+                        if isinstance(detail, str) and detail.startswith(prefixes):
                             selected = True
                 if selected and offloaded:
                     return
@@ -159,7 +160,7 @@ def smoke(host, runtime, product_input):
                     deadline = time.monotonic() + 850
                     response = completion(server, "http://" + address + "/v1", deadline)
                     if gpu:
-                        require_device(logs, server, deadline)
+                        require_device(logs, server, deadline, backend)
                     if server.poll() is not None:
                         raise RuntimeError("packaged server exited before shutdown")
                 finally:

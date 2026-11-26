@@ -15,6 +15,7 @@ pub use kv_page_growth::kv_page_growth;
 pub use remote_handoff::remote_handoff;
 pub use single_step::single_step;
 pub use split_chain::{chain, core_parity, split_scan};
+pub(crate) use split_prefix_hit::source_model_sha256;
 pub use split_prefix_hit::split_prefix_hit;
 pub(crate) use stage_execution::{stage_runtime_plan_for_range, stage_runtime_plans};
 pub use stage_fa_parity::stage_fa_parity;
