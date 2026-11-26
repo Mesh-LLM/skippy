@@ -180,9 +180,12 @@ jobs:
       contents: read
       pull-requests: read
       actions: read
+    # A fork's own pull_request run selects nothing: it exists only so GitHub
+    # holds it for maintainer approval. The approved-fork controller then runs
+    # every selected check once, on protected runners with warm caches.
     outputs:
-      automation: ${{ steps.release.outputs.verified != 'true' && (github.event_name == 'workflow_run' && steps.fork.outputs.automation == 'true' || github.event_name != 'workflow_run' && (!github.event.pull_request || steps.paths.outputs.automation == 'true')) }}
-      code: ${{ steps.release.outputs.verified != 'true' && (github.event_name == 'workflow_run' && steps.fork.outputs.code == 'true' || github.event_name != 'workflow_run' && (!github.event.pull_request || steps.paths.outputs.code == 'true' || (github.event_name == 'pull_request' && steps.paths.outputs.packages == 'true'))) }}
+      automation: ${{ steps.release.outputs.verified != 'true' && (github.event_name == 'workflow_run' && steps.fork.outputs.automation == 'true' || github.event_name != 'workflow_run' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.id == github.event.repository.id) && (!github.event.pull_request || steps.paths.outputs.automation == 'true')) }}
+      code: ${{ steps.release.outputs.verified != 'true' && (github.event_name == 'workflow_run' && steps.fork.outputs.code == 'true' || github.event_name != 'workflow_run' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.id == github.event.repository.id) && (!github.event.pull_request || steps.paths.outputs.code == 'true' || (github.event_name == 'pull_request' && steps.paths.outputs.packages == 'true'))) }}
       packages: ${{ steps.release.outputs.verified != 'true' && ((github.event_name == 'workflow_run' && steps.fork.outputs.packages == 'true') || (github.event_name == 'pull_request_target' && steps.paths.outputs.packages == 'true') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && (steps.main_base.outputs.force == 'true' || steps.paths.outputs.packages == 'true' || steps.paths.outputs.inference == 'true' || steps.paths.outputs.packaging == 'true' || steps.paths.outputs.native == 'true'))) }}
       native: ${{ steps.release.outputs.verified != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' && (steps.main_base.outputs.force == 'true' || steps.paths.outputs.native == 'true') }}
     steps:
