@@ -175,10 +175,22 @@ fn wait_for_receipts(sink: &RecordingReceiptSink, expected: usize) {
 
 #[test]
 fn single_prefill_sample_requires_prompt_to_fit_session_batch() {
-    assert!(!prompt_fits_single_prefill_sample(0, 2048));
-    assert!(!prompt_fits_single_prefill_sample(1, 2048));
-    assert!(prompt_fits_single_prefill_sample(2048, 2048));
-    assert!(!prompt_fits_single_prefill_sample(2049, 2048));
+    assert!(!prompt_fits_single_prefill_sample(0, 2048, 2048));
+    assert!(!prompt_fits_single_prefill_sample(1, 2048, 2048));
+    assert!(prompt_fits_single_prefill_sample(2048, 2048, 2048));
+    assert!(!prompt_fits_single_prefill_sample(2049, 2048, 2048));
+}
+
+#[test]
+fn single_prefill_sample_respects_direct_iteration_limit() {
+    // A full-model batch4096 session still has a 2048-token direct limit.
+    assert!(!prompt_fits_single_prefill_sample(4096, 4096, 2048));
+    assert!(prompt_fits_single_prefill_sample(2048, 4096, 2048));
+    // Activation-export stages can impose a smaller microbatch limit.
+    assert!(!prompt_fits_single_prefill_sample(513, 2048, 512));
+    assert!(prompt_fits_single_prefill_sample(512, 2048, 512));
+    // The scheduler limit must not override a smaller native session batch.
+    assert!(!prompt_fits_single_prefill_sample(513, 512, 2048));
 }
 
 #[test]

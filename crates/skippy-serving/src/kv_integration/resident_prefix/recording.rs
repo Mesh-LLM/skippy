@@ -87,9 +87,12 @@ impl KvStageIntegration {
         let seq_id = match sequences.allocate() {
             Ok(sequence) => sequence,
             Err(error) => {
-                let removed = evict_one_resident(&mut radix, &mut sequences, |victim| {
-                    self.release_native_prefix(runtime, session_id, victim)
-                })?;
+                let removed = evict_one_resident(
+                    &mut radix,
+                    &mut sequences,
+                    self.resident_config.max_entries,
+                    |victim| self.release_native_prefix(runtime, session_id, victim),
+                )?;
                 let Some(removed) = removed else {
                     return Err(error);
                 };
@@ -118,6 +121,7 @@ impl KvStageIntegration {
             tokens: tokens.to_vec(),
             logical_bytes: 0,
             last_used: 0,
+            insertions_since_reuse: None,
             value: entry.clone(),
         };
         let bytes = match runtime.resident_prefix_bytes(session_id, seq_id) {
@@ -261,7 +265,9 @@ fn make_record_room(
     mut drop_native: impl FnMut(&skippy_cache::RadixEvictionCandidate<RadixResidentEntry>) -> Result<()>,
 ) -> Result<bool> {
     while resident_index_over_capacity(config, radix.stats(), bytes) {
-        let Some(removed) = evict_one_resident(radix, sequences, &mut drop_native)? else {
+        let Some(removed) =
+            evict_one_resident(radix, sequences, config.max_entries, &mut drop_native)?
+        else {
             return Ok(false);
         };
         evicted.0 = evicted.0.saturating_add(1);
@@ -301,6 +307,57 @@ mod resident_record_cap_tests {
             reserved_seq_count: 8,
             max_resident_tokens,
         }
+    }
+
+    #[test]
+    fn a_scan_preserves_reused_prefixes_within_the_entry_limit() -> Result<()> {
+        let config = skippy_cache::ResidentCacheConfig {
+            max_entries: 4,
+            ..config(0, 0)
+        };
+        let mut radix = skippy_cache::UnifiedRadixCache::new();
+        let mut sequences = ResidentSequencePool::new(4);
+        let mut evicted = (0, 0);
+        for token in 1..=13 {
+            assert!(make_record_room(
+                config,
+                &mut radix,
+                &mut sequences,
+                0,
+                &mut evicted,
+                |_| Ok(())
+            )?);
+            let seq_id = sequences.allocate()?;
+            radix.insert_resident(
+                "stage",
+                &[token],
+                0,
+                RadixResidentEntry {
+                    page_id: token.to_string(),
+                    seq_id,
+                    token_count: 1,
+                    recompute_cost: 1,
+                },
+            )?;
+            assert!(radix.stats().resident_entries <= 4);
+            assert_eq!(radix.stats().resident_entries, sequences.stats().0);
+
+            if token == 4 {
+                for reused in 1..=4 {
+                    radix.mark_resident_reused("stage", &[reused]);
+                }
+            }
+            if token == 8 {
+                assert!(radix.peek_resident("stage", &[1]).is_none());
+                for retained in 2..=4 {
+                    assert!(radix.peek_resident("stage", &[retained]).is_some());
+                }
+            }
+        }
+        // The old working set loses preference after the reuse window.
+        assert!(radix.peek_resident("stage", &[2]).is_none());
+        assert_eq!(evicted, (9, 9));
+        Ok(())
     }
 
     #[test]

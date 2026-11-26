@@ -1,0 +1,4586 @@
+{
+  "qwen35-c128": [
+    {
+      "round": 0,
+      "arm": "skippy-base",
+      "evidence_id": "ev_6c75ab2df216e722044db24ed16a3b132f65144b2e115a381e9e0f6f8c2dbfe0",
+      "derived_capacity_evidence_id": "ev_84cbefe960df9b6e6b21471ce070723a2202f75f2dda6d4e573689f36d95316e",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 128,
+        "ttft_p50_ms": 32851.724208,
+        "ttft_p95_ms": 62284.40924145,
+        "e2e_p50_ms": 40514.223687499994,
+        "e2e_p95_ms": 66397.2526068,
+        "tpot_p50_ms": 225.66990256451612,
+        "output_tok_s_over_client_span": 60.849106873884494
+      },
+      "linear_tpot_p95_ms": 251.72727736612902,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 128,
+          "slo_ok": false,
+          "ttft_p95_ms": 62444.014958,
+          "tpot_p95_ms": 252.7153212580645,
+          "output_tok_s_per_gpu": 60.849106873884494,
+          "goodput_rps": 0.8764885999900355,
+          "mean_inflight": 75.64811808968689
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 0,
+      "arm": "skippy-patched",
+      "evidence_id": "ev_ab4053ddfed9a7293b7292f9953c70a8c3353dc0527a8cea31e9a3bf5e5f55a0",
+      "derived_capacity_evidence_id": "ev_ddd0c71335783f60fa1a4b4e3edf06fb82f545a576d26ac7ccd81291e186d3ce",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 128,
+        "ttft_p50_ms": 32876.2893335,
+        "ttft_p95_ms": 62371.63138925,
+        "e2e_p50_ms": 40334.1591245,
+        "e2e_p95_ms": 66506.2069853,
+        "tpot_p50_ms": 226.16167540322581,
+        "output_tok_s_over_client_span": 60.76048995965451
+      },
+      "linear_tpot_p95_ms": 252.23948487903223,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 128,
+          "slo_ok": false,
+          "ttft_p95_ms": 62531.825208,
+          "tpot_p95_ms": 253.23608870967743,
+          "output_tok_s_per_gpu": 60.76048995965451,
+          "goodput_rps": 0.8752121356493203,
+          "mean_inflight": 75.69300317228955
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 0,
+      "arm": "llama-unified",
+      "evidence_id": "ev_cf409eeee54ed50e4d8c582ec6a4d9abdd27632036cd164ea5364a05ee1a5af2",
+      "derived_capacity_evidence_id": "ev_ae2872f9966ac688cd73cbbf7624fc4807b45d10da419289a61e5282fb1bbb2d",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 128,
+        "ttft_p50_ms": 38206.392292,
+        "ttft_p95_ms": 72563.62072554999,
+        "e2e_p50_ms": 46682.265042,
+        "e2e_p95_ms": 76387.78647105,
+        "tpot_p50_ms": 259.6834065967742,
+        "output_tok_s_over_client_span": 52.972524941541025
+      },
+      "linear_tpot_p95_ms": 281.5025947435484,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 128,
+          "slo_ok": false,
+          "ttft_p95_ms": 72745.824834,
+          "tpot_p95_ms": 282.63623251612904,
+          "output_tok_s_per_gpu": 52.972524941541025,
+          "goodput_rps": 0.6337045220057398,
+          "mean_inflight": 76.337468441239
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 0,
+      "arm": "llama-slots",
+      "evidence_id": "ev_6bfd358e6dcb9d9b0782854cf6acdfceee90c4b2970dc370dc5efb03ee0ca027",
+      "derived_capacity_evidence_id": "ev_1c67e4ee8e344805f6ab70abe4d36e36cf0fa1dccc4a12567aee1a685cf5437c",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 128,
+        "ttft_p50_ms": 38819.664124999996,
+        "ttft_p95_ms": 73681.66534354999,
+        "e2e_p50_ms": 47441.78825,
+        "e2e_p95_ms": 77536.86925219999,
+        "tpot_p50_ms": 263.0643064516129,
+        "output_tok_s_over_client_span": 52.19890552483142
+      },
+      "linear_tpot_p95_ms": 285.46419563870967,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 128,
+          "slo_ok": false,
+          "ttft_p95_ms": 73869.013416,
+          "tpot_p95_ms": 287.14264651612905,
+          "output_tok_s_per_gpu": 52.19890552483142,
+          "goodput_rps": 0.6117059241191182,
+          "mean_inflight": 76.39874795847685
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 1,
+      "arm": "skippy-patched",
+      "evidence_id": "ev_b0b8c6aa42ccb0857e196bdb1cdc56696c87283af2444bfa452bdc9f3daad46a",
+      "derived_capacity_evidence_id": "ev_68e311ef85a02b35e13fbf3edaa503ec9dedc1f585ea7f914f33a23c10e88e19",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 128,
+        "ttft_p50_ms": 32776.590542000005,
+        "ttft_p95_ms": 62212.916237499994,
+        "e2e_p50_ms": 40670.756791499996,
+        "e2e_p95_ms": 66327.6406705,
+        "tpot_p50_ms": 226.04480377419355,
+        "output_tok_s_over_client_span": 60.91344918369475
+      },
+      "linear_tpot_p95_ms": 251.52658514032254,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 128,
+          "slo_ok": false,
+          "ttft_p95_ms": 62372.361625,
+          "tpot_p95_ms": 252.94459274193548,
+          "output_tok_s_per_gpu": 60.91344918369476,
+          "goodput_rps": 0.8774154057221657,
+          "mean_inflight": 75.75242891377772
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 1,
+      "arm": "llama-slots",
+      "evidence_id": "ev_76cea41c037ac0b90c49c6c86bd36c7f08b944bd37bbb64f90639b954610040f",
+      "derived_capacity_evidence_id": "ev_301d7d06227bc302777b3b62f19f02c72249c304e5269db84806d441d136697d",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 128,
+        "ttft_p50_ms": 38663.5722295,
+        "ttft_p95_ms": 73527.92063914999,
+        "e2e_p50_ms": 47280.9165835,
+        "e2e_p95_ms": 77375.6463932,
+        "tpot_p50_ms": 263.0104341290322,
+        "output_tok_s_over_client_span": 52.30605172834055
+      },
+      "linear_tpot_p95_ms": 283.8600011499999,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 128,
+          "slo_ok": false,
+          "ttft_p95_ms": 73716.073041,
+          "tpot_p95_ms": 287.1317338709677,
+          "output_tok_s_per_gpu": 52.306051728340556,
+          "goodput_rps": 0.6129615436914909,
+          "mean_inflight": 76.30397014702628
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 1,
+      "arm": "skippy-base",
+      "evidence_id": "ev_0e0e99abed2d7b3c3a27d73c9f595942ef477a08829bf7d5ad574e9bb7f1dc2b",
+      "derived_capacity_evidence_id": "ev_2a4682d928a5226713525f112a041c5de4882e800207697959a783e8e38221df",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 128,
+        "ttft_p50_ms": 32862.921188,
+        "ttft_p95_ms": 62366.3303704,
+        "e2e_p50_ms": 40539.272646,
+        "e2e_p95_ms": 66491.23334595,
+        "tpot_p50_ms": 226.2053965,
+        "output_tok_s_over_client_span": 60.77451642395282
+      },
+      "linear_tpot_p95_ms": 252.0716807693548,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 128,
+          "slo_ok": false,
+          "ttft_p95_ms": 62527.502541,
+          "tpot_p95_ms": 253.2552311612903,
+          "output_tok_s_per_gpu": 60.774516423952825,
+          "goodput_rps": 0.8754141770051799,
+          "mean_inflight": 75.69293186959183
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 1,
+      "arm": "llama-unified",
+      "evidence_id": "ev_b350b71327b2de0760c6c42420da7f3095398f00faedaf5e08af3a08ce50ff56",
+      "derived_capacity_evidence_id": "ev_eaf3491736bcf2b26357b9c0d0a19eaef032cfe79513966f37f051ce4d751ce7",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 128,
+        "ttft_p50_ms": 38207.22833300001,
+        "ttft_p95_ms": 72535.76808344999,
+        "e2e_p50_ms": 46680.1861875,
+        "e2e_p95_ms": 76363.93882894999,
+        "tpot_p50_ms": 259.42588240322584,
+        "output_tok_s_over_client_span": 52.989056830243875
+      },
+      "linear_tpot_p95_ms": 281.32531297419354,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 128,
+          "slo_ok": false,
+          "ttft_p95_ms": 72717.4875,
+          "tpot_p95_ms": 282.45819758064516,
+          "output_tok_s_per_gpu": 52.98905683024387,
+          "goodput_rps": 0.6339022911821166,
+          "mean_inflight": 76.34160095721255
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 2,
+      "arm": "llama-slots",
+      "evidence_id": "ev_5c4380864039c312401ade136d92ae671c1545b797984dc682ff7c5467d1a3c0",
+      "derived_capacity_evidence_id": "ev_57739089a298ab225186dde0cb89b31989d6c99b555281f13958573e6b4ad770",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 128,
+        "ttft_p50_ms": 38614.203792,
+        "ttft_p95_ms": 73470.165467,
+        "e2e_p50_ms": 47224.6990835,
+        "e2e_p95_ms": 77322.68971865,
+        "tpot_p50_ms": 262.75059745161286,
+        "output_tok_s_over_client_span": 52.34188305079516
+      },
+      "linear_tpot_p95_ms": 283.76918986290315,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 128,
+          "slo_ok": false,
+          "ttft_p95_ms": 73657.744292,
+          "tpot_p95_ms": 287.3961707096774,
+          "output_tok_s_per_gpu": 52.34188305079516,
+          "goodput_rps": 0.6133814420015058,
+          "mean_inflight": 76.26636778186516
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 2,
+      "arm": "llama-unified",
+      "evidence_id": "ev_8b3a2ed0adc02ab087e11793f01fed8c10089b3849dcf8ec799aebc3ba460d3d",
+      "derived_capacity_evidence_id": "ev_e326d46e5db2c8c8275ee21dce922c8d215f92f22d449918be5ebecfb8ca1984",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 128,
+        "ttft_p50_ms": 38263.813459,
+        "ttft_p95_ms": 72605.0834171,
+        "e2e_p50_ms": 46753.887229500004,
+        "e2e_p95_ms": 76431.51744155001,
+        "tpot_p50_ms": 259.62198656451613,
+        "output_tok_s_over_client_span": 52.94249624044965
+      },
+      "linear_tpot_p95_ms": 281.23906612903227,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 128,
+          "slo_ok": false,
+          "ttft_p95_ms": 72786.092334,
+          "tpot_p95_ms": 282.45601612903226,
+          "output_tok_s_per_gpu": 52.94249624044965,
+          "goodput_rps": 0.6333452919389728,
+          "mean_inflight": 76.37067446539879
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 2,
+      "arm": "skippy-patched",
+      "evidence_id": "ev_746ce9340e1d7f0a74abdce28e974d86d2b2473a172fe4e1ef79360bfc56e7cc",
+      "derived_capacity_evidence_id": "ev_c4d35107d01520108730745189cb301a339846c797c7e3ec74e9637fbea942ce",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 128,
+        "ttft_p50_ms": 32790.2590205,
+        "ttft_p95_ms": 62223.362969199996,
+        "e2e_p50_ms": 40685.137916499996,
+        "e2e_p95_ms": 66341.87535625,
+        "tpot_p50_ms": 225.88963575806451,
+        "output_tok_s_over_client_span": 60.90058075628219
+      },
+      "linear_tpot_p95_ms": 251.8067157258064,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 128,
+          "slo_ok": false,
+          "ttft_p95_ms": 62382.585042,
+          "tpot_p95_ms": 253.22180241935482,
+          "output_tok_s_per_gpu": 60.90058075628219,
+          "goodput_rps": 0.8772300450734006,
+          "mean_inflight": 75.81832670168801
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 2,
+      "arm": "skippy-base",
+      "evidence_id": "ev_2b7309d34c53aed717a6e694389771c5d8587ccc0280f2351cb4138806d01a46",
+      "derived_capacity_evidence_id": "ev_5d94482dc4f13f999469c4c952fc4063ae4d81f16f7ca7794c8011fcff2b0388",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 128,
+        "ttft_p50_ms": 32839.8225005,
+        "ttft_p95_ms": 62310.440573249994,
+        "e2e_p50_ms": 40506.491896,
+        "e2e_p95_ms": 66435.6668919,
+        "tpot_p50_ms": 225.9266203064516,
+        "output_tok_s_over_client_span": 60.824719114669904
+      },
+      "linear_tpot_p95_ms": 252.06704347419353,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 128,
+          "slo_ok": false,
+          "ttft_p95_ms": 62470.070542,
+          "tpot_p95_ms": 253.41668816129032,
+          "output_tok_s_per_gpu": 60.8247191146699,
+          "goodput_rps": 0.8761373114661924,
+          "mean_inflight": 75.64937828185688
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 3,
+      "arm": "llama-unified",
+      "evidence_id": "ev_3c75880f5039abf529ded36e8d16cb32eaa6063af88bf58bde1d628301cdc42a",
+      "derived_capacity_evidence_id": "ev_53ecc099c591911d9245339f529b4a9e438ee4e0af05774ddc622c5bcc3d07ea",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 128,
+        "ttft_p50_ms": 38246.082729,
+        "ttft_p95_ms": 72579.62951489999,
+        "e2e_p50_ms": 46718.797083,
+        "e2e_p95_ms": 76406.87306874999,
+        "tpot_p50_ms": 259.5900900483871,
+        "output_tok_s_over_client_span": 52.96014070278475
+      },
+      "linear_tpot_p95_ms": 281.18796350806446,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 128,
+          "slo_ok": false,
+          "ttft_p95_ms": 72761.414834,
+          "tpot_p95_ms": 282.39081048387095,
+          "output_tok_s_per_gpu": 52.960140702784756,
+          "goodput_rps": 0.6335563707120246,
+          "mean_inflight": 76.35927983225832
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 3,
+      "arm": "skippy-base",
+      "evidence_id": "ev_105cdb8ef7d00425911288df53a7c0f26976b17d4f2d2aad5bc20b3fe71babed",
+      "derived_capacity_evidence_id": "ev_6c254b5289406913f192e5ff5f9326c2419c7954d0208937cd6b269e95d23ca3",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 128,
+        "ttft_p50_ms": 32836.600542,
+        "ttft_p95_ms": 62284.94791424999,
+        "e2e_p50_ms": 40735.822604500005,
+        "e2e_p95_ms": 66396.2033126,
+        "tpot_p50_ms": 226.1902809032258,
+        "output_tok_s_over_client_span": 60.848079315566224
+      },
+      "linear_tpot_p95_ms": 251.8962356709677,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 128,
+          "slo_ok": false,
+          "ttft_p95_ms": 62445.114958,
+          "tpot_p95_ms": 253.1058615483871,
+          "output_tok_s_per_gpu": 60.848079315566224,
+          "goodput_rps": 0.8764737987349628,
+          "mean_inflight": 75.77191777566176
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 3,
+      "arm": "llama-slots",
+      "evidence_id": "ev_2015d7988ce5f20b424d30e7376f798f362700c4871ef7c0a0e53b16dd4cf657",
+      "derived_capacity_evidence_id": "ev_18f52b9cb5fd022c1c7abb838ef097fb776ba3a3180a4e48e2c3bd0a5e2d5895",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 128,
+        "ttft_p50_ms": 38662.4618755,
+        "ttft_p95_ms": 73547.8548545,
+        "e2e_p50_ms": 47290.441146,
+        "e2e_p95_ms": 77398.2625149,
+        "tpot_p50_ms": 263.22477082258064,
+        "output_tok_s_over_client_span": 52.28018052334184
+      },
+      "linear_tpot_p95_ms": 283.54536297419344,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 128,
+          "slo_ok": false,
+          "ttft_p95_ms": 73735.139417,
+          "tpot_p95_ms": 286.9209516129032,
+          "output_tok_s_per_gpu": 52.28018052334183,
+          "goodput_rps": 0.6126583655079121,
+          "mean_inflight": 76.27170891561005
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 3,
+      "arm": "skippy-patched",
+      "evidence_id": "ev_e10fd3a76d94a5647bc513f181721f7f6987ac7dca0ae111c4cd9ab7575dd02a",
+      "derived_capacity_evidence_id": "ev_738dfe21901aaaa86f215595fb37735a89512873fecf9a5e51edc215b01eff0e",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 128,
+        "ttft_p50_ms": 32824.856646,
+        "ttft_p95_ms": 62259.06534615,
+        "e2e_p50_ms": 40490.050104,
+        "e2e_p95_ms": 66386.13521425,
+        "tpot_p50_ms": 225.64739919354838,
+        "output_tok_s_over_client_span": 60.868687148846384
+      },
+      "linear_tpot_p95_ms": 251.6540706177419,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 128,
+          "slo_ok": false,
+          "ttft_p95_ms": 62418.141834,
+          "tpot_p95_ms": 252.84712229032257,
+          "output_tok_s_per_gpu": 60.868687148846384,
+          "goodput_rps": 0.8767706400834807,
+          "mean_inflight": 75.60586589873378
+        }
+      ],
+      "request_accounting": null
+    }
+  ],
+  "coder-c256": [
+    {
+      "round": 0,
+      "arm": "skippy-base",
+      "evidence_id": "ev_c9a49fe8bc010c2f7a99d6df7a350b5445af348d2753db394da91341aedacbd7",
+      "derived_capacity_evidence_id": "ev_5153ce0a81d6c79f8feb052fd2e59864d90144f80a53bc7bdbc9be77157bc394",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 256,
+        "ttft_p50_ms": 67933.901937,
+        "ttft_p95_ms": 129835.57333325001,
+        "e2e_p50_ms": 75862.9550205,
+        "e2e_p95_ms": 137112.02654125,
+        "tpot_p50_ms": 235.44411627419356,
+        "output_tok_s_over_client_span": 59.22645590776516
+      },
+      "linear_tpot_p95_ms": 261.09630276612904,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 256,
+          "slo_ok": false,
+          "ttft_p95_ms": 130179.483458,
+          "tpot_p95_ms": 261.10138038709675,
+          "output_tok_s_per_gpu": 59.22645590776515,
+          "goodput_rps": 0.4120981429129167,
+          "mean_inflight": 139.71763787808945
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 0,
+      "arm": "skippy-patched",
+      "evidence_id": "ev_a50a6c54d0ccb80939267acfcbf83968c2955cec28bf117c9b5cd0d8efd7e6b3",
+      "derived_capacity_evidence_id": "ev_0e7652f982778c6c30ef03bfa2e55a0401981000f7db1f1ba6732047095f3ab7",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 256,
+        "ttft_p50_ms": 67948.707958,
+        "ttft_p95_ms": 129912.558583,
+        "e2e_p50_ms": 75893.8775415,
+        "e2e_p95_ms": 137173.9224585,
+        "tpot_p50_ms": 235.49570766129034,
+        "output_tok_s_over_client_span": 59.20884267359648
+      },
+      "linear_tpot_p95_ms": 261.0601659919355,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 256,
+          "slo_ok": false,
+          "ttft_p95_ms": 130252.854958,
+          "tpot_p95_ms": 261.1216841612903,
+          "output_tok_s_per_gpu": 59.20884267359647,
+          "goodput_rps": 0.41197558989196764,
+          "mean_inflight": 139.7219064518306
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 0,
+      "arm": "llama-unified",
+      "evidence_id": "ev_9676675129ce30cc5ebcf52693d9b4034df5fa5dfe3c8ac411379089f8ad5a68",
+      "derived_capacity_evidence_id": "ev_813046930f08962e58153886b3cb063d7ffd08fe81ccfedde53111818bf8784e",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 256,
+        "ttft_p50_ms": 68521.9949165,
+        "ttft_p95_ms": 131283.35501075,
+        "e2e_p50_ms": 76554.71012500001,
+        "e2e_p95_ms": 138105.78784374997,
+        "tpot_p50_ms": 252.50839314516128,
+        "output_tok_s_over_client_span": 58.766768055870905
+      },
+      "linear_tpot_p95_ms": 259.24597884677416,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 256,
+          "slo_ok": false,
+          "ttft_p95_ms": 131605.706291,
+          "tpot_p95_ms": 259.6978548387097,
+          "output_tok_s_per_gpu": 58.76676805587091,
+          "goodput_rps": 0.4017259535069301,
+          "mean_inflight": 140.3080154234179
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 0,
+      "arm": "llama-slots",
+      "evidence_id": "ev_94e3fce2926217c35593c6640553ee87a0014b8ebe9462ac9b14aecdfc66a87c",
+      "derived_capacity_evidence_id": "ev_47eb24bf46281c93343f32f11750313238c53ee0e870d8aac53b00f5c8184b5e",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 256,
+        "ttft_p50_ms": 79430.2066875,
+        "ttft_p95_ms": 152151.6812185,
+        "e2e_p50_ms": 88825.0807705,
+        "e2e_p95_ms": 160167.658781,
+        "tpot_p50_ms": 290.6434502580645,
+        "output_tok_s_over_client_span": 50.75355199700769
+      },
+      "linear_tpot_p95_ms": 304.53315891935483,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 256,
+          "slo_ok": false,
+          "ttft_p95_ms": 152558.548375,
+          "tpot_p95_ms": 304.8342849354838,
+          "output_tok_s_per_gpu": 50.75355199700769,
+          "goodput_rps": 0.30357959568522663,
+          "mean_inflight": 140.3937407391218
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 1,
+      "arm": "skippy-patched",
+      "evidence_id": "ev_f37250704c0ca1c071c710775720f4a7e50dcee36e2b6d5666590669a9877a90",
+      "derived_capacity_evidence_id": "ev_7b3e65c707e553b370b0f8587e1a95a4edd58b4fd03b28be78f2e0ba4c6480aa",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 256,
+        "ttft_p50_ms": 67974.357708,
+        "ttft_p95_ms": 129895.58712475,
+        "e2e_p50_ms": 75916.116229,
+        "e2e_p95_ms": 137186.57370824998,
+        "tpot_p50_ms": 235.54462635483873,
+        "output_tok_s_over_client_span": 59.19404454151696
+      },
+      "linear_tpot_p95_ms": 261.13459811290323,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 256,
+          "slo_ok": false,
+          "ttft_p95_ms": 130240.719625,
+          "tpot_p95_ms": 261.173207,
+          "output_tok_s_per_gpu": 59.19404454151696,
+          "goodput_rps": 0.411872624373348,
+          "mean_inflight": 139.72002580027925
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 1,
+      "arm": "llama-slots",
+      "evidence_id": "ev_027989b8efa6767343b1980fa846a0cd967c9dae77a17e87e0579a17a97b6ab6",
+      "derived_capacity_evidence_id": "ev_413269f16106a84757cee76454ad9082948552c851ed6ba40502cba7356976c4",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 256,
+        "ttft_p50_ms": 79500.621125,
+        "ttft_p95_ms": 152218.02847925,
+        "e2e_p50_ms": 88900.10245800001,
+        "e2e_p95_ms": 160213.88924025,
+        "tpot_p50_ms": 290.93766532258064,
+        "output_tok_s_over_client_span": 50.7384246886881
+      },
+      "linear_tpot_p95_ms": 304.55157962096774,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 256,
+          "slo_ok": false,
+          "ttft_p95_ms": 152624.051042,
+          "tpot_p95_ms": 305.0028306451613,
+          "output_tok_s_per_gpu": 50.73842468868809,
+          "goodput_rps": 0.30348911251778765,
+          "mean_inflight": 140.4217173288828
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 1,
+      "arm": "skippy-base",
+      "evidence_id": "ev_ccf2178c03a6780a968c5915b1e26f05310c6e32b25b791f2739d4c905590147",
+      "derived_capacity_evidence_id": "ev_f7a6ac01995817adf43d1fa3c0d300734809e282af5bf7b609656da9fab4f997",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 256,
+        "ttft_p50_ms": 67942.145875,
+        "ttft_p95_ms": 129897.59593725,
+        "e2e_p50_ms": 75868.6403545,
+        "e2e_p95_ms": 137151.652062,
+        "tpot_p50_ms": 235.46521572580644,
+        "output_tok_s_over_client_span": 59.20991336410383
+      },
+      "linear_tpot_p95_ms": 261.05982056451614,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 256,
+          "slo_ok": false,
+          "ttft_p95_ms": 130238.88225,
+          "tpot_p95_ms": 261.12995161290326,
+          "output_tok_s_per_gpu": 59.20991336410385,
+          "goodput_rps": 0.4119830397648827,
+          "mean_inflight": 139.62306387165654
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 1,
+      "arm": "llama-unified",
+      "evidence_id": "ev_9e88dec8c014bb11110687e826793df414dab0a4934200be48ba099431f47ddd",
+      "derived_capacity_evidence_id": "ev_6cef0c14f900fde14469ede554c182324d9a98e18b1c123e263d99332d0e8880",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 256,
+        "ttft_p50_ms": 68563.6019585,
+        "ttft_p95_ms": 131270.4525105,
+        "e2e_p50_ms": 76596.1948955,
+        "e2e_p95_ms": 138093.34907275,
+        "tpot_p50_ms": 252.1760954354839,
+        "output_tok_s_over_client_span": 58.77251602251023
+      },
+      "linear_tpot_p95_ms": 259.1733292903226,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 256,
+          "slo_ok": false,
+          "ttft_p95_ms": 131590.523667,
+          "tpot_p95_ms": 259.56692203225805,
+          "output_tok_s_per_gpu": 58.77251602251023,
+          "goodput_rps": 0.40176524624762855,
+          "mean_inflight": 140.33885003283527
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 2,
+      "arm": "llama-slots",
+      "evidence_id": "ev_4dc28fce00599e4f46302b517b7101d6ede1491de483e9496bfc4d5082cbcb95",
+      "derived_capacity_evidence_id": "ev_1d8b145247da669581cbd00ef08ed7ca3552cfc8528f3ade726ef8771ec2291d",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 256,
+        "ttft_p50_ms": 79461.634167,
+        "ttft_p95_ms": 152139.33777075002,
+        "e2e_p50_ms": 88845.2529165,
+        "e2e_p95_ms": 160150.9655205,
+        "tpot_p50_ms": 290.6999274193548,
+        "output_tok_s_over_client_span": 50.75804384335707
+      },
+      "linear_tpot_p95_ms": 304.4386525564516,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 256,
+          "slo_ok": false,
+          "ttft_p95_ms": 152545.028583,
+          "tpot_p95_ms": 305.04045296774194,
+          "output_tok_s_per_gpu": 50.75804384335707,
+          "goodput_rps": 0.30360646341851766,
+          "mean_inflight": 140.41172555354947
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 2,
+      "arm": "llama-unified",
+      "evidence_id": "ev_c390bd65847e9c38b6d6320f6aae9010c9b76d0ba893d397d3219fd04342e434",
+      "derived_capacity_evidence_id": "ev_29f2d187141be705dba90ca7d2f0c9726527ba5a0a6fea2cc4e0d751fd0ad785",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 256,
+        "ttft_p50_ms": 68544.7267505,
+        "ttft_p95_ms": 131295.25201025,
+        "e2e_p50_ms": 76602.918271,
+        "e2e_p95_ms": 138109.58575,
+        "tpot_p50_ms": 252.5676908548387,
+        "output_tok_s_over_client_span": 58.765235323710776
+      },
+      "linear_tpot_p95_ms": 259.27188136290323,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 256,
+          "slo_ok": false,
+          "ttft_p95_ms": 131617.564916,
+          "tpot_p95_ms": 259.5325819677419,
+          "output_tok_s_per_gpu": 58.765235323710776,
+          "goodput_rps": 0.4017154758456791,
+          "mean_inflight": 140.33103683813695
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 2,
+      "arm": "skippy-patched",
+      "evidence_id": "ev_3b63614ffb9755f341ec8aaa6f3e493adb4b2db5538e0a823274c7313cd3849f",
+      "derived_capacity_evidence_id": "ev_a07b632510b18468c8989725899797ea66742cedda1d2dc281fb21676ec47abf",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 256,
+        "ttft_p50_ms": 67956.9135,
+        "ttft_p95_ms": 129915.761344,
+        "e2e_p50_ms": 75690.647,
+        "e2e_p95_ms": 137168.26750025002,
+        "tpot_p50_ms": 235.50134946774193,
+        "output_tok_s_over_client_span": 59.211222759322936
+      },
+      "linear_tpot_p95_ms": 261.12788911290323,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 256,
+          "slo_ok": false,
+          "ttft_p95_ms": 130257.257875,
+          "tpot_p95_ms": 261.1362056451613,
+          "output_tok_s_per_gpu": 59.21122275932293,
+          "goodput_rps": 0.41199215054704674,
+          "mean_inflight": 139.70042777686652
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 2,
+      "arm": "skippy-base",
+      "evidence_id": "ev_89ca6015f8ecc12a838965fbc0c7011e153b2cd9993e656ce787eaa8472d387d",
+      "derived_capacity_evidence_id": "ev_9450648ea4e2692eeda503a48d9b27fae7506a84ee8b151b75094b9191c9004e",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 256,
+        "ttft_p50_ms": 67939.149875,
+        "ttft_p95_ms": 129860.789625,
+        "e2e_p50_ms": 75880.126438,
+        "e2e_p95_ms": 137147.0118435,
+        "tpot_p50_ms": 235.5551471935484,
+        "output_tok_s_over_client_span": 59.21108496975889
+      },
+      "linear_tpot_p95_ms": 261.03552452419353,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 256,
+          "slo_ok": false,
+          "ttft_p95_ms": 130204.785375,
+          "tpot_p95_ms": 261.0389529677419,
+          "output_tok_s_per_gpu": 59.21108496975889,
+          "goodput_rps": 0.4119911918061837,
+          "mean_inflight": 139.72441440793804
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 3,
+      "arm": "llama-unified",
+      "evidence_id": "ev_ce55cd186ae3dcc731a81c2714ee26ade999e9b5c3629200b87a3bde67e49dc0",
+      "derived_capacity_evidence_id": "ev_a3a94ffee2657c1c7a20bb6ad4921e4ae6aba1960200ee117043ad1e7c13288d",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 256,
+        "ttft_p50_ms": 68454.12039600001,
+        "ttft_p95_ms": 131164.552135,
+        "e2e_p50_ms": 76514.42789600001,
+        "e2e_p95_ms": 137975.62489575,
+        "tpot_p50_ms": 252.14978830645163,
+        "output_tok_s_over_client_span": 58.82305637536745
+      },
+      "linear_tpot_p95_ms": 258.86752721774195,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 256,
+          "slo_ok": false,
+          "ttft_p95_ms": 131487.375166,
+          "tpot_p95_ms": 259.4490887096774,
+          "output_tok_s_per_gpu": 58.82305637536746,
+          "goodput_rps": 0.4021107369409885,
+          "mean_inflight": 140.3144055086521
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 3,
+      "arm": "skippy-base",
+      "evidence_id": "ev_e8c688daeb6e9fae57c466e824fd2676d3a2209fa114deb80394079bdf37dc7f",
+      "derived_capacity_evidence_id": "ev_3b71800d826017365aa3360ecca1ed8aee8522345dec0fb99242ae473dfb97af",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 256,
+        "ttft_p50_ms": 68006.273646,
+        "ttft_p95_ms": 129844.92567725,
+        "e2e_p50_ms": 75938.658396,
+        "e2e_p95_ms": 137076.14977075002,
+        "tpot_p50_ms": 235.40804437096773,
+        "output_tok_s_over_client_span": 59.24133105018677
+      },
+      "linear_tpot_p95_ms": 259.7268286290323,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 256,
+          "slo_ok": false,
+          "ttft_p95_ms": 130185.077084,
+          "tpot_p95_ms": 259.85187903225807,
+          "output_tok_s_per_gpu": 59.24133105018677,
+          "goodput_rps": 0.41220164427009837,
+          "mean_inflight": 139.80967017135666
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 3,
+      "arm": "llama-slots",
+      "evidence_id": "ev_5c71f8b78d2cff10b5569fa9a587119b649d18306fb5f24917651dd6272b53d6",
+      "derived_capacity_evidence_id": "ev_32c34d7fe2ac34a3d5361b82b008746157760b1ca039b771b445be3a0b300640",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 256,
+        "ttft_p50_ms": 79427.9362705,
+        "ttft_p95_ms": 152136.11625025002,
+        "e2e_p50_ms": 88805.7245415,
+        "e2e_p95_ms": 160124.6890525,
+        "tpot_p50_ms": 290.52686962903226,
+        "output_tok_s_over_client_span": 50.76561638852909
+      },
+      "linear_tpot_p95_ms": 304.9792661290323,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 256,
+          "slo_ok": false,
+          "ttft_p95_ms": 152540.60275,
+          "tpot_p95_ms": 305.01379032258063,
+          "output_tok_s_per_gpu": 50.76561638852909,
+          "goodput_rps": 0.3036517581833405,
+          "mean_inflight": 140.39629478122896
+        }
+      ],
+      "request_accounting": null
+    },
+    {
+      "round": 3,
+      "arm": "skippy-patched",
+      "evidence_id": "ev_92291e1b7dfdef73f55d89a6d9c1db1c71d01032bdc66b4be0e4ba92b9d40af5",
+      "derived_capacity_evidence_id": "ev_fb80c770c29dd2eb178dce2c4fab76267d8fdeafa2ab323f45125b516cd599d7",
+      "kind": "capacity",
+      "audited_metrics": {
+        "requests": 256,
+        "ttft_p50_ms": 67959.4588335,
+        "ttft_p95_ms": 129939.491719,
+        "e2e_p50_ms": 75900.62797949999,
+        "e2e_p95_ms": 137195.992885,
+        "tpot_p50_ms": 235.495541,
+        "output_tok_s_over_client_span": 59.18984989386163
+      },
+      "linear_tpot_p95_ms": 261.1810074032258,
+      "inferencekit_metrics": [
+        {
+          "name": "n_star",
+          "value": null,
+          "unit": "streams",
+          "stat": "threshold",
+          "n": 1,
+          "ci95": null
+        },
+        {
+          "name": "goodput_rps",
+          "value": null,
+          "unit": "req/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "output_tok_s_per_gpu",
+          "value": null,
+          "unit": "tok/s",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "ttft_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "tpot_ms",
+          "value": null,
+          "unit": "ms",
+          "stat": "p95_at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "mean_inflight",
+          "value": null,
+          "unit": "requests",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        },
+        {
+          "name": "usd_per_1m_output_tokens",
+          "value": null,
+          "unit": "USD",
+          "stat": "at_n_star",
+          "n": null,
+          "ci95": null
+        }
+      ],
+      "curve": [
+        {
+          "level": 256,
+          "slo_ok": false,
+          "ttft_p95_ms": 130280.03575,
+          "tpot_p95_ms": 261.1986868387097,
+          "output_tok_s_per_gpu": 59.18984989386163,
+          "goodput_rps": 0.41184343798219153,
+          "mean_inflight": 139.61540933902648
+        }
+      ],
+      "request_accounting": null
+    }
+  ],
+  "qwen36-original-r0": [
+    {
+      "round": 0,
+      "arm": "skippy-base",
+      "evidence_id": "ev_9dd49e807ff7c3fdfc5dca45093b80dc63b93db137e5829c2f1629e3e76bc0ed",
+      "derived_capacity_evidence_id": null,
+      "kind": "serve_benchmark",
+      "audited_metrics": {
+        "requests": 4,
+        "ttft_p50_ms": 396.273229,
+        "ttft_p95_ms": 403.69215355,
+        "e2e_p50_ms": 809.568437,
+        "e2e_p95_ms": 815.42859545,
+        "tpot_p50_ms": 13.238403919354838,
+        "output_tok_s_over_client_span": 39.56358634375382
+      },
+      "linear_tpot_p95_ms": 13.393459738709678,
+      "inferencekit_metrics": [
+        {
+          "name": "ttft_ms",
+          "value": 394.086125,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 404.615416,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 13.212599483870967,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 13.416268806451614,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 75.39085433886491,
+          "unit": "tok/s",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 76.60728572355274,
+          "unit": "tok/s",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 808.529833,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 816.279458,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 394.086125,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 404.615416,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 13.212599483870967,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 13.416268806451614,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 75.39085433886491,
+          "unit": "tok/s",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 76.60728572355274,
+          "unit": "tok/s",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 808.529833,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 816.279458,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        }
+      ],
+      "curve": null,
+      "request_accounting": {
+        "timed_requests": 4,
+        "successful_requests": 4,
+        "failed_requests": 0,
+        "selected_token_counts": 4,
+        "unknown_token_counts": 0,
+        "potentially_estimated_counts": 0,
+        "selected_output_tokens_total": 128,
+        "selected_output_tokens_min": 32,
+        "selected_output_tokens_max": 32,
+        "successful_count_mismatches": 0
+      }
+    },
+    {
+      "round": 0,
+      "arm": "skippy-patched",
+      "evidence_id": "ev_8a28d92788d6e6afd0c0e108888589843b86225fa429ccc35bc248e570481936",
+      "derived_capacity_evidence_id": null,
+      "kind": "serve_benchmark",
+      "audited_metrics": {
+        "requests": 4,
+        "ttft_p50_ms": 398.2280005,
+        "ttft_p95_ms": 401.96229385,
+        "e2e_p50_ms": 815.8885835,
+        "e2e_p95_ms": 820.1285063,
+        "tpot_p50_ms": 13.474140451612904,
+        "output_tok_s_over_client_span": 39.27457256397258
+      },
+      "linear_tpot_p95_ms": 13.486733611290322,
+      "inferencekit_metrics": [
+        {
+          "name": "ttft_ms",
+          "value": 396.364167,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 402.292375,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 13.473986548387096,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 13.488928774193548,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 74.21538921931695,
+          "unit": "tok/s",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 75.72257812173198,
+          "unit": "tok/s",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 813.548375,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 820.46375,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 396.364167,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 402.292375,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 13.473986548387096,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 13.488928774193548,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 74.21538921931695,
+          "unit": "tok/s",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 75.72257812173198,
+          "unit": "tok/s",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 813.548375,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 820.46375,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        }
+      ],
+      "curve": null,
+      "request_accounting": {
+        "timed_requests": 4,
+        "successful_requests": 4,
+        "failed_requests": 0,
+        "selected_token_counts": 4,
+        "unknown_token_counts": 0,
+        "potentially_estimated_counts": 0,
+        "selected_output_tokens_total": 128,
+        "selected_output_tokens_min": 32,
+        "selected_output_tokens_max": 32,
+        "successful_count_mismatches": 0
+      }
+    },
+    {
+      "round": 0,
+      "arm": "llama-unified",
+      "evidence_id": "ev_213e77715cccca460b0395e1337fbcae1a094bb33c752369b5bd77b42d9e7252",
+      "derived_capacity_evidence_id": null,
+      "kind": "serve_benchmark",
+      "audited_metrics": {
+        "requests": 4,
+        "ttft_p50_ms": 417.7623125,
+        "ttft_p95_ms": 429.54550624999996,
+        "e2e_p50_ms": 844.2850415,
+        "e2e_p95_ms": 857.1181901,
+        "tpot_p50_ms": 13.686650532258064,
+        "output_tok_s_over_client_span": 37.809731021056585
+      },
+      "linear_tpot_p95_ms": 13.889977479032257,
+      "inferencekit_metrics": [
+        {
+          "name": "ttft_ms",
+          "value": 417.64675,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 431.6045,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 13.602215032258064,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 13.910958322580646,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 72.615914072249,
+          "unit": "tok/s",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 73.76904585585977,
+          "unit": "tok/s",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 839.597125,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 858.555584,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 417.64675,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 431.6045,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 13.602215032258064,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 13.910958322580646,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 72.615914072249,
+          "unit": "tok/s",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 73.76904585585977,
+          "unit": "tok/s",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 839.597125,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 858.555584,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        }
+      ],
+      "curve": null,
+      "request_accounting": {
+        "timed_requests": 4,
+        "successful_requests": 4,
+        "failed_requests": 0,
+        "selected_token_counts": 4,
+        "unknown_token_counts": 0,
+        "potentially_estimated_counts": 0,
+        "selected_output_tokens_total": 128,
+        "selected_output_tokens_min": 32,
+        "selected_output_tokens_max": 32,
+        "successful_count_mismatches": 0
+      }
+    },
+    {
+      "round": 0,
+      "arm": "llama-slots",
+      "evidence_id": "ev_ca647226a0589963057cc07e571e0890bdf83f2a2fb91ead2f01ff2290f51512",
+      "derived_capacity_evidence_id": null,
+      "kind": "serve_benchmark",
+      "audited_metrics": {
+        "requests": 4,
+        "ttft_p50_ms": 418.4627495,
+        "ttft_p95_ms": 428.16148925,
+        "e2e_p50_ms": 833.8133535,
+        "e2e_p95_ms": 845.92155615,
+        "tpot_p50_ms": 13.39505914516129,
+        "output_tok_s_over_client_span": 38.308078325673804
+      },
+      "linear_tpot_p95_ms": 13.471007143548386,
+      "inferencekit_metrics": [
+        {
+          "name": "ttft_ms",
+          "value": 417.502541,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 429.703583,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 13.320479838709677,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 13.471248677419354,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 74.24104244462897,
+          "unit": "tok/s",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 75.75896430164286,
+          "unit": "tok/s",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 830.549791,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 847.482375,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 417.502541,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 429.703583,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 13.320479838709677,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 13.471248677419354,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 74.24104244462897,
+          "unit": "tok/s",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 75.75896430164286,
+          "unit": "tok/s",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 830.549791,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 847.482375,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        }
+      ],
+      "curve": null,
+      "request_accounting": {
+        "timed_requests": 4,
+        "successful_requests": 4,
+        "failed_requests": 0,
+        "selected_token_counts": 4,
+        "unknown_token_counts": 0,
+        "potentially_estimated_counts": 0,
+        "selected_output_tokens_total": 128,
+        "selected_output_tokens_min": 32,
+        "selected_output_tokens_max": 32,
+        "successful_count_mismatches": 0
+      }
+    }
+  ],
+  "flash-original-r0": [
+    {
+      "round": 0,
+      "arm": "skippy-base",
+      "evidence_id": "ev_e2c1aae11c82b02345762c5be21300a6f451657835d90983c2378b5c9b22f69f",
+      "derived_capacity_evidence_id": null,
+      "kind": "serve_benchmark",
+      "audited_metrics": {
+        "requests": 4,
+        "ttft_p50_ms": 1074.143104,
+        "ttft_p95_ms": 1085.14700625,
+        "e2e_p50_ms": 1985.1574795000001,
+        "e2e_p95_ms": 2000.2671813499999,
+        "tpot_p50_ms": 29.363780919354838,
+        "output_tok_s_over_client_span": 16.109915352713976
+      },
+      "linear_tpot_p95_ms": 30.03887292580645,
+      "inferencekit_metrics": [
+        {
+          "name": "ttft_ms",
+          "value": 1067.549958,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 1085.925375,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 29.232457,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 30.134832,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 33.90393102409285,
+          "unit": "tok/s",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 35.02443614801418,
+          "unit": "tok/s",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 1982.654375,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 2002.491875,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 1067.549958,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 1085.925375,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 29.232457,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 30.134832,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 33.90393102409285,
+          "unit": "tok/s",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 35.02443614801418,
+          "unit": "tok/s",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 1982.654375,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 2002.491875,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        }
+      ],
+      "curve": null,
+      "request_accounting": {
+        "timed_requests": 4,
+        "successful_requests": 4,
+        "failed_requests": 0,
+        "selected_token_counts": 4,
+        "unknown_token_counts": 0,
+        "potentially_estimated_counts": 0,
+        "selected_output_tokens_total": 128,
+        "selected_output_tokens_min": 32,
+        "selected_output_tokens_max": 32,
+        "successful_count_mismatches": 0
+      }
+    },
+    {
+      "round": 0,
+      "arm": "skippy-patched",
+      "evidence_id": "ev_b92248611aa3168199f8c3cca3276dbe152013a2fab43bc9798da7a14379e31d",
+      "derived_capacity_evidence_id": null,
+      "kind": "serve_benchmark",
+      "audited_metrics": {
+        "requests": 4,
+        "ttft_p50_ms": 1068.1329165,
+        "ttft_p95_ms": 1083.9327277,
+        "e2e_p50_ms": 1974.2366255,
+        "e2e_p95_ms": 1989.88882325,
+        "tpot_p50_ms": 29.200495306451614,
+        "output_tok_s_over_client_span": 16.17263938769882
+      },
+      "linear_tpot_p95_ms": 29.227866248387095,
+      "inferencekit_metrics": [
+        {
+          "name": "ttft_ms",
+          "value": 1068.025416,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 1086.701959,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 29.19436290322581,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 29.23161422580645,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 34.23880394341647,
+          "unit": "tok/s",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 34.28063219620897,
+          "unit": "tok/s",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 1973.334584,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 1992.491792,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 1068.025416,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 1086.701959,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 29.19436290322581,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 29.23161422580645,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 34.23880394341647,
+          "unit": "tok/s",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 34.28063219620897,
+          "unit": "tok/s",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 1973.334584,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 1992.491792,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        }
+      ],
+      "curve": null,
+      "request_accounting": {
+        "timed_requests": 4,
+        "successful_requests": 4,
+        "failed_requests": 0,
+        "selected_token_counts": 4,
+        "unknown_token_counts": 0,
+        "potentially_estimated_counts": 0,
+        "selected_output_tokens_total": 128,
+        "selected_output_tokens_min": 32,
+        "selected_output_tokens_max": 32,
+        "successful_count_mismatches": 0
+      }
+    },
+    {
+      "round": 0,
+      "arm": "llama-unified",
+      "evidence_id": "ev_e765a601d44107bc9bb94e23a946b98235dc67678ffdc0e946f14fd5d275d3c5",
+      "derived_capacity_evidence_id": null,
+      "kind": "serve_benchmark",
+      "audited_metrics": {
+        "requests": 4,
+        "ttft_p50_ms": 1143.8296255,
+        "ttft_p95_ms": 1171.0627599499999,
+        "e2e_p50_ms": 2079.058125,
+        "e2e_p95_ms": 2104.1875036499996,
+        "tpot_p50_ms": 30.1350349516129,
+        "output_tok_s_over_client_span": 15.347976856597686
+      },
+      "linear_tpot_p95_ms": 30.288751612903226,
+      "inferencekit_metrics": [
+        {
+          "name": "ttft_ms",
+          "value": 1141.726917,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 1175.497541,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 30.082783612903224,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 30.30665725806452,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 33.12652851212331,
+          "unit": "tok/s",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 33.450149600291,
+          "unit": "tok/s",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 2076.759958,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 2108.216541,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 1141.726917,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 1175.497541,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 30.082783612903224,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 30.30665725806452,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 33.12652851212331,
+          "unit": "tok/s",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 33.450149600291,
+          "unit": "tok/s",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 2076.759958,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 2108.216541,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        }
+      ],
+      "curve": null,
+      "request_accounting": {
+        "timed_requests": 4,
+        "successful_requests": 4,
+        "failed_requests": 0,
+        "selected_token_counts": 4,
+        "unknown_token_counts": 0,
+        "potentially_estimated_counts": 0,
+        "selected_output_tokens_total": 128,
+        "selected_output_tokens_min": 32,
+        "selected_output_tokens_max": 32,
+        "successful_count_mismatches": 0
+      }
+    },
+    {
+      "round": 0,
+      "arm": "llama-slots",
+      "evidence_id": "ev_4f18f9058bc4a69be23c79a27c475ba089e22825fe5d9ceb7fcf0497d4c50b46",
+      "derived_capacity_evidence_id": null,
+      "kind": "serve_benchmark",
+      "audited_metrics": {
+        "requests": 4,
+        "ttft_p50_ms": 1143.9354165,
+        "ttft_p95_ms": 1169.68885805,
+        "e2e_p50_ms": 2059.9175619999996,
+        "e2e_p95_ms": 2084.1942767,
+        "tpot_p50_ms": 29.483245290322582,
+        "output_tok_s_over_client_span": 15.492882609066793
+      },
+      "linear_tpot_p95_ms": 29.64298352580645,
+      "inferencekit_metrics": [
+        {
+          "name": "ttft_ms",
+          "value": 1142.969958,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 1174.063208,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 29.479357516129035,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 29.670486548387096,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 33.913096868795556,
+          "unit": "tok/s",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 34.0656985259614,
+          "unit": "tok/s",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 2058.834833,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 2088.287333,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "p512-o32"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 1142.969958,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "ttft_ms",
+          "value": 1174.063208,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 29.479357516129035,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "tpot_ms",
+          "value": 29.670486548387096,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 33.913096868795556,
+          "unit": "tok/s",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "decode_tok_s",
+          "value": 34.0656985259614,
+          "unit": "tok/s",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 2058.834833,
+          "unit": "ms",
+          "stat": "median",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        },
+        {
+          "name": "e2e_ms",
+          "value": 2088.287333,
+          "unit": "ms",
+          "stat": "p95",
+          "n": 4,
+          "ci95": [
+            null,
+            null
+          ],
+          "subject": "all"
+        }
+      ],
+      "curve": null,
+      "request_accounting": {
+        "timed_requests": 4,
+        "successful_requests": 4,
+        "failed_requests": 0,
+        "selected_token_counts": 4,
+        "unknown_token_counts": 0,
+        "potentially_estimated_counts": 0,
+        "selected_output_tokens_total": 128,
+        "selected_output_tokens_min": 32,
+        "selected_output_tokens_max": 32,
+        "successful_count_mismatches": 0
+      }
+    }
+  ]
+}

@@ -10,7 +10,8 @@ pub(crate) mod readout;
 mod step_telemetry;
 
 use self::batch_policy::{
-    BatchPlatform, BatchPolicy, BatchTuning, BatchView, Gather, batch_policy, take_batch,
+    BatchPlatform, BatchPolicy, BatchTuning, BatchView, DirectBatchOrder, Gather, batch_policy,
+    take_batch,
 };
 use self::cache_runtime::{
     CacheAffinityRefresh, CacheRuntimeQueue, CacheRuntimeTelemetry,
@@ -130,6 +131,7 @@ pub(crate) struct DirectIterationChannel {
 struct IterationSchedulerShared {
     commands: std_mpsc::SyncSender<SchedulerCommand>,
     max_direct_iteration_tokens: usize,
+    prefill_chunk_tokens: std::num::NonZeroUsize,
     owner_count: AtomicUsize,
     worker: Mutex<Option<JoinHandle<()>>>,
 }
@@ -415,6 +417,7 @@ struct SchedulerWorker {
     direct_wave_full: bool,
     telemetry: Option<Telemetry>,
     last_served_direct: bool,
+    next_direct_batch_order: DirectBatchOrder,
     last_served_cache_runtime: bool,
     last_emitted_lifecycle_counters: (u64, u64, u64, u64),
 }
@@ -465,6 +468,9 @@ impl IterationScheduler {
             config.emits_activation_frame(),
         );
         let iteration_interval = scheduler_config.iteration_interval;
+        let prefill_chunk_tokens =
+            std::num::NonZeroUsize::new(scheduler_config.prefill_chunk_tokens)
+                .expect("scheduler prefill chunk size is clamped to at least one");
         let max_consecutive_prefill_iterations =
             scheduler_config.max_consecutive_prefill_iterations;
         let mixed_prefill_decode = scheduler_config.mixed_prefill_decode;
@@ -569,6 +575,7 @@ impl IterationScheduler {
                     telemetry: Some(telemetry),
                     compute_meter,
                     last_served_direct: false,
+                    next_direct_batch_order: DirectBatchOrder::Arrival,
                     last_served_cache_runtime: false,
                     last_emitted_lifecycle_counters: (0, 0, 0, 0),
                 }
@@ -581,6 +588,7 @@ impl IterationScheduler {
             shared: Arc::new(IterationSchedulerShared {
                 commands,
                 max_direct_iteration_tokens,
+                prefill_chunk_tokens,
                 owner_count: AtomicUsize::new(1),
                 worker: Mutex::new(Some(worker)),
             }),
@@ -718,6 +726,8 @@ impl IterationScheduler {
         }
     }
 
+    // Test convenience; production callers pass cancellation through execute_iteration_on.
+    #[cfg(test)]
     pub(super) fn execute_iteration(
         &self,
         session_id: &str,

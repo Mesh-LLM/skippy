@@ -1,5 +1,62 @@
 use super::super::tests::direct_iteration;
 use super::*;
+use skippy_runtime::IterationBatchPhase;
+
+#[test]
+fn a_prefill_wave_yields_one_turn_to_independent_decode_rows() {
+    let mut same_session = direct_iteration("next-prefill", 1);
+    same_session.phase = IterationBatchPhase::Decode;
+    let mut anchor = direct_iteration("decoding-anchor", 1);
+    anchor.phase = IterationBatchPhase::Decode;
+    let mut queue = VecDeque::from([
+        direct_iteration("first-prefill", 512),
+        direct_iteration("next-prefill", 512),
+        same_session,
+        anchor,
+    ]);
+    let policy = default_policy();
+    let (first, rejection) = take_batch(&mut queue, &*policy, 3, 4, 512, DirectBatchOrder::Arrival);
+    assert_eq!(session_ids(&first), ["first-prefill"]);
+    assert_eq!(rejection, None);
+
+    let (decode, rejection) = take_batch(
+        &mut queue,
+        &*policy,
+        3,
+        4,
+        512,
+        DirectBatchOrder::DecodeTurn,
+    );
+    assert_eq!(session_ids(&decode), ["decoding-anchor"]);
+    assert_eq!(rejection, None);
+
+    let (prefill, rejection) =
+        take_batch(&mut queue, &*policy, 3, 4, 512, DirectBatchOrder::Arrival);
+    assert_eq!(session_ids(&prefill), ["next-prefill"]);
+    assert_eq!(rejection, None);
+    assert_eq!(queue.front().unwrap().phase, IterationBatchPhase::Decode);
+}
+
+#[test]
+fn a_decode_turn_preserves_arrival_batch_when_it_already_serves_decode() {
+    let mut anchor = direct_iteration("decoding-anchor", 1);
+    anchor.phase = IterationBatchPhase::Decode;
+    let mut queue = VecDeque::from([direct_iteration("next-prefill", 384), anchor]);
+    let policy = default_policy();
+
+    let (batch, rejection) = take_batch(
+        &mut queue,
+        &*policy,
+        2,
+        4,
+        512,
+        DirectBatchOrder::DecodeTurn,
+    );
+
+    assert_eq!(session_ids(&batch), ["decoding-anchor", "next-prefill"]);
+    assert_eq!(rejection, None);
+    assert!(queue.is_empty());
+}
 
 #[test]
 fn selected_sessions_have_the_same_order_for_every_arrival_permutation() {

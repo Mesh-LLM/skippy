@@ -1,0 +1,49 @@
+{
+  "passed_integrity_gates": true,
+  "job_spec_sha256": "1ddda5b344b4acaef586bfe7811a388c306831036b8d98793ae18ebc9947af05",
+  "responses_verified": 32,
+  "fresh_processes": 4,
+  "corner_comparisons": [
+    {
+      "arm": "skippy-original-fixed",
+      "prompt": "short-0",
+      "text_sha256": "e8732e8311c78f0e5806f82336d2502af2db2055c33c04cfe45c3eb636e6cf21",
+      "within_arm_repeat_and_mode_exact": true,
+      "matches_original_server_original_metal": false,
+      "matches_combined_server_fixed_metal": true,
+      "matches_vanilla_slots": false,
+      "matches_vanilla_unified": false
+    },
+    {
+      "arm": "skippy-original-fixed",
+      "prompt": "long-2",
+      "text_sha256": "0e37994ff92c98b06c50f6887a55f25b9f401cd7e27fc2b79d15665657db4349",
+      "within_arm_repeat_and_mode_exact": true,
+      "matches_original_server_original_metal": false,
+      "matches_combined_server_fixed_metal": true,
+      "matches_vanilla_slots": false,
+      "matches_vanilla_unified": false
+    },
+    {
+      "arm": "skippy-combined-original",
+      "prompt": "short-0",
+      "text_sha256": "fbb0fa858df4f7ce6d83c41494d4fc7d7bb56dad979efdbf06f4296e1aea4451",
+      "within_arm_repeat_and_mode_exact": true,
+      "matches_original_server_original_metal": true,
+      "matches_combined_server_fixed_metal": false,
+      "matches_vanilla_slots": false,
+      "matches_vanilla_unified": false
+    },
+    {
+      "arm": "skippy-combined-original",
+      "prompt": "long-2",
+      "text_sha256": "62e2199f6c9b6aad243746a8d42d046b95a4c2e9e4085a5bdff94ea973754cec",
+      "within_arm_repeat_and_mode_exact": true,
+      "matches_original_server_original_metal": true,
+      "matches_combined_server_fixed_metal": false,
+      "matches_vanilla_slots": false,
+      "matches_vanilla_unified": false
+    }
+  ],
+  "scope": "Two Qwen3.6 serial prompts only; component attribution, not quality or timing clearance."
+}

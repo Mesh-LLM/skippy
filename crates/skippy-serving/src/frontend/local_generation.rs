@@ -149,6 +149,7 @@ impl StageOpenAiBackend {
 pub(super) fn prompt_fits_single_prefill_sample(
     prompt_token_count: usize,
     session_batch_size: usize,
+    iteration_token_limit: usize,
 ) -> bool {
-    prompt_token_count > 1 && prompt_token_count <= session_batch_size
+    prompt_token_count > 1 && prompt_token_count <= session_batch_size.min(iteration_token_limit)
 }

@@ -24,6 +24,7 @@ fn worker(commands: std_mpsc::Receiver<SchedulerCommand>) -> SchedulerWorker {
         direct_wave_full: false,
         telemetry: None,
         last_served_direct: true,
+        next_direct_batch_order: DirectBatchOrder::Arrival,
         last_served_cache_runtime: false,
         last_emitted_lifecycle_counters: (0, 0, 0, 0),
     }

@@ -1,0 +1,209 @@
+{
+  "passed": true,
+  "draft_sha256": "1b04f617d4174c19574a2f8b663ebebe7956997f6a8ef2b8d798323ed5bc4251",
+  "request_timings_sha256": "337d766e8516bb44c1328e2d610adfbe2a3a3fe7286fa4b44c17f619c3adb5cb",
+  "tables": {
+    "qwen35-c128": [
+      {
+        "arm": "skippy-base",
+        "rounds": 4,
+        "complete": 512,
+        "values": {
+          "ttft_p95_ms": 62297.69424375,
+          "e2e_p95_ms": 66416.45974935,
+          "tpot_p95_ms": 251.9816395725806,
+          "output_tok_s": 60.836399215118064
+        },
+        "slo_pass_rounds": 0
+      },
+      {
+        "arm": "skippy-patched",
+        "rounds": 4,
+        "complete": 512,
+        "values": {
+          "ttft_p95_ms": 62241.214157675,
+          "e2e_p95_ms": 66364.00528525,
+          "tpot_p95_ms": 251.73039317177415,
+          "output_tok_s": 60.884633952564286
+        },
+        "slo_pass_rounds": 0
+      },
+      {
+        "arm": "llama-slots",
+        "rounds": 4,
+        "complete": 512,
+        "values": {
+          "ttft_p95_ms": 73537.887746825,
+          "e2e_p95_ms": 77386.95445404999,
+          "tpot_p95_ms": 283.8145955064515,
+          "output_tok_s": 52.293116125841195
+        },
+        "slo_pass_rounds": 0
+      },
+      {
+        "arm": "llama-unified",
+        "rounds": 4,
+        "complete": 512,
+        "values": {
+          "ttft_p95_ms": 72571.62512022498,
+          "e2e_p95_ms": 76397.3297699,
+          "tpot_p95_ms": 281.2821895516129,
+          "output_tok_s": 52.96633282216289
+        },
+        "slo_pass_rounds": 0
+      }
+    ],
+    "coder-c256": [
+      {
+        "arm": "skippy-base",
+        "rounds": 4,
+        "complete": 1024,
+        "values": {
+          "ttft_p95_ms": 129852.857651125,
+          "e2e_p95_ms": 137129.519192375,
+          "tpot_p95_ms": 261.04767254435484,
+          "output_tok_s": 59.21877043876202
+        },
+        "slo_pass_rounds": 0
+      },
+      {
+        "arm": "skippy-patched",
+        "rounds": 4,
+        "complete": 1024,
+        "values": {
+          "ttft_p95_ms": 129914.1599635,
+          "e2e_p95_ms": 137180.248083375,
+          "tpot_p95_ms": 261.13124361290323,
+          "output_tok_s": 59.20144360755671
+        },
+        "slo_pass_rounds": 0
+      },
+      {
+        "arm": "llama-slots",
+        "rounds": 4,
+        "complete": 1024,
+        "values": {
+          "ttft_p95_ms": 152145.509494625,
+          "e2e_p95_ms": 160159.31215075002,
+          "tpot_p95_ms": 304.5423692701613,
+          "output_tok_s": 50.75579792018238
+        },
+        "slo_pass_rounds": 0
+      },
+      {
+        "arm": "llama-unified",
+        "rounds": 4,
+        "complete": 1024,
+        "values": {
+          "ttft_p95_ms": 131276.903760625,
+          "e2e_p95_ms": 138099.56845824997,
+          "tpot_p95_ms": 259.2096540685484,
+          "output_tok_s": 58.76964203919057
+        },
+        "slo_pass_rounds": 0
+      }
+    ],
+    "qwen36-original-r0": [
+      {
+        "arm": "skippy-base",
+        "rounds": 1,
+        "complete": 4,
+        "values": {
+          "ttft_p95_ms": 403.69215355,
+          "e2e_p95_ms": 815.42859545,
+          "tpot_p95_ms": 13.393459738709678,
+          "output_tok_s": 39.56358634375382
+        },
+        "slo_pass_rounds": 1
+      },
+      {
+        "arm": "skippy-patched",
+        "rounds": 1,
+        "complete": 4,
+        "values": {
+          "ttft_p95_ms": 401.96229385,
+          "e2e_p95_ms": 820.1285063,
+          "tpot_p95_ms": 13.486733611290322,
+          "output_tok_s": 39.27457256397258
+        },
+        "slo_pass_rounds": 1
+      },
+      {
+        "arm": "llama-slots",
+        "rounds": 1,
+        "complete": 4,
+        "values": {
+          "ttft_p95_ms": 428.16148925,
+          "e2e_p95_ms": 845.92155615,
+          "tpot_p95_ms": 13.471007143548386,
+          "output_tok_s": 38.3080783256738
+        },
+        "slo_pass_rounds": 1
+      },
+      {
+        "arm": "llama-unified",
+        "rounds": 1,
+        "complete": 4,
+        "values": {
+          "ttft_p95_ms": 429.54550624999996,
+          "e2e_p95_ms": 857.1181901,
+          "tpot_p95_ms": 13.889977479032257,
+          "output_tok_s": 37.809731021056585
+        },
+        "slo_pass_rounds": 1
+      }
+    ],
+    "flash-original-r0": [
+      {
+        "arm": "skippy-base",
+        "rounds": 1,
+        "complete": 4,
+        "values": {
+          "ttft_p95_ms": 1085.14700625,
+          "e2e_p95_ms": 2000.2671813499999,
+          "tpot_p95_ms": 30.03887292580645,
+          "output_tok_s": 16.109915352713976
+        },
+        "slo_pass_rounds": 1
+      },
+      {
+        "arm": "skippy-patched",
+        "rounds": 1,
+        "complete": 4,
+        "values": {
+          "ttft_p95_ms": 1083.9327277,
+          "e2e_p95_ms": 1989.88882325,
+          "tpot_p95_ms": 29.227866248387095,
+          "output_tok_s": 16.17263938769882
+        },
+        "slo_pass_rounds": 1
+      },
+      {
+        "arm": "llama-slots",
+        "rounds": 1,
+        "complete": 4,
+        "values": {
+          "ttft_p95_ms": 1169.68885805,
+          "e2e_p95_ms": 2084.1942767,
+          "tpot_p95_ms": 29.64298352580645,
+          "output_tok_s": 15.492882609066793
+        },
+        "slo_pass_rounds": 1
+      },
+      {
+        "arm": "llama-unified",
+        "rounds": 1,
+        "complete": 4,
+        "values": {
+          "ttft_p95_ms": 1171.0627599499999,
+          "e2e_p95_ms": 2104.1875036499996,
+          "tpot_p95_ms": 30.288751612903226,
+          "output_tok_s": 15.347976856597686
+        },
+        "slo_pass_rounds": 1
+      }
+    ]
+  },
+  "scope": "Verifies four-table arithmetic and the historical Coder single-user quote; does not pass correctness or non-inferiority.",
+  "coder_single_historical_sha256": "c5dcc51d39aff52cd25856dd96565815407daa5124d871a879816f3845c05d8f"
+}

@@ -2,13 +2,10 @@ mod recording;
 mod selection;
 #[cfg(test)]
 use recording::resident_index_over_capacity;
+use selection::rank_resident_candidates;
 
 use anyhow::{Context, Result};
 use skippy_protocol::StageKvRetention;
-use skippy_scheduler::{
-    CapacityDemand, ComponentCapacitySnapshot, EvictableCacheEntry, plan_component_capacity,
-    rank_eviction_candidates,
-};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
@@ -254,17 +251,12 @@ impl KvStageIntegration {
         let required_eviction_tokens = occupied_after_request
             .saturating_add(target_free)
             .saturating_sub(eviction_capacity);
-        let mut ranked = candidates
-            .iter()
-            .filter(|candidate| Some(candidate.value.seq_id) != protected_seq_id)
-            .map(|candidate| EvictableCacheEntry {
-                id: candidate.value.seq_id.to_string(),
-                units: resident_candidate_units(candidate),
-                recompute_cost: candidate.value.recompute_cost,
-                last_used: candidate.last_used,
-            })
-            .collect::<Vec<_>>();
-        rank_eviction_candidates(&mut ranked);
+        let ranked = rank_resident_candidates(
+            candidates
+                .iter()
+                .filter(|candidate| Some(candidate.value.seq_id) != protected_seq_id),
+            self.resident_config.max_entries,
+        );
         let mut decision = ResidentCapacityDecision {
             enabled: true,
             capacity_known: true,
@@ -447,12 +439,14 @@ impl KvStageIntegration {
                 &token_ids[..token_count],
             );
             restore?;
-            let resident_entries = self
-                .radix
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .stats()
-                .resident_entries;
+            let resident_entries = {
+                let mut radix = self
+                    .radix
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                radix.mark_resident_reused(&identity.namespace, &radix_hit.stored_tokens);
+                radix.stats().resident_entries
+            };
             self.notify_kv_lifecycle(KvLifecycleEvent::PrefixRestored {
                 restored_tokens: token_count,
                 resident_entries,
@@ -486,9 +480,12 @@ impl KvStageIntegration {
         let mut evicted_entries = 0usize;
         let mut evicted_tokens = 0u64;
         while evicted_tokens < target_tokens {
-            let Some(removed) = evict_one_resident(&mut radix, &mut sequences, |victim| {
-                self.release_native_prefix(runtime, session_id, victim)
-            })?
+            let Some(removed) = evict_one_resident(
+                &mut radix,
+                &mut sequences,
+                self.resident_config.max_entries,
+                |victim| self.release_native_prefix(runtime, session_id, victim),
+            )?
             else {
                 break;
             };
@@ -581,41 +578,14 @@ impl KvStageIntegration {
 fn evict_one_resident(
     radix: &mut skippy_cache::UnifiedRadixCache<RadixResidentEntry, super::RadixExactEntry>,
     sequences: &mut ResidentSequencePool,
+    max_entries: usize,
     mut drop_native: impl FnMut(&skippy_cache::RadixEvictionCandidate<RadixResidentEntry>) -> Result<()>,
 ) -> Result<Option<skippy_cache::RadixEviction<RadixResidentEntry>>> {
     let candidates = radix.resident_eviction_candidates();
-    if candidates.is_empty() {
+    let Some(ranked) = rank_resident_candidates(candidates.iter(), max_entries).next() else {
         return Ok(None);
-    }
-    let plan = plan_component_capacity(
-        &ComponentCapacitySnapshot {
-            component: "resident-kv-tokens".to_string(),
-            capacity_units: candidates
-                .iter()
-                .map(resident_candidate_units)
-                .fold(0u64, u64::saturating_add),
-            active_units: 0,
-            pinned_cache_units: 0,
-            evictable_entries: candidates
-                .iter()
-                .map(|candidate| EvictableCacheEntry {
-                    id: candidate.value.seq_id.to_string(),
-                    units: resident_candidate_units(candidate),
-                    recompute_cost: candidate.value.recompute_cost,
-                    last_used: candidate.last_used,
-                })
-                .collect(),
-        },
-        CapacityDemand {
-            request_units: 0,
-            minimum_free_units: 0,
-            target_free_units: 1,
-        },
-    );
-    let victim_id = plan
-        .victim_ids
-        .first()
-        .context("resident capacity planner returned no victim")?;
+    };
+    let victim_id = &ranked.id;
     let victim = candidates
         .iter()
         .find(|candidate| candidate.value.seq_id.to_string() == *victim_id)
@@ -627,15 +597,6 @@ fn evict_one_resident(
     debug_assert_eq!(removed.value.page_id, victim.value.page_id);
     sequences.release(removed.value.seq_id)?;
     Ok(Some(removed))
-}
-
-fn resident_candidate_units(
-    candidate: &skippy_cache::RadixEvictionCandidate<RadixResidentEntry>,
-) -> u64 {
-    candidate
-        .value
-        .token_count
-        .max(candidate.tokens.len() as u64)
 }
 
 fn insert_saved_resident(
@@ -890,7 +851,7 @@ mod proactive_eviction_tests {
             )
             .unwrap();
 
-        let error = evict_one_resident(&mut radix, &mut sequences, |_| {
+        let error = evict_one_resident(&mut radix, &mut sequences, 4, |_| {
             anyhow::bail!("native drop failed")
         })
         .unwrap_err();
@@ -921,7 +882,7 @@ mod proactive_eviction_tests {
         radix.acquire_resident("stage", &[1, 2, 3]).unwrap();
         let mut dropped = false;
 
-        let removed = evict_one_resident(&mut radix, &mut sequences, |_| {
+        let removed = evict_one_resident(&mut radix, &mut sequences, 4, |_| {
             dropped = true;
             Ok(())
         })
@@ -952,7 +913,7 @@ mod proactive_eviction_tests {
             .unwrap();
         let mut dropped = None;
 
-        let removed = evict_one_resident(&mut radix, &mut sequences, |victim| {
+        let removed = evict_one_resident(&mut radix, &mut sequences, 4, |victim| {
             let seq_id = victim.value.seq_id;
             dropped = Some(seq_id);
             Ok(())
@@ -1040,7 +1001,7 @@ mod proactive_eviction_tests {
             .unwrap();
         let mut dropped = None;
 
-        let removed = evict_one_resident(&mut radix, &mut sequences, |victim| {
+        let removed = evict_one_resident(&mut radix, &mut sequences, 4, |victim| {
             let seq_id = victim.value.seq_id;
             dropped = Some(seq_id);
             Ok(())

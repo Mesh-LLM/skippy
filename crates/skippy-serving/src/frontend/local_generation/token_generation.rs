@@ -56,6 +56,7 @@ mod cache_prefill;
 #[cfg(test)]
 pub(crate) mod capture_trace;
 mod kv_restore;
+mod sampled_prefill;
 use cache_prefill::deferred_suffix_prefill_enabled;
 
 /// A `NaN` logprob marks a token whose raw logits row was unavailable when it
@@ -638,6 +639,9 @@ impl StageOpenAiBackend {
         Ok(prompt_fits_single_prefill_sample(
             request.prompt_token_ids.len(),
             batch_size,
+            // Whole-prompt prefill uses the same direct queue as readout.
+            // A native session can admit more tokens than that queue allows.
+            self.iteration_scheduler.readout_chunk_limit(),
         ))
     }
 
@@ -660,7 +664,15 @@ impl StageOpenAiBackend {
                 request.sampling.enabled.then_some(request.sampling),
             )?;
         }
-        if self.can_sample_whole_prompt_in_prefill(request, session_id)? {
+        // Logprob observation must not move the final prompt token into a
+        // separate native microbatch. Cache restore retains its own contract.
+        let aligned_logprob_prefill = request.sampling.top_logprobs.is_some()
+            && self.kv.is_none()
+            && request.max_tokens > 0
+            && request.prompt_token_ids.len() > 1;
+        if aligned_logprob_prefill
+            || self.can_sample_whole_prompt_in_prefill(request, session_id)?
+        {
             let chat_sampling_configured = if let Some(metadata) = request.chat_sampling_metadata {
                 self.configure_chat_sampling(
                     session_id,
@@ -673,10 +685,16 @@ impl StageOpenAiBackend {
                 false
             };
             return Ok(PromptPrefillResult {
-                prompt_prefill_sample: self.prefill_whole_prompt(
+                prompt_prefill_sample: self.prefill_sampled_chunks(
                     request,
                     session_id,
                     cache_stats,
+                    if aligned_logprob_prefill {
+                        self.iteration_scheduler.prefill_chunk_limit()
+                    } else {
+                        std::num::NonZeroUsize::new(request.prompt_token_ids.len())
+                            .expect("whole-prompt prefill admitted more than one token")
+                    },
                 )?,
                 chat_sampling_configured,
             });
@@ -714,71 +732,6 @@ impl StageOpenAiBackend {
             prompt_prefill_sample: None,
             chat_sampling_configured: false,
         })
-    }
-
-    fn prefill_whole_prompt(
-        &self,
-        request: &LocalGeneration<'_>,
-        session_id: &str,
-        cache_stats: &mut GenerationCacheStats,
-    ) -> InferenceResult<Option<i32>> {
-        let prefill_timer = PhaseTimer::start();
-        let _prefill = self.enter_openai_phase(&prefill_timer);
-        let runtime_sessions_before = self
-            .iteration_scheduler
-            .execute_runtime("feature-prefill-stats-before", |runtime| {
-                Ok(runtime.session_stats())
-            })?;
-        let outcome = self.iteration_scheduler.execute_iteration(
-            session_id,
-            request.prompt_token_ids,
-            &[],
-            request.sampling.enabled.then_some(request.sampling),
-            true,
-            skippy_runtime::IterationBatchPhase::Prefill,
-        )?;
-        let prompt_prefill_sample = Some(outcome.predicted);
-        cache_stats.suffix_prefill_tokens = saturating_u32(request.prompt_token_ids.len());
-        let runtime_sessions_after = self
-            .iteration_scheduler
-            .execute_runtime("feature-prefill-stats-after", |runtime| {
-                Ok(runtime.session_stats())
-            })?;
-        let mut attrs = self.openai_attrs(request.ids);
-        attrs.insert(
-            "llama_stage.prefill_token_count".to_string(),
-            json!(request.prompt_token_ids.len()),
-        );
-        attrs.insert("llama_stage.prefill_chunk_count".to_string(), json!(1));
-        attrs.insert("skippy.kv.restored_prefill".to_string(), json!(false));
-        attrs.insert("skippy.kv.restored_prefill_tokens".to_string(), json!(0));
-        attrs.insert(
-            "skippy.kv.prefill_suffix_tokens".to_string(),
-            json!(request.prompt_token_ids.len()),
-        );
-        attrs.insert("skippy.kv.recorded_pages".to_string(), json!(0));
-        attrs.insert(
-            "llama_stage.runtime_lock_wait_ms".to_string(),
-            json!(outcome.runtime_lock_wait_ms),
-        );
-        attrs.insert(
-            "llama_stage.runtime_lock_hold_ms".to_string(),
-            json!(outcome.runtime_lock_hold_ms),
-        );
-        attrs.insert("llama_stage.runtime_lock_acquires".to_string(), json!(1));
-        Self::insert_runtime_session_stats(
-            &mut attrs,
-            "llama_stage.runtime_sessions_before",
-            &runtime_sessions_before,
-        );
-        Self::insert_runtime_session_stats(
-            &mut attrs,
-            "llama_stage.runtime_sessions_after",
-            &runtime_sessions_after,
-        );
-        cache_stats.prompt_ms = prefill_timer.elapsed_ms();
-        self.emit_openai_phase("stage.openai_prefill", prefill_timer, attrs);
-        Ok(prompt_prefill_sample)
     }
 
     fn configure_chat_sampling(

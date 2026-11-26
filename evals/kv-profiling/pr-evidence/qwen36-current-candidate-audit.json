@@ -1,0 +1,154 @@
+{
+  "model": "qwen3.6-35b-a3b-q4-k-m",
+  "job_spec_sha256": "f9bd7bda45922da811c4600b98051b7692284a259d97b439365b03017416a13a",
+  "responses_verified": 64,
+  "fresh_processes": 8,
+  "model_pin_exact": true,
+  "full_metal_and_f16_kv": true,
+  "caches_off": true,
+  "thermal_nominal": true,
+  "original_control_calibration": {
+    "skippy-base/short-0": true,
+    "skippy-base/long-2": true,
+    "skippy-patched/short-0": false,
+    "skippy-patched/long-2": false,
+    "llama-slots/short-0": true,
+    "llama-slots/long-2": true,
+    "llama-unified/short-0": true,
+    "llama-unified/long-2": true
+  },
+  "candidate_cross_engine": [
+    {
+      "prompt": "short-0",
+      "repeat": 0,
+      "reference": "llama-slots",
+      "candidate_exact": false
+    },
+    {
+      "prompt": "short-0",
+      "repeat": 0,
+      "reference": "llama-unified",
+      "candidate_exact": false
+    },
+    {
+      "prompt": "short-0",
+      "repeat": 1,
+      "reference": "llama-slots",
+      "candidate_exact": false
+    },
+    {
+      "prompt": "short-0",
+      "repeat": 1,
+      "reference": "llama-unified",
+      "candidate_exact": false
+    },
+    {
+      "prompt": "long-2",
+      "repeat": 0,
+      "reference": "llama-slots",
+      "candidate_exact": false
+    },
+    {
+      "prompt": "long-2",
+      "repeat": 0,
+      "reference": "llama-unified",
+      "candidate_exact": false
+    },
+    {
+      "prompt": "long-2",
+      "repeat": 1,
+      "reference": "llama-slots",
+      "candidate_exact": false
+    },
+    {
+      "prompt": "long-2",
+      "repeat": 1,
+      "reference": "llama-unified",
+      "candidate_exact": false
+    }
+  ],
+  "first_divergences": [
+    {
+      "prompt": "short-0",
+      "repeat": 0,
+      "reference": "llama-slots",
+      "token_index": 3,
+      "reference_token": "\n\n",
+      "candidate_token": " no",
+      "reference_logprob_gap": null,
+      "candidate_in_reference_top5": false
+    },
+    {
+      "prompt": "short-0",
+      "repeat": 0,
+      "reference": "llama-unified",
+      "token_index": 3,
+      "reference_token": "\n\n",
+      "candidate_token": " no",
+      "reference_logprob_gap": null,
+      "candidate_in_reference_top5": false
+    },
+    {
+      "prompt": "short-0",
+      "repeat": 1,
+      "reference": "llama-slots",
+      "token_index": 3,
+      "reference_token": "\n\n",
+      "candidate_token": " no",
+      "reference_logprob_gap": null,
+      "candidate_in_reference_top5": false
+    },
+    {
+      "prompt": "short-0",
+      "repeat": 1,
+      "reference": "llama-unified",
+      "token_index": 3,
+      "reference_token": "\n\n",
+      "candidate_token": " no",
+      "reference_logprob_gap": null,
+      "candidate_in_reference_top5": false
+    },
+    {
+      "prompt": "long-2",
+      "repeat": 0,
+      "reference": "llama-slots",
+      "token_index": 2,
+      "reference_token": " equipment",
+      "candidate_token": "\n\n",
+      "reference_logprob_gap": 4.859130587428808,
+      "candidate_in_reference_top5": true
+    },
+    {
+      "prompt": "long-2",
+      "repeat": 0,
+      "reference": "llama-unified",
+      "token_index": 2,
+      "reference_token": " equipment",
+      "candidate_token": "\n\n",
+      "reference_logprob_gap": 4.859844367951155,
+      "candidate_in_reference_top5": true
+    },
+    {
+      "prompt": "long-2",
+      "repeat": 1,
+      "reference": "llama-slots",
+      "token_index": 2,
+      "reference_token": " equipment",
+      "candidate_token": "\n\n",
+      "reference_logprob_gap": 4.859130587428808,
+      "candidate_in_reference_top5": true
+    },
+    {
+      "prompt": "long-2",
+      "repeat": 1,
+      "reference": "llama-unified",
+      "token_index": 2,
+      "reference_token": " equipment",
+      "candidate_token": "\n\n",
+      "reference_logprob_gap": 4.859844367951155,
+      "candidate_in_reference_top5": true
+    }
+  ],
+  "exact_cross_engine_pass": false,
+  "scope": "Two selected serial prompts only; no concurrent, task quality, capacity or timing clearance."
+}

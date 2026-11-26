@@ -135,7 +135,10 @@ fn arrival_order_keeps_every_rule() {
     let selection = policy.select(&view);
     // b's prefill does not fit; its later decode must not overtake it
     assert_eq!(selection, Selection(vec![0, 4]));
-    assert_eq!(check_selection(&view, &selection), Ok(()));
+    assert_eq!(
+        check_selection(&view, &selection, DirectBatchOrder::Arrival),
+        Ok(())
+    );
 }
 
 #[test]
@@ -150,7 +153,13 @@ fn a_selection_that_breaks_a_rule_is_named() {
         2,
         8,
     );
-    let rejected = |positions: &[usize]| check_selection(&view, &Selection(positions.to_vec()));
+    let rejected = |positions: &[usize]| {
+        check_selection(
+            &view,
+            &Selection(positions.to_vec()),
+            DirectBatchOrder::Arrival,
+        )
+    };
     assert_eq!(rejected(&[]), Err(BatchRejection::Empty));
     assert_eq!(rejected(&[1, 0]), Err(BatchRejection::NotInQueueOrder));
     assert_eq!(rejected(&[0, 0]), Err(BatchRejection::NotInQueueOrder));
@@ -174,8 +183,11 @@ fn a_later_request_may_not_overtake_its_own_session() {
         8,
     );
     assert_eq!(
-        check_selection(&view, &Selection(vec![0, 2])),
+        check_selection(&view, &Selection(vec![0, 2]), DirectBatchOrder::Arrival),
         Err(BatchRejection::OvertakesSession)
     );
-    assert_eq!(check_selection(&view, &Selection(vec![0, 1])), Ok(()));
+    assert_eq!(
+        check_selection(&view, &Selection(vec![0, 1]), DirectBatchOrder::Arrival),
+        Ok(())
+    );
 }

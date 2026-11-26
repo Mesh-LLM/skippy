@@ -1,6 +1,44 @@
 //! Native memory determines whether prefix matches may truncate attention state.
 use super::*;
 use crate::kv_integration::RadixExactEntry;
+use skippy_cache::RadixEvictionCandidate;
+use skippy_scheduler::{EvictableCacheEntry, rank_eviction_candidates};
+
+/// Keep reused prefixes through a one-pass scan. An unreferenced entry remains
+/// reclaimable under pressure, and stops getting preference after two cache
+/// turnovers without another successful restore.
+pub(super) fn rank_resident_candidates<'a>(
+    candidates: impl Iterator<Item = &'a RadixEvictionCandidate<RadixResidentEntry>>,
+    max_entries: usize,
+) -> impl Iterator<Item = EvictableCacheEntry> {
+    let reuse_window = u64::try_from(max_entries)
+        .unwrap_or(u64::MAX)
+        .saturating_mul(2);
+    let mut unreused = Vec::new();
+    let mut reused = Vec::new();
+    for candidate in candidates {
+        let ranked = EvictableCacheEntry {
+            id: candidate.value.seq_id.to_string(),
+            units: candidate
+                .value
+                .token_count
+                .max(candidate.tokens.len() as u64),
+            recompute_cost: candidate.value.recompute_cost,
+            last_used: candidate.last_used,
+        };
+        if candidate
+            .insertions_since_reuse
+            .is_some_and(|age| age < reuse_window)
+        {
+            reused.push(ranked);
+        } else {
+            unreused.push(ranked);
+        }
+    }
+    rank_eviction_candidates(&mut unreused);
+    rank_eviction_candidates(&mut reused);
+    unreused.into_iter().chain(reused)
+}
 
 impl KvStageIntegration {
     pub(crate) fn retains_recurrent_checkpoints(&self) -> bool {

@@ -1,0 +1,37 @@
+{
+  "job_id": "job_rjhtn7rec3h8neg",
+  "spec_sha256": "43cf249f507930b1f7c67ad1630cfa80dfba936446d72306555085b8ea578fd3",
+  "response_count": 8,
+  "fresh_processes": 8,
+  "full_metal": true,
+  "cache_off": true,
+  "model_pin_exact": true,
+  "thermal_nominal": true,
+  "matrix": {
+    "load-0190": {
+      "native-fixed": {
+        "serial_sha256": "26c4763182d4792b347c03fbacd3b5059892ece535cb90031a42bedbe771b076",
+        "serial_equals_c128": true,
+        "prefix": " keeper checks the equipment and writes careful observations each morning.\nThe k"
+      },
+      "combined-fixed": {
+        "serial_sha256": "26c4763182d4792b347c03fbacd3b5059892ece535cb90031a42bedbe771b076",
+        "serial_equals_c128": true,
+        "prefix": " keeper checks the equipment and writes careful observations each morning.\nThe k"
+      }
+    },
+    "load-0100": {
+      "native-fixed": {
+        "serial_sha256": "c9e318a090e4c24b5fb2935568086eab560228ef1e788e51de6ecb6bfb64d0d4",
+        "serial_equals_c128": true,
+        "prefix": " keeper checks the <think>\nThinking Process:\n\n1.  **Analyze the Request:**\n    *"
+      },
+      "combined-fixed": {
+        "serial_sha256": "c9e318a090e4c24b5fb2935568086eab560228ef1e788e51de6ecb6bfb64d0d4",
+        "serial_equals_c128": true,
+        "prefix": " keeper checks the <think>\nThinking Process:\n\n1.  **Analyze the Request:**\n    *"
+      }
+    }
+  },
+  "scope": "Fixed-Metal Qwen3.5 serial controls only. Cross-engine loaded, all-model quality and timing gates remain open."
+}
