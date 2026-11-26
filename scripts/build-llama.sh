@@ -585,6 +585,9 @@ if [[ "$LLAMA_STAGE_FULL_REPLAY" == "ON" ]]; then
     # test-backend-ops runs as the ctest skippy_backend_ops_kv_rows
     BUILD_TARGETS+=(test-skippy-cachegen-metal test-skippy-tracing-metal test-backend-ops)
   fi
+  if [[ "$LLAMA_BACKEND" == "cuda" ]]; then
+    BUILD_TARGETS+=(test-skippy-tracing-cuda)
+  fi
 fi
 
 if (( ${#REQUESTED_TARGETS[@]} > 0 )); then

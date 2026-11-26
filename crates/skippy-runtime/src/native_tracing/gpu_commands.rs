@@ -1,9 +1,10 @@
 //! Device-side timing of the work native calls submit.
 //!
-//! A supporting backend (Metal) reports each command buffer after the GPU has
-//! finished it, on the backend's completion thread, carrying the trace tag
-//! the submitting thread had set. The callback only copies the record into
-//! the ring: it runs on a thread that completes every command on the device,
+//! A supporting backend reports each unit of device work after the GPU has
+//! finished it, carrying the trace tag the submitting thread had set: Metal
+//! each command buffer, on its completion thread; CUDA each graph compute, on
+//! the thread that next computes or synchronizes. The callback only copies
+//! the record into the ring: it runs on a thread the device's work waits on,
 //! and anything slower there would delay the very work being measured. A push
 //! into a full ring drops the record and counts it.
 
@@ -27,7 +28,7 @@ pub const GPU_TIMING_RING_CAPACITY: usize = 4096;
 pub struct GpuCommandTiming {
     /// The submitting native call's id; 0 when the work was submitted untagged.
     pub tag: u64,
-    /// The backend registry name, such as `"MTL"`.
+    /// The backend registry name, such as `"MTL"` or `"CUDA"`.
     pub backend: &'static str,
     pub context_id: u32,
     /// 1-based graph compute count of the backend instance; for Metal it

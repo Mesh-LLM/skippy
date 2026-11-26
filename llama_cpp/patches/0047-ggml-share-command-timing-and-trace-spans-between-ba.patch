@@ -1,0 +1,1139 @@
+From b29de3a78c45d79e594fb8be06310bb5d89310bf Mon Sep 17 00:00:00 2001
+From: Jared Wyles <jared.wyles@gmail.com>
+Date: Thu, 26 Nov 2026 11:25:07 +1100
+Subject: [PATCH 47/48] ggml: share command timing and trace spans between
+ backends
+
+Metal's timing module held two things: how Metal stamps a command buffer,
+and everything a backend reports through the timing procs that has nothing
+to do with Metal: the callbacks and kept spans, the thread's tag, the node
+classification (attention, mat-muls, recurrent state, KV writes), the
+graph op counts and the span plumbing. A second backend would have had to
+copy all of it.
+
+ggml-base now holds that half as ggml-backend-timing. Each backend registry
+gets its own state from ggml_backend_timing_new, so its callbacks, user data
+and kept spans stay separate; the thread's tag is shared, since a host sets
+the same tag on every backend. ggml-metal-timing keeps its interface and
+only converts Metal's host clock, so Metal reports exactly what it did:
+"mtl.graph_ops" comes from the "mtl" prefix, and the Unix clock is now
+std::chrono::system_clock, which is CLOCK_REALTIME on macOS and Linux.
+---
+ ggml/src/CMakeLists.txt                   |   2 +
+ ggml/src/ggml-backend-timing.cpp          | 473 ++++++++++++++++++++++
+ ggml/src/ggml-backend-timing.h            |  73 ++++
+ ggml/src/ggml-metal/ggml-metal-timing.cpp | 420 ++-----------------
+ 4 files changed, 572 insertions(+), 396 deletions(-)
+ create mode 100644 ggml/src/ggml-backend-timing.cpp
+ create mode 100644 ggml/src/ggml-backend-timing.h
+
+diff --git a/ggml/src/CMakeLists.txt b/ggml/src/CMakeLists.txt
+index 5ff78f2..2cdd092 100644
+--- a/ggml/src/CMakeLists.txt
++++ b/ggml/src/CMakeLists.txt
+@@ -195,6 +195,8 @@ add_library(ggml-base
+             ggml-alloc.c
+             ggml-backend.cpp
+             ggml-backend-meta.cpp
++            ggml-backend-timing.cpp
++            ggml-backend-timing.h
+             ggml-opt.cpp
+             ggml-threading.cpp
+             ggml-threading.h
+diff --git a/ggml/src/ggml-backend-timing.cpp b/ggml/src/ggml-backend-timing.cpp
+new file mode 100644
+index 0000000..c0f2382
+--- /dev/null
++++ b/ggml/src/ggml-backend-timing.cpp
+@@ -0,0 +1,473 @@
++#include "ggml-backend-timing.h"
++
++#include "ggml-impl.h"
++
++#include <algorithm>
++#include <atomic>
++#include <chrono>
++#include <cstdlib>
++#include <iterator>
++#include <map>
++#include <mutex>
++#include <numeric>
++#include <set>
++#include <string>
++#include <string_view>
++#include <vector>
++
++namespace {
++
++std::atomic<uint32_t> g_next_context_id { 0 };
++
++thread_local uint64_t g_tag = 0;
++
++struct pending_span {
++    uint64_t     tag;
++    const char * name;
++    bool         has_detail;
++    std::string  detail;
++    int64_t      start_unix_ns;
++    int64_t      end_unix_ns;
++};
++
++constexpr size_t MAX_PENDING_SPANS = 256;
++
++void deliver_span(ggml_backend_trace_span_callback_t callback, void * user_data, const ggml_backend_trace_span & span) {
++    if (callback != nullptr) {
++        callback(&span, user_data);
++    }
++}
++
++// views and reshapes: no work, so they join the run around them
++constexpr int OP_CLASS_NONE = -1;
++
++bool has_prefix(const char * name, std::string_view prefix) {
++    return std::string_view(name).compare(0, prefix.size(), prefix) == 0;
++}
++
++// the cache a node writes, or reads with a view: its root tensor's name
++const char * cache_name(const ggml_tensor * t) {
++    const ggml_tensor * root = t->view_src != nullptr ? t->view_src : t;
++    return has_prefix(root->name, "cache_") ? root->name : nullptr;
++}
++
++// llama-memory-recurrent names its state cache_r_l<i> and cache_s_l<i>
++bool is_recurrent_cache(const char * name) {
++    return has_prefix(name, "cache_r_l") || has_prefix(name, "cache_s_l");
++}
++
++// the cache class of a node that copies into or gathers from a cache
++int cache_class(const ggml_tensor * node) {
++    const char * name = cache_name(node);
++    if (name == nullptr && node->op == GGML_OP_GET_ROWS && node->src[0] != nullptr) {
++        name = cache_name(node->src[0]);
++        return name != nullptr && is_recurrent_cache(name) ? GGML_BACKEND_OP_CLASS_RECURRENT : GGML_BACKEND_OP_CLASS_OTHER;
++    }
++    if (name == nullptr) {
++        return GGML_BACKEND_OP_CLASS_OTHER;
++    }
++    return is_recurrent_cache(name) ? GGML_BACKEND_OP_CLASS_RECURRENT : GGML_BACKEND_OP_CLASS_KV_WRITE;
++}
++
++// the K/Q and K/Q/V products of llama-graph's unfused attention ("kq-<il>",
++// "kqv-<il>") and its output ("kqv_out-<il>")
++bool is_named_attention(const ggml_tensor * node) {
++    return has_prefix(node->name, "kq-") || has_prefix(node->name, "kqv-") ||
++        has_prefix(node->name, "kq_") || has_prefix(node->name, "kqv_");
++}
++
++int op_class(const ggml_tensor * node) {
++    switch (node->op) {
++        case GGML_OP_NONE:
++        case GGML_OP_RESHAPE:
++        case GGML_OP_VIEW:
++        case GGML_OP_PERMUTE:
++        case GGML_OP_TRANSPOSE:
++            return OP_CLASS_NONE;
++        case GGML_OP_FLASH_ATTN_EXT:
++            return GGML_BACKEND_OP_CLASS_ATTENTION;
++        case GGML_OP_SSM_CONV:
++        case GGML_OP_SSM_SCAN:
++        case GGML_OP_RWKV_WKV6:
++        case GGML_OP_RWKV_WKV7:
++        case GGML_OP_GATED_LINEAR_ATTN:
++        case GGML_OP_GATED_DELTA_NET:
++            return GGML_BACKEND_OP_CLASS_RECURRENT;
++        case GGML_OP_SOFT_MAX:
++            // a masked soft max is unfused attention; MoE routing has no mask
++            return node->src[1] != nullptr || is_named_attention(node) ?
++                GGML_BACKEND_OP_CLASS_ATTENTION : GGML_BACKEND_OP_CLASS_OTHER;
++        case GGML_OP_MUL_MAT:
++        case GGML_OP_MUL_MAT_ID:
++            return is_named_attention(node) ? GGML_BACKEND_OP_CLASS_ATTENTION : GGML_BACKEND_OP_CLASS_MATMUL;
++        case GGML_OP_SET_ROWS:
++        case GGML_OP_CPY:
++        case GGML_OP_GET_ROWS:
++            return cache_class(node);
++        default:
++            return is_named_attention(node) ? GGML_BACKEND_OP_CLASS_ATTENTION : GGML_BACKEND_OP_CLASS_OTHER;
++    }
++}
++
++uint64_t input_bytes(const ggml_tensor * node) {
++    return std::accumulate(std::begin(node->src), std::end(node->src), uint64_t { 0 },
++            [](uint64_t sum, const ggml_tensor * src) { return src != nullptr ? sum + ggml_nbytes(src) : sum; });
++}
++
++uint64_t bytes_of(const ggml_tensor * t) {
++    return t != nullptr ? ggml_nbytes(t) : 0;
++}
++
++// a gather reads only its rows, and a row write writes only its rows, of the
++// tensor they index: get_rows(a, ids) has a as src[0], set_rows(a, b, ids) as src[2]
++uint64_t bytes_read(const ggml_tensor * node) {
++    switch (node->op) {
++        case GGML_OP_GET_ROWS:
++            return ggml_nbytes(node) + bytes_of(node->src[1]);
++        case GGML_OP_SET_ROWS:
++            return input_bytes(node) - bytes_of(node->src[2]);
++        default:
++            return input_bytes(node);
++    }
++}
++
++bool in_recurrent_cache(const ggml_tensor * t) {
++    const char * name = t != nullptr ? cache_name(t) : nullptr;
++    return name != nullptr && is_recurrent_cache(name);
++}
++
++struct state_rows {
++    uint32_t gathered;
++    uint32_t carried;
++};
++
++// llama-graph's build_rs gathers the states from the batch's first state cell
++// to its last, then copies the gathered states no sequence of the batch owns
++// back unchanged
++state_rows state_rows_of(const ggml_tensor * node) {
++    if (node->op == GGML_OP_GET_ROWS && in_recurrent_cache(node->src[0]) && node->src[1] != nullptr) {
++        return { (uint32_t) ggml_nelements(node->src[1]), 0 };
++    }
++    if (node->op != GGML_OP_CPY || node->src[0] == nullptr || !in_recurrent_cache(node->src[1])) {
++        return { 0, 0 };
++    }
++    const ggml_tensor * gathered = node->src[0]->view_src;
++    const bool unchanged = gathered != nullptr && gathered->op == GGML_OP_GET_ROWS && in_recurrent_cache(gathered->src[0]);
++    return { 0, unchanged ? (uint32_t) ggml_nrows(node->src[0]) : 0 };
++}
++
++// ggml_flash_attn_ext_rows passes its I32 row lists [padded_rows, slices] as src[5]
++const ggml_tensor * attention_rows(const ggml_tensor * node) {
++    return node->op == GGML_OP_FLASH_ATTN_EXT ? node->src[5] : nullptr;
++}
++
++struct attention_shape {
++    uint32_t kv_cells;
++    uint32_t queries;
++    bool     row_lists;
++    bool     flash;
++    uint64_t bytes;
++};
++
++// unfused attention's K/Q product, kq = mul_mat(k, q): k is
++// [head_dim, n_kv, n_head_kv, ...], q is [head_dim, n_tokens, n_head, ...]
++attention_shape unfused_shape_of(const ggml_tensor * node) {
++    const ggml_tensor * k = node->src[0];
++    const ggml_tensor * q = node->src[1];
++    if (k == nullptr || q == nullptr) {
++        return { 0, 0, false, false, input_bytes(node) };
++    }
++    return { (uint32_t) k->ne[1], (uint32_t) (q->ne[1] * q->ne[3]), false, false, input_bytes(node) };
++}
++
++// what one attention node addresses: with row lists only the listed K/V
++// rows of the shared pool, otherwise the whole K/V span it was given
++attention_shape attention_shape_of(const ggml_tensor * node) {
++    if (node->op == GGML_OP_MUL_MAT && has_prefix(node->name, "kq-")) {
++        return unfused_shape_of(node);
++    }
++    const ggml_tensor * q    = node->src[0];
++    const ggml_tensor * k    = node->src[1];
++    const ggml_tensor * v    = node->src[2];
++    const ggml_tensor * rows = attention_rows(node);
++    if (node->op != GGML_OP_FLASH_ATTN_EXT || q == nullptr || k == nullptr || v == nullptr) {
++        return { 0, 0, false, false, input_bytes(node) };
++    }
++    const uint32_t queries = (uint32_t) (q->ne[1] * q->ne[3]);
++    if (rows == nullptr) {
++        return { (uint32_t) k->ne[1], queries, false, true, input_bytes(node) };
++    }
++    const uint64_t row_bytes =
++        ggml_row_size(k->type, k->ne[0]) * (uint64_t) k->ne[2] +
++        ggml_row_size(v->type, v->ne[0]) * (uint64_t) v->ne[2];
++    const uint64_t listed = (uint64_t) rows->ne[0] * (uint64_t) rows->ne[1];
++    const uint64_t other  = input_bytes(node) - ggml_nbytes(k) - ggml_nbytes(v);
++    return { (uint32_t) rows->ne[0], queries, true, true, other + listed * row_bytes };
++}
++
++// llama-graph names a layer's tensors "<name>-<il>"
++int32_t layer_of(const ggml_tensor * node) {
++    const std::string_view name(node->name);
++    const size_t dash = name.rfind('-');
++    if (dash == std::string_view::npos || dash + 1 == name.size()) {
++        return -1;
++    }
++    const std::string_view digits = name.substr(dash + 1);
++    if (!std::all_of(digits.begin(), digits.end(), [](char c) { return c >= '0' && c <= '9'; })) {
++        return -1;
++    }
++    return (int32_t) std::strtol(std::string(digits).c_str(), nullptr, 10);
++}
++
++} // namespace
++
++struct ggml_backend_timing {
++    explicit ggml_backend_timing(const char * prefix) : graph_ops_name(std::string(prefix) + ".graph_ops") {}
++
++    // install once: a replacement racing a completion may pair the new callback with the old data
++    std::atomic<ggml_backend_command_timing_callback_t> callback { nullptr };
++    std::atomic<void *>                                 user_data { nullptr };
++
++    std::atomic<ggml_backend_trace_span_callback_t> span_callback { nullptr };
++    std::atomic<void *>                             span_user_data { nullptr };
++
++    // spans that ended before the first span callback arrived: device
++    // initialisation can run before anyone can listen
++    std::mutex                pending_mutex;
++    std::vector<pending_span> pending;          // guarded by pending_mutex
++    std::atomic<bool>         span_installed { false };
++
++    std::mutex    graph_ops_mutex;
++    std::set<int> graph_ops_reported; // node counts, guarded by graph_ops_mutex
++
++    // "<prefix>.graph_ops", alive as long as the registry
++    const std::string graph_ops_name;
++};
++
++ggml_backend_timing_t ggml_backend_timing_new(const char * prefix) {
++    return new ggml_backend_timing(prefix);
++}
++
++uint32_t ggml_backend_timing_next_context_id(void) {
++    return g_next_context_id.fetch_add(1, std::memory_order_relaxed) + 1;
++}
++
++int64_t ggml_backend_timing_unix_now_ns(void) {
++    return std::chrono::duration_cast<std::chrono::nanoseconds>(
++            std::chrono::system_clock::now().time_since_epoch()).count();
++}
++
++uint64_t ggml_backend_timing_tag(void) {
++    return g_tag;
++}
++
++void ggml_backend_timing_set_tag(uint64_t tag) {
++    g_tag = tag;
++}
++
++bool ggml_backend_timing_commands_enabled(ggml_backend_timing_t timing) {
++    return timing->callback.load(std::memory_order_acquire) != nullptr;
++}
++
++bool ggml_backend_timing_enabled(ggml_backend_timing_t timing) {
++    return ggml_backend_timing_commands_enabled(timing) ||
++        timing->span_callback.load(std::memory_order_acquire) != nullptr;
++}
++
++void ggml_backend_timing_set_callback(
++        ggml_backend_timing_t timing,
++        ggml_backend_command_timing_callback_t callback,
++        void * user_data) {
++    if (callback == nullptr) {
++        timing->callback.store(nullptr, std::memory_order_release);
++        return;
++    }
++    timing->user_data.store(user_data, std::memory_order_relaxed);
++    timing->callback.store(callback, std::memory_order_release);
++}
++
++void ggml_backend_timing_report(ggml_backend_timing_t timing, const struct ggml_backend_command_timing * command) {
++    const auto callback = timing->callback.load(std::memory_order_acquire);
++    if (callback != nullptr) {
++        callback(command, timing->user_data.load(std::memory_order_acquire));
++    }
++}
++
++void ggml_backend_timing_command_init(
++        struct ggml_backend_command_timing * command,
++        uint32_t context_id,
++        uint32_t compute_index,
++        uint32_t command_index,
++        uint32_t command_count,
++        uint32_t node_count) {
++    *command = {};
++    command->tag           = g_tag;
++    command->context_id    = context_id;
++    command->compute_index = compute_index;
++    command->command_index = command_index;
++    command->command_count = command_count;
++    command->node_count    = node_count;
++    command->op_class      = GGML_BACKEND_OP_CLASS_COUNT;
++    command->layer         = -1;
++}
++
++void ggml_backend_timing_account(
++        struct ggml_backend_command_timing * command,
++        struct ggml_cgraph * gf,
++        int start,
++        int end,
++        bool split_by_class) {
++    ggml_backend_command_timing & timing = *command;
++    timing.split_by_class = split_by_class ? 1 : 0;
++    // Metal may submit an empty trailing command buffer. It has no operation
++    // classes to mix; do not leave the unclassified COUNT sentinel in its event.
++    if (gf == nullptr || start >= end) {
++        timing.op_class = GGML_BACKEND_OP_CLASS_OTHER;
++        return;
++    }
++
++    ggml_tensor ** first = gf->nodes + start;
++    ggml_tensor ** last  = gf->nodes + std::min(end, gf->n_nodes);
++
++    std::for_each(first, last, [&timing](const ggml_tensor * node) {
++        const int cls = op_class(node);
++        if (cls == OP_CLASS_NONE) {
++            return;
++        }
++        if (timing.layer < 0) {
++            timing.layer = layer_of(node);
++        }
++        timing.class_nodes[cls] += 1;
++        const state_rows states = state_rows_of(node);
++        timing.recurrent_states         = std::max(timing.recurrent_states, states.gathered);
++        timing.recurrent_states_carried = std::max(timing.recurrent_states_carried, states.carried);
++        if (cls != GGML_BACKEND_OP_CLASS_ATTENTION) {
++            timing.class_bytes[cls] += bytes_read(node);
++            return;
++        }
++        const attention_shape shape = attention_shape_of(node);
++        timing.class_bytes[cls] += shape.bytes;
++        timing.attention_kv_cells = std::max(timing.attention_kv_cells, shape.kv_cells);
++        timing.attention_queries  = std::max(timing.attention_queries, shape.queries);
++        timing.attention_row_list_nodes += shape.row_lists ? 1 : 0;
++        timing.attention_flash_nodes    += shape.flash ? 1 : 0;
++    });
++
++    const uint32_t * counts_begin = std::cbegin(timing.class_nodes);
++    const uint32_t * counts_end   = std::cend(timing.class_nodes);
++    const auto       nonzero      = [](uint32_t n) { return n > 0; };
++    const auto classes_used = std::count_if(counts_begin, counts_end, nonzero);
++    if (classes_used == 0) {
++        timing.op_class = GGML_BACKEND_OP_CLASS_OTHER;
++    } else if (classes_used == 1) {
++        timing.op_class = (int32_t) std::distance(counts_begin, std::find_if(counts_begin, counts_end, nonzero));
++    }
++}
++
++int ggml_backend_timing_class_run_end(struct ggml_cgraph * gf, int start) {
++    ggml_tensor ** first = gf->nodes + start;
++    ggml_tensor ** last  = gf->nodes + gf->n_nodes;
++
++    const auto classified = [](const ggml_tensor * node) { return op_class(node) != OP_CLASS_NONE; };
++    ggml_tensor ** lead = std::find_if(first, last, classified);
++    if (lead == last) {
++        return gf->n_nodes;
++    }
++    const int cls = op_class(*lead);
++    ggml_tensor ** next = std::find_if(lead + 1, last, [cls](const ggml_tensor * node) {
++        const int other = op_class(node);
++        return other != OP_CLASS_NONE && other != cls;
++    });
++    return (int) std::distance(gf->nodes, next);
++}
++
++void ggml_backend_timing_graph_ops(ggml_backend_timing_t timing, struct ggml_cgraph * gf) {
++    if (gf == nullptr || !ggml_backend_timing_commands_enabled(timing)) {
++        return;
++    }
++    {
++        std::lock_guard<std::mutex> lock(timing->graph_ops_mutex);
++        if (!timing->graph_ops_reported.insert(gf->n_nodes).second) {
++            return;
++        }
++    }
++    const int64_t start = ggml_backend_timing_span_start(timing);
++
++    std::map<std::string_view, int> counts;
++    std::for_each(gf->nodes, gf->nodes + gf->n_nodes, [&counts](const ggml_tensor * node) {
++        ++counts[ggml_op_desc(node)];
++    });
++    const std::string detail = std::accumulate(counts.begin(), counts.end(), "nodes=" + std::to_string(gf->n_nodes),
++        [](std::string text, const auto & op) {
++            return std::move(text) + ' ' + std::string(op.first) + ':' + std::to_string(op.second);
++        });
++
++    ggml_backend_timing_span_end(timing, timing->graph_ops_name.c_str(), detail.c_str(), start);
++}
++
++void ggml_backend_timing_set_span_callback(
++        ggml_backend_timing_t timing,
++        ggml_backend_trace_span_callback_t callback,
++        void * user_data) {
++    if (callback == nullptr) {
++        timing->span_callback.store(nullptr, std::memory_order_release);
++        return;
++    }
++
++    std::vector<pending_span> pending;
++    {
++        std::lock_guard<std::mutex> lock(timing->pending_mutex);
++        timing->span_user_data.store(user_data, std::memory_order_relaxed);
++        timing->span_callback.store(callback, std::memory_order_release);
++        timing->span_installed.store(true, std::memory_order_release);
++        pending.swap(timing->pending);
++    }
++
++    // kept spans reach the first callback in the order they ended
++    std::for_each(pending.begin(), pending.end(), [callback, user_data](const pending_span & kept) {
++        const ggml_backend_trace_span span = {
++            kept.tag, kept.name, kept.has_detail ? kept.detail.c_str() : nullptr,
++            kept.start_unix_ns, kept.end_unix_ns,
++        };
++        deliver_span(callback, user_data, span);
++    });
++}
++
++int64_t ggml_backend_timing_span_start(ggml_backend_timing_t timing) {
++    if (timing->span_callback.load(std::memory_order_acquire) == nullptr &&
++            timing->span_installed.load(std::memory_order_acquire)) {
++        return 0;
++    }
++    return ggml_backend_timing_unix_now_ns();
++}
++
++void ggml_backend_timing_span_end(
++        ggml_backend_timing_t timing,
++        const char * name,
++        const char * detail,
++        int64_t start_unix_ns) {
++    if (start_unix_ns == 0 || name == nullptr) {
++        return;
++    }
++    const ggml_backend_trace_span span = { g_tag, name, detail, start_unix_ns, ggml_backend_timing_unix_now_ns() };
++
++    if (timing->span_installed.load(std::memory_order_acquire)) {
++        deliver_span(timing->span_callback.load(std::memory_order_acquire),
++                timing->span_user_data.load(std::memory_order_acquire), span);
++        return;
++    }
++
++    {
++        std::lock_guard<std::mutex> lock(timing->pending_mutex);
++        if (!timing->span_installed.load(std::memory_order_acquire)) {
++            if (timing->pending.size() < MAX_PENDING_SPANS) {
++                timing->pending.push_back({ span.tag, name, detail != nullptr, detail != nullptr ? detail : "",
++                        span.start_unix_ns, span.end_unix_ns });
++            }
++            return;
++        }
++    }
++    // the first callback arrived while this span was ending
++    deliver_span(timing->span_callback.load(std::memory_order_acquire),
++            timing->span_user_data.load(std::memory_order_acquire), span);
++}
+diff --git a/ggml/src/ggml-backend-timing.h b/ggml/src/ggml-backend-timing.h
+new file mode 100644
+index 0000000..c4c3e3f
+--- /dev/null
++++ b/ggml/src/ggml-backend-timing.h
+@@ -0,0 +1,73 @@
++#pragma once
++
++#include "ggml-backend.h"
++
++#include <stdbool.h>
++#include <stdint.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++// one backend registry's callbacks and kept spans; lives for the process
++typedef struct ggml_backend_timing * ggml_backend_timing_t;
++
++// `prefix` names the backend's spans, as in "mtl.graph_ops"; static
++GGML_API ggml_backend_timing_t ggml_backend_timing_new(const char * prefix);
++
++GGML_API uint32_t ggml_backend_timing_next_context_id(void);
++GGML_API int64_t  ggml_backend_timing_unix_now_ns(void);
++
++// thread-local, shared by every backend
++GGML_API uint64_t ggml_backend_timing_tag(void);
++GGML_API void     ggml_backend_timing_set_tag(uint64_t tag);
++
++GGML_API bool ggml_backend_timing_commands_enabled(ggml_backend_timing_t timing);
++GGML_API bool ggml_backend_timing_enabled(ggml_backend_timing_t timing);
++
++GGML_API void ggml_backend_timing_set_callback(
++        ggml_backend_timing_t timing,
++        ggml_backend_command_timing_callback_t callback,
++        void * user_data);
++
++GGML_API void ggml_backend_timing_report(
++        ggml_backend_timing_t timing,
++        const struct ggml_backend_command_timing * command);
++
++// the tag comes from the calling thread
++GGML_API void ggml_backend_timing_command_init(
++        struct ggml_backend_command_timing * command,
++        uint32_t context_id,
++        uint32_t compute_index,
++        uint32_t command_index,
++        uint32_t command_count,
++        uint32_t node_count);
++
++GGML_API void ggml_backend_timing_account(
++        struct ggml_backend_command_timing * command,
++        struct ggml_cgraph * gf,
++        int start,
++        int end,
++        bool split_by_class);
++
++GGML_API int ggml_backend_timing_class_run_end(struct ggml_cgraph * gf, int start);
++
++GGML_API void ggml_backend_timing_graph_ops(ggml_backend_timing_t timing, struct ggml_cgraph * gf);
++
++GGML_API void ggml_backend_timing_set_span_callback(
++        ggml_backend_timing_t timing,
++        ggml_backend_trace_span_callback_t callback,
++        void * user_data);
++
++GGML_API int64_t ggml_backend_timing_span_start(ggml_backend_timing_t timing);
++
++// `name` is static; `detail` is copied if the span is kept for a later callback
++GGML_API void ggml_backend_timing_span_end(
++        ggml_backend_timing_t timing,
++        const char * name,
++        const char * detail,
++        int64_t start_unix_ns);
++
++#ifdef __cplusplus
++}
++#endif
+diff --git a/ggml/src/ggml-metal/ggml-metal-timing.cpp b/ggml/src/ggml-metal/ggml-metal-timing.cpp
+index 477058b..19b2a26 100644
+--- a/ggml/src/ggml-metal/ggml-metal-timing.cpp
++++ b/ggml/src/ggml-metal/ggml-metal-timing.cpp
+@@ -1,21 +1,13 @@
+ #include "ggml-metal-timing.h"
+ 
+-#include "ggml-impl.h"
++#include "ggml-backend-timing.h"
+ 
+-#include <algorithm>
+ #include <atomic>
+ #include <cstdlib>
+ #include <ctime>
+-#include <iterator>
+-#include <map>
+ #include <memory>
+-#include <mutex>
+ #include <new>
+-#include <numeric>
+-#include <set>
+-#include <string>
+ #include <string_view>
+-#include <vector>
+ 
+ #if defined(__APPLE__)
+ #include <mach/mach_time.h>
+@@ -23,36 +15,10 @@
+ 
+ namespace {
+ 
+-// install once: a replacement racing a completion may pair the new callback with the old data
+-std::atomic<ggml_backend_command_timing_callback_t> g_callback { nullptr };
+-std::atomic<void *>                                 g_user_data { nullptr };
+-
+-std::atomic<ggml_backend_trace_span_callback_t> g_span_callback { nullptr };
+-std::atomic<void *>                             g_span_user_data { nullptr };
+-
+-std::atomic<uint32_t> g_next_context_id { 0 };
+-
+-std::mutex    g_graph_ops_mutex;
+-std::set<int> g_graph_ops_reported; // node counts, guarded by g_graph_ops_mutex
+-
+-thread_local uint64_t g_tag = 0;
+-
+-// spans that ended before the first span callback arrived: device
+-// initialisation compiles the kernel libraries before anyone can listen
+-struct pending_span {
+-    uint64_t     tag;
+-    const char * name;
+-    bool         has_detail;
+-    std::string  detail;
+-    int64_t      start_unix_ns;
+-    int64_t      end_unix_ns;
+-};
+-
+-constexpr size_t MAX_PENDING_SPANS = 256;
+-
+-std::mutex                g_pending_mutex;
+-std::vector<pending_span> g_pending;          // guarded by g_pending_mutex
+-std::atomic<bool>         g_span_installed { false };
++ggml_backend_timing_t hooks() {
++    static const ggml_backend_timing_t timing = ggml_backend_timing_new("mtl");
++    return timing;
++}
+ 
+ // seconds on the host clock that Metal stamps command buffers with
+ double host_now_s() {
+@@ -70,199 +36,6 @@ double host_now_s() {
+ #endif
+ }
+ 
+-int64_t unix_now_ns() {
+-    timespec ts {};
+-    clock_gettime(CLOCK_REALTIME, &ts);
+-    return (int64_t) ts.tv_sec * 1000000000 + (int64_t) ts.tv_nsec;
+-}
+-
+-void deliver_span(ggml_backend_trace_span_callback_t callback, void * user_data, const ggml_backend_trace_span & span) {
+-    if (callback != nullptr) {
+-        callback(&span, user_data);
+-    }
+-}
+-
+-// views and reshapes: no work, so they join the run around them
+-constexpr int OP_CLASS_NONE = -1;
+-
+-bool has_prefix(const char * name, std::string_view prefix) {
+-    return std::string_view(name).compare(0, prefix.size(), prefix) == 0;
+-}
+-
+-// the cache a node writes, or reads with a view: its root tensor's name
+-const char * cache_name(const ggml_tensor * t) {
+-    const ggml_tensor * root = t->view_src != nullptr ? t->view_src : t;
+-    return has_prefix(root->name, "cache_") ? root->name : nullptr;
+-}
+-
+-// llama-memory-recurrent names its state cache_r_l<i> and cache_s_l<i>
+-bool is_recurrent_cache(const char * name) {
+-    return has_prefix(name, "cache_r_l") || has_prefix(name, "cache_s_l");
+-}
+-
+-// the cache class of a node that copies into or gathers from a cache
+-int cache_class(const ggml_tensor * node) {
+-    const char * name = cache_name(node);
+-    if (name == nullptr && node->op == GGML_OP_GET_ROWS && node->src[0] != nullptr) {
+-        name = cache_name(node->src[0]);
+-        return name != nullptr && is_recurrent_cache(name) ? GGML_BACKEND_OP_CLASS_RECURRENT : GGML_BACKEND_OP_CLASS_OTHER;
+-    }
+-    if (name == nullptr) {
+-        return GGML_BACKEND_OP_CLASS_OTHER;
+-    }
+-    return is_recurrent_cache(name) ? GGML_BACKEND_OP_CLASS_RECURRENT : GGML_BACKEND_OP_CLASS_KV_WRITE;
+-}
+-
+-// the K/Q and K/Q/V products of llama-graph's unfused attention ("kq-<il>",
+-// "kqv-<il>") and its output ("kqv_out-<il>")
+-bool is_named_attention(const ggml_tensor * node) {
+-    return has_prefix(node->name, "kq-") || has_prefix(node->name, "kqv-") ||
+-        has_prefix(node->name, "kq_") || has_prefix(node->name, "kqv_");
+-}
+-
+-int op_class(const ggml_tensor * node) {
+-    switch (node->op) {
+-        case GGML_OP_NONE:
+-        case GGML_OP_RESHAPE:
+-        case GGML_OP_VIEW:
+-        case GGML_OP_PERMUTE:
+-        case GGML_OP_TRANSPOSE:
+-            return OP_CLASS_NONE;
+-        case GGML_OP_FLASH_ATTN_EXT:
+-            return GGML_BACKEND_OP_CLASS_ATTENTION;
+-        case GGML_OP_SSM_CONV:
+-        case GGML_OP_SSM_SCAN:
+-        case GGML_OP_RWKV_WKV6:
+-        case GGML_OP_RWKV_WKV7:
+-        case GGML_OP_GATED_LINEAR_ATTN:
+-        case GGML_OP_GATED_DELTA_NET:
+-            return GGML_BACKEND_OP_CLASS_RECURRENT;
+-        case GGML_OP_SOFT_MAX:
+-            // a masked soft max is unfused attention; MoE routing has no mask
+-            return node->src[1] != nullptr || is_named_attention(node) ?
+-                GGML_BACKEND_OP_CLASS_ATTENTION : GGML_BACKEND_OP_CLASS_OTHER;
+-        case GGML_OP_MUL_MAT:
+-        case GGML_OP_MUL_MAT_ID:
+-            return is_named_attention(node) ? GGML_BACKEND_OP_CLASS_ATTENTION : GGML_BACKEND_OP_CLASS_MATMUL;
+-        case GGML_OP_SET_ROWS:
+-        case GGML_OP_CPY:
+-        case GGML_OP_GET_ROWS:
+-            return cache_class(node);
+-        default:
+-            return is_named_attention(node) ? GGML_BACKEND_OP_CLASS_ATTENTION : GGML_BACKEND_OP_CLASS_OTHER;
+-    }
+-}
+-
+-uint64_t input_bytes(const ggml_tensor * node) {
+-    return std::accumulate(std::begin(node->src), std::end(node->src), uint64_t { 0 },
+-            [](uint64_t sum, const ggml_tensor * src) { return src != nullptr ? sum + ggml_nbytes(src) : sum; });
+-}
+-
+-uint64_t bytes_of(const ggml_tensor * t) {
+-    return t != nullptr ? ggml_nbytes(t) : 0;
+-}
+-
+-// a gather reads only its rows, and a row write writes only its rows, of the
+-// tensor they index: get_rows(a, ids) has a as src[0], set_rows(a, b, ids) as src[2]
+-uint64_t bytes_read(const ggml_tensor * node) {
+-    switch (node->op) {
+-        case GGML_OP_GET_ROWS:
+-            return ggml_nbytes(node) + bytes_of(node->src[1]);
+-        case GGML_OP_SET_ROWS:
+-            return input_bytes(node) - bytes_of(node->src[2]);
+-        default:
+-            return input_bytes(node);
+-    }
+-}
+-
+-bool in_recurrent_cache(const ggml_tensor * t) {
+-    const char * name = t != nullptr ? cache_name(t) : nullptr;
+-    return name != nullptr && is_recurrent_cache(name);
+-}
+-
+-struct state_rows {
+-    uint32_t gathered;
+-    uint32_t carried;
+-};
+-
+-// llama-graph's build_rs gathers the states from the batch's first state cell
+-// to its last, then copies the gathered states no sequence of the batch owns
+-// back unchanged
+-state_rows state_rows_of(const ggml_tensor * node) {
+-    if (node->op == GGML_OP_GET_ROWS && in_recurrent_cache(node->src[0]) && node->src[1] != nullptr) {
+-        return { (uint32_t) ggml_nelements(node->src[1]), 0 };
+-    }
+-    if (node->op != GGML_OP_CPY || node->src[0] == nullptr || !in_recurrent_cache(node->src[1])) {
+-        return { 0, 0 };
+-    }
+-    const ggml_tensor * gathered = node->src[0]->view_src;
+-    const bool unchanged = gathered != nullptr && gathered->op == GGML_OP_GET_ROWS && in_recurrent_cache(gathered->src[0]);
+-    return { 0, unchanged ? (uint32_t) ggml_nrows(node->src[0]) : 0 };
+-}
+-
+-// ggml_flash_attn_ext_rows passes its I32 row lists [padded_rows, slices] as src[5]
+-const ggml_tensor * attention_rows(const ggml_tensor * node) {
+-    return node->op == GGML_OP_FLASH_ATTN_EXT ? node->src[5] : nullptr;
+-}
+-
+-struct attention_shape {
+-    uint32_t kv_cells;
+-    uint32_t queries;
+-    bool     row_lists;
+-    bool     flash;
+-    uint64_t bytes;
+-};
+-
+-// unfused attention's K/Q product, kq = mul_mat(k, q): k is
+-// [head_dim, n_kv, n_head_kv, ...], q is [head_dim, n_tokens, n_head, ...]
+-attention_shape unfused_shape_of(const ggml_tensor * node) {
+-    const ggml_tensor * k = node->src[0];
+-    const ggml_tensor * q = node->src[1];
+-    if (k == nullptr || q == nullptr) {
+-        return { 0, 0, false, false, input_bytes(node) };
+-    }
+-    return { (uint32_t) k->ne[1], (uint32_t) (q->ne[1] * q->ne[3]), false, false, input_bytes(node) };
+-}
+-
+-// what one attention node addresses: with row lists only the listed K/V
+-// rows of the shared pool, otherwise the whole K/V span it was given
+-attention_shape attention_shape_of(const ggml_tensor * node) {
+-    if (node->op == GGML_OP_MUL_MAT && has_prefix(node->name, "kq-")) {
+-        return unfused_shape_of(node);
+-    }
+-    const ggml_tensor * q    = node->src[0];
+-    const ggml_tensor * k    = node->src[1];
+-    const ggml_tensor * v    = node->src[2];
+-    const ggml_tensor * rows = attention_rows(node);
+-    if (node->op != GGML_OP_FLASH_ATTN_EXT || q == nullptr || k == nullptr || v == nullptr) {
+-        return { 0, 0, false, false, input_bytes(node) };
+-    }
+-    const uint32_t queries = (uint32_t) (q->ne[1] * q->ne[3]);
+-    if (rows == nullptr) {
+-        return { (uint32_t) k->ne[1], queries, false, true, input_bytes(node) };
+-    }
+-    const uint64_t row_bytes =
+-        ggml_row_size(k->type, k->ne[0]) * (uint64_t) k->ne[2] +
+-        ggml_row_size(v->type, v->ne[0]) * (uint64_t) v->ne[2];
+-    const uint64_t listed = (uint64_t) rows->ne[0] * (uint64_t) rows->ne[1];
+-    const uint64_t other  = input_bytes(node) - ggml_nbytes(k) - ggml_nbytes(v);
+-    return { (uint32_t) rows->ne[0], queries, true, true, other + listed * row_bytes };
+-}
+-
+-// llama-graph names a layer's tensors "<name>-<il>"
+-int32_t layer_of(const ggml_tensor * node) {
+-    const std::string_view name(node->name);
+-    const size_t dash = name.rfind('-');
+-    if (dash == std::string_view::npos || dash + 1 == name.size()) {
+-        return -1;
+-    }
+-    const std::string_view digits = name.substr(dash + 1);
+-    if (!std::all_of(digits.begin(), digits.end(), [](char c) { return c >= '0' && c <= '9'; })) {
+-        return -1;
+-    }
+-    return (int32_t) std::strtol(std::string(digits).c_str(), nullptr, 10);
+-}
+-
+ } // namespace
+ 
+ struct ggml_metal_timing_record {
+@@ -277,7 +50,7 @@ struct ggml_metal_timing_record {
+ };
+ 
+ uint32_t ggml_metal_timing_next_context_id(void) {
+-    return g_next_context_id.fetch_add(1, std::memory_order_relaxed) + 1;
++    return ggml_backend_timing_next_context_id();
+ }
+ 
+ ggml_metal_timing_record_t ggml_metal_timing_begin(
+@@ -286,8 +59,7 @@ ggml_metal_timing_record_t ggml_metal_timing_begin(
+         uint32_t command_index,
+         uint32_t command_count,
+         uint32_t node_count) {
+-    if (g_callback.load(std::memory_order_acquire) == nullptr &&
+-            g_span_callback.load(std::memory_order_acquire) == nullptr) {
++    if (!ggml_backend_timing_enabled(hooks())) {
+         return nullptr;
+     }
+ 
+@@ -296,14 +68,7 @@ ggml_metal_timing_record_t ggml_metal_timing_begin(
+         return nullptr;
+     }
+ 
+-    record->timing.tag           = g_tag;
+-    record->timing.context_id    = context_id;
+-    record->timing.compute_index = compute_index;
+-    record->timing.command_index = command_index;
+-    record->timing.command_count = command_count;
+-    record->timing.node_count    = node_count;
+-    record->timing.op_class      = GGML_BACKEND_OP_CLASS_COUNT;
+-    record->timing.layer         = -1;
++    ggml_backend_timing_command_init(&record->timing, context_id, compute_index, command_index, command_count, node_count);
+ 
+     return record;
+ }
+@@ -314,71 +79,13 @@ void ggml_metal_timing_account(
+         int start,
+         int end,
+         bool split_by_class) {
+-    if (record == nullptr) {
+-        return;
+-    }
+-    ggml_backend_command_timing & timing = record->timing;
+-    timing.split_by_class = split_by_class ? 1 : 0;
+-    // Metal may submit an empty trailing command buffer. It has no operation
+-    // classes to mix; do not leave the unclassified COUNT sentinel in its event.
+-    if (gf == nullptr || start >= end) {
+-        timing.op_class = GGML_BACKEND_OP_CLASS_OTHER;
+-        return;
+-    }
+-
+-    ggml_tensor ** first = gf->nodes + start;
+-    ggml_tensor ** last  = gf->nodes + std::min(end, gf->n_nodes);
+-
+-    std::for_each(first, last, [&timing](const ggml_tensor * node) {
+-        const int cls = op_class(node);
+-        if (cls == OP_CLASS_NONE) {
+-            return;
+-        }
+-        if (timing.layer < 0) {
+-            timing.layer = layer_of(node);
+-        }
+-        timing.class_nodes[cls] += 1;
+-        const state_rows states = state_rows_of(node);
+-        timing.recurrent_states         = std::max(timing.recurrent_states, states.gathered);
+-        timing.recurrent_states_carried = std::max(timing.recurrent_states_carried, states.carried);
+-        if (cls != GGML_BACKEND_OP_CLASS_ATTENTION) {
+-            timing.class_bytes[cls] += bytes_read(node);
+-            return;
+-        }
+-        const attention_shape shape = attention_shape_of(node);
+-        timing.class_bytes[cls] += shape.bytes;
+-        timing.attention_kv_cells = std::max(timing.attention_kv_cells, shape.kv_cells);
+-        timing.attention_queries  = std::max(timing.attention_queries, shape.queries);
+-        timing.attention_row_list_nodes += shape.row_lists ? 1 : 0;
+-        timing.attention_flash_nodes    += shape.flash ? 1 : 0;
+-    });
+-
+-    const uint32_t * counts_begin = std::cbegin(timing.class_nodes);
+-    const uint32_t * counts_end   = std::cend(timing.class_nodes);
+-    const auto       nonzero      = [](uint32_t n) { return n > 0; };
+-    const auto classes_used = std::count_if(counts_begin, counts_end, nonzero);
+-    if (classes_used == 0) {
+-        timing.op_class = GGML_BACKEND_OP_CLASS_OTHER;
+-    } else if (classes_used == 1) {
+-        timing.op_class = (int32_t) std::distance(counts_begin, std::find_if(counts_begin, counts_end, nonzero));
++    if (record != nullptr) {
++        ggml_backend_timing_account(&record->timing, gf, start, end, split_by_class);
+     }
+ }
+ 
+ int ggml_metal_timing_class_run_end(struct ggml_cgraph * gf, int start) {
+-    ggml_tensor ** first = gf->nodes + start;
+-    ggml_tensor ** last  = gf->nodes + gf->n_nodes;
+-
+-    const auto classified = [](const ggml_tensor * node) { return op_class(node) != OP_CLASS_NONE; };
+-    ggml_tensor ** lead = std::find_if(first, last, classified);
+-    if (lead == last) {
+-        return gf->n_nodes;
+-    }
+-    const int cls = op_class(*lead);
+-    ggml_tensor ** next = std::find_if(lead + 1, last, [cls](const ggml_tensor * node) {
+-        const int other = op_class(node);
+-        return other != OP_CLASS_NONE && other != cls;
+-    });
+-    return (int) std::distance(gf->nodes, next);
++    return ggml_backend_timing_class_run_end(gf, start);
+ }
+ 
+ bool ggml_metal_timing_op_profile(void) {
+@@ -386,13 +93,13 @@ bool ggml_metal_timing_op_profile(void) {
+         const char * value = std::getenv("GGML_METAL_OP_PROFILE");
+         return value != nullptr && value[0] != '\0' && std::string_view(value) != "0";
+     }();
+-    return requested && g_callback.load(std::memory_order_acquire) != nullptr;
++    return requested && ggml_backend_timing_commands_enabled(hooks());
+ }
+ 
+ void ggml_metal_timing_encode_start(ggml_metal_timing_record_t record) {
+     if (record != nullptr) {
+-        record->saved_tag = g_tag;
+-        g_tag = record->timing.tag;
++        record->saved_tag = ggml_backend_timing_tag();
++        ggml_backend_timing_set_tag(record->timing.tag);
+         record->encode_start_host_s.store(host_now_s(), std::memory_order_release);
+     }
+ }
+@@ -400,7 +107,7 @@ void ggml_metal_timing_encode_start(ggml_metal_timing_record_t record) {
+ void ggml_metal_timing_encode_end(ggml_metal_timing_record_t record) {
+     if (record != nullptr) {
+         record->encode_end_host_s.store(host_now_s(), std::memory_order_release);
+-        g_tag = record->saved_tag;
++        ggml_backend_timing_set_tag(record->saved_tag);
+     }
+ }
+ 
+@@ -410,19 +117,13 @@ void ggml_metal_timing_finish(
+         double execute_end_host_s,
+         int32_t status) {
+     const std::unique_ptr<ggml_metal_timing_record> owned(record);
+-    if (!owned) {
++    if (!owned || !ggml_backend_timing_commands_enabled(hooks())) {
+         return;
+     }
+ 
+-    const auto callback = g_callback.load(std::memory_order_acquire);
+-    if (callback == nullptr) {
+-        return;
+-    }
+-    void * user_data = g_user_data.load(std::memory_order_acquire);
+-
+     // one paired reading converts every host time on this record
+     const double  host_now = host_now_s();
+-    const int64_t unix_now = unix_now_ns();
++    const int64_t unix_now = ggml_backend_timing_unix_now_ns();
+     const auto to_unix_ns = [&](double host_s) -> int64_t {
+         return host_s > 0.0 ? unix_now - (int64_t) ((host_now - host_s) * 1e9) : 0;
+     };
+@@ -434,102 +135,29 @@ void ggml_metal_timing_finish(
+     timing.execute_start_unix_ns = to_unix_ns(execute_start_host_s);
+     timing.execute_end_unix_ns   = to_unix_ns(execute_end_host_s);
+ 
+-    callback(&timing, user_data);
++    ggml_backend_timing_report(hooks(), &timing);
+ }
+ 
+ int64_t ggml_metal_timing_span_start(void) {
+-    if (g_span_callback.load(std::memory_order_acquire) == nullptr &&
+-            g_span_installed.load(std::memory_order_acquire)) {
+-        return 0;
+-    }
+-    return unix_now_ns();
++    return ggml_backend_timing_span_start(hooks());
+ }
+ 
+ void ggml_metal_timing_span_end(const char * name, const char * detail, int64_t start_unix_ns) {
+-    if (start_unix_ns == 0 || name == nullptr) {
+-        return;
+-    }
+-    const ggml_backend_trace_span span = { g_tag, name, detail, start_unix_ns, unix_now_ns() };
+-
+-    if (g_span_installed.load(std::memory_order_acquire)) {
+-        deliver_span(g_span_callback.load(std::memory_order_acquire),
+-                g_span_user_data.load(std::memory_order_acquire), span);
+-        return;
+-    }
+-
+-    {
+-        std::lock_guard<std::mutex> lock(g_pending_mutex);
+-        if (!g_span_installed.load(std::memory_order_acquire)) {
+-            if (g_pending.size() < MAX_PENDING_SPANS) {
+-                g_pending.push_back({ span.tag, name, detail != nullptr, detail != nullptr ? detail : "",
+-                        span.start_unix_ns, span.end_unix_ns });
+-            }
+-            return;
+-        }
+-    }
+-    // the first callback arrived while this span was ending
+-    deliver_span(g_span_callback.load(std::memory_order_acquire),
+-            g_span_user_data.load(std::memory_order_acquire), span);
++    ggml_backend_timing_span_end(hooks(), name, detail, start_unix_ns);
+ }
+ 
+ void ggml_metal_timing_set_callback(ggml_backend_command_timing_callback_t callback, void * user_data) {
+-    if (callback == nullptr) {
+-        g_callback.store(nullptr, std::memory_order_release);
+-        return;
+-    }
+-    g_user_data.store(user_data, std::memory_order_relaxed);
+-    g_callback.store(callback, std::memory_order_release);
++    ggml_backend_timing_set_callback(hooks(), callback, user_data);
+ }
+ 
+ void ggml_metal_timing_graph_ops(struct ggml_cgraph * gf) {
+-    if (gf == nullptr || g_callback.load(std::memory_order_acquire) == nullptr) {
+-        return;
+-    }
+-    {
+-        std::lock_guard<std::mutex> lock(g_graph_ops_mutex);
+-        if (!g_graph_ops_reported.insert(gf->n_nodes).second) {
+-            return;
+-        }
+-    }
+-    const int64_t start = ggml_metal_timing_span_start();
+-
+-    std::map<std::string_view, int> counts;
+-    std::for_each(gf->nodes, gf->nodes + gf->n_nodes, [&counts](const ggml_tensor * node) {
+-        ++counts[ggml_op_desc(node)];
+-    });
+-    const std::string detail = std::accumulate(counts.begin(), counts.end(), "nodes=" + std::to_string(gf->n_nodes),
+-        [](std::string text, const auto & op) {
+-            return std::move(text) + ' ' + std::string(op.first) + ':' + std::to_string(op.second);
+-        });
+-
+-    ggml_metal_timing_span_end("mtl.graph_ops", detail.c_str(), start);
++    ggml_backend_timing_graph_ops(hooks(), gf);
+ }
+ 
+ void ggml_metal_timing_set_tag(uint64_t tag) {
+-    g_tag = tag;
++    ggml_backend_timing_set_tag(tag);
+ }
+ 
+ void ggml_metal_timing_set_span_callback(ggml_backend_trace_span_callback_t callback, void * user_data) {
+-    if (callback == nullptr) {
+-        g_span_callback.store(nullptr, std::memory_order_release);
+-        return;
+-    }
+-
+-    std::vector<pending_span> pending;
+-    {
+-        std::lock_guard<std::mutex> lock(g_pending_mutex);
+-        g_span_user_data.store(user_data, std::memory_order_relaxed);
+-        g_span_callback.store(callback, std::memory_order_release);
+-        g_span_installed.store(true, std::memory_order_release);
+-        pending.swap(g_pending);
+-    }
+-
+-    // kept spans reach the first callback in the order they ended
+-    for (const auto & kept : pending) {
+-        const ggml_backend_trace_span span = {
+-            kept.tag, kept.name, kept.has_detail ? kept.detail.c_str() : nullptr,
+-            kept.start_unix_ns, kept.end_unix_ns,
+-        };
+-        deliver_span(callback, user_data, span);
+-    }
++    ggml_backend_timing_set_span_callback(hooks(), callback, user_data);
+ }
+-- 
+2.43.0
+
