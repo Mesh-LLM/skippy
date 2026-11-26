@@ -2,7 +2,7 @@
 name = "skippy-inference-api"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "OpenAI-compatible HTTP frontend shared by Skippy runtimes"
 repository = "https://github.com/Mesh-LLM/skippy"

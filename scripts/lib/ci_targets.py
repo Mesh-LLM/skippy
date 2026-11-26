@@ -2,13 +2,18 @@
 
 import json
 import platform
+import shutil
 
 from .ci_artifacts import read_json
 from .ci_process import capture
 
 
 def targets():
-    plan = json.loads(capture(["bash", "scripts/ci-plan.sh"]))
+    # Windows resolves a bare bash to the system WSL launcher before PATH.
+    bash = shutil.which("bash") if platform.system() == "Windows" else "bash"
+    if not bash:
+        raise ValueError("target planning requires Git Bash on Windows")
+    plan = json.loads(capture([bash, "scripts/ci-plan.sh"]))
     return (
         {row["id"]: row for row in plan["hosts"]["include"]},
         {row["id"]: row for row in plan["runtimes"]["include"]},
@@ -42,3 +47,9 @@ def validate_native_identity(directory, host, runtime, expected_arches=None):
             raise ValueError("CUDA manifest toolkit mismatch")
         if expected_arches is not None and backend["cuda"]["gpu_arches"] != expected_arches.split(";"):
             raise ValueError(f"CUDA manifest architectures differ from {expected_arches}")
+    elif runtime["backend"] == "rocm":
+        rocm = backend["rocm"]
+        if rocm["version"] != runtime["toolkit"]:
+            raise ValueError("ROCm manifest toolkit mismatch")
+        if rocm["gpu_arches"] != runtime["gpu_architectures"].split(";"):
+            raise ValueError("ROCm manifest architectures differ from the matrix")

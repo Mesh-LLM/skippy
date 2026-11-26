@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 
 const workflow = readFileSync(join(__dirname, '../workflows/ci.yml'), 'utf8');
 const section = workflow.split('\n  gate:\n')[1];
@@ -15,7 +15,7 @@ const packageJobs = rows.map(row => `package_${row.id.replaceAll('-', '_')}`);
 const prPackages = ['package_darwin_aarch64_metal', 'package_linux_aarch64_cuda13'];
 const releaseSmokes = ['release_smoke_linux_x86_64_cuda12', 'release_smoke_linux_aarch64_cuda12', 'release_smoke_linux_x86_64_cuda13'];
 
-function results({ automation = true, code = true, packages = false, native = false, full = false, release = false, hostedRequiresNative = false } = {}) {
+function results({ automation = true, code = true, packages = false, native = false, full = false, release = false } = {}) {
   const selected = code || packages;
   const required = ['changes'];
   if (automation) required.push('automation');
@@ -26,8 +26,11 @@ function results({ automation = true, code = true, packages = false, native = fa
   if (native) required.push('native_contracts');
   if (release) required.push(...releaseSmokes);
   const needs = Object.fromEntries(declared.map(job => [job, { result: required.includes(job) ? 'success' : 'skipped' }]));
-  needs.changes.outputs = { automation: String(automation), code: String(code), packages: String(packages), native: String(native), hosted_requires_native: String(hostedRequiresNative) };
-  if (selected) needs.plan.outputs = { profile: full ? 'full' : 'pr', runtimes: JSON.stringify({ include: rows }) };
+  needs.changes.outputs = { automation: String(automation), code: String(code), packages: String(packages), native: String(native) };
+  if (selected) needs.plan.outputs = {
+    profile: full ? 'full' : 'pr',
+    runtimes: JSON.stringify({ include: full ? rows : rows.filter(row => !row.full_only) }),
+  };
   return needs;
 }
 
@@ -42,18 +45,109 @@ test('protected pull_request_target skips CI when trusted admission skips change
   assert.equal(shouldRun({ changes: { result: 'success' } }), true);
 });
 
-test('all eight runtime packages match the planned matrix and depend on the canary', () => {
-  assert.equal(packageJobs.length, 8);
+test('all thirteen runtime packages match the planned matrix and depend on the canary', () => {
+  assert.equal(packageJobs.length, 13);
   assert.deepEqual(declared.filter(job => job.startsWith('package_')).sort(), packageJobs.sort());
   for (const row of rows) {
     const job = `package_${row.id.replaceAll('-', '_')}`;
     const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
     assert.match(body, /^    needs: \[plan, quality[\],]/m);
     assert.ok(body.includes(`runtime-id: ${row.id}\n`));
+    assert.ok(body.includes('ref: ${{ env.SKIPPY_CI_SOURCE_REF }}\n'), job);
     if (row.backend !== 'cpu') assert.ok(body.includes(`package_${row.host.replaceAll('-', '_')}_cpu`));
     assert.equal(body.includes("needs.changes.outputs.packages == 'true'"), prPackages.includes(job));
+    const needsSeparateSmoke = releaseSmokes.includes(job.replace('package_', 'release_smoke_'));
+    assert.equal(body.includes('smoke: artifact'), row.validation === 'artifact' || needsSeparateSmoke);
+    if (row.validation === 'artifact') assert.ok(body.includes(row.runner[0]));
+    if (row.host === 'windows-x86_64' && row.backend === 'cuda') {
+      assert.ok(body.includes(`windows-cuda: '${row.toolkit}'\n`));
+    }
+    if (row.host === 'windows-x86_64' && row.backend === 'rocm') {
+      assert.ok(body.includes(`windows-rocm: '${row.toolkit}'\n`));
+    }
   }
   assert.doesNotThrow(() => gate(results({ full: true })));
+});
+
+test('macOS packaging checks the pinned Rust toolchain before building', () => {
+  const action = readFileSync(join(__dirname, '../actions/ci-package/action.yml'), 'utf8');
+  assert.match(action, /if: runner\.os == 'macOS'\n +shell: bash\n +run: bash scripts\/ci-macos-rust\.sh/);
+  assert.ok(action.indexOf('uses: ./.github/actions/source') < action.indexOf('ci-macos-rust.sh'));
+  assert.ok(action.indexOf('ci-macos-rust.sh') < action.indexOf('just ci-host'));
+});
+
+test('separate device smoke consumes prebuilt artifacts without restoring build caches', () => {
+  const action = readFileSync(join(__dirname, '../actions/ci-smoke/action.yml'), 'utf8');
+  assert.doesNotMatch(action, /uses: \.\/.github\/actions\/cache/);
+  assert.match(action, /inputs\.download-package != 'true'.*env\.SKIPPY_CI_MODEL/);
+  assert.ok(action.indexOf('Check release device scratch storage') < action.indexOf('actions/download-artifact'));
+  assert.match(action, /export TMPDIR="\$RUNNER_TEMP"/);
+  assert.match(action, /device-evidence-\$\{\{ inputs\.runtime_id \}\}/);
+});
+
+test('release publication consumes prepared assets and independently verifies their receipt', () => {
+  const release = readFileSync(join(__dirname, '../workflows/release.yml'), 'utf8');
+  const verify = release.split('\n  verify:\n')[1].split('\n  publish:\n')[0];
+  const publish = release.split('\n  publish:\n')[1].split('\n  publish_crates:\n')[0];
+  assert.match(verify, /just release-prepare-candidate/);
+  assert.match(verify, /name: prepared-release-\$\{\{ needs.admission.outputs.source \}\}/);
+  const download = publish.indexOf('name: prepared-release-');
+  const verification = publish.indexOf('just release-verify dist/release');
+  assert.ok(download >= 0 && download < verification);
+  assert.match(publish.slice(download, verification), /path: dist\/release/);
+  assert.match(publish, /cmp release-receipt\/release.json dist\/release\/release.json/);
+  assert.doesNotMatch(publish, /release-prepare-candidate|release-product-/);
+  assert.match(publish, /ARTIFACT_ONLY: \$\{\{ needs.verify.outputs.artifact_only \}\}/);
+});
+
+test('crates.io publishes from the verified stable tag when enabled', () => {
+  const release = readFileSync(join(__dirname, '../workflows/release.yml'), 'utf8');
+  const verify = release.split('\n  verify:\n')[1].split('\n  publish:\n')[0];
+  const [publish, rest] = release.split('\n  publish_crates:\n');
+  const [crates, following] = rest.split('\n  documentation:\n');
+  assert.match(verify, /if: needs\.admission\.outputs\.prerelease != 'true'\n +run: just release-crates package release-artifacts\/release-product-linux-x86_64-cpu/);
+  assert.doesNotMatch(publish + following, /CARGO_REGISTRY_TOKEN|SKIPPY_CRATES_BOOTSTRAP_TOKEN|crates-io-auth-action/);
+  assert.match(crates, /needs: \[admission, publish\]/);
+  assert.match(crates, /!inputs\.canary && needs\.admission\.outputs\.prerelease != 'true' && vars\.SKIPPY_PUBLISH_CRATES == 'true'/);
+  assert.match(crates, /ref: refs\/tags\/\$\{\{ needs\.admission\.outputs\.tag \}\}/);
+  assert.match(crates, /id-token: write/);
+  assert.match(crates, /just release-crates publish "\$RELEASE_TAG" "\$SOURCE_SHA"/);
+});
+
+test('PR plans exclude full-only targets independently of their smoke evidence', () => {
+  const plan = profile => JSON.parse(execFileSync('just', ['ci-plan'], {
+    cwd: join(__dirname, '../..'), encoding: 'utf8',
+    env: { ...process.env, SKIPPY_CI_PROFILE: profile, GITHUB_OUTPUT: '' },
+  }));
+  const pr = plan('pr').runtimes.include;
+  const full = plan('full').runtimes.include;
+  assert.equal(pr.length, 8);
+  assert.equal(full.length, 13);
+  assert.ok(pr.every(row => row.validation === 'inference'));
+  assert.deepEqual(full.filter(row => !row.full_only), pr);
+  const rocm = full.find(row => row.id === 'linux-x86_64-rocm');
+  assert.equal(rocm.validation, 'inference');
+  assert.equal(rocm.full_only, true);
+  assert.equal(full.filter(row => row.validation === 'artifact').length, 4);
+  assert.ok(!pr.some(row => row.id === rocm.id));
+  const release = results({ full: true, release: true });
+  release.plan.outputs.runtimes = JSON.stringify({ include: full });
+  assert.doesNotThrow(() => gate(release, true));
+  // An eight-package controller must reject a thirteen-package candidate.
+  for (const row of full.filter(row => row.full_only)) {
+    delete release['package_' + row.id.replaceAll('-', '_')];
+  }
+  assert.throws(() => gate(release, true), /active runtime matrix/);
+  const needs = results({ packages: true });
+  assert.equal(JSON.parse(needs.plan.outputs.runtimes).include.length, 8);
+  assert.doesNotThrow(() => gate(needs));
+  for (const job of prPackages) {
+    const invalid = structuredClone(needs);
+    const include = JSON.parse(invalid.plan.outputs.runtimes).include
+      .filter(row => 'package_' + row.id.replaceAll('-', '_') !== job);
+    invalid.plan.outputs.runtimes = JSON.stringify({ include });
+    assert.throws(() => gate(invalid), /active runtime matrix/);
+  }
 });
 
 test('only package-affecting pull requests require the two package and smoke jobs', () => {
@@ -80,7 +174,7 @@ test('automation-only PRs require successful offline checks and skip all builds'
     else needs.automation.result = result;
     assert.throws(() => gate(needs), /automation/);
   }
-  for (const decision of ['automation', 'code', 'packages', 'native', 'hosted_requires_native']) {
+  for (const decision of ['automation', 'code', 'packages', 'native']) {
     const needs = results({ code: false });
     delete needs.changes.outputs[decision];
     assert.throws(() => gate(needs), /Path selection/);
@@ -171,11 +265,12 @@ test('release validation requires the three other GPU smokes', () => {
   assert.throws(() => gate(results(), true), /requires full CI/);
 });
 
-test('hosted CI cannot satisfy a native package requirement', () => {
-  assert.throws(() => gate(results({ hostedRequiresNative: true })), /require native hardware qualification on an isolated runner/);
+test('hosted CI no longer fails merely because native qualification is separate', () => {
+  assert.doesNotThrow(() => gate(results()));
+  assert.doesNotMatch(workflow, /hosted_requires_native/);
 });
 
-test('the repository switch moves every hosted job to Depot', () => {
+test('the repository switch routes Windows CUDA 13 and eligible Linux and macOS jobs to Depot', () => {
   const workflows = ['ci', 'ci-images', 'ci-image-builds', 'docs', 'inference', 'llama-upgrade', 'pr-checks', 'release'];
   for (const name of workflows) {
     const yaml = readFileSync(join(__dirname, '../workflows', name + '.yml'), 'utf8');
@@ -184,8 +279,17 @@ test('the repository switch moves every hosted job to Depot', () => {
     assert.ok(labels.some(label => label.includes('SKIPPY_DEPOT_RUNNERS_ENABLED')), name);
     for (const label of labels) {
       if (name.startsWith('llama-upgrade') && label === '${{ matrix.runner }}') continue;
+      if (name === 'ci' && label === 'windows-2022') continue;
       assert.match(label, /vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true'.*depot-/, name);
     }
+  }
+  assert.doesNotMatch(workflow, /windows_toolchain_probe/);
+  for (const job of packageJobs.filter(job => job.startsWith('package_windows_'))) {
+    const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
+    const expected = job === 'package_windows_x86_64_cuda13'
+      ? "${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-windows-2022-8' || 'windows-2022' }}"
+      : 'windows-2022';
+    assert.equal(body.match(/^    runs-on: (.+)$/m)?.[1], expected, job);
   }
 });
 
@@ -217,11 +321,11 @@ test('the protected image PR bridge routes only the image workflow', () => {
   assert.match(bridge, /uses: \.\/\.github\/workflows\/ci-image-builds\.yml/);
 });
 
-test('host CPU packages install Just on GitHub and Depot runners', () => {
+test('host CPU and Windows backend packages install Just on their own runners', () => {
   for (const row of rows) {
     const job = `package_${row.id.replaceAll('-', '_')}`;
     const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
-    assert.equal(body.includes("setup-host: 'true'"), row.backend === 'cpu', job);
+    assert.equal(body.includes("setup-host: 'true'"), row.backend === 'cpu' || row.host === 'windows-x86_64', job);
   }
   const action = readFileSync(join(__dirname, '../actions/ci-package/action.yml'), 'utf8');
   assert.match(action, /uses: \.\/\.github\/actions\/setup\n      if: inputs.setup-host == 'true'/);
@@ -286,6 +390,7 @@ test('container consumers pin images and Cargo snapshots to the selected digest'
     ['linux_x86_64_cuda12', 'cuda12', 'cuda12:latest'],
     ['linux_x86_64_cuda13', 'cuda13', 'cuda13:latest'],
     ['linux_aarch64_cuda12', 'cuda12_arm', 'cuda12:latest-arm64'],
+    ['linux_x86_64_rocm', 'rocm', 'rocm:latest'],
   ];
   for (const [runtime, digest, tag] of packages) {
     const body = workflow.split(`\n  package_${runtime}:\n`)[1].split(/\n  \w+:\n/)[0];
@@ -342,7 +447,7 @@ test('native CI trusts only an immutable same-repository PR from a writer', asyn
 
 test('main can reuse only a receipt for the exact release dispatch and candidate', async () => {
   const changes = workflow.split('\n  changes:\n')[1].split('\n  plan:\n')[0];
-  const receiptScript = changes.split('          script: |\n')[1].split('\n      - uses:')[0];
+  const receiptScript = changes.split('      - name: Reuse qualification')[1].split('          script: |\n')[1].split('\n      - uses:')[0];
   const evaluateReceipt = new Function('github', 'context', 'core',
     'return (async () => {\n' + receiptScript + '\n})()');
   const sha = 'a'.repeat(40);
@@ -389,4 +494,11 @@ test('main can reuse only a receipt for the exact release dispatch and candidate
   assert.equal(await checked(commit, { ...run, head_branch: 'other' }, receipt), undefined);
   assert.equal(await checked(commit, run, { ...receipt, name: 'other-receipt' }), undefined);
   assert.equal(await checked(commit, run, { ...receipt, expired: true }), undefined);
+});
+
+test('every candidate checkout opts in to fork code only for the approved-fork controller (real #222 context)', () => {
+  const refs = workflow.match(/^ +ref: \$\{\{ env\.SKIPPY_CI_SOURCE_REF \}\}\n.*$/gm);
+  assert.equal(refs.length, 20);
+  for (const ref of refs) assert.match(ref, /\n +allow-unsafe-pr-checkout: \$\{\{ inputs\.approved_fork_pr != '' \}\}$/);
+  assert.equal(workflow.match(/allow-unsafe-pr-checkout:/g).length, refs.length);
 });

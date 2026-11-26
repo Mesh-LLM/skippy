@@ -31,8 +31,9 @@ CI implementation; tagged releases reuse it. Builds have no publication secrets.
 Trusted same-repository PRs may use standard native JY jobs on persistent
 hardware, with fresh source-pinned workspaces and no publication credentials.
 The standard JY job account is accepted; no separate account migration is required.
-Fork and other untrusted PRs require isolated
-ephemeral execution. See the CI skill for admission and cleanup requirements.
+Fork PRs may enter native execution after maintainer workflow approval through
+the protected approved-fork controller; other untrusted work remains isolated.
+See the CI skill for admission and cleanup requirements.
 
 Default tests are offline and use isolated temporary state. Model and hardware
 qualification is explicit and cannot pass through missing-fixture/device skips.
@@ -62,6 +63,11 @@ description re-evaluates the gate. Checkboxes do not replace CI or review.
 - Describe material architecture changes separately from the opening summary.
   Explain ABI, API, wire/hash, model/runtime, or artifact compatibility and any
   required migration when those contracts change.
+- For GitHub Actions workflow changes, include before-and-after Mermaid diagrams
+  for each affected workflow in the PR description. Compare the target branch
+  with the final proposed change, and show triggers, job dependencies, artifact
+  handoffs, and qualification or publication gates that change. Include shared
+  composite action diagrams when their execution flow changes.
 - Record the exact validation commands, relevant configuration/features, and
   observed results. Distinguish completed checks from failed, pending, or
   unrun checks, and give the reason for gaps. Keep validation separate from the
