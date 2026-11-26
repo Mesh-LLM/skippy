@@ -1,4 +1,4 @@
-From bca35e0231e78932c4737e63b9caced19abb6762 Mon Sep 17 00:00:00 2001
+From ea2d499bfaea083c5ed3a38182a5f8c9bdd18e7c Mon Sep 17 00:00:00 2001
 From: Skippy contributors <ci@skippy.local>
 Date: Mon, 23 Nov 2026 13:51:35 +1100
 Subject: [PATCH] Skip clearing reclaimed KV chunks fully overwritten by raw
@@ -12,10 +12,10 @@ Subject: [PATCH] Skip clearing reclaimed KV chunks fully overwritten by raw
  4 files changed, 88 insertions(+), 14 deletions(-)
 
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 3d11e2444..735f3081d 100644
+index cd6340976..86e25d60f 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -569,6 +569,12 @@ if (LLAMA_STAGE_BUILD_TESTS)
+@@ -486,6 +486,12 @@ if (LLAMA_STAGE_BUILD_TESTS)
          endforeach()
      endfunction()
      add_skippy_sampling_history_tests(gemma skippy-model-loader-fixtures dense)
@@ -29,10 +29,10 @@ index 3d11e2444..735f3081d 100644
      add_skippy_sampling_history_tests(granitehybrid skippy-noalloc-granite-hybrid-fixture recurrent)
  
 diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
-index b8c00f857..7d7901d8e 100644
+index a06758f9d..0099261f9 100644
 --- a/src/llama-kv-cache.cpp
 +++ b/src/llama-kv-cache.cpp
-@@ -648,7 +648,7 @@ void llama_kv_cache::release_free_chunks(uint32_t stream) {
+@@ -645,7 +645,7 @@ void llama_kv_cache::release_free_chunks(uint32_t stream) {
      trace.set_value("bytes", (int64_t) bytes);
  }
  
@@ -41,7 +41,7 @@ index b8c00f857..7d7901d8e 100644
      if (!release_pages) {
          return;
      }
-@@ -663,18 +663,35 @@ void llama_kv_cache::reclaim_chunks(uint32_t stream, const std::vector<uint32_t>
+@@ -660,18 +660,35 @@ void llama_kv_cache::reclaim_chunks(uint32_t stream, const std::vector<uint32_t>
      if (chunks.empty()) {
          return;
      }
@@ -83,7 +83,7 @@ index b8c00f857..7d7901d8e 100644
      trace.set_value("bytes", (int64_t) bytes);
  }
  
-@@ -1536,7 +1553,7 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
+@@ -1521,7 +1538,7 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
      return res;
  }
  
@@ -92,7 +92,7 @@ index b8c00f857..7d7901d8e 100644
      // TODO: refactor [TAG_KV_CACHE_SHARE_CELLS]
      if (other) {
          return;
-@@ -1559,7 +1576,7 @@ void llama_kv_cache::apply_ubatch(const slot_info & sinfo, const llama_ubatch &
+@@ -1544,7 +1561,7 @@ void llama_kv_cache::apply_ubatch(const slot_info & sinfo, const llama_ubatch &
          if (top != idxs.end()) {
              clear_cells_through(*top);
          }
@@ -101,7 +101,7 @@ index b8c00f857..7d7901d8e 100644
      }
  
      for (uint32_t s = 0; s < sinfo.n_stream(); ++s) {
-@@ -2332,7 +2349,19 @@ bool llama_kv_cache::stage_import_kv_page(
+@@ -2317,7 +2334,19 @@ bool llama_kv_cache::stage_import_kv_page(
          error = "failed to allocate KV cache cells for imported page";
          return false;
      }
@@ -123,7 +123,7 @@ index b8c00f857..7d7901d8e 100644
      const auto cell_runs = llama_kv_cache_cell_runs(sinfo.idxs[0]);
      const char * src = static_cast<const char *>(input);
 diff --git a/src/llama-kv-cache.h b/src/llama-kv-cache.h
-index ad9257353..f77e14586 100644
+index 6d5eccaf7..1343a605f 100644
 --- a/src/llama-kv-cache.h
 +++ b/src/llama-kv-cache.h
 @@ -304,7 +304,7 @@ public:
@@ -227,5 +227,5 @@ index 1e636d0f3..db4a27bd2 100644
          for (const bool full : {false, true}) {
              if (grammar) {
 -- 
-2.56.0
+2.56.1
 

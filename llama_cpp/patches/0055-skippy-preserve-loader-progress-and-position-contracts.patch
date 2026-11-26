@@ -1,4 +1,4 @@
-From e5c110740185f6e068e56168b74f1bc695be4404 Mon Sep 17 00:00:00 2001
+From 2131355cb1b6f70223bf87f743f610f50c761dbc Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Wed, 25 Nov 2026 11:11:17 +1100
 Subject: [PATCH] skippy: preserve loader, sampling and position contracts
@@ -31,10 +31,10 @@ index fc5dcd389..6f8a93484 100644
  
  enum skippy_kv_page_codec {
 diff --git a/src/llama-context.cpp b/src/llama-context.cpp
-index a742ba235..2cf413d2d 100644
+index 0edcdb5e9..f042c2109 100644
 --- a/src/llama-context.cpp
 +++ b/src/llama-context.cpp
-@@ -2418,11 +2418,6 @@ int llama_context::decode(
+@@ -2440,11 +2440,6 @@ int llama_context::decode(
  
      GGML_ASSERT((cparams.causal_attn || cparams.n_ubatch >= n_tokens_all) && "non-causal attention requires n_ubatch >= n_tokens");
  
@@ -46,7 +46,7 @@ index a742ba235..2cf413d2d 100644
      // TODO: this clear of the buffer can easily be forgotten - need something better
      // sync first so any in-flight async copies into embd_seq complete before it is freed
      if (!embd_seq.empty()) {
-@@ -2432,6 +2427,12 @@ int llama_context::decode(
+@@ -2454,6 +2449,12 @@ int llama_context::decode(
      output_swaps.clear();
      embd_batch_idxs.clear();
  
@@ -59,7 +59,7 @@ index a742ba235..2cf413d2d 100644
      sched_reserve(graph_build_inputs);
  
      bool did_optimize = false;
-@@ -5058,7 +5059,7 @@ llama_context * llama_init_from_model_with_graph_inputs(
+@@ -5088,7 +5089,7 @@ llama_context * llama_init_from_model_with_graph_inputs(
      }
  
      if (params.ctx_type == LLAMA_CONTEXT_TYPE_MTP &&
@@ -69,7 +69,7 @@ index a742ba235..2cf413d2d 100644
          return nullptr;
      }
 diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
-index 692a3bc8f..849362823 100644
+index deed32cbb..4b47eaf96 100644
 --- a/src/llama-kv-cache.cpp
 +++ b/src/llama-kv-cache.cpp
 @@ -2000,6 +2000,18 @@ bool llama_kv_cache::stage_export_kv_page(
@@ -205,7 +205,7 @@ index db4a27bd2..9d465e25f 100644
              if (grammar) {
                  for (const bool lazy : {false, true}) {
 diff --git a/tests/test-batch-alloc.cpp b/tests/test-batch-alloc.cpp
-index 5bf099d6c..e51474720 100644
+index 93f8e4ef5..2636db5ae 100644
 --- a/tests/test-batch-alloc.cpp
 +++ b/tests/test-batch-alloc.cpp
 @@ -926,6 +926,36 @@ static void test_mrope(testing & t) {
@@ -438,5 +438,5 @@ index 22b92c0a8..4145b5b0b 100644
              !check_exact_resident_selection(argv[1]) ||
              !check_multilane_context_capacity(argv[1])) {
 -- 
-2.56.0
+2.56.1
 

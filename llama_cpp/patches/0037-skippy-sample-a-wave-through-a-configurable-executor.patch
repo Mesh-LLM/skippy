@@ -1,4 +1,4 @@
-From f15dfd3c6c64c66f6003bef564f2d94a705e39d1 Mon Sep 17 00:00:00 2001
+From 1d3374f843d1076d856c09118306f2697c3ff406 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Thu, 12 Nov 2026 12:25:11 +1100
 Subject: [PATCH] skippy: sample a wave through a configurable executor
@@ -397,7 +397,7 @@ index 000000000..e33523ea7
 +    std::vector<std::thread> threads; // grown by run() under `turn`
 +};
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 8ceab864c..687681d2a 100644
+index 25b8bab5f..35dda15c4 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
 @@ -195,6 +195,8 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)

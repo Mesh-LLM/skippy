@@ -1,4 +1,4 @@
-From 3a049c732e2c7f39bd8bf9011d64eedad8adf7d6 Mon Sep 17 00:00:00 2001
+From 751c9ca7542d404fddb5d5e6f0dedcc88e5ca7a5 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Sat, 7 Nov 2026 21:27:50 +1100
 Subject: [PATCH] llama: keep a sequence's unified-pool cells in chunks
@@ -20,7 +20,7 @@ Claude-Session: https://claude.ai/code/session_01QA3dWey3RBtBgDz1Tery9Y
  3 files changed, 115 insertions(+)
 
 diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
-index e5580ce9a..243abe424 100644
+index b935162d2..d16641afa 100644
 --- a/src/llama-kv-cache.cpp
 +++ b/src/llama-kv-cache.cpp
 @@ -9,6 +9,7 @@
@@ -129,7 +129,7 @@ index e5580ce9a..243abe424 100644
  
          // for continuous slots, we test that all tokens in the ubatch fit, starting from the current head
 diff --git a/src/llama-kv-cache.h b/src/llama-kv-cache.h
-index 12405f01b..da7d6e961 100644
+index 0d683ec3e..a6da0bf9b 100644
 --- a/src/llama-kv-cache.h
 +++ b/src/llama-kv-cache.h
 @@ -275,6 +275,13 @@ public:

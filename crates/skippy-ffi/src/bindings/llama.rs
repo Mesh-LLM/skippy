@@ -500,6 +500,15 @@ pub struct llama_model_quantize_params {
     pub tt_overrides: *const llama_model_tensor_override,
     pub prune_layers: *const i32,
     pub max_buf_size: usize,
+    pub activations: *const llama_model_imatrix_data,
+    pub statistics: *const llama_model_imatrix_data,
+    pub stats_schema: *const *const ::std::os::raw::c_char,
+    pub target_bpw: f32,
+    pub target_size: i64,
+    pub state_file: *const ::std::os::raw::c_char,
+    pub target_exclude: *const ggml_type,
+    pub abort_callback: ggml_abort_callback,
+    pub abort_callback_data: *mut ::std::os::raw::c_void,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq)]

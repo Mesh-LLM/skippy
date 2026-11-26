@@ -1,4 +1,4 @@
-From 8bda23f7d52b73579457f7fea6ea3e5eaea5466d Mon Sep 17 00:00:00 2001
+From 763a4ca6f43b96baee274f0dd579d40aefc85ad2 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Tue, 10 Nov 2026 17:05:21 +1100
 Subject: [PATCH] skippy: size the unified KV pool and choose its memory
@@ -104,10 +104,10 @@ index 6d9028a18..fc5dcd389 100644
      SKIPPY_KV_PAGE_FLAG_V_TRANSPOSED      = 1 << 0,
      SKIPPY_KV_PAGE_FLAG_HAS_K_IDX         = 1 << 1,
 diff --git a/src/llama-context.cpp b/src/llama-context.cpp
-index 250c2bb26..ed4909fc1 100644
+index fd08598b2..144a3e603 100644
 --- a/src/llama-context.cpp
 +++ b/src/llama-context.cpp
-@@ -411,9 +411,11 @@ llama_context::llama_context(
+@@ -426,9 +426,11 @@ llama_context::llama_context(
      {
          cparams.fused_kv_rows = false;
  
@@ -121,7 +121,7 @@ index 250c2bb26..ed4909fc1 100644
              LLAMA_LOG_INFO("%s: LLAMA_KV_ROWS_DISABLE set, disabling kv_rows\n", __func__);
              cparams.auto_fkvr = false;
 diff --git a/src/llama-graph.h b/src/llama-graph.h
-index 4ce46d522..dc816099e 100644
+index 9c68abc0c..b6833e580 100644
 --- a/src/llama-graph.h
 +++ b/src/llama-graph.h
 @@ -101,6 +101,9 @@ struct skippy_graph_build_inputs {

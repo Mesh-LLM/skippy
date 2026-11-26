@@ -1,4 +1,4 @@
-From ee45a5a07c6f1ed4fdffdb02dc40e7a756b1d711 Mon Sep 17 00:00:00 2001
+From a8df076a1f54f911bf1e8503d3c3f2766d7eeae3 Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Wed, 25 Nov 2026 07:22:58 +1100
 Subject: [PATCH] skippy: track upstream in-place state fill effects
@@ -121,5 +121,5 @@ index 21f659cbd..ec3878c1a 100644
      if (!result) { result = check_raw_embedding_checkpoint(); }
      if (!result) { result = check_semantic_identities(); }
 -- 
-2.56.0
+2.56.1
 

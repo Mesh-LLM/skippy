@@ -1,4 +1,4 @@
-From 78d3fa59de260a92ab27077aec9322d99aa62ff4 Mon Sep 17 00:00:00 2001
+From 9dcf436aae694fbafdc9cf1e5f173f3af77df181 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Tue, 10 Nov 2026 21:05:00 +1100
 Subject: [PATCH] skippy: open models without rollback snapshots unless a plan
@@ -39,8 +39,8 @@ Claude-Session: https://claude.ai/code/session_01QA3dWey3RBtBgDz1Tery9Y
  src/skippy/execution-single.cpp              |  11 +
  src/skippy/model_loading.cpp                 |  14 +-
  src/skippy/tests/backend_sample_capacity.cpp | 251 ++++++++++++++
- src/skippy/tests/recurrent_retention.cpp     | 326 +++++++++++++++++++
- 6 files changed, 628 insertions(+), 5 deletions(-)
+ src/skippy/tests/recurrent_retention.cpp     | 338 +++++++++++++++++++
+ 6 files changed, 640 insertions(+), 5 deletions(-)
  create mode 100644 src/skippy/tests/backend_sample_capacity.cpp
  create mode 100644 src/skippy/tests/recurrent_retention.cpp
 
@@ -427,10 +427,10 @@ index 000000000..b234872a7
 +}
 diff --git a/src/skippy/tests/recurrent_retention.cpp b/src/skippy/tests/recurrent_retention.cpp
 new file mode 100644
-index 000000000..8eacda334
+index 000000000..f78090f2c
 --- /dev/null
 +++ b/src/skippy/tests/recurrent_retention.cpp
-@@ -0,0 +1,326 @@
+@@ -0,0 +1,338 @@
 +// Explicit snapshot retention must preserve outputs and cache continuation.
 +#include "skippy.h"
 +#include "../runtime_types.h"
@@ -539,12 +539,15 @@ index 000000000..8eacda334
 +    size_t tensors = 0;
 +    for (auto * tensor : memory->r_l) {
 +        if (!tensor) { continue; }
-+        CHECK(tensor->ne[1] == static_cast<int64_t>(memory->size) * (1 + requested));
++        // rs_replay defers the commit into widened pending rows, so it keeps
++        // a single row group instead of (1 + requested) snapshot planes
++        const int64_t groups = memory->rs_replay ? 1 : 1 + requested;
++        CHECK(tensor->ne[1] == static_cast<int64_t>(memory->size) * groups);
 +        ++tensors;
 +    }
 +    CHECK(tensors > 0);
-+    std::fprintf(stderr, "RETENTION depth=%u snapshot_groups=%u tensors=%zu\n",
-+            memory->n_rs_seq, 1 + memory->n_rs_seq, tensors);
++    std::fprintf(stderr, "RETENTION depth=%u row_groups=%u tensors=%zu\n",
++            memory->n_rs_seq, memory->rs_replay ? 1u : 1u + memory->n_rs_seq, tensors);
 +}
 +
 +void prefill(skippy_session * session, const std::vector<llama_token> & tokens) {
@@ -697,6 +700,15 @@ index 000000000..8eacda334
 +}
 +
 +void cross_mode_restore(skippy_model * source_model, skippy_model * target_model) {
++    auto * source_memory = skippy_memory_recurrent_adapter(source_model->ctx->get_memory());
++    auto * target_memory = skippy_memory_recurrent_adapter(target_model->ctx->get_memory());
++    // rs_replay widened the recurrent rows and added per-cell pending counts,
++    // so recurrent state saved under one layout cannot import into the other
++    if ((source_memory == nullptr) != (target_memory == nullptr) ||
++            (source_memory != nullptr && source_memory->rs_replay != target_memory->rs_replay)) {
++        std::fprintf(stderr, "CROSS_MODE layouts differ, skipped\n");
++        return;
++    }
 +    Session source(source_model);
 +    prefill(source.value, prefix);
 +    const Snapshot saved(source.value);

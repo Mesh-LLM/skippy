@@ -1,4 +1,4 @@
-From 1b400319d30de775853bae607351a383f2ee046b Mon Sep 17 00:00:00 2001
+From bdecd9d73a4f04ba0b5ca0f8f9942f09aab7632c Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Wed, 25 Nov 2026 07:49:52 +1100
 Subject: [PATCH] cache: restore composite attention occupancy reporting
@@ -8,7 +8,7 @@ Subject: [PATCH] cache: restore composite attention occupancy reporting
  1 file changed, 26 insertions(+)
 
 diff --git a/src/skippy/resident_prefix.cpp b/src/skippy/resident_prefix.cpp
-index bbd592fe8..ebe660b64 100644
+index 317c96b46..57b1d78ac 100644
 --- a/src/skippy/resident_prefix.cpp
 +++ b/src/skippy/resident_prefix.cpp
 @@ -7,6 +7,10 @@
@@ -22,7 +22,7 @@ index bbd592fe8..ebe660b64 100644
  #include "llama-memory-hybrid.h"
  #include "llama-memory-hybrid-iswa.h"
  #include "llama-memory-recurrent.h"
-@@ -181,6 +185,28 @@ skippy_status native_error(skippy_error ** error, const std::exception & excepti
+@@ -180,6 +184,28 @@ skippy_status native_error(skippy_error ** error, const std::exception & excepti
  
  bool used_attention_cells(llama_memory_t memory, uint64_t * cells) {
      if (!memory) { *cells = 0; return true; }
@@ -52,5 +52,5 @@ index bbd592fe8..ebe660b64 100644
          *cells = kv->get_used_cells();
          return true;
 -- 
-2.56.0
+2.56.1
 

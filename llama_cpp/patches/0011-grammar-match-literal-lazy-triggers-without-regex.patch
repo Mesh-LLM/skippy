@@ -1,4 +1,4 @@
-From ce1bcb22150e758399d65e0e16a6eff6041f9174 Mon Sep 17 00:00:00 2001
+From 3cf3c99e3b8dacd2f451d8402c5abbab4f3fc658 Mon Sep 17 00:00:00 2001
 From: Mesh-LLM CI <ci@mesh-llm.local>
 Date: Wed, 28 Oct 2026 20:57:15 +1300
 Subject: [PATCH] grammar: match literal lazy triggers without regex
@@ -32,7 +32,7 @@ index 21a018c8c..40eca5a1e 100644
          // get from the first matched capturing group to the end of the string
          size_t start = std::string::npos;
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 4733ae088..90df03839 100644
+index 742ca1737..c1faa202f 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
 @@ -196,6 +196,7 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)

@@ -1,4 +1,4 @@
-From f5a21adc54e8e68ffff2285039d7df38d49e3cc9 Mon Sep 17 00:00:00 2001
+From 2db82ad2f04d00bdcdd85740a83562e6f177d1e7 Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Wed, 25 Nov 2026 08:04:02 +1100
 Subject: [PATCH] muse-glimmer: retain token-aware continuation and turn
@@ -49,5 +49,5 @@ index f31845702..85e67fad9 100644
          if (has_response_format) {
              auto response_json   = p.content(p.schema(p.json(), "response-format-schema", inputs.json_schema));
 -- 
-2.56.0
+2.56.1
 

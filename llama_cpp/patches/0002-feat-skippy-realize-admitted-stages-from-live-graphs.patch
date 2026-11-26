@@ -1,4 +1,4 @@
-From 6a65636ceb08a45201339020d2133b19e99dde49 Mon Sep 17 00:00:00 2001
+From 80217d28206f5240e9d0697a374638f5fef7f912 Mon Sep 17 00:00:00 2001
 From: James Dumay <james@generalinference.xyz>
 Date: Tue, 13 Oct 2026 22:06:42 +1100
 Subject: [PATCH] feat(skippy): realize admitted stages from live graphs
@@ -293,7 +293,7 @@ index b009d460d..2cf5cc7fc 100644
      const llama_model * model = llama_get_model(ctx);
      const llama_vocab * vocab = llama_model_get_vocab(model);
 diff --git a/common/common.h b/common/common.h
-index a8e89ed2d..9e856f143 100644
+index 22724e817..4981afa92 100644
 --- a/common/common.h
 +++ b/common/common.h
 @@ -43,7 +43,7 @@
@@ -314,7 +314,7 @@ index a8e89ed2d..9e856f143 100644
  };
  
  struct common_params_model {
-@@ -841,7 +841,7 @@ std::string string_repeat(const std::string & str, size_t n);
+@@ -842,7 +842,7 @@ std::string string_repeat(const std::string & str, size_t n);
  
  void string_replace_all(std::string & s, const std::string & search, const std::string & replace);
  
@@ -323,7 +323,7 @@ index a8e89ed2d..9e856f143 100644
  
  template<class T>
  static std::vector<T> string_split(const std::string & str, char delim) {
-@@ -969,11 +969,11 @@ void fs_write_atomic(const std::filesystem::path & path, const std::string & dat
+@@ -970,11 +970,11 @@ void fs_write_atomic(const std::filesystem::path & path, const std::string & dat
  //
  
  // Auto-detect if colors can be enabled based on terminal and environment
@@ -338,7 +338,7 @@ index a8e89ed2d..9e856f143 100644
  
  //
  // Model utils
-@@ -1205,13 +1205,13 @@ bool common_replay_last_token(struct llama_context * ctx, llama_token last_token
+@@ -1206,13 +1206,13 @@ bool common_replay_last_token(struct llama_context * ctx, llama_token last_token
  
  // tokenizes a string into a vector of tokens
  // should work similar to Python's `tokenizer.encode`
@@ -354,7 +354,7 @@ index a8e89ed2d..9e856f143 100644
      const struct llama_vocab * vocab,
             const std::string & text,
                          bool   add_special,
-@@ -1219,12 +1219,12 @@ std::vector<llama_token> common_tokenize(
+@@ -1220,12 +1220,12 @@ std::vector<llama_token> common_tokenize(
  
  // tokenizes a token into a piece, optionally renders special/control tokens
  // should work similar to Python's `tokenizer.id_to_piece`
@@ -1430,7 +1430,7 @@ index 000000000..7f5064cb5
 +}
 +
 diff --git a/src/llama-batch.cpp b/src/llama-batch.cpp
-index ca3e308f4..103b2ed6f 100644
+index 3391cb49e..cf1dfe8c6 100644
 --- a/src/llama-batch.cpp
 +++ b/src/llama-batch.cpp
 @@ -28,7 +28,8 @@ llama_batch_allocr::llama_batch_allocr(uint32_t n_pos_per_embd, bool allow_mixed
@@ -1470,7 +1470,7 @@ index ca3e308f4..103b2ed6f 100644
                      }
                  }
              }
-@@ -1539,7 +1540,7 @@ bool llama_batch_ext_set_decision_group(llama_batch_ext * batch, int32_t idx, in
+@@ -1543,7 +1544,7 @@ bool llama_batch_ext_set_decision_group(llama_batch_ext * batch, int32_t idx, in
  
  // llama_batch_compat
  
@@ -1479,7 +1479,7 @@ index ca3e308f4..103b2ed6f 100644
      llama_batch_ext * batch_ext = &dst;
  
      if (n_embd_row == 0) {
-@@ -1572,7 +1573,7 @@ void llama_batch_compat::init(llama_batch_ext & dst, const llama_batch & batch_i
+@@ -1576,7 +1577,7 @@ void llama_batch_compat::init(llama_batch_ext & dst, const llama_batch & batch_i
  
          // position(s)
          if (batch_inp.pos) {
@@ -1488,7 +1488,7 @@ index ca3e308f4..103b2ed6f 100644
                  // token batch: one position per token
                  t.pos[0] = batch_inp.pos[i];
              } else {
-@@ -1615,9 +1616,9 @@ void llama_batch_compat::init(llama_batch_ext & dst, const llama_batch & batch_i
+@@ -1619,9 +1620,9 @@ void llama_batch_compat::init(llama_batch_ext & dst, const llama_batch & batch_i
      }
  }
  
@@ -1528,10 +1528,10 @@ index e6f4be6a2..9b4c5a7dc 100644
 +    static void init(llama_batch_ext & batch_ext, const llama_batch & batch_inp, size_t n_embd_row = 0, bool activation_positions = false);
  };
 diff --git a/src/llama-context.cpp b/src/llama-context.cpp
-index 07a0dbafc..11e837caf 100644
+index aa0b93045..d73188ffb 100644
 --- a/src/llama-context.cpp
 +++ b/src/llama-context.cpp
-@@ -2205,7 +2205,9 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
+@@ -2214,7 +2214,9 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
          }
      }
  
@@ -1543,10 +1543,10 @@ index 07a0dbafc..11e837caf 100644
          return -1;
      }
 diff --git a/src/llama-memory-hybrid-idx.cpp b/src/llama-memory-hybrid-idx.cpp
-index 0199c734e..68f8f4de8 100644
+index 3866d5980..a7f6f9d84 100644
 --- a/src/llama-memory-hybrid-idx.cpp
 +++ b/src/llama-memory-hybrid-idx.cpp
-@@ -194,6 +194,16 @@ bool llama_memory_hybrid_idx::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_po
+@@ -195,6 +195,16 @@ bool llama_memory_hybrid_idx::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_po
      return get_mem_attn()->seq_rm(seq_id, p0, p1);
  }
  
@@ -1564,10 +1564,10 @@ index 0199c734e..68f8f4de8 100644
      // only whole sequences are copied: the recurrent state ignores the range, and a shared cell holds a single pool grouping
      GGML_ASSERT(p0 <= 0 && p1 < 0 && "partial seq_cp is not supported");
 diff --git a/src/llama-memory-hybrid-idx.h b/src/llama-memory-hybrid-idx.h
-index 85a2a91ec..b5f4413cb 100644
+index ebd082ab5..d32ea0c7b 100644
 --- a/src/llama-memory-hybrid-idx.h
 +++ b/src/llama-memory-hybrid-idx.h
-@@ -65,6 +65,10 @@ public:
+@@ -66,6 +66,10 @@ public:
      void seq_add (llama_seq_id seq_id,                              llama_pos p0, llama_pos p1, llama_pos shift) override;
      void seq_div (llama_seq_id seq_id,                              llama_pos p0, llama_pos p1, int d) override;
  
@@ -17927,7 +17927,7 @@ index 000000000..cc9279e7e
 +// attached from an earlier chat request.
 +void skippy_prepare_non_chat_workload(skippy_session * session);
 diff --git a/tests/test-batch-alloc.cpp b/tests/test-batch-alloc.cpp
-index 42c4c5249..5bf099d6c 100644
+index 49e2b0755..93f8e4ef5 100644
 --- a/tests/test-batch-alloc.cpp
 +++ b/tests/test-batch-alloc.cpp
 @@ -926,6 +926,27 @@ static void test_mrope(testing & t) {

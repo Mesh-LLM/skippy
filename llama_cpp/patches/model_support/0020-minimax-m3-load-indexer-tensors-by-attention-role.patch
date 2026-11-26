@@ -1,4 +1,4 @@
-From 604c5f6f4d23f2ca2e806a3d498f7fe8095ef6a2 Mon Sep 17 00:00:00 2001
+From bec53d97df709f183fb1b72bdc91d30961421988 Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Wed, 25 Nov 2026 07:49:52 +1100
 Subject: [PATCH] minimax-m3: load indexer tensors by attention role
@@ -8,7 +8,7 @@ Subject: [PATCH] minimax-m3: load indexer tensors by attention role
  1 file changed, 7 insertions(+), 8 deletions(-)
 
 diff --git a/src/models/minimax-m3.cpp b/src/models/minimax-m3.cpp
-index e50619e0e..84fdf3b3c 100644
+index 313c8301d..eca20f30a 100644
 --- a/src/models/minimax-m3.cpp
 +++ b/src/models/minimax-m3.cpp
 @@ -98,14 +98,13 @@ void llama_model_minimax_m3::load_arch_tensors(llama_model_loader &) {
@@ -34,5 +34,5 @@ index e50619e0e..84fdf3b3c 100644
      }
  }
 -- 
-2.56.0
+2.56.1
 

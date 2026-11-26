@@ -1,4 +1,4 @@
-From 009f5c7b3f032eda5ae6d778298dca13de288506 Mon Sep 17 00:00:00 2001
+From a6852ef879dabce3ed96112d1af31a7bf6a0a4de Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Sat, 7 Nov 2026 19:12:33 +1100
 Subject: [PATCH] skippy: trace K/V row-list runs
@@ -38,7 +38,7 @@ index e17e72c31..c6675d944 100644
              skippy/graph_dependencies.cpp
              skippy/graph_identity.cpp
 diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
-index f66544a4a..e5580ce9a 100644
+index c6a0c792a..b935162d2 100644
 --- a/src/llama-kv-cache.cpp
 +++ b/src/llama-kv-cache.cpp
 @@ -1,4 +1,5 @@

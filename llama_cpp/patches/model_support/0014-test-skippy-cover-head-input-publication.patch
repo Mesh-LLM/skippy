@@ -1,4 +1,4 @@
-From 94f5f2eedf126a11b9bb6bed8ed87edfda5cf49a Mon Sep 17 00:00:00 2001
+From 756649f29efb149e39756bb9e41169f20186cc80 Mon Sep 17 00:00:00 2001
 From: Mesh-LLM CI <ci@mesh-llm.local>
 Date: Mon, 9 Nov 2026 09:20:42 +1100
 Subject: [PATCH] test(skippy): cover head-input publication and stage capture
@@ -15,10 +15,10 @@ case runs in native-rollback mode.
  3 files changed, 134 insertions(+), 17 deletions(-)
 
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index e76959a26..316c866f6 100644
+index 761a427f5..ac5698b88 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -521,6 +521,9 @@ if (LLAMA_STAGE_BUILD_TESTS)
+@@ -529,6 +529,9 @@ if (LLAMA_STAGE_BUILD_TESTS)
      # lfm2's fixture slides its attention window, so it checkpoints every window.
      add_skippy_verify_rollback_test(lfm2 lfm2-dense.gguf sliding-window)
      add_skippy_verify_rollback_test(glm5-next glm5-next-moe.gguf)
@@ -28,7 +28,7 @@ index e76959a26..316c866f6 100644
      add_executable(skippy-backend-sample-capacity skippy/tests/backend_sample_capacity.cpp)
      target_include_directories(skippy-backend-sample-capacity PRIVATE .)
      target_compile_features(skippy-backend-sample-capacity PRIVATE cxx_std_17)
-@@ -834,6 +837,19 @@ if (LLAMA_STAGE_BUILD_TESTS)
+@@ -848,6 +851,19 @@ if (LLAMA_STAGE_BUILD_TESTS)
      set_tests_properties(skippy_noalloc_graph_planning_recurrent_rollback PROPERTIES
          FIXTURES_REQUIRED skippy-noalloc-nemotron-h-fixture)
  
@@ -49,7 +49,7 @@ index e76959a26..316c866f6 100644
          NAME skippy_generate_mamba2_fixture
          COMMAND skippy-model-fixture-generator
 diff --git a/src/skippy/tests/graph_build_inputs.cpp b/src/skippy/tests/graph_build_inputs.cpp
-index afc8c77b3..e32e1e0de 100644
+index 5fbf171f8..628ef1174 100644
 --- a/src/skippy/tests/graph_build_inputs.cpp
 +++ b/src/skippy/tests/graph_build_inputs.cpp
 @@ -13,7 +13,9 @@ static const skippy::log_gate::installer skippy_log_gate_installer{};
@@ -70,7 +70,7 @@ index afc8c77b3..e32e1e0de 100644
  #include <thread>
  #include <utility>
  #include <vector>
-@@ -903,8 +906,8 @@ static int check_execution_profile_residency() {
+@@ -904,8 +907,8 @@ static int check_execution_profile_residency() {
  
  // Speculative drafters capture the residual entering each trunk layer. Every
  // layer must publish a finite input row per token, and distinct layers must
@@ -81,7 +81,7 @@ index afc8c77b3..e32e1e0de 100644
      llama_model_params model_params = llama_model_default_params();
      model_params.n_gpu_layers = 0;
      model_params.load_mtp = true; // the fixture carries a NextN block beside the trunk
-@@ -917,14 +920,15 @@ static int check_layer_inputs(const char * model_path) {
+@@ -918,14 +921,15 @@ static int check_layer_inputs(const char * model_path) {
      }
      const int32_t n_layer = llama_model_n_layer(model);
      const int32_t n_embd = llama_model_n_embd(model);
@@ -99,7 +99,7 @@ index afc8c77b3..e32e1e0de 100644
          const float * data = llama_get_embeddings_layer_inp(ctx, il);
          if (data == nullptr) {
              std::fprintf(stderr, "layer %d input was not captured\n", il);
-@@ -956,24 +960,90 @@ static int check_layer_inputs(const char * model_path) {
+@@ -957,24 +961,90 @@ static int check_layer_inputs(const char * model_path) {
      return rc;
  }
  
@@ -198,7 +198,7 @@ index afc8c77b3..e32e1e0de 100644
      int rc = 0;
      for (const auto & cuts : splits) {
          for (size_t stage = 0; rc == 0 && stage + 1 < cuts.size(); ++stage) {
-@@ -992,7 +1062,8 @@ static int check_stage_layer_inputs(const char * model_path) {
+@@ -993,7 +1063,8 @@ static int check_stage_layer_inputs(const char * model_path) {
              }
              std::vector<int32_t> captured;
              for (int32_t layer : targets) {
@@ -208,7 +208,7 @@ index afc8c77b3..e32e1e0de 100644
                      captured.push_back(layer);
                      context->set_embeddings_layer_inp(layer, true);
                  }
-@@ -1033,15 +1104,22 @@ int main(int argc, char ** argv) {
+@@ -1034,15 +1105,22 @@ int main(int argc, char ** argv) {
      if (argc == 2 && std::strcmp(argv[1], "--input-width") == 0) {
          return check_decode_input_width();
      }

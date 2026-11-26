@@ -1,4 +1,4 @@
-From 531ea089580a7d6cbb72f4f1c8d0d5004b8c425d Mon Sep 17 00:00:00 2001
+From c860ad89a65d326cdcf51bf048b2cd34cf0f50b3 Mon Sep 17 00:00:00 2001
 From: Daniel Winter <danielwinterw@gmail.com>
 Date: Thu, 29 Oct 2026 21:32:31 +1100
 Subject: [PATCH] skippy: roll back staged verify windows in place
@@ -62,10 +62,10 @@ rewind must be refused as unsupported.
  src/skippy/state.cpp                          |  65 ++-
  src/skippy/tests/sampling_history.cpp         |  49 +++
  src/skippy/tests/verify_rollback.cpp          | 392 ++++++++++++++++++
- src/skippy/verify_window.cpp                  | 213 ++++++++++
+ src/skippy/verify_window.cpp                  | 229 ++++++++++
  src/skippy/verify_window.h                    |  38 ++
  ...st-skippy-verify-checkpoint-retirement.cpp |   9 +
- 16 files changed, 937 insertions(+), 79 deletions(-)
+ 16 files changed, 953 insertions(+), 79 deletions(-)
  create mode 100644 src/skippy/tests/verify_rollback.cpp
  create mode 100644 src/skippy/verify_window.cpp
  create mode 100644 src/skippy/verify_window.h
@@ -1181,10 +1181,10 @@ index 000000000..f479a8e4e
 +}
 diff --git a/src/skippy/verify_window.cpp b/src/skippy/verify_window.cpp
 new file mode 100644
-index 000000000..d5d27a1b3
+index 000000000..c578edf61
 --- /dev/null
 +++ b/src/skippy/verify_window.cpp
-@@ -0,0 +1,213 @@
+@@ -0,0 +1,229 @@
 +// Verify-window bookkeeping: the window that rolls back in place, the host
 +// checkpoints that replace it when it cannot, and the buffers they reuse.
 +#include "skippy.h"
@@ -1347,14 +1347,26 @@ index 000000000..d5d27a1b3
 +        return SKIPPY_STATUS_RUNTIME_ERROR;
 +    }
 +    llama_memory_recurrent::mem_cell * tail = &recurrent->cells[static_cast<size_t>(tail_id)];
++    // rs_replay defers the commit into the cell's pending tokens instead of
++    // writing snapshot planes, so the rollback depth is capped by that count.
++    if (recurrent->rs_replay && rollback > tail->rs_pend) {
++        skippy_set_error(out_error, SKIPPY_STATUS_RUNTIME_ERROR, "verify-window rollback snapshot is unavailable");
++        return SKIPPY_STATUS_RUNTIME_ERROR;
++    }
 +
 +    skippy_verify_checkpoint checkpoint = skippy_acquire_verify_checkpoint(session);
 +    session->ctx->synchronize();
-+    // Serialize the sequence as if it had rolled back: the state writer
-+    // reads the snapshot group named by rs_idx and the tail position.
++    // Serialize the sequence as if it had rolled back: the state writer reads
++    // the snapshot group named by rs_idx, or the reduced pending count under
++    // rs_replay, together with the tail position.
 +    const llama_pos tail_pos = tail->pos;
++    const uint32_t tail_pend = tail->rs_pend;
 +    tail->pos = window.token_start;
-+    recurrent->rs_idx[seq] = rollback;
++    if (recurrent->rs_replay) {
++        tail->rs_pend = tail_pend - rollback;
++    } else {
++        recurrent->rs_idx[seq] = rollback;
++    }
 +    enum skippy_status status = SKIPPY_STATUS_OK;
 +    try {
 +        session->verify_checkpoints.reserve(session->verify_checkpoints.size() + 1);
@@ -1364,7 +1376,11 @@ index 000000000..d5d27a1b3
 +        status = SKIPPY_STATUS_RUNTIME_ERROR;
 +    }
 +    tail->pos = tail_pos;
-+    recurrent->rs_idx[seq] = 0;
++    if (recurrent->rs_replay) {
++        tail->rs_pend = tail_pend;
++    } else {
++        recurrent->rs_idx[seq] = 0;
++    }
 +    if (status != SKIPPY_STATUS_OK) {
 +        skippy_recycle_verify_checkpoint(session, std::move(checkpoint));
 +        return status;

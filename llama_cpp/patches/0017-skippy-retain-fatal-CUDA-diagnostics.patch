@@ -1,4 +1,4 @@
-From c576cca1db49f4316790078452f820a04e1fbe88 Mon Sep 17 00:00:00 2001
+From 32014527b202a369520951f192eb39fd460fdd9b Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Tue, 17 Nov 2026 21:32:09 +1100
 Subject: [PATCH] skippy: retain fatal CUDA diagnostics during quiet device
@@ -9,7 +9,7 @@ Subject: [PATCH] skippy: retain fatal CUDA diagnostics during quiet device
  1 file changed, 4 insertions(+), 1 deletion(-)
 
 diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
-index 1dd8e68e2..84d1e0f3d 100644
+index aa6fb297f..5086bcde6 100644
 --- a/ggml/src/ggml-cuda/ggml-cuda.cu
 +++ b/ggml/src/ggml-cuda/ggml-cuda.cu
 @@ -118,7 +118,10 @@ void ggml_cuda_error(const char * stmt, const char * func, const char * file, in

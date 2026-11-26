@@ -1,4 +1,4 @@
-From f5c4e73dd91f6395df1ed23e45658d157caadcee Mon Sep 17 00:00:00 2001
+From b5b8bbe0f3dd1c5489a2f7a319138ffc1b29760a Mon Sep 17 00:00:00 2001
 From: Mesh-LLM CI <ci@mesh-llm.local>
 Date: Fri, 6 Nov 2026 10:38:07 -0800
 Subject: [PATCH] models: expose Metis16 delegated pass layers
@@ -200,10 +200,10 @@ index 0a57a6ab0..137cee74d 100644
          // end of the pass: one more memory read, the depth head, and an entry recording where the pass left the token
          ggml_tensor * retrieved = mem_read(model, &x);
 diff --git a/src/models/models.h b/src/models/models.h
-index 25c1e40f4..de72e8985 100644
+index 90415fc94..aed5b89cd 100644
 --- a/src/models/models.h
 +++ b/src/models/models.h
-@@ -1932,6 +1932,9 @@ struct llama_model_metis16 : public llama_model_base {
+@@ -1976,6 +1976,9 @@ struct llama_model_metis16 : public llama_model_base {
  
      struct graph : public llm_build_mamba_base {
          graph(const llm_graph_params & params);

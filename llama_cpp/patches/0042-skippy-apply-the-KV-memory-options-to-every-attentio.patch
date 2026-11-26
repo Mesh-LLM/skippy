@@ -1,4 +1,4 @@
-From 541192d5cd2381a4c38bc2e522e462bb5c848ee5 Mon Sep 17 00:00:00 2001
+From 1cec01daf71acdc9aea5cc904614f538169d2036 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Wed, 18 Nov 2026 20:05:54 +1100
 Subject: [PATCH] skippy: apply the KV memory options to every attention cache

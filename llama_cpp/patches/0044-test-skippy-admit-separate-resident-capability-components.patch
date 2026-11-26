@@ -1,4 +1,4 @@
-From 00900834f6b76d11f2bbbea6f1d2bfe48af4df63 Mon Sep 17 00:00:00 2001
+From 86f2dd22077d77a670b378f66a7c7854199ec0bf Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Fri, 20 Nov 2026 08:08:55 +1100
 Subject: [PATCH] test-skippy: admit separate resident capability components

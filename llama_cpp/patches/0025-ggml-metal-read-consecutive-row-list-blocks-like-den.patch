@@ -1,4 +1,4 @@
-From d6e05f1b594bbd091a2e9bed90bc2311f58fc7ec Mon Sep 17 00:00:00 2001
+From 0b50da72c8370645c621c997d368d0996daeb38e Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Sat, 7 Nov 2026 21:19:15 +1100
 Subject: [PATCH] ggml-metal: read consecutive row-list blocks like dense
@@ -22,10 +22,10 @@ Claude-Session: https://claude.ai/code/session_01QA3dWey3RBtBgDz1Tery9Y
  1 file changed, 24 insertions(+), 9 deletions(-)
 
 diff --git a/ggml/src/ggml-metal/kernels/fa_vec_common.metal b/ggml/src/ggml-metal/kernels/fa_vec_common.metal
-index 1a96c6f7e..92aa90f8a 100644
+index cf37e4924..a67106b83 100644
 --- a/ggml/src/ggml-metal/kernels/fa_vec_common.metal
 +++ b/ggml/src/ggml-metal/kernels/fa_vec_common.metal
-@@ -232,8 +232,23 @@ kernel void kernel_flash_attn_ext_vec(
+@@ -237,8 +237,23 @@ kernel void kernel_flash_attn_ext_vec(
                  ic = 0;
              }
  
@@ -51,7 +51,7 @@ index 1a96c6f7e..92aa90f8a 100644
                  FOR_UNROLL (short ii = 0; ii < C/NW; ++ii) {
                      const short i = ii*NW + tiisg;
  
-@@ -295,8 +310,8 @@ kernel void kernel_flash_attn_ext_vec(
+@@ -300,8 +315,8 @@ kernel void kernel_flash_attn_ext_vec(
              {
                  device      const k4_t * pk4 = nullptr;
  
@@ -62,7 +62,7 @@ index 1a96c6f7e..92aa90f8a 100644
  
                      pk4 += ty*NS10/4 + tx;
                  }
-@@ -310,7 +325,7 @@ kernel void kernel_flash_attn_ext_vec(
+@@ -315,7 +330,7 @@ kernel void kernel_flash_attn_ext_vec(
  
                  // each simdgroup processes Q queries and NE (NW/NL) cache elements
                  FOR_UNROLL (short cc = 0; cc < C/NE; ++cc) {
@@ -71,7 +71,7 @@ index 1a96c6f7e..92aa90f8a 100644
                          // the KV rows are gathered from the index list; -1 entries are padding
                          const int i11 = spidx[NE*cc + ty];
                          if (i11 >= 0) {
-@@ -346,7 +361,7 @@ kernel void kernel_flash_attn_ext_vec(
+@@ -351,7 +366,7 @@ kernel void kernel_flash_attn_ext_vec(
                              }
                          }
                      } else {
@@ -80,7 +80,7 @@ index 1a96c6f7e..92aa90f8a 100644
  
                          k4_t mk;
  
-@@ -453,7 +468,7 @@ kernel void kernel_flash_attn_ext_vec(
+@@ -458,7 +473,7 @@ kernel void kernel_flash_attn_ext_vec(
                      }
                  }
  
@@ -89,7 +89,7 @@ index 1a96c6f7e..92aa90f8a 100644
                      FOR_UNROLL (short cc = 0; cc < C/NE; ++cc) {
                          // the KV rows are gathered from the index list; -1 entries are padding
                          const int i11 = spidx[NE*cc + ty];
-@@ -487,7 +502,7 @@ kernel void kernel_flash_attn_ext_vec(
+@@ -492,7 +507,7 @@ kernel void kernel_flash_attn_ext_vec(
                          }
                      }
                  } else if (is_same<vd4_t, v4_t>::value) {
@@ -98,7 +98,7 @@ index 1a96c6f7e..92aa90f8a 100644
  
                      pv4 += ty*NS20/4 + tx;
  
-@@ -501,7 +516,7 @@ kernel void kernel_flash_attn_ext_vec(
+@@ -506,7 +521,7 @@ kernel void kernel_flash_attn_ext_vec(
                      }
                  } else {
                      FOR_UNROLL (short cc = 0; cc < C/NE; ++cc) {

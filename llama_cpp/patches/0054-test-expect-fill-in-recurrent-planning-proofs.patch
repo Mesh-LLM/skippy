@@ -1,4 +1,4 @@
-From d7ed180f07fde50293ec7007dc2cf4f4ac5b1301 Mon Sep 17 00:00:00 2001
+From 26bb46bc23807710f57c27b51c4640a84dd8a5e4 Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Wed, 25 Nov 2026 08:16:42 +1100
 Subject: [PATCH] test: expect native fill operations in recurrent planning
@@ -45,5 +45,5 @@ index 720ba457a..9dbebc7b3 100644
                  if (node->op != expect) {
                      error = "delta-net state write at layer " + std::to_string(il) +
 -- 
-2.56.0
+2.56.1
 

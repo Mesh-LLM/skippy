@@ -1,4 +1,4 @@
-From 4fccabddb4a3c9c2330b1af650ca89c26151b76f Mon Sep 17 00:00:00 2001
+From f8442155749d16f1d8391a989b3a32186d853064 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Sun, 8 Nov 2026 12:17:27 +1100
 Subject: [PATCH] llama, ggml-metal: start every row-list run on an attention
@@ -33,10 +33,10 @@ Claude-Session: https://claude.ai/code/session_01QA3dWey3RBtBgDz1Tery9Y
  create mode 100644 tests/test-skippy-kv-rows-aligned.cpp
 
 diff --git a/ggml/src/ggml-metal/ggml-metal-ops.cpp b/ggml/src/ggml-metal/ggml-metal-ops.cpp
-index 1e09a7e32..52c76d7c2 100644
+index 3448e8b12..cd1acf45d 100644
 --- a/ggml/src/ggml-metal/ggml-metal-ops.cpp
 +++ b/ggml/src/ggml-metal/ggml-metal-ops.cpp
-@@ -3605,19 +3605,29 @@ int ggml_metal_op_flash_attn_ext(ggml_metal_op_t ctx, int idx) {
+@@ -3626,19 +3626,29 @@ int ggml_metal_op_flash_attn_ext(ggml_metal_op_t ctx, int idx) {
      GGML_ASSERT(!has_rows || ne11_attn % OP_FLASH_ATTN_EXT_NCPSG == 0);
      GGML_ASSERT(!has_rows || ne11_attn % OP_FLASH_ATTN_EXT_VEC_NCPSG == 0);
  
@@ -73,10 +73,10 @@ index 1e09a7e32..52c76d7c2 100644
                  }
              }
 diff --git a/ggml/src/ggml-metal/kernels/fa_vec_common.metal b/ggml/src/ggml-metal/kernels/fa_vec_common.metal
-index 37ee468ec..dfc35bae4 100644
+index adfe8d816..f61b0b919 100644
 --- a/ggml/src/ggml-metal/kernels/fa_vec_common.metal
 +++ b/ggml/src/ggml-metal/kernels/fa_vec_common.metal
-@@ -241,8 +241,12 @@ kernel void kernel_flash_attn_ext_vec(
+@@ -246,8 +246,12 @@ kernel void kernel_flash_attn_ext_vec(
              int rows_base = -1;
              if (FC_flash_attn_ext_vec_has_rows) {
                  if (FC_flash_attn_ext_vec_rows_dense) {
@@ -91,7 +91,7 @@ index 37ee468ec..dfc35bae4 100644
                      const int first = rows_list[ic];
                      const int last  = rows_list[ic + C - 1];
 diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
-index 243abe424..ee7840800 100644
+index d16641afa..6097c870e 100644
 --- a/src/llama-kv-cache.cpp
 +++ b/src/llama-kv-cache.cpp
 @@ -2696,6 +2696,22 @@ uint32_t llama_kv_cache::get_n_kv_rows(const llama_ubatch & ubatch) const {
@@ -132,7 +132,7 @@ index 243abe424..ee7840800 100644
      }
  
 diff --git a/src/llama-kv-cache.h b/src/llama-kv-cache.h
-index da7d6e961..4bd818c34 100644
+index a6da0bf9b..631adf9d4 100644
 --- a/src/llama-kv-cache.h
 +++ b/src/llama-kv-cache.h
 @@ -278,6 +278,9 @@ public:
@@ -252,7 +252,7 @@ index 6b15791a4..8775a4e6b 100644
      // return -1 if the sequence is not present
      llama_pos seq_pos_min(llama_seq_id seq_id) const {
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index c3032fb78..bf1e23046 100644
+index b4656519d..dba88877a 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
 @@ -193,6 +193,7 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)

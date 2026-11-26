@@ -1,4 +1,4 @@
-From 3f3e735ce498ef21ee91cf1ea903e6f5a8dcccfe Mon Sep 17 00:00:00 2001
+From 5ab7d5111a34b8ebdc300069dd050cfcf4276621 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Sun, 8 Nov 2026 20:18:33 +1100
 Subject: [PATCH] llama: zero KV pool cells as the high-water mark advances,
@@ -34,7 +34,7 @@ Claude-Session: https://claude.ai/code/session_01QA3dWey3RBtBgDz1Tery9Y
  6 files changed, 103 insertions(+), 5 deletions(-)
 
 diff --git a/ggml/include/ggml-backend.h b/ggml/include/ggml-backend.h
-index 4383bd3ff..fced5e821 100644
+index 208e129c2..284543ee0 100644
 --- a/ggml/include/ggml-backend.h
 +++ b/ggml/include/ggml-backend.h
 @@ -64,6 +64,8 @@ extern "C" {
@@ -47,10 +47,10 @@ index 4383bd3ff..fced5e821 100644
      GGML_API enum ggml_backend_buffer_usage ggml_backend_buffer_get_usage     (ggml_backend_buffer_t buffer);
      GGML_API ggml_backend_buffer_type_t     ggml_backend_buffer_get_type      (ggml_backend_buffer_t buffer);
 diff --git a/ggml/src/ggml-backend.cpp b/ggml/src/ggml-backend.cpp
-index 7b4ef7aba..b6a601fc6 100644
+index 7b4d3a6d0..bf76ab6cc 100644
 --- a/ggml/src/ggml-backend.cpp
 +++ b/ggml/src/ggml-backend.cpp
-@@ -385,6 +385,10 @@ size_t ggml_backend_buffer_get_alloc_size(ggml_backend_buffer_t buffer, const st
+@@ -386,6 +386,10 @@ size_t ggml_backend_buffer_get_alloc_size(ggml_backend_buffer_t buffer, const st
      return ggml_backend_buft_get_alloc_size(ggml_backend_buffer_get_type(buffer), tensor);
  }
  
@@ -62,7 +62,7 @@ index 7b4ef7aba..b6a601fc6 100644
      return ggml_backend_buft_is_host(ggml_backend_buffer_get_type(buffer));
  }
 diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
-index ee7840800..42c5c9436 100644
+index 6097c870e..ebbe8b8f6 100644
 --- a/src/llama-kv-cache.cpp
 +++ b/src/llama-kv-cache.cpp
 @@ -62,6 +62,14 @@ static void ggml_gen_hadamard(ggml_tensor * tensor) {
@@ -187,7 +187,7 @@ index ee7840800..42c5c9436 100644
          for (uint32_t ii = 0; ii < sinfo.size(); ++ii) {
              const uint32_t i = s*sinfo.size() + ii;
 diff --git a/src/llama-kv-cache.h b/src/llama-kv-cache.h
-index 4bd818c34..e3f1cbbfa 100644
+index 631adf9d4..7f0ba31ba 100644
 --- a/src/llama-kv-cache.h
 +++ b/src/llama-kv-cache.h
 @@ -285,6 +285,21 @@ public:

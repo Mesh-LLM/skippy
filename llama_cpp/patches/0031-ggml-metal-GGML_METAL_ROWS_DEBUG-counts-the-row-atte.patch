@@ -1,4 +1,4 @@
-From 9a53d20e49ef3eced0b7f4bf5c723e553d5b22ee Mon Sep 17 00:00:00 2001
+From 3b049010669cbf0c1ef634bf5089cdebc12b63cc Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Sun, 8 Nov 2026 13:07:18 +1100
 Subject: [PATCH] ggml-metal: GGML_METAL_ROWS_DEBUG counts the row-attention
@@ -15,7 +15,7 @@ Claude-Session: https://claude.ai/code/session_01QA3dWey3RBtBgDz1Tery9Y
  1 file changed, 26 insertions(+), 2 deletions(-)
 
 diff --git a/ggml/src/ggml-metal/ggml-metal-ops.cpp b/ggml/src/ggml-metal/ggml-metal-ops.cpp
-index 52c76d7c2..56235817a 100644
+index cd1acf45d..99538d0ca 100644
 --- a/ggml/src/ggml-metal/ggml-metal-ops.cpp
 +++ b/ggml/src/ggml-metal/ggml-metal-ops.cpp
 @@ -12,6 +12,8 @@
@@ -27,7 +27,7 @@ index 52c76d7c2..56235817a 100644
  #include <limits>
  #include <cmath>
  
-@@ -3609,8 +3611,21 @@ int ggml_metal_op_flash_attn_ext(ggml_metal_op_t ctx, int idx) {
+@@ -3630,8 +3632,21 @@ int ggml_metal_op_flash_attn_ext(ggml_metal_op_t ctx, int idx) {
      // consecutive range (possibly ending in padding) or all padding. a run ascends, so its ends
      // decide; the lists are readable from the host whenever their Metal buffer is shared or
      // mapped (every buffer type but private)
@@ -51,7 +51,7 @@ index 52c76d7c2..56235817a 100644
          [&] {
              constexpr int64_t C = OP_FLASH_ATTN_EXT_VEC_NCPSG;
              const int32_t * lists = (const int32_t *) kv_rows->data;
-@@ -3628,11 +3643,20 @@ int ggml_metal_op_flash_attn_ext(ggml_metal_op_t ctx, int idx) {
+@@ -3649,11 +3664,20 @@ int ggml_metal_op_flash_attn_ext(ggml_metal_op_t ctx, int idx) {
                  const int64_t live = tail - block;
                  if (tail == block + C || block[live - 1] != first + live - 1 || first + C > n_cache_rows ||
                          std::any_of(tail, block + C, [](int32_t row) { return row >= 0; })) {
