@@ -65,6 +65,10 @@ runs:
       with:
         artifact: ${{ inputs.candidate-artifact }}
         sha: ${{ inputs.candidate-sha }}
+    - name: Set up the pinned macOS Rust toolchain
+      if: runner.os == 'macOS'
+      shell: bash
+      run: bash scripts/ci-macos-rust.sh
     - name: Verify real AMD device access and pinned toolkit
       if: inputs.runtime-id == 'linux-x86_64-rocm' && inputs.smoke == 'inference'
       shell: bash
