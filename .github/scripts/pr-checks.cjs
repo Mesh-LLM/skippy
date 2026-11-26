@@ -27,9 +27,11 @@ module.exports = async function aggregate({ github, context, core, depot = false
       core.info('Ignoring a closed PR or superseded source');
       continue;
     }
+    // An approved fork's native jobs run under main, so the PR page does not list them: link the status to that run.
+    let forkRun;
     const status = (state, description) => github.rest.repos.createCommitStatus({
       ...repo, sha: source, context: 'PR checks', state, description,
-      target_url: `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`
+      target_url: `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${forkRun?.id || context.runId}`
     });
     try {
       await status('pending', 'Checking all applicable PR workflows');
@@ -65,6 +67,7 @@ module.exports = async function aggregate({ github, context, core, depot = false
         const requiredFork = path === '.github/workflows/fork-native.yml' && expected.get(path) === run.event;
         const requiredInference = path === '.github/workflows/inference.yml' && expected.get(path) === run.event;
         if (expected.get(path) === run.event) expected.delete(path);
+        if (requiredFork) forkRun = run;
         if (run.status !== 'completed') pending = true;
         // GitHub completes a fork run it is holding for maintainer approval; nothing has run or failed yet.
         else if (!sameRepositoryPR && run.event === 'pull_request' && run.conclusion === 'action_required') awaitingApproval = true;
@@ -100,6 +103,11 @@ module.exports = async function aggregate({ github, context, core, depot = false
       validateAcceptance(current.body);
       if (awaitingApproval) {
         await status('pending', 'Waiting for a maintainer to approve workflows');
+      } else if (forkRun && forkRun.status !== 'completed') {
+        const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun,
+          { ...repo, run_id: forkRun.id, filter: 'latest', per_page: 100 });
+        const waiting = jobs.filter(job => job.status !== 'completed').map(job => job.name).join(', ');
+        await status('pending', `Approved fork CI: waiting for ${waiting || 'jobs to start'}`.slice(0, 140));
       } else if (pending || expected.size) {
         await status('pending', 'Waiting for applicable PR checks to finish');
       } else {
