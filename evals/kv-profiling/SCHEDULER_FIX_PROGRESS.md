@@ -1550,7 +1550,7 @@ native recipe regenerated at patch-queue digest
 Offline `GIT_ALLOW_PROTOCOL=file just llama-prepare` passed without a download.
 Offline `just lint` passed on the merged source. Serial offline Rust workspace
 tests passed 4,869 tests in 114 groups with 314 ignored; the native Metal full
-replay is still running on an M5 Max. The previously quoted M1 Ultra model
+replay result and its harness repair are recorded below. The previously quoted M1 Ultra model
 results were measured on the earlier source and cannot qualify this port.
 The [source attestation](pr-evidence/source-attestation.json) distinguishes
 identical patch bytes from pending port hardware qualification. Draft PR #233
@@ -1573,3 +1573,15 @@ full-replay retry built the missing executable and is running CTest; its log is
 native replay pass before that command exits zero. The current-head CI
 inference qualification jobs and quality canary have passed, but they do not
 establish matched performance or the prospective task-quality result.
+
+## 2026-11-26 22:03 UTC: current-main native Metal replay passed
+
+The corrected offline `GIT_ALLOW_PROTOCOL=file CARGO_NET_OFFLINE=true just
+native-full-replay metal` exited zero on the local M5 Max. CTest selected
+341 tests: 340 passed, one (`skippy_resident_checkpoint_gpu_long`) was
+registered as skipped, and none failed. In particular, `test-skippy-chat`
+compiled and passed, as did `test-skippy-q4-scale-metal` and
+`skippy_backend_ops_kv_rows`. The retained retry log SHA256 is
+`20aaaa993df6df855f13825647683f05690e90192ae547c79e0a9416beda1e72`.
+This clears the local current-source native replay gate. It does not establish
+M1 Ultra full-model output, task quality, or performance on the ported source.
