@@ -15,7 +15,7 @@ const packageJobs = rows.map(row => `package_${row.id.replaceAll('-', '_')}`);
 const prPackages = ['package_darwin_aarch64_metal', 'package_linux_aarch64_cuda13'];
 const releaseSmokes = ['release_smoke_linux_x86_64_cuda12', 'release_smoke_linux_aarch64_cuda12', 'release_smoke_linux_x86_64_cuda13'];
 
-function results({ automation = true, code = true, packages = false, native = false, full = false, release = false, hostedRequiresNative = false } = {}) {
+function results({ automation = true, code = true, packages = false, native = false, full = false, release = false } = {}) {
   const selected = code || packages;
   const required = ['changes'];
   if (automation) required.push('automation');
@@ -26,7 +26,7 @@ function results({ automation = true, code = true, packages = false, native = fa
   if (native) required.push('native_contracts');
   if (release) required.push(...releaseSmokes);
   const needs = Object.fromEntries(declared.map(job => [job, { result: required.includes(job) ? 'success' : 'skipped' }]));
-  needs.changes.outputs = { automation: String(automation), code: String(code), packages: String(packages), native: String(native), hosted_requires_native: String(hostedRequiresNative) };
+  needs.changes.outputs = { automation: String(automation), code: String(code), packages: String(packages), native: String(native) };
   if (selected) needs.plan.outputs = {
     profile: full ? 'full' : 'pr',
     runtimes: JSON.stringify({ include: full ? rows : rows.filter(row => !row.full_only) }),
@@ -67,6 +67,22 @@ test('all thirteen runtime packages match the planned matrix and depend on the c
     }
   }
   assert.doesNotThrow(() => gate(results({ full: true })));
+});
+
+test('macOS packaging checks the pinned Rust toolchain before building', () => {
+  const action = readFileSync(join(__dirname, '../actions/ci-package/action.yml'), 'utf8');
+  assert.match(action, /if: runner\.os == 'macOS'\n +shell: bash\n +run: bash scripts\/ci-macos-rust\.sh/);
+  assert.ok(action.indexOf('uses: ./.github/actions/source') < action.indexOf('ci-macos-rust.sh'));
+  assert.ok(action.indexOf('ci-macos-rust.sh') < action.indexOf('just ci-host'));
+});
+
+test('separate device smoke consumes prebuilt artifacts without restoring build caches', () => {
+  const action = readFileSync(join(__dirname, '../actions/ci-smoke/action.yml'), 'utf8');
+  assert.doesNotMatch(action, /uses: \.\/.github\/actions\/cache/);
+  assert.match(action, /inputs\.download-package != 'true'.*env\.SKIPPY_CI_MODEL/);
+  assert.ok(action.indexOf('Check release device scratch storage') < action.indexOf('actions/download-artifact'));
+  assert.match(action, /export TMPDIR="\$RUNNER_TEMP"/);
+  assert.match(action, /device-evidence-\$\{\{ inputs\.runtime_id \}\}/);
 });
 
 test('release publication consumes prepared assets and independently verifies their receipt', () => {
@@ -158,7 +174,7 @@ test('automation-only PRs require successful offline checks and skip all builds'
     else needs.automation.result = result;
     assert.throws(() => gate(needs), /automation/);
   }
-  for (const decision of ['automation', 'code', 'packages', 'native', 'hosted_requires_native']) {
+  for (const decision of ['automation', 'code', 'packages', 'native']) {
     const needs = results({ code: false });
     delete needs.changes.outputs[decision];
     assert.throws(() => gate(needs), /Path selection/);
@@ -249,8 +265,9 @@ test('release validation requires the three other GPU smokes', () => {
   assert.throws(() => gate(results(), true), /requires full CI/);
 });
 
-test('hosted CI cannot satisfy a native package requirement', () => {
-  assert.throws(() => gate(results({ hostedRequiresNative: true })), /require native hardware qualification on an isolated runner/);
+test('hosted CI no longer fails merely because native qualification is separate', () => {
+  assert.doesNotThrow(() => gate(results()));
+  assert.doesNotMatch(workflow, /hosted_requires_native/);
 });
 
 test('the repository switch routes Windows CUDA 13 and eligible Linux and macOS jobs to Depot', () => {
@@ -430,7 +447,7 @@ test('native CI trusts only an immutable same-repository PR from a writer', asyn
 
 test('main can reuse only a receipt for the exact release dispatch and candidate', async () => {
   const changes = workflow.split('\n  changes:\n')[1].split('\n  plan:\n')[0];
-  const receiptScript = changes.split('          script: |\n')[1].split('\n      - uses:')[0];
+  const receiptScript = changes.split('      - name: Reuse qualification')[1].split('          script: |\n')[1].split('\n      - uses:')[0];
   const evaluateReceipt = new Function('github', 'context', 'core',
     'return (async () => {\n' + receiptScript + '\n})()');
   const sha = 'a'.repeat(40);
@@ -477,4 +494,11 @@ test('main can reuse only a receipt for the exact release dispatch and candidate
   assert.equal(await checked(commit, { ...run, head_branch: 'other' }, receipt), undefined);
   assert.equal(await checked(commit, run, { ...receipt, name: 'other-receipt' }), undefined);
   assert.equal(await checked(commit, run, { ...receipt, expired: true }), undefined);
+});
+
+test('every candidate checkout opts in to fork code only for the approved-fork controller (real #222 context)', () => {
+  const refs = workflow.match(/^ +ref: \$\{\{ env\.SKIPPY_CI_SOURCE_REF \}\}\n.*$/gm);
+  assert.equal(refs.length, 20);
+  for (const ref of refs) assert.match(ref, /\n +allow-unsafe-pr-checkout: \$\{\{ inputs\.approved_fork_pr != '' \}\}$/);
+  assert.equal(workflow.match(/allow-unsafe-pr-checkout:/g).length, refs.length);
 });

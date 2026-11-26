@@ -2,11 +2,13 @@
 
 import json
 import os
+import random
 import re
 import sys
 import tempfile
 import time
 from http.client import IncompleteRead
+from itertools import count
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -15,12 +17,14 @@ from .ci_process import capture
 
 ORIGIN = "https://pilot.jianyang.cloud"
 READ_ATTEMPTS = 4
+STATUS_READ_BUDGET = 300
 TRANSIENT_HTTP_STATUSES = {408, 429, 500, 502, 503, 504}
 
 
 class PilotHTTPError(RuntimeError):
-    def __init__(self, path, status, detail):
-        super().__init__(f"JY HTTP {status}: {detail}")
+    def __init__(self, path, status, detail, ray=None):
+        context = f" (Cloudflare Ray {ray})" if ray else ""
+        super().__init__(f"JY HTTP {status}: {detail}{context}")
         self.path = path
         self.status = status
 
@@ -54,7 +58,8 @@ class Pilot:
         except HTTPError as error:
             detail = (error.read(65536).decode("utf-8", errors="replace")
                       if not path.startswith("/v1/auth/") else f"{path} authentication request failed")
-            raise PilotHTTPError(path, error.code, detail) from None
+            ray = error.headers.get("CF-Ray") if error.headers is not None else None
+            raise PilotHTTPError(path, error.code, detail, ray) from None
         if len(result) > 16 * 1024 * 1024:
             raise ValueError("JY response exceeded capture limit")
         return json.loads(result)
@@ -89,11 +94,18 @@ class Pilot:
         self.session = (time.monotonic(), session["api_key"])
         return self.session[1]
 
-    def api(self, method, path, body=None):
+    def api(self, method, path, body=None, *, status_deadline=None):
+        # Status reads for already-launched work may outlast one retry burst.
+        # Other API calls keep their existing retry and cleanup budgets.
+        retry_until = (min(status_deadline, time.monotonic() + STATUS_READ_BUDGET)
+                       if status_deadline is not None else None)
         token = self.auth()
-        for attempt in range(READ_ATTEMPTS):
+        for attempt in count():
+            timeout = min(60, retry_until - time.monotonic()) if retry_until is not None else 60
+            if timeout <= 0:
+                raise TimeoutError(f"JY status read deadline expired for {path}")
             try:
-                return self.request(method, path, body, token)
+                return self.request(method, path, body, token, timeout=timeout)
             except (ConnectionError, TimeoutError, IncompleteRead, URLError, PilotHTTPError) as error:
                 if isinstance(error, PilotHTTPError):
                     transient = error.status in TRANSIENT_HTTP_STATUSES
@@ -103,11 +115,18 @@ class Pilot:
                     transient = True
                 # Only replay idempotent reads. Authentication is outside this
                 # loop; launch/cancel POSTs and permanent errors fail immediately.
-                if method != "GET" or not transient or attempt == READ_ATTEMPTS - 1:
+                if method != "GET" or not transient:
                     raise
-                delay = 2 ** attempt
-                print(f"Retrying JY GET {path} after {type(error).__name__} "
-                      f"in {delay}s (attempt {attempt + 2}/{READ_ATTEMPTS})", file=sys.stderr)
+                delay = 2 ** min(attempt, 5)
+                if retry_until is None:
+                    if attempt >= READ_ATTEMPTS - 1:
+                        raise
+                else:
+                    delay = min(30, delay) + random.uniform(0, 1)
+                    if time.monotonic() + delay >= retry_until:
+                        raise
+                status = f"HTTP {error.status}" if isinstance(error, PilotHTTPError) else type(error).__name__
+                print(f"Retrying JY GET {path} after {status} in {delay:.1f}s", file=sys.stderr)
                 time.sleep(delay)
 
 

@@ -30,7 +30,7 @@ function selection(github, files, { force = false, verified = false } = {}) {
     .map(name => [name, String(matches(name, files))]));
   const steps = { paths: { outputs: paths }, release: { outputs: { verified: String(verified) } },
     main_base: { outputs: { force: String(force) } } };
-  return Object.fromEntries(['automation', 'code', 'packages', 'native', 'hosted_requires_native'].map(name => {
+  return Object.fromEntries(['automation', 'code', 'packages', 'native'].map(name => {
     const expression = changes.match(new RegExp(`^      ${name}: \\$\\{\\{ (.+) \\}\\}$`, 'm'))[1];
     return [name, new Function('github', 'steps', `return (${expression});`)(github, steps)];
   }));
@@ -67,20 +67,19 @@ test('main runs device smokes for inference and packaging changes, Graph Contrac
     const actual = selection(main, [file]);
     assert.equal(actual.packages, inference, file);
     assert.equal(actual.native, native, file);
-    assert.equal(actual.hosted_requires_native, false, file);
   }
   assert.deepEqual(selection(main, ['scripts/tests/inference_contracts.py'], { force: true }),
-    { automation: true, code: true, packages: true, native: true, hosted_requires_native: false });
+    { automation: true, code: true, packages: true, native: true });
   assert.deepEqual(selection(main, ['llama_cpp/upstream.txt'], { verified: true }),
-    { automation: false, code: false, packages: false, native: false, hosted_requires_native: false });
+    { automation: false, code: false, packages: false, native: false });
 });
 
 test('PR hardware selection and full nightly/release profile selection stay unchanged', () => {
   const pr = event_name => ({ event_name, event: { pull_request: {} } });
   assert.deepEqual(selection(pr('pull_request_target'), ['crates/skippy-cli/src/main.rs']),
-    { automation: true, code: true, packages: true, native: false, hosted_requires_native: false });
+    { automation: true, code: true, packages: true, native: false });
   assert.deepEqual(selection(pr('pull_request'), ['crates/skippy-cli/src/main.rs']),
-    { automation: true, code: true, packages: false, native: false, hosted_requires_native: true });
+    { automation: true, code: true, packages: false, native: false });
   assert.equal(selection(pr('pull_request_target'), ['scripts/tests/inference_contracts.py']).packages, false);
   assert.equal(selection(pr('pull_request_target'), ['crates/skippy-package-builder/src/lib.rs']).packages, false);
   const profile = workflow.match(/SKIPPY_CI_PROFILE: \$\{\{ (.+) \}\}/)[1];
