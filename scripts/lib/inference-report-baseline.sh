@@ -5,8 +5,11 @@
 validate_rates() {
   jq -e --arg sha "$3" --arg row "$4" --slurpfile job "$2" '
     def uint: type == "number" and . >= 0 and . == floor and . < 18446744073709551616;
-    (keys == (["source_sha", "configuration", "job_id", "run_id", "requests",
+    ((keys - ["workload"]) == (["source_sha", "configuration", "job_id", "run_id", "requests",
       "prefill_tokens", "prefill_ms", "decode_tokens", "decode_ms"] | sort)) and
+    (if has("workload") then
+      .workload == "DGX Spark warm probe v2" and .decode_tokens == 384
+     else true end) and
     .source_sha == $sha and .configuration == $row and .requests == 3 and
     (.prefill_tokens | uint) and (.decode_tokens | uint) and
     (.prefill_ms | type == "number") and (.decode_ms | type == "number") and
@@ -88,6 +91,7 @@ baseline_for_row() {
        else .rows[0].mode == "standalone" and .rows[0].machines == 1 end)
     ' "$candidate/plan.json" > /dev/null || return 1
     validate_rates "$candidate/$id-throughput.json" "$candidate/$id-job.json" "$baseline_sha" "$id" || return 1
+    jq -e '.workload == "DGX Spark warm probe v2"' "$candidate/$id-throughput.json" > /dev/null || return 1
     found=$candidate
   done
   [[ -n $found ]] || return 1

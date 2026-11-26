@@ -121,6 +121,7 @@ class ThroughputTests(unittest.TestCase):
         self.assertEqual(receipt["requests"], len(cases))
         self.assertEqual(receipt["prefill_tokens"], 603)
         self.assertEqual(receipt["decode_tokens"], 384)
+        self.assertEqual(receipt["workload"], inference_probe.WORKLOAD)
         self.assertEqual(receipt["decode_ms"], 3 * len(cases))
         self.assertEqual([call.args[0].selector for call in send.call_args_list],
                          [self.prefix + "qualification.json", quality_path, quality_path,

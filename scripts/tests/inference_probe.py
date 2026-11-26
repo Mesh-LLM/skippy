@@ -66,7 +66,8 @@ class ProbeTests(unittest.TestCase):
     def test_measure_retains_failed_response_and_stops(self):
         bad = sample(MODEL, 0, True)
         bad["response"]["usage"]["completion_tokens"] = 1
-        with TemporaryDirectory() as temporary, patch.object(probe, "send", return_value=bad) as send:
+        with TemporaryDirectory() as temporary, patch.object(
+                probe, "send", side_effect=lambda _request, record: record.update(bad)) as send:
             with self.assertRaisesRegex(ValueError, "full output"):
                 probe.measure(MODEL, Path(temporary))
             saved = json.loads((Path(temporary) / "throughput-probe.json").read_text())
@@ -77,10 +78,25 @@ class ProbeTests(unittest.TestCase):
     def test_measure_keeps_warmups_separate(self):
         replies = [sample(MODEL, i, warmup)
                    for i in range(len(probe.PARAGRAPHS)) for warmup in (True, False)]
-        with TemporaryDirectory() as temporary, patch.object(probe, "send", side_effect=replies):
+        with TemporaryDirectory() as temporary, patch.object(
+                probe, "send", side_effect=lambda _request, record: record.update(replies.pop(0))):
             probe.measure(MODEL, Path(temporary))
             saved = json.loads((Path(temporary) / "throughput-probe.json").read_text())
         self.assertEqual(len(probe.validate_evidence(saved, MODEL)), 3)
+
+    def test_malformed_measured_json_retains_raw_body_request_and_time(self):
+        body = '{"broken":'
+        with TemporaryDirectory() as temporary, patch.object(
+                probe, "curl", side_effect=[json.dumps(sample(MODEL, 0, True)["response"]), body]):
+            with self.assertRaises(json.JSONDecodeError):
+                probe.measure(MODEL, Path(temporary))
+            saved = json.loads((Path(temporary) / "throughput-probe.json").read_text())
+        failed = saved["samples"][0]["measured"]
+        self.assertEqual(saved["status"], "failed")
+        self.assertEqual(failed["payload"], probe.payload(MODEL, 0, False))
+        self.assertEqual(failed["raw_body"], body)
+        self.assertGreater(failed["client_ms"], 0)
+        self.assertNotIn("response", failed)
 
 
 if __name__ == "__main__":
