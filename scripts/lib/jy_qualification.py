@@ -89,11 +89,14 @@ class Pilot:
         self.session = (time.monotonic(), session["api_key"])
         return self.session[1]
 
-    def api(self, method, path, body=None):
+    def api(self, method, path, body=None, *, deadline=None):
         token = self.auth()
         for attempt in range(READ_ATTEMPTS):
+            timeout = 60 if deadline is None else min(60, deadline - time.monotonic())
+            if timeout <= 0:
+                raise TimeoutError("JY read deadline reached")
             try:
-                return self.request(method, path, body, token)
+                return self.request(method, path, body, token, timeout=timeout)
             except (ConnectionError, TimeoutError, IncompleteRead, URLError, PilotHTTPError) as error:
                 if isinstance(error, PilotHTTPError):
                     transient = error.status in TRANSIENT_HTTP_STATUSES
@@ -106,6 +109,8 @@ class Pilot:
                 if method != "GET" or not transient or attempt == READ_ATTEMPTS - 1:
                     raise
                 delay = 2 ** attempt
+                if deadline is not None and time.monotonic() + delay >= deadline:
+                    raise
                 print(f"Retrying JY GET {path} after {type(error).__name__} "
                       f"in {delay}s (attempt {attempt + 2}/{READ_ATTEMPTS})", file=sys.stderr)
                 time.sleep(delay)

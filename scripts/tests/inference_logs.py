@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 from lib.inference_logs import NativeLogs
+from lib.jy_qualification import Pilot
 
 
 def page(run, start, texts, complete=False, caught_up=True):
@@ -28,7 +29,12 @@ class LogTests(unittest.TestCase):
         self.stdout, self.stderr = io.StringIO(), io.StringIO()
         self.enterContext(redirect_stdout(self.stdout))
         self.enterContext(redirect_stderr(self.stderr))
-        self.enterContext(patch("lib.inference_logs.time.monotonic", return_value=0))
+        self.now = 0
+        self.enterContext(patch("lib.inference_logs.time.monotonic", side_effect=lambda: self.now))
+        self.enterContext(patch("lib.inference_logs.time.sleep", side_effect=self.advance))
+
+    def advance(self, seconds):
+        self.now += seconds
 
     def test_live_pages_cursor_deduplication_and_terminal_tail(self):
         self.pilot.api.side_effect = [page("run_a", 0, ["build"], caught_up=False),
@@ -97,10 +103,101 @@ class LogTests(unittest.TestCase):
 
     def test_final_drain_deadline_reports_incomplete_capture(self):
         self.pilot.api.return_value = page("run_a", 0, [])
-        with patch("lib.inference_logs.time.monotonic", side_effect=[0, 0, 0, 31, 31]), \
-                patch("lib.inference_logs.time.sleep"):
-            self.logs.capture({"id": "job_a", "runs": [{"id": "run_a"}]}, None, 100, final=True)
+        self.logs.capture({"id": "job_a", "runs": [{"id": "run_a"}]}, None, 100, final=True)
+        self.assertEqual(self.now, 30)
         self.assertIn("deadline reached", self.stderr.getvalue())
+        self.assertIn("run_a", self.stderr.getvalue())
+        self.assertNotIn("run_a.jsonl", self.stderr.getvalue())
+
+    def test_busy_run_yields_to_other_attempts_and_next_status_poll(self):
+        cursors = iter(range(20))
+
+        def read(_method, path, *, deadline):
+            self.assertLessEqual(deadline, self.now + 5)
+            if "run_busy/" in path:
+                self.advance(1)
+                return page("run_busy", next(cursors), ["busy"], caught_up=False)
+            return page("run_other", 0, ["other"], complete=True)
+
+        self.pilot.api.side_effect = read
+        job = {"id": "job_a", "runs": [{"id": "run_busy"}, {"id": "run_other"}]}
+        self.logs.capture(job, None, 5400)
+        self.assertEqual(self.now, 5)
+        self.assertEqual(self.logs.cursors, {"run_busy": 5, "run_other": 1})
+        self.assertIn("run_busy: log drain deadline reached", self.stderr.getvalue())
+        self.logs.capture(job, None, 5400)
+        self.assertEqual(self.logs.cursors["run_busy"], 10)
+        self.assertEqual(self.stdout.getvalue().count("] other"), 1)
+
+    def test_unexpected_run_error_does_not_block_other_attempts(self):
+        self.pilot.api.side_effect = [AttributeError("do not expose response"),
+                                      page("run_b", 0, ["other"], complete=True)]
+        job = {"id": "job_a", "runs": [{"id": "run_a"}, {"id": "run_b"}]}
+        self.logs.capture(job, None, 100)
+        self.assertEqual(self.logs.cursors, {"run_b": 1})
+        self.assertIn("AttributeError", self.stderr.getvalue())
+        self.assertNotIn("do not expose response", self.stderr.getvalue())
+
+    def test_dead_worker_is_bounded_and_leader_logs_are_retained(self):
+        def read(_method, path, *, deadline):
+            if path == "/v1/jobs/job_b":
+                self.advance(deadline - self.now)
+                raise TimeoutError()
+            return page("run_a", 0, ["leader tail"], complete=True)
+
+        self.pilot.api.side_effect = read
+        job = {"id": "job_a", "runs": [{"id": "run_a"}]}
+        formation = {"members": [{"job_id": "job_a"}, {"job_id": "job_b"}]}
+        self.logs.capture(job, formation, 100, final=True)
+        self.assertEqual(self.now, 30)
+        self.assertIn("leader tail", self.stdout.getvalue())
+        diagnostics = (self.logs.output / "diagnostics.txt").read_text()
+        self.assertIn("job_b: TimeoutError; log capture incomplete", diagnostics)
+        self.assertIn("deadline reached", diagnostics)
+
+    def test_log_failure_never_replaces_success_or_failure_verdict(self):
+        wait = run_path(str(Path(__file__).resolve().parents[1] / "inference-dispatch.py"))["wait"]
+        for status in ("succeeded", "failed"):
+            with self.subTest(status=status):
+                self.now = 0
+                job = {"id": "job_a", "status": status, "repo_rev": "a" * 40,
+                       "runs": [{"id": "run_a"}]}
+                self.pilot.api.side_effect = lambda _method, path, **_: (
+                    job if path == "/v1/jobs/job_a" else None)
+                if status == "failed":
+                    with self.assertRaisesRegex(RuntimeError, "model-split failed: failed"):
+                        wait(self.pilot, "job_a", "model-split", "a" * 40, self.output, 100)
+                else:
+                    self.assertEqual(wait(self.pilot, "job_a", "model-split", "a" * 40,
+                                          self.output, 100), job)
+                self.assertEqual(self.now, 30)
+
+    def test_diagnostic_disk_failure_does_not_escape(self):
+        self.pilot.api.side_effect = AttributeError()
+        with patch.object(Path, "mkdir", side_effect=PermissionError()):
+            self.logs.capture({"id": "job_a", "runs": [{"id": "run_a"}]}, None, 100)
+        self.assertIn("cannot retain diagnostics", self.stderr.getvalue())
+
+    def test_cancellation_is_not_swallowed(self):
+        self.pilot.api.side_effect = KeyboardInterrupt()
+        with self.assertRaises(KeyboardInterrupt):
+            self.logs.capture({"id": "job_a", "runs": [{"id": "run_a"}]}, None, 100)
+
+    def test_log_socket_timeout_uses_run_budget_not_qualification_budget(self):
+        pilot = Pilot()
+        logs = NativeLogs(pilot, "timeout", self.output)
+
+        def timeout(_request, *, timeout):
+            self.advance(timeout)
+            raise TimeoutError()
+
+        with patch.object(pilot, "auth", return_value="test"), \
+                patch.object(pilot.opener, "open", side_effect=timeout) as send:
+            logs.capture({"id": "job_a", "runs": [{"id": "run_a"}]}, None, 5400)
+        send.assert_called_once()
+        self.assertEqual(send.call_args.kwargs["timeout"], 5)
+        self.assertEqual(self.now, 5)
+
 
     def test_invalid_run_identity_is_not_used_in_requests_or_paths(self):
         self.logs.capture({"runs": [{"id": "../../outside"}]}, None, 100)

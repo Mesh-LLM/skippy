@@ -51,6 +51,31 @@ class ReadRecoveryTests(unittest.TestCase):
         self.assertEqual(self.sleep.call_args_list, [call(1), call(2), call(4)])
         self.auth.assert_called_once()
 
+    def test_deadline_caps_request_timeout_and_prevents_retry_after_expiry(self):
+        with patch.object(jy_qualification.time, "monotonic", side_effect=[10, 14]), \
+                patch.object(self.pilot.opener, "open", side_effect=TimeoutError()) as send:
+            with self.assertRaises(TimeoutError):
+                self.pilot.api("GET", self.path, deadline=15)
+        self.assertEqual(send.call_args.kwargs["timeout"], 5)
+        send.assert_called_once()
+        self.sleep.assert_not_called()
+
+    def test_expired_deadline_sends_no_request(self):
+        with patch.object(jy_qualification.time, "monotonic", return_value=15), \
+                patch.object(self.pilot.opener, "open") as send:
+            with self.assertRaisesRegex(TimeoutError, "deadline reached"):
+                self.pilot.api("GET", self.path, deadline=15)
+        send.assert_not_called()
+
+    def test_retry_request_uses_remaining_budget(self):
+        with patch.object(jy_qualification.time, "monotonic", side_effect=[10, 11, 12]), \
+                patch.object(self.pilot.opener, "open", side_effect=[TimeoutError(),
+                             io.BytesIO(b'{"status":"running"}')]) as send:
+            self.assertEqual(self.pilot.api("GET", self.path, deadline=15), {"status": "running"})
+        self.assertEqual([item.kwargs["timeout"] for item in send.call_args_list], [5, 3])
+        self.sleep.assert_called_once_with(1)
+
+
     def test_permanent_errors_fail_immediately(self):
         errors = [HTTPError("https://pilot.jianyang.cloud" + self.path, status, "Permanent", {},
                             io.BytesIO(b"permanent failure")) for status in (400, 401, 403, 404, 409)]
