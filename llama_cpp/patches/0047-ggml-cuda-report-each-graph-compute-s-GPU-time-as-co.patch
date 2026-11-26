@@ -1,0 +1,310 @@
+From c3343f904ce8a80b6a08bfc06f86a48a4d03fa59 Mon Sep 17 00:00:00 2001
+From: Skippy contributors <ci@skippy.local>
+Date: Fri, 27 Nov 2026 08:42:56 +1100
+Subject: [PATCH] ggml-cuda: report each graph compute's GPU time as command
+ timing
+
+The CUDA backend did not expose ggml_backend_set_command_timing_callback,
+so a CUDA run had no GPU time: Skippy's skippy.span.gpu_execute_ms was 0
+and an iteration could not be split into GPU work and host overhead.
+
+With a callback installed, each graph compute is one command. Two events
+bracket it on the context's stream; the first is recorded before any CUDA
+graph capture begins, so it is never captured. At the next synchronize the
+host has already waited for the GPU, so the events are read then, anchored
+to the host clock by one more event recorded on the idle stream. Execute
+time runs from when the stream reaches the compute, so it includes any time
+the GPU waited for the host to queue kernels.
+
+With no callback installed nothing is recorded.
+---
+ ggml/src/ggml-cuda/command-timing.cu  | 118 ++++++++++++++++++++++++++
+ ggml/src/ggml-cuda/command-timing.cuh |  15 ++++
+ ggml/src/ggml-cuda/common.cuh         |  18 ++++
+ ggml/src/ggml-cuda/ggml-cuda.cu       |  22 +++++
+ ggml/src/ggml-cuda/vendors/hip.h      |   2 +
+ ggml/src/ggml-cuda/vendors/musa.h     |   2 +
+ 6 files changed, 177 insertions(+)
+ create mode 100644 ggml/src/ggml-cuda/command-timing.cu
+ create mode 100644 ggml/src/ggml-cuda/command-timing.cuh
+
+diff --git a/ggml/src/ggml-cuda/command-timing.cu b/ggml/src/ggml-cuda/command-timing.cu
+new file mode 100644
+index 000000000..06f35dd5b
+--- /dev/null
++++ b/ggml/src/ggml-cuda/command-timing.cu
+@@ -0,0 +1,118 @@
++#include "command-timing.cuh"
++
++#include <atomic>
++#include <chrono>
++
++static std::atomic<ggml_backend_command_timing_callback_t> g_timing_callback { nullptr };
++static std::atomic<void *> g_timing_user_data { nullptr };
++static std::atomic<uint32_t> g_timing_next_context_id { 0 };
++static thread_local uint64_t g_timing_tag = 0;
++
++// a caller that never synchronizes loses its oldest computes past this
++static constexpr size_t GGML_CUDA_TIMING_MAX_PENDING = 1024;
++
++static int64_t ggml_cuda_timing_now_ns() {
++    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
++}
++
++static cudaEvent_t ggml_cuda_timing_take_event(ggml_backend_cuda_context & ctx) {
++    if (!ctx.timing_free_events.empty()) {
++        cudaEvent_t event = ctx.timing_free_events.back();
++        ctx.timing_free_events.pop_back();
++        return event;
++    }
++    cudaEvent_t event = nullptr;
++    CUDA_CHECK(cudaEventCreateWithFlags(&event, cudaEventDefault));
++    return event;
++}
++
++static void ggml_cuda_timing_recycle(ggml_backend_cuda_context & ctx, const ggml_cuda_timed_compute & compute) {
++    ctx.timing_free_events.push_back(compute.start);
++    ctx.timing_free_events.push_back(compute.end);
++}
++
++void ggml_cuda_set_command_timing_callback(ggml_backend_command_timing_callback_t callback, void * user_data) {
++    g_timing_user_data.store(user_data, std::memory_order_relaxed);
++    g_timing_callback.store(callback, std::memory_order_release);
++}
++
++void ggml_cuda_set_command_timing_tag(uint64_t tag) {
++    g_timing_tag = tag;
++}
++
++void ggml_cuda_command_timing_begin(ggml_backend_cuda_context & ctx, const ggml_cgraph * cgraph) {
++    if (g_timing_callback.load(std::memory_order_acquire) == nullptr) {
++        return;
++    }
++    if (ctx.timing_context_id == 0) {
++        ctx.timing_context_id = g_timing_next_context_id.fetch_add(1, std::memory_order_relaxed) + 1;
++    }
++    ggml_cuda_timed_compute compute;
++    compute.encode_start_ns = ggml_cuda_timing_now_ns();
++    compute.start = ggml_cuda_timing_take_event(ctx);
++    compute.end = ggml_cuda_timing_take_event(ctx);
++    compute.tag = g_timing_tag;
++    compute.compute_index = ++ctx.timing_compute_count;
++    compute.node_count = cgraph->n_nodes;
++    CUDA_CHECK(cudaEventRecord(compute.start, ctx.stream()));
++    ctx.timing_open = compute;
++}
++
++void ggml_cuda_command_timing_end(ggml_backend_cuda_context & ctx) {
++    if (ctx.timing_open.start == nullptr) {
++        return;
++    }
++    ggml_cuda_timed_compute compute = ctx.timing_open;
++    ctx.timing_open = {};
++    CUDA_CHECK(cudaEventRecord(compute.end, ctx.stream()));
++    compute.encode_end_ns = ggml_cuda_timing_now_ns();
++    if (ctx.timing_pending.size() == GGML_CUDA_TIMING_MAX_PENDING) {
++        ggml_cuda_timing_recycle(ctx, ctx.timing_pending.front());
++        ctx.timing_pending.erase(ctx.timing_pending.begin());
++    }
++    ctx.timing_pending.push_back(compute);
++}
++
++void ggml_cuda_command_timing_report(ggml_backend_cuda_context & ctx) {
++    if (ctx.timing_pending.empty()) {
++        return;
++    }
++    const auto callback = g_timing_callback.load(std::memory_order_acquire);
++    void * user_data = g_timing_user_data.load(std::memory_order_relaxed);
++
++    // the stream is idle, so this event completes at once: it ties event times to the host clock
++    cudaEvent_t now = ggml_cuda_timing_take_event(ctx);
++    CUDA_CHECK(cudaEventRecord(now, ctx.stream()));
++    CUDA_CHECK(cudaEventSynchronize(now));
++    const int64_t now_ns = ggml_cuda_timing_now_ns();
++
++    for (const ggml_cuda_timed_compute & compute : ctx.timing_pending) {
++        if (callback != nullptr) {
++            float since_start_ms = 0.0f;
++            float since_end_ms   = 0.0f;
++            const bool timed = cudaEventElapsedTime(&since_start_ms, compute.start, now) == cudaSuccess &&
++                               cudaEventElapsedTime(&since_end_ms, compute.end, now) == cudaSuccess;
++
++            ggml_backend_command_timing timing = {};
++            timing.tag           = compute.tag;
++            timing.context_id    = ctx.timing_context_id;
++            timing.compute_index = compute.compute_index;
++            timing.command_index = 0;
++            timing.command_count = 1;
++            timing.node_count    = compute.node_count;
++            timing.status        = timed ? 0 : 1;
++            timing.encode_start_unix_ns = compute.encode_start_ns;
++            timing.encode_end_unix_ns   = compute.encode_end_ns;
++            if (timed) {
++                timing.execute_start_unix_ns = now_ns - (int64_t) ((double) since_start_ms * 1e6);
++                timing.execute_end_unix_ns   = now_ns - (int64_t) ((double) since_end_ms * 1e6);
++            }
++            timing.op_class = GGML_BACKEND_OP_CLASS_COUNT;
++            timing.layer    = -1;
++            callback(&timing, user_data);
++        }
++        ggml_cuda_timing_recycle(ctx, compute);
++    }
++    ctx.timing_pending.clear();
++    ctx.timing_free_events.push_back(now);
++}
+diff --git a/ggml/src/ggml-cuda/command-timing.cuh b/ggml/src/ggml-cuda/command-timing.cuh
+new file mode 100644
+index 000000000..bf975c4ca
+--- /dev/null
++++ b/ggml/src/ggml-cuda/command-timing.cuh
+@@ -0,0 +1,15 @@
++#pragma once
++
++#include "common.cuh"
++
++// The "ggml_backend_set_command_timing_callback" proc: each graph compute is one command, timed by two events and reported at the next synchronize
++// Execute time runs from when the stream reaches the compute, so it includes any wait for the host to queue kernels
++void ggml_cuda_set_command_timing_callback(ggml_backend_command_timing_callback_t callback, void * user_data);
++void ggml_cuda_set_command_timing_tag(uint64_t tag);
++
++// no-ops while no callback is installed
++void ggml_cuda_command_timing_begin(ggml_backend_cuda_context & ctx, const ggml_cgraph * cgraph);
++void ggml_cuda_command_timing_end(ggml_backend_cuda_context & ctx);
++
++// call once the stream is synchronized
++void ggml_cuda_command_timing_report(ggml_backend_cuda_context & ctx);
+diff --git a/ggml/src/ggml-cuda/common.cuh b/ggml/src/ggml-cuda/common.cuh
+index dfb222b4f..b97b199d3 100644
+--- a/ggml/src/ggml-cuda/common.cuh
++++ b/ggml/src/ggml-cuda/common.cuh
+@@ -1341,6 +1341,17 @@ struct ggml_tensor_extra_gpu {
+ struct ggml_cuda_graph;
+ struct ggml_cuda_stream_context;
+ 
++// one graph compute queued while command timing is on (command-timing.cuh)
++struct ggml_cuda_timed_compute {
++    cudaEvent_t start = nullptr;
++    cudaEvent_t end   = nullptr;
++    uint64_t tag           = 0;
++    uint32_t compute_index = 0;
++    uint32_t node_count    = 0;
++    int64_t  encode_start_ns = 0;
++    int64_t  encode_end_ns   = 0;
++};
++
+ struct ggml_backend_cuda_context {
+     int device;
+     std::string name;
+@@ -1379,6 +1390,13 @@ struct ggml_backend_cuda_context {
+ 
+     std::unique_ptr<ggml_cuda_stream_context> concurrent_stream_context;
+ 
++    // command timing (command-timing.cuh); context id 0 until the first timed compute
++    uint32_t timing_context_id = 0;
++    uint32_t timing_compute_count = 0;
++    std::vector<cudaEvent_t> timing_free_events;
++    std::vector<ggml_cuda_timed_compute> timing_pending;
++    ggml_cuda_timed_compute timing_open;
++
+     ~ggml_backend_cuda_context();
+ 
+     cudaStream_t stream(int device, int stream) {
+diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
+index 38caaf041..1c413f727 100644
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -76,6 +76,7 @@
+ #include "ggml-cuda/fill.cuh"
+ #include "ggml-cuda/lightning-indexer.cuh"
+ #include "ggml-cuda/top-k-mask.cuh"
++#include "ggml-cuda/command-timing.cuh"
+ #include "ggml.h"
+ 
+ #include <algorithm>
+@@ -924,6 +925,17 @@ ggml_backend_cuda_context::~ggml_backend_cuda_context() {
+     if (copy_event != nullptr) {
+         CUDA_CHECK(cudaEventDestroy(copy_event));
+     }
++    for (const ggml_cuda_timed_compute & compute : timing_pending) {
++        timing_free_events.push_back(compute.start);
++        timing_free_events.push_back(compute.end);
++    }
++    if (timing_open.start != nullptr) {
++        timing_free_events.push_back(timing_open.start);
++        timing_free_events.push_back(timing_open.end);
++    }
++    for (cudaEvent_t event : timing_free_events) {
++        CUDA_CHECK(cudaEventDestroy(event));
++    }
+     for (int i = 0; i < GGML_CUDA_MAX_DEVICES; ++i) {
+         for (int j = 0; j < GGML_CUDA_MAX_STREAMS; ++j) {
+             if (streams[i][j] != nullptr) {
+@@ -3188,6 +3200,7 @@ static void ggml_backend_cuda_synchronize(ggml_backend_t backend) {
+     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *)backend->context;
+ 
+     CUDA_CHECK(cudaStreamSynchronize(cuda_ctx->stream()));
++    ggml_cuda_command_timing_report(*cuda_ctx);
+ 
+     GGML_UNUSED(backend);
+ }
+@@ -5419,6 +5432,8 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend,
+     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *) backend->context;
+ 
+     ggml_cuda_set_device(cuda_ctx->device);
++    // before any capture begins: the start event must stay outside the CUDA graph
++    ggml_cuda_command_timing_begin(*cuda_ctx, cgraph);
+ 
+     bool use_cuda_graph             = false;
+     bool cuda_graph_update_required = false;
+@@ -5476,6 +5491,7 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend,
+     }
+ 
+     ggml_cuda_graph_evaluate_and_capture(cuda_ctx, cgraph, use_cuda_graph, cuda_graph_update_required, graph_key);
++    ggml_cuda_command_timing_end(*cuda_ctx);
+ 
+     return GGML_STATUS_SUCCESS;
+ }
+@@ -7186,6 +7202,12 @@ static bool ggml_cuda_cachegen_decode(
+ 
+ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, const char * name) {
+     GGML_UNUSED(reg);
++    if (strcmp(name, "ggml_backend_set_command_timing_callback") == 0) {
++        return (void *)ggml_cuda_set_command_timing_callback;
++    }
++    if (strcmp(name, "ggml_backend_set_command_timing_tag") == 0) {
++        return (void *)ggml_cuda_set_command_timing_tag;
++    }
+     if (strcmp(name, "ggml_backend_comm_init") == 0) {
+         return (void *)ggml_backend_cuda_comm_init;
+     }
+diff --git a/ggml/src/ggml-cuda/vendors/hip.h b/ggml/src/ggml-cuda/vendors/hip.h
+index 23a2f7ba1..52ac7052b 100644
+--- a/ggml/src/ggml-cuda/vendors/hip.h
++++ b/ggml/src/ggml-cuda/vendors/hip.h
+@@ -67,7 +67,9 @@
+ #define cudaErrorPeerAccessAlreadyEnabled hipErrorPeerAccessAlreadyEnabled
+ #define cudaErrorPeerAccessNotEnabled hipErrorPeerAccessNotEnabled
+ #define cudaEventCreateWithFlags hipEventCreateWithFlags
++#define cudaEventDefault hipEventDefault
+ #define cudaEventDisableTiming hipEventDisableTiming
++#define cudaEventElapsedTime hipEventElapsedTime
+ #define cudaEventRecord hipEventRecord
+ #define cudaEventSynchronize hipEventSynchronize
+ #define cudaEvent_t hipEvent_t
+diff --git a/ggml/src/ggml-cuda/vendors/musa.h b/ggml/src/ggml-cuda/vendors/musa.h
+index ff13fa052..1d9506944 100644
+--- a/ggml/src/ggml-cuda/vendors/musa.h
++++ b/ggml/src/ggml-cuda/vendors/musa.h
+@@ -55,7 +55,9 @@
+ #define cudaErrorPeerAccessAlreadyEnabled musaErrorPeerAccessAlreadyEnabled
+ #define cudaErrorPeerAccessNotEnabled musaErrorPeerAccessNotEnabled
+ #define cudaEventCreateWithFlags musaEventCreateWithFlags
++#define cudaEventDefault musaEventDefault
+ #define cudaEventDisableTiming musaEventDisableTiming
++#define cudaEventElapsedTime musaEventElapsedTime
+ #define cudaEventRecord musaEventRecord
+ #define cudaEventSynchronize musaEventSynchronize
+ #define cudaEvent_t musaEvent_t
+-- 
+2.43.0
+
