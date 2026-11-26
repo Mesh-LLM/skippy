@@ -137,7 +137,7 @@ jq -n --arg sha "$BASELINE_SHA" '[{workflow_runs:[
 ]}]' > "$fixture/main-runs.json"
 cp "$fixture/jobs.json" "$fixture/main-jobs.json"
 jq -n '{truncated:false,tree:(["scripts/inference-execute.py", "scripts/lib/inference_checks.py",
-  "scripts/lib/inference_throughput.py", "scripts/lib/inference_inputs.py",
+  "scripts/lib/inference_throughput.py", "scripts/lib/inference_probe.py", "scripts/lib/inference_inputs.py",
   "scripts/lib/inference_ladder.py", "scripts/lib/ci_artifacts.py", "scripts/lib/ci_process.py",
   "scripts/lib/ci_smoke.py", "ci/inference-quality.json", "ci/inference-artifacts.json",
   ".gi/templates.yaml"] | map({path:.,type:"blob",sha:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}))}' > "$fixture/current-tree.json"

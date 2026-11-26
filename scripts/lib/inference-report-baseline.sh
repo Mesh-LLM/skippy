@@ -41,7 +41,7 @@ prepare_baseline() {
   # Engine sources are intentionally excluded: their performance is being measured.
   local inputs
   inputs='["scripts/inference-execute.py", "scripts/lib/inference_checks.py",
-    "scripts/lib/inference_throughput.py", "scripts/lib/inference_inputs.py",
+    "scripts/lib/inference_throughput.py", "scripts/lib/inference_probe.py", "scripts/lib/inference_inputs.py",
     "scripts/lib/inference_ladder.py", "scripts/lib/ci_artifacts.py",
     "scripts/lib/ci_process.py", "scripts/lib/ci_smoke.py",
     "ci/inference-quality.json", "ci/inference-artifacts.json", ".gi/templates.yaml"]'

@@ -79,6 +79,34 @@ class CrateReleaseContract(unittest.TestCase):
 
 
 class SmokeEvidenceContract(unittest.TestCase):
+    def test_linux_rocm_release_policy_rejects_archive_only_evidence(self):
+        release = release_script()
+        with patch.dict(os.environ, SKIPPY_CI_PROFILE="full", GITHUB_OUTPUT=""):
+            _, runtimes = release.targets()
+        runtime = runtimes["linux-x86_64-rocm"]
+        self.assertTrue(runtime["full_only"])
+        self.assertEqual(runtime["validation"], "inference")
+        artifact_only = [row["id"] for row in runtimes.values() if row["validation"] == "artifact"]
+        self.assertEqual(len(artifact_only), 4)
+        self.assertTrue(all(variant.startswith("windows-") for variant in artifact_only))
+        source, digest = "a" * 40, "b" * 64
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            evidence = root / "release-product-linux-x86_64-rocm/evidence"
+            evidence.mkdir(parents=True)
+            report = {"source": source, "variant": runtime["id"], "backend": runtime["backend"],
+                      "archive_sha256": digest}
+            archive_check = evidence / "artifact-smoke.json"
+            release.artifacts.write_json(archive_check, report)
+            policy = {"artifact_only": runtime["validation"] == "artifact"}
+            with self.assertRaises(FileNotFoundError):
+                release.verify_smoke(root, runtime["id"], source, "rocm", digest, **policy)
+            archive_check.unlink()
+            release.artifacts.write_json(evidence / "smoke.json", report)
+            release.verify_smoke(root, runtime["id"], source, "rocm", digest, **policy)
+            with self.assertRaisesRegex(ValueError, "archive"):
+                release.verify_smoke(root, runtime["id"], source, "rocm", "c" * 64, **policy)
+
     def test_remote_smoke_binds_to_the_original_archive(self):
         release = release_script()
         variant = "linux-x86_64-cuda12"
