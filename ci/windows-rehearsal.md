@@ -98,6 +98,10 @@ before shutdown. Host recovery requires the matching Windows disabled-device
 receipt before rebinding an initialized allocation to Linux. Missing release
 confirmation retains VFIO quarantine. After a host restart, recovery can resume
 only when original driver bindings and native discovery already succeed.
+Cancellation requests a cooperative guest exit before stopping the VM. The
+guest stops the task process tree and unloads the assigned AMD device. The
+independent timer uses the same request when the reservation owner disappears;
+failure to obtain the release receipt still retains quarantine.
 
 The golden Windows base remains on NFS. Disposable QCOW2 overlays use local scratch where capacity permits; smaller
 hosts keep their writable overlays on NFS. The approved profile selects the path.
@@ -138,9 +142,16 @@ Vendor installers are copied and checksum-verified on the guest local disk befor
 execution. Detect the PCI PnP entity before installation and require successful
 driver initialization after reboot.
 
-Actual Windows initialization passed on NVIDIA and on AMD with the paired
-firmware/PCIe configuration. The AMD return to Linux failed and the test host
-became unresponsive; its allocation remains quarantined. Windows ROCm rehearsal
-capacity is disabled while the guest release fix awaits hardware validation.
-Packaged inference and post-initialization cancellation/reset recovery remain
-required before adoption.
+Actual Windows initialization passed on NVIDIA and AMD with the paired
+firmware/PCIe configuration. An early AMD return to Linux failed and that host
+remains quarantined. A separate AMD canary on BIOS 04.01, with a freshly
+extracted VBIOS and the orderly Windows release guard, completed two normal
+Windows-to-Linux cycles on one host boot. The second ran the admitted Qwen3
+fixture through a checksum-verified ROCm product, required GPU offload and
+returned a completion. Each cycle confirmed Windows device error 22, original
+Linux GPU/audio bindings, native gfx1151 discovery and scheduler resumption.
+These results do not isolate the BIOS change from the release safeguards.
+
+Windows ROCm rehearsal capacity remains disabled pending initialized-driver
+cancellation qualification. CUDA inference and the final exact-head workflow
+matrix also remain required before adoption.
