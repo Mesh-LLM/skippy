@@ -17,6 +17,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Source checkout failed' }
 $actual = & git.exe rev-parse HEAD
 if ($LASTEXITCODE -ne 0 -or $actual.Trim() -ne $task.source) { throw 'Source identity mismatch' }
 $env:SKIPPY_PYTHON = 'C:\MeshWindows\Python\python.exe'
+$env:SKIPPY_CI_PROFILE = 'full'
 $env:SKIPPY_CI_MODEL = "$inputDirectory\model.gguf"
 $variants = if ($task.backend -eq 'cuda') { @('cuda12', 'cuda13') } else { @('rocm') }
 foreach ($variant in $variants) {
