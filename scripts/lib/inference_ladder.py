@@ -19,7 +19,8 @@ def plan(profile, sha):
     models = ladder["models"]
     if ladder["schema_version"] != 1 or not isinstance(models, list) or not models:
         raise ValueError("unsupported or empty inference ladder")
-    checks = (["gpu-startup", "scored-quality", "streaming-smoke"] if profile == "pr"
+    checks = (["gpu-startup", "scored-quality", "streaming-smoke",
+               "bounded-throughput-probes"] if profile == "pr"
               else ["correctness", "scored-quality", "agentx-performance"])
     rows, ids, names = [], set(), set()
     for model in models:

@@ -28,7 +28,8 @@ class LadderTests(unittest.TestCase):
         self.assertEqual(plan["performance_claim"], "smoke-only")
         for row in rows:
             self.assertEqual(row["machines"], 2 if row["mode"] == "split" else 1)
-            self.assertEqual(row["checks"], ["gpu-startup", "scored-quality", "streaming-smoke"])
+            self.assertEqual(row["checks"], ["gpu-startup", "scored-quality", "streaming-smoke",
+                                             "bounded-throughput-probes"])
 
     def test_extended_profiles(self):
         nightly = inference_ladder.plan("nightly", self.sha)["rows"]
