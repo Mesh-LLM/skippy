@@ -5,7 +5,10 @@ use std::{
 };
 
 use crate::llama_draft::LlamaDraftApi;
-use crate::runtime::{SkippyModelOpenFromPartsWithEventsFn, SkippyModelOpenWithEventsFn};
+use crate::runtime::{
+    SkippyClearRuntimeEventReporterFn, SkippyModelOpenFromPartsWithEventsFn,
+    SkippyModelOpenWithEventsFn, SkippySetRuntimeEventReporterFn,
+};
 use crate::{
     ABI_VERSION_MAJOR, ABI_VERSION_MINOR, ABI_VERSION_PATCH, AbiVersion, ActivationBoundaryDesc,
     ActivationDesc, AsrAbortCallback, AsrInfoV1, AsrModel, AsrResult, AsrSegmentV1,
@@ -16,11 +19,10 @@ use crate::{
     MtmdHelperBitmapWrapper, MtmdHelperDecodeBudget, MtmdHelperGenAudio, MtmdHelperGenAudioInput,
     MtmdHelperInitOpt, MtmdHelperVideo, MtmdInputChunkType, MtmdInputChunks, MtmdInputText,
     NativeMtpDraft, NativeRuntimeLoadError, NgramCache, Opaque, RuntimeConfig, SamplingConfig,
-    Session, SkippyDecodeStepSampledMtpFn, SkippyModelAttachMtpDraftModelFn,
-    SkippyRuntimeEventReporterV1, StagePlan, StagePlanDescV1, StagePlanProfileDescV1,
-    StagePlanStateDescV1, StagePlanStringRefV1, StagePlanValueDescV1, StagePlanValueKind,
-    StagePlanner, StagePlannerConfigV1, Status, SystemOneSlot, TensorInfo, TokenLogprobs,
-    TokenSignal, WorkloadInfoV1, runtime_abi_supported,
+    Session, SkippyDecodeStepSampledMtpFn, SkippyModelAttachMtpDraftModelFn, StagePlan,
+    StagePlanDescV1, StagePlanProfileDescV1, StagePlanStateDescV1, StagePlanStringRefV1,
+    StagePlanValueDescV1, StagePlanValueKind, StagePlanner, StagePlannerConfigV1, Status,
+    SystemOneSlot, TensorInfo, TokenLogprobs, TokenSignal, WorkloadInfoV1, runtime_abi_supported,
 };
 
 static SYMBOLS: OnceLock<Symbols> = OnceLock::new();
@@ -411,10 +413,6 @@ impl Symbols {
 pub fn symbol_present(name: &[u8]) -> bool {
     symbols().symbol_exists(name)
 }
-
-type SkippySetRuntimeEventReporterFn =
-    unsafe extern "C" fn(reporter: *const SkippyRuntimeEventReporterV1) -> Status;
-type SkippyClearRuntimeEventReporterFn = unsafe extern "C" fn();
 
 pub fn skippy_set_runtime_event_reporter_fn() -> Option<SkippySetRuntimeEventReporterFn> {
     static CACHE: OnceLock<Option<SkippySetRuntimeEventReporterFn>> = OnceLock::new();

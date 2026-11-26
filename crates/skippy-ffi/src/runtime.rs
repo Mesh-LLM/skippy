@@ -9,7 +9,8 @@ use crate::{Error, Model, Opaque, RuntimeConfig, SkippyRuntimeEventReporterV1, S
 #[cfg(not(feature = "dynamic-runtime"))]
 use crate::{
     LlamaPerfContextData, LlamaPerfContextFn, SkippyDecodeStepSampledMtpFn,
-    SkippyModelAttachMtpDraftModelFn,
+    SkippyModelAttachMtpDraftModelFn, SkippySetGpuCommandTimingCallbackFn,
+    SkippySetNativeSpanCallbackFn, SkippySetTraceTagFn,
 };
 
 #[cfg(not(feature = "dynamic-runtime"))]
@@ -247,6 +248,35 @@ pub fn skippy_model_open_with_events_fn() -> Option<SkippyModelOpenWithEventsFn>
 pub fn skippy_model_open_from_parts_with_events_fn() -> Option<SkippyModelOpenFromPartsWithEventsFn>
 {
     Some(static_bindings::skippy_model_open_from_parts_with_events)
+}
+
+pub(crate) type SkippySetRuntimeEventReporterFn =
+    unsafe extern "C" fn(reporter: *const SkippyRuntimeEventReporterV1) -> Status;
+pub(crate) type SkippyClearRuntimeEventReporterFn = unsafe extern "C" fn();
+
+#[cfg(not(feature = "dynamic-runtime"))]
+pub fn skippy_set_runtime_event_reporter_fn() -> Option<SkippySetRuntimeEventReporterFn> {
+    Some(static_bindings::skippy_set_runtime_event_reporter)
+}
+
+#[cfg(not(feature = "dynamic-runtime"))]
+pub fn skippy_clear_runtime_event_reporter_fn() -> Option<SkippyClearRuntimeEventReporterFn> {
+    Some(static_bindings::skippy_clear_runtime_event_reporter)
+}
+
+#[cfg(not(feature = "dynamic-runtime"))]
+pub fn skippy_set_native_span_callback_fn() -> Option<SkippySetNativeSpanCallbackFn> {
+    Some(static_bindings::skippy_set_native_span_callback)
+}
+
+#[cfg(not(feature = "dynamic-runtime"))]
+pub fn skippy_set_gpu_command_timing_callback_fn() -> Option<SkippySetGpuCommandTimingCallbackFn> {
+    Some(static_bindings::skippy_set_gpu_command_timing_callback)
+}
+
+#[cfg(not(feature = "dynamic-runtime"))]
+pub fn skippy_set_trace_tag_fn() -> Option<SkippySetTraceTagFn> {
+    Some(static_bindings::skippy_set_trace_tag)
 }
 
 /// Graph reuse counters for a statically linked native runtime.

@@ -31,6 +31,7 @@ mod dynamic;
 pub mod llama_draft;
 mod model;
 mod multimodal;
+pub mod native_symbol;
 mod runtime;
 mod sampling;
 mod stage_plan;
@@ -146,9 +147,11 @@ pub use state::{
 #[cfg(not(feature = "dynamic-runtime"))]
 pub use runtime::{
     llama_perf_context_optional, load_native_runtime_libraries, load_native_runtime_library,
-    native_runtime_loaded, skippy_decode_step_sampled_mtp_fn,
-    skippy_model_attach_mtp_draft_model_fn, skippy_model_open_from_parts_with_events_fn,
-    skippy_model_open_with_events_fn,
+    native_runtime_loaded, skippy_clear_runtime_event_reporter_fn,
+    skippy_decode_step_sampled_mtp_fn, skippy_model_attach_mtp_draft_model_fn,
+    skippy_model_open_from_parts_with_events_fn, skippy_model_open_with_events_fn,
+    skippy_set_gpu_command_timing_callback_fn, skippy_set_native_span_callback_fn,
+    skippy_set_runtime_event_reporter_fn, skippy_set_trace_tag_fn,
 };
 
 #[cfg(feature = "dynamic-runtime")]

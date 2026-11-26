@@ -1,3 +1,4 @@
+use skippy_ffi::native_symbol::{self, NativeSymbol};
 use skippy_ffi::{
     FEATURE_CLEF_DECISIONS, FEATURE_DEVICE_EVENTS, FEATURE_DIAGNOSTIC_EVENTS, FEATURE_KV_EVENTS,
     FEATURE_LAYA_DECISIONS, FEATURE_MODEL_LOAD_EVENTS_V2, FEATURE_NATIVE_TRACING,
@@ -18,7 +19,7 @@ const MAX_KNOWN_FEATURE_BIT: u32 = 43;
 struct FamilySpec {
     bit: u64,
     name: &'static str,
-    required_symbols: &'static [&'static [u8]],
+    required_symbols: &'static [NativeSymbol],
 }
 
 const FAMILIES: &[FamilySpec] = &[
@@ -26,101 +27,101 @@ const FAMILIES: &[FamilySpec] = &[
         bit: FEATURE_RUNTIME_EVENTS,
         name: "runtime_events",
         required_symbols: &[
-            b"skippy_model_open_with_events\0",
-            b"skippy_model_open_from_parts_with_events\0",
+            native_symbol::SKIPPY_MODEL_OPEN_WITH_EVENTS,
+            native_symbol::SKIPPY_MODEL_OPEN_FROM_PARTS_WITH_EVENTS,
         ],
     },
     FamilySpec {
         bit: FEATURE_RUNTIME_EVENT_REPORTER,
         name: "runtime_event_reporter",
         required_symbols: &[
-            b"skippy_set_runtime_event_reporter\0",
-            b"skippy_clear_runtime_event_reporter\0",
+            native_symbol::SKIPPY_SET_RUNTIME_EVENT_REPORTER,
+            native_symbol::SKIPPY_CLEAR_RUNTIME_EVENT_REPORTER,
         ],
     },
     FamilySpec {
         bit: FEATURE_MODEL_LOAD_EVENTS_V2,
         name: "model_load_events_v2",
-        required_symbols: &[b"skippy_emit_model_load_event_v2\0"],
+        required_symbols: &[native_symbol::SKIPPY_EMIT_MODEL_LOAD_EVENT_V2],
     },
     FamilySpec {
         bit: FEATURE_KV_EVENTS,
         name: "kv_events",
-        required_symbols: &[b"skippy_emit_kv_event\0"],
+        required_symbols: &[native_symbol::SKIPPY_EMIT_KV_EVENT],
     },
     FamilySpec {
         bit: FEATURE_DEVICE_EVENTS,
         name: "device_events",
-        required_symbols: &[b"skippy_emit_device_event\0"],
+        required_symbols: &[native_symbol::SKIPPY_EMIT_DEVICE_EVENT],
     },
     FamilySpec {
         bit: FEATURE_DIAGNOSTIC_EVENTS,
         name: "diagnostic_events",
-        required_symbols: &[b"skippy_emit_diagnostic_event\0"],
+        required_symbols: &[native_symbol::SKIPPY_EMIT_DIAGNOSTIC_EVENT],
     },
     FamilySpec {
         bit: FEATURE_UNLOAD_EVENTS,
         name: "unload_events",
-        required_symbols: &[b"skippy_emit_unload_event\0"],
+        required_symbols: &[native_symbol::SKIPPY_EMIT_UNLOAD_EVENT],
     },
     FamilySpec {
         bit: FEATURE_NON_CHAT_WORKLOADS,
         name: "non_chat_workloads",
         required_symbols: &[
-            b"skippy_model_workload_info_v1\0",
-            b"skippy_session_embed\0",
-            b"skippy_session_rerank\0",
-            b"skippy_session_encode_prompt\0",
+            native_symbol::SKIPPY_MODEL_WORKLOAD_INFO_V1,
+            native_symbol::SKIPPY_SESSION_EMBED,
+            native_symbol::SKIPPY_SESSION_RERANK,
+            native_symbol::SKIPPY_SESSION_ENCODE_PROMPT,
         ],
     },
     FamilySpec {
         bit: FEATURE_LAYA_DECISIONS,
         name: "laya_decisions",
         required_symbols: &[
-            b"skippy_laya_model_open\0",
-            b"skippy_laya_model_free\0",
-            b"skippy_laya_model_info_v1\0",
-            b"skippy_laya_model_memory_v1\0",
-            b"skippy_laya_tokenize\0",
-            b"skippy_laya_read\0",
+            native_symbol::SKIPPY_LAYA_MODEL_OPEN,
+            native_symbol::SKIPPY_LAYA_MODEL_FREE,
+            native_symbol::SKIPPY_LAYA_MODEL_INFO_V1,
+            native_symbol::SKIPPY_LAYA_MODEL_MEMORY_V1,
+            native_symbol::SKIPPY_LAYA_TOKENIZE,
+            native_symbol::SKIPPY_LAYA_READ,
         ],
     },
     FamilySpec {
         bit: FEATURE_CLEF_DECISIONS,
         name: "clef_decisions",
         required_symbols: &[
-            b"skippy_clef_model_open\0",
-            b"skippy_clef_model_free\0",
-            b"skippy_clef_model_info_v1\0",
-            b"skippy_clef_model_decision_metadata\0",
-            b"skippy_clef_plan\0",
-            b"skippy_clef_read\0",
+            native_symbol::SKIPPY_CLEF_MODEL_OPEN,
+            native_symbol::SKIPPY_CLEF_MODEL_FREE,
+            native_symbol::SKIPPY_CLEF_MODEL_INFO_V1,
+            native_symbol::SKIPPY_CLEF_MODEL_DECISION_METADATA,
+            native_symbol::SKIPPY_CLEF_PLAN,
+            native_symbol::SKIPPY_CLEF_READ,
         ],
     },
     FamilySpec {
         bit: FEATURE_SPEECH_RECOGNITION,
         name: "speech_recognition",
         required_symbols: &[
-            b"skippy_asr_model_open\0",
-            b"skippy_asr_model_free\0",
-            b"skippy_asr_model_info_v1\0",
-            b"skippy_asr_decode_audio\0",
-            b"skippy_asr_samples_free\0",
-            b"skippy_asr_transcribe\0",
-            b"skippy_asr_result_segment_count\0",
-            b"skippy_asr_result_segment_v1\0",
-            b"skippy_asr_result_language\0",
-            b"skippy_asr_result_duration_seconds\0",
-            b"skippy_asr_result_free\0",
+            native_symbol::SKIPPY_ASR_MODEL_OPEN,
+            native_symbol::SKIPPY_ASR_MODEL_FREE,
+            native_symbol::SKIPPY_ASR_MODEL_INFO_V1,
+            native_symbol::SKIPPY_ASR_DECODE_AUDIO,
+            native_symbol::SKIPPY_ASR_SAMPLES_FREE,
+            native_symbol::SKIPPY_ASR_TRANSCRIBE,
+            native_symbol::SKIPPY_ASR_RESULT_SEGMENT_COUNT,
+            native_symbol::SKIPPY_ASR_RESULT_SEGMENT_V1,
+            native_symbol::SKIPPY_ASR_RESULT_LANGUAGE,
+            native_symbol::SKIPPY_ASR_RESULT_DURATION_SECONDS,
+            native_symbol::SKIPPY_ASR_RESULT_FREE,
         ],
     },
     FamilySpec {
         bit: FEATURE_NATIVE_TRACING,
         name: "native_tracing",
         required_symbols: &[
-            b"skippy_set_native_span_callback\0",
-            b"skippy_set_gpu_command_timing_callback\0",
-            b"skippy_set_trace_tag\0",
+            native_symbol::SKIPPY_SET_NATIVE_SPAN_CALLBACK,
+            native_symbol::SKIPPY_SET_GPU_COMMAND_TIMING_CALLBACK,
+            native_symbol::SKIPPY_SET_TRACE_TAG,
         ],
     },
 ];
@@ -146,7 +147,7 @@ impl CapabilityReport {
 /// additional message and never disable a family.
 pub(crate) fn build_report(
     features: u64,
-    symbol_exists: impl Fn(&[u8]) -> bool,
+    symbol_exists: impl Fn(&NativeSymbol) -> bool,
 ) -> CapabilityReport {
     let mut confirmed = 0u64;
     let mut health_messages = Vec::new();
@@ -163,10 +164,7 @@ pub(crate) fn build_report(
         if features & family.bit == 0 {
             continue;
         }
-        let all_present = family
-            .required_symbols
-            .iter()
-            .all(|symbol| symbol_exists(symbol));
+        let all_present = family.required_symbols.iter().all(&symbol_exists);
         if all_present {
             confirmed |= family.bit;
         } else {
@@ -183,26 +181,6 @@ pub(crate) fn build_report(
     }
 }
 
-pub(crate) fn symbol_available(name: &[u8]) -> bool {
-    #[cfg(feature = "dynamic-native-runtime")]
-    {
-        skippy_ffi::symbol_present(name)
-    }
-    #[cfg(not(feature = "dynamic-native-runtime"))]
-    {
-        #[cfg(unix)]
-        {
-            let symbol = unsafe { libc::dlsym(libc::RTLD_DEFAULT, name.as_ptr().cast()) };
-            !symbol.is_null()
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = name;
-            false
-        }
-    }
-}
-
 /// Probes the loaded native runtime's family bit+symbol groups
 /// (bits 24, 31-37, and 40), logging one bounded health record per malformed
 /// family plus at most one for reserved bits. Callers must have already
@@ -215,7 +193,7 @@ pub fn probe_capabilities() -> CapabilityReport {
     let Some(features) = abi_features_bitmask() else {
         return CapabilityReport::default();
     };
-    let report = build_report(features, symbol_available);
+    let report = build_report(features, NativeSymbol::present);
     for message in &report.health_messages {
         write_native_log_note(message);
     }
@@ -237,8 +215,8 @@ mod tests {
     fn complete_workload_family_checks_all_exports_without_reserved_warning() {
         let checked = std::cell::RefCell::new(Vec::new());
         let report = build_report(FEATURE_NON_CHAT_WORKLOADS, |symbol| {
-            checked.borrow_mut().push(symbol.to_vec());
-            WORKLOAD_SYMBOLS.contains(&symbol)
+            checked.borrow_mut().push(symbol.name().to_vec());
+            WORKLOAD_SYMBOLS.contains(&symbol.name())
         });
         assert_eq!(report.confirmed, FEATURE_NON_CHAT_WORKLOADS);
         assert!(report.health_messages.is_empty());
@@ -249,7 +227,7 @@ mod tests {
     fn each_missing_workload_export_disables_only_the_workload_family() {
         for missing in WORKLOAD_SYMBOLS {
             let report = build_report(FEATURE_NON_CHAT_WORKLOADS | FEATURE_KV_EVENTS, |symbol| {
-                symbol != *missing
+                symbol.name() != *missing
             });
             assert!(!report.family_confirmed(FEATURE_NON_CHAT_WORKLOADS));
             assert!(report.family_confirmed(FEATURE_KV_EVENTS));
@@ -262,7 +240,7 @@ mod tests {
     #[test]
     fn unadvertised_workload_family_does_not_resolve_its_exports() {
         let report = build_report(FEATURE_KV_EVENTS, |symbol| {
-            assert!(!WORKLOAD_SYMBOLS.contains(&symbol));
+            assert!(!WORKLOAD_SYMBOLS.contains(&symbol.name()));
             true
         });
         assert_eq!(report.confirmed, FEATURE_KV_EVENTS);
@@ -367,7 +345,7 @@ mod tests {
     #[test]
     fn incomplete_symbols_disable_only_that_family() {
         let report = build_report(FEATURE_KV_EVENTS | FEATURE_DEVICE_EVENTS, |symbol| {
-            symbol != b"skippy_emit_kv_event\0"
+            symbol.name() != b"skippy_emit_kv_event\0"
         });
         assert!(!report.family_confirmed(FEATURE_KV_EVENTS));
         assert!(report.family_confirmed(FEATURE_DEVICE_EVENTS));
@@ -379,7 +357,7 @@ mod tests {
     fn independent_families_probe_independently() {
         let report = build_report(
             FEATURE_RUNTIME_EVENTS | FEATURE_RUNTIME_EVENT_REPORTER | FEATURE_UNLOAD_EVENTS,
-            |symbol| symbol != b"skippy_set_runtime_event_reporter\0",
+            |symbol| symbol.name() != b"skippy_set_runtime_event_reporter\0",
         );
         assert!(report.family_confirmed(FEATURE_RUNTIME_EVENTS));
         assert!(!report.family_confirmed(FEATURE_RUNTIME_EVENT_REPORTER));

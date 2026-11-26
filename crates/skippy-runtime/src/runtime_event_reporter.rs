@@ -146,62 +146,6 @@ pub unsafe fn deliver_runtime_event_for_test(event: *const RawRuntimeEvent) {
 type SetReporterFn = unsafe extern "C" fn(*const RawReporter) -> skippy_ffi::Status;
 type ClearReporterFn = unsafe extern "C" fn();
 
-fn set_reporter_fn() -> Option<SetReporterFn> {
-    #[cfg(feature = "dynamic-native-runtime")]
-    {
-        skippy_ffi::skippy_set_runtime_event_reporter_fn()
-    }
-    #[cfg(not(feature = "dynamic-native-runtime"))]
-    {
-        static CACHE: OnceLock<Option<SetReporterFn>> = OnceLock::new();
-        *CACHE.get_or_init(|| {
-            #[cfg(unix)]
-            {
-                let symbol = unsafe {
-                    libc::dlsym(
-                        libc::RTLD_DEFAULT,
-                        c"skippy_set_runtime_event_reporter".as_ptr(),
-                    )
-                };
-                (!symbol.is_null())
-                    .then(|| unsafe { std::mem::transmute::<*mut c_void, SetReporterFn>(symbol) })
-            }
-            #[cfg(not(unix))]
-            {
-                None
-            }
-        })
-    }
-}
-
-fn clear_reporter_fn() -> Option<ClearReporterFn> {
-    #[cfg(feature = "dynamic-native-runtime")]
-    {
-        skippy_ffi::skippy_clear_runtime_event_reporter_fn()
-    }
-    #[cfg(not(feature = "dynamic-native-runtime"))]
-    {
-        static CACHE: OnceLock<Option<ClearReporterFn>> = OnceLock::new();
-        *CACHE.get_or_init(|| {
-            #[cfg(unix)]
-            {
-                let symbol = unsafe {
-                    libc::dlsym(
-                        libc::RTLD_DEFAULT,
-                        c"skippy_clear_runtime_event_reporter".as_ptr(),
-                    )
-                };
-                (!symbol.is_null())
-                    .then(|| unsafe { std::mem::transmute::<*mut c_void, ClearReporterFn>(symbol) })
-            }
-            #[cfg(not(unix))]
-            {
-                None
-            }
-        })
-    }
-}
-
 /// Installs the runtime-scoped (process-global) event reporter, gated on the
 /// probed `runtime_event_reporter` family. Returns `false` without touching
 /// native state when the family is unavailable or a symbol failed to
@@ -214,7 +158,7 @@ fn install_runtime_event_reporter_for(capabilities: &CapabilityReport) -> bool {
     if !capabilities.family_confirmed(FEATURE_RUNTIME_EVENT_REPORTER) {
         return false;
     }
-    let Some(set_fn) = set_reporter_fn() else {
+    let Some(set_fn) = skippy_ffi::skippy_set_runtime_event_reporter_fn() else {
         return false;
     };
 
@@ -264,7 +208,7 @@ pub fn clear_runtime_event_reporter() {
     // Dynamic symbol lookup requires a loaded runtime; the guard keeps this
     // public cleanup function a safe no-op before dynamic startup.
     let clear_fn = if skippy_ffi::native_runtime_loaded() {
-        clear_reporter_fn()
+        skippy_ffi::skippy_clear_runtime_event_reporter_fn()
     } else {
         None
     };
