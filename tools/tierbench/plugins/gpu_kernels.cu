@@ -28,6 +28,15 @@ __global__ void global_read(const uint4* __restrict__ data, std::size_t count, u
     }
 }
 
+__global__ void global_write(uint4* __restrict__ data, std::size_t count) {
+    std::size_t first = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    std::size_t stride = static_cast<std::size_t>(gridDim.x) * blockDim.x;
+    for (std::size_t i = first; i < count; i += stride) {
+        auto v = static_cast<unsigned>(i);
+        data[i] = make_uint4(v, v ^ never, v + 1, v ^ 1u);
+    }
+}
+
 __global__ void global_chase(const unsigned* __restrict__ next, unsigned stride, unsigned long long steps,
                              unsigned* sink) {
     unsigned at = 0;
@@ -93,6 +102,11 @@ extern "C" int tierbench_gpu_global_read(const void* data, std::size_t bytes, un
                                          void* sink, void* stream) {
     global_read<<<blocks, threads, 0, as_stream(stream)>>>(static_cast<const uint4*>(data), bytes / sizeof(uint4),
                                                            passes, static_cast<unsigned*>(sink));
+    return last_error();
+}
+
+extern "C" int tierbench_gpu_global_write(void* data, std::size_t bytes, unsigned blocks, void* stream) {
+    global_write<<<blocks, threads, 0, as_stream(stream)>>>(static_cast<uint4*>(data), bytes / sizeof(uint4));
     return last_error();
 }
 

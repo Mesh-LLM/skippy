@@ -11,6 +11,7 @@ A small runner that measures how fast data moves through a machine's memory tier
 | `plugins/cpu_memory.cpp` | read, write and copy bandwidth, and dependent-load latency, from L1 out to DRAM |
 | `plugins/storage_posix.cpp` | durable writes, direct reads and page-cache reads against the scratch directory |
 | `plugins/gpu_plugin.cpp`, `gpu_kernels.cu`, `gpu_api.h` | one source for CUDA and HIP: copies, zero-copy, GPU memory and shared memory |
+| `plugins/gpu_placement.cpp` | CUDA and HIP: where a buffer lives (device, mapped pinned, managed or pageable host memory), as kernels read and write it and as a checkpoint saves and restores it |
 | `plugins/gpu_prefill.cpp` | prefill compute: half and bfloat16 matrix multiplies through cuBLAS or hipBLAS, swept by token count |
 | `plugins/metal_prefill.mm` | prefill compute on Apple GPUs through MPS |
 | `plugins/metal_memory.mm` | Apple GPUs: blits, kernel reads from private, shared and no-copy buffers, threadgroup memory, GPU latency and `MTLIOCommandQueue` loads |
@@ -125,5 +126,21 @@ At a few tokens the multiply is limited by reading the weights, so its `gbps` si
 | `shared-latency` | one thread following a random cycle through shared memory |
 
 The shared-memory sizes go up to the GPU's opt-in limit per block. Larger sizes are recorded as `unsupported`.
+
+## Where a buffer lives
+
+The `cuda-placement` and `hip-placement` cases ask whether a buffer the GPU uses, such as a KV pool or a recurrent-state checkpoint, could live in host-visible memory. On an integrated GPU such as the GB10 every placement is the same DRAM, so what differs is how the GPU reaches it.
+
+| Case | What it times |
+|---|---|
+| `read-device`, `read-mapped`, `read-managed`, `read-system` | a kernel reading the buffer 8 times over, from `cudaMalloc`, mapped pinned host, managed, or plain `aligned_alloc` memory |
+| `write-*` | a kernel writing the buffer once, in the same four placements |
+| `save-memcpy-pageable`, `save-memcpy-pinned` | device to host with `cudaMemcpyAsync`, waiting for each copy as a checkpoint save does |
+| `save-kernel-mapped`, `save-kernel-system` | the same save as a copy kernel writing straight into host memory |
+| `restore-*` | the reverse of each save |
+
+`read-system`, `write-system` and the `-kernel-system` cases need a GPU that can address pageable memory. Elsewhere they are recorded as `unsupported`. The plugin's facts carry `pageable_memory_access`, `pageable_uses_host_page_tables` and the managed-memory attributes, which say how the GPU reaches host memory. Read them beside the rows.
+
+Managed memory is first touched on the host, so the warmup repetitions include any migration to the GPU.
 
 Kernels use plain loops: ranges are not available in device code.

@@ -32,7 +32,7 @@ inline void release_device(void* p) { static_cast<void>(GPU(Free)(p)); }
 
 using Owned = std::unique_ptr<void, void (*)(void*)>;
 
-enum class Memory { pageable, pinned, mapped, device };
+enum class Memory { pageable, pinned, mapped, managed, device };
 
 inline Owned allocate(Memory kind, std::size_t bytes, tierbench_error* error) {
     void* p = nullptr;
@@ -53,6 +53,12 @@ inline Owned allocate(Memory kind, std::size_t bytes, tierbench_error* error) {
         }
         std::memset(p, 1, bytes);
         return {p, release_pinned};
+    case Memory::managed:
+        if (!ok(GPU(MallocManaged)(&p, bytes, GPU(MemAttachGlobal)), error, "managed allocation")) {
+            return {nullptr, release_device};
+        }
+        std::memset(p, 1, bytes);
+        return {p, release_device};
     case Memory::device: {
         if (!ok(GPU(Malloc)(&p, bytes), error, "device allocation")) {
             return {nullptr, release_device};

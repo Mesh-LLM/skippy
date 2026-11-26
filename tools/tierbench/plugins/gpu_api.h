@@ -14,6 +14,11 @@ using gpu_device_attr = hipDeviceAttribute_t;
 inline constexpr auto gpu_attr_integrated = hipDeviceAttributeIntegrated;
 inline constexpr auto gpu_attr_sm_count = hipDeviceAttributeMultiprocessorCount;
 inline constexpr auto gpu_attr_shared_optin = hipDeviceAttributeSharedMemPerBlockOptin;
+inline constexpr auto gpu_attr_pageable_access = hipDeviceAttributePageableMemoryAccess;
+inline constexpr auto gpu_attr_pageable_host_tables = hipDeviceAttributePageableMemoryAccessUsesHostPageTables;
+inline constexpr auto gpu_attr_concurrent_managed = hipDeviceAttributeConcurrentManagedAccess;
+inline constexpr auto gpu_attr_registered_host_pointer = hipDeviceAttributeCanUseHostPointerForRegisteredMem;
+inline constexpr auto gpu_attr_managed_from_host = hipDeviceAttributeDirectManagedMemAccessFromHost;
 inline constexpr const char* gpu_api_name = "hip";
 inline hipError_t gpu_malloc_pinned(void** p, std::size_t n) { return hipHostMalloc(p, n, hipHostMallocDefault); }
 inline hipError_t gpu_malloc_mapped(void** p, std::size_t n) { return hipHostMalloc(p, n, hipHostMallocMapped); }
@@ -30,6 +35,11 @@ using gpu_device_attr = cudaDeviceAttr;
 inline constexpr auto gpu_attr_integrated = cudaDevAttrIntegrated;
 inline constexpr auto gpu_attr_sm_count = cudaDevAttrMultiProcessorCount;
 inline constexpr auto gpu_attr_shared_optin = cudaDevAttrMaxSharedMemoryPerBlockOptin;
+inline constexpr auto gpu_attr_pageable_access = cudaDevAttrPageableMemoryAccess;
+inline constexpr auto gpu_attr_pageable_host_tables = cudaDevAttrPageableMemoryAccessUsesHostPageTables;
+inline constexpr auto gpu_attr_concurrent_managed = cudaDevAttrConcurrentManagedAccess;
+inline constexpr auto gpu_attr_registered_host_pointer = cudaDevAttrCanUseHostPointerForRegisteredMem;
+inline constexpr auto gpu_attr_managed_from_host = cudaDevAttrDirectManagedMemAccessFromHost;
 inline constexpr const char* gpu_api_name = "cuda";
 inline cudaError_t gpu_malloc_pinned(void** p, std::size_t n) { return cudaMallocHost(p, n); }
 inline cudaError_t gpu_malloc_mapped(void** p, std::size_t n) { return cudaHostAlloc(p, n, cudaHostAllocMapped); }
@@ -40,6 +50,7 @@ extern "C" {
 int tierbench_gpu_pull(const void* source, void* target, std::size_t bytes, void* stream);
 int tierbench_gpu_global_read(const void* data, std::size_t bytes, unsigned passes, unsigned blocks, void* sink,
                               void* stream);
+int tierbench_gpu_global_write(void* data, std::size_t bytes, unsigned blocks, void* stream);
 int tierbench_gpu_global_chase(const unsigned* next, unsigned stride, unsigned long long steps, void* sink,
                                void* stream);
 int tierbench_gpu_shared_prepare(unsigned bytes);
