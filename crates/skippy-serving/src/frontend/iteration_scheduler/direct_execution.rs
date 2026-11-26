@@ -162,6 +162,36 @@ impl SchedulerWorker {
                             .sum::<usize>()
                     ),
                 ),
+                // A prefill chunk and a decode step cost very different amounts, and attention
+                // grows with the deepest context, so an iteration's time needs its mix.
+                (
+                    "skippy.scheduler.prefill_requests".to_string(),
+                    json!(requests.len() - decode_steps),
+                ),
+                (
+                    "skippy.scheduler.prefill_tokens".to_string(),
+                    json!(
+                        requests
+                            .iter()
+                            .filter(|(r, _)| r.phase == IterationBatchPhase::Prefill)
+                            .map(|(r, _)| r.token_ids.len())
+                            .sum::<usize>()
+                    ),
+                ),
+                (
+                    "skippy.scheduler.decode_requests".to_string(),
+                    json!(decode_steps),
+                ),
+                (
+                    "skippy.scheduler.max_context_tokens".to_string(),
+                    json!(
+                        requests
+                            .iter()
+                            .filter_map(|(r, _)| r.positions.iter().max())
+                            .max()
+                            .map_or(0, |position| i64::from(*position) + 1)
+                    ),
+                ),
                 (
                     "skippy.scheduler.batch_wait_max_ms".to_string(),
                     json!(timing.wait.iter().copied().fold(0.0_f64, f64::max)),
