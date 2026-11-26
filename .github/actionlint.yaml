@@ -9,5 +9,5 @@ self-hosted-runner:
     - cuda13
     - rocm
     - runtime-image
-    - windows-vm-rehearsal
+    - windows-vm
     - cuda

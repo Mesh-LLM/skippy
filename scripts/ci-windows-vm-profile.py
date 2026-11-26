@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate a protected Windows rehearsal host profile before reserving its GPU."""
+"""Validate a protected Windows GPU host profile before reserving its GPU."""
 
 import hashlib
 import json

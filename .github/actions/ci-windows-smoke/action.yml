@@ -1,0 +1,93 @@
+name: Windows GPU smoke
+description: Qualify exact Windows archives in a disposable GPU guest and restore its native host.
+inputs:
+  backend:
+    description: CUDA (12 and 13 together) or ROCm.
+    required: true
+  candidate-artifact:
+    description: Immutable candidate source artifact.
+    default: ''
+  candidate-sha:
+    description: Immutable candidate source revision.
+    default: ''
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup
+      with:
+        cache: 'false'
+    - uses: ./.github/actions/source
+      with:
+        artifact: ${{ inputs.candidate-artifact }}
+        sha: ${{ inputs.candidate-sha }}
+    - name: Restore the exact public Windows recipe
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      with:
+        repository: Mesh-LLM/mesh-llm-runner-images
+        ref: 3e065f2cedb13228678c287f0ad55c26bafe6e6e
+        path: target/windows-recipe
+        persist-credentials: false
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      if: inputs.backend == 'cuda'
+      with:
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-product-windows-x86_64-cuda12
+        path: target/windows-input/products/windows-x86_64-cuda12
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      if: inputs.backend == 'cuda'
+      with:
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-product-windows-x86_64-cuda13
+        path: target/windows-input/products/windows-x86_64-cuda13
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      if: inputs.backend == 'rocm'
+      with:
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-product-windows-x86_64-rocm
+        path: target/windows-input/products/windows-x86_64-rocm
+    - name: Admit the pinned Qwen3 fixture
+      run: just ci-model-fetch
+      shell: bash
+    - name: Execute exact Windows archives with required GPU offload
+      run: bash scripts/ci-windows-vm-smoke.sh
+      shell: bash
+      env:
+        WINDOWS_BACKEND: ${{ inputs.backend }}
+        WINDOWS_RECIPE_SHA: 3e065f2cedb13228678c287f0ad55c26bafe6e6e
+    - name: Upload CUDA 12 inference evidence
+      if: inputs.backend == 'cuda'
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-device-evidence-windows-x86_64-cuda12
+        path: target/windows-evidence/windows-x86_64-cuda12
+        if-no-files-found: error
+        overwrite: true
+        retention-days: 7
+    - name: Upload CUDA 13 inference evidence
+      if: inputs.backend == 'cuda'
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-device-evidence-windows-x86_64-cuda13
+        path: target/windows-evidence/windows-x86_64-cuda13
+        if-no-files-found: error
+        overwrite: true
+        retention-days: 7
+    - name: Upload ROCm inference evidence
+      if: inputs.backend == 'rocm'
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-device-evidence-windows-x86_64-rocm
+        path: target/windows-evidence/windows-x86_64-rocm
+        if-no-files-found: error
+        overwrite: true
+        retention-days: 7
+    - name: Retain VM and host restoration evidence
+      if: always()
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-windows-${{ inputs.backend }}-diagnostics
+        path: target/windows-evidence
+        if-no-files-found: warn
+        overwrite: true
+        retention-days: 14
+    - name: Reclaim copied VM inputs
+      if: always()
+      shell: bash
+      run: rm -rf -- target/windows-input

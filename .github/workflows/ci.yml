@@ -974,6 +974,50 @@ jobs:
           windows-rocm: '7.2.0'
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
+  smoke_windows_cuda:
+    name: Windows GPU smoke · CUDA 12 and 13
+    needs: [plan, package_windows_x86_64_cuda12, package_windows_x86_64_cuda13]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on:
+      group: jy-rnr_j74hjtfyzpp6943
+      labels: [self-hosted, Linux, X64, windows-vm, cuda]
+    timeout-minutes: 90
+    env:
+      SKIPPY_CI_PROFILE: full
+      WINDOWS_HOST_PROFILE: ${{ vars.SKIPPY_WINDOWS_CUDA_PROFILE }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-windows-smoke
+        with:
+          backend: cuda
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  smoke_windows_rocm:
+    name: Windows GPU smoke · ROCm
+    needs: [plan, package_windows_x86_64_rocm]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on:
+      group: jy-rnr_ya8h5cpegg47v3x
+      labels: [self-hosted, Linux, X64, windows-vm, rocm]
+    timeout-minutes: 90
+    env:
+      SKIPPY_CI_PROFILE: full
+      WINDOWS_HOST_PROFILE: ${{ vars.SKIPPY_WINDOWS_ROCM_PROFILE }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-windows-smoke
+        with:
+          backend: rocm
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
   gate:
     name: ${{ needs.plan.outputs.profile == 'full' && 'Full CI gate' || (github.event_name == 'pull_request_target' && 'Same-repository CI' || 'CI') }}
     needs: [
@@ -982,7 +1026,8 @@ jobs:
       package_linux_x86_64_cpu, package_linux_x86_64_cuda12, package_linux_x86_64_cuda13, package_linux_x86_64_rocm,
       package_linux_aarch64_cpu, package_linux_aarch64_cuda12, package_linux_aarch64_cuda13,
       package_windows_x86_64_cpu, package_windows_x86_64_cuda12, package_windows_x86_64_cuda13, package_windows_x86_64_rocm,
-      release_smoke_linux_x86_64_cuda12, release_smoke_linux_aarch64_cuda12, release_smoke_linux_x86_64_cuda13
+      release_smoke_linux_x86_64_cuda12, release_smoke_linux_aarch64_cuda12, release_smoke_linux_x86_64_cuda13,
+      smoke_windows_cuda, smoke_windows_rocm
     ]
     if: always() && needs.changes.result != 'skipped'
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
@@ -1040,3 +1085,4 @@ jobs:
             for (const job of prPackages) if (!packageJobs.includes(job)) throw new Error(`Missing package job ${job}`);
             for (const job of packageJobs) requireResult(job, full || (packages && prPackages.includes(job)));
             for (const job of releaseSmokes) requireResult(job, release);
+            for (const job of ['smoke_windows_cuda', 'smoke_windows_rocm']) requireResult(job, full);

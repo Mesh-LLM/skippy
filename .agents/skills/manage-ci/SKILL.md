@@ -53,8 +53,10 @@ contract; no downstream product's workflow topology applies here.
   uses two device jobs and checks the three remaining CUDA archives on hosted
   compiler-image runners.
   Tagged releases add device smoke on those exact archives, including x64 CUDA 13.
-  Windows x64 CPU, CUDA and ROCm require archive smoke in full CI and on
-  releases. Linux x64 ROCm builds and smokes on the native JY ROCm pool using
+  Windows x64 CPU retains archive verification. Full CI additionally requires
+  two native Windows VM smoke jobs: CUDA 12 and 13 share one guest; ROCm has one.
+  Nightly, release and llama-upgrade callers reuse them. GPU manifest rows
+  require source/archive-bound inference receipts; short PR CI skips these jobs. Linux x64 ROCm builds and smokes on the native JY ROCm pool using
   the digest-pinned compiler container and the CPU job's verified CLI. Its
   inference evidence is embedded in the tested product; no separate smoke
   job or duplicate CLI build is needed. Restore candidate source before HIP
@@ -138,10 +140,10 @@ contract; no downstream product's workflow topology applies here.
   exact candidate selected by successful full CI. The four established inference
   models retain their separate PR/manual/nightly/release workflow.
 - `ci/targets.json` owns four host definitions and thirteen runtime definitions.
-  The branch-only Windows GPU rehearsal is documented in `ci/windows-rehearsal.md`.
-  It uses public Windows VM recipes but supplies no production qualification;
-  require real Windows results and verified host lifecycle recovery before adoption.
-  Remove its temporary workflow and JY allowlists before merging production wiring.
+  `ci/windows-gpu-smoke.md` documents the public Windows VM recipe, host profiles
+  and native restoration contract. Missing AMD unload/task receipts or failed
+  native restoration retain quarantine. Keep the temporary rehearsal workflow
+  out of the merge tree and retire its historical entry and dispatch allowlists.
   `enabled_hosts` selects the active CI and release roster. Require the evidence
   declared for every release asset. Call out pending inference qualification
   for archive-only targets in the release notes.

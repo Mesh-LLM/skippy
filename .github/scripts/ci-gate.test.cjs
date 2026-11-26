@@ -13,6 +13,7 @@ const targets = JSON.parse(readFileSync(join(__dirname, '../../ci/targets.json')
 const rows = targets.runtimes.filter(row => row.enabled !== false && targets.enabled_hosts.includes(row.host));
 const packageJobs = rows.map(row => `package_${row.id.replaceAll('-', '_')}`);
 const prPackages = ['package_darwin_aarch64_metal', 'package_linux_aarch64_cuda13'];
+const windowsSmokes = ['smoke_windows_cuda', 'smoke_windows_rocm'];
 const releaseSmokes = ['release_smoke_linux_x86_64_cuda12', 'release_smoke_linux_aarch64_cuda12', 'release_smoke_linux_x86_64_cuda13'];
 
 function results({ automation = true, code = true, packages = false, native = false, full = false, release = false } = {}) {
@@ -21,7 +22,7 @@ function results({ automation = true, code = true, packages = false, native = fa
   if (automation) required.push('automation');
   if (selected) required.push('plan');
   if (code) required.push('quality');
-  if (full) required.push('native_contracts', ...packageJobs);
+  if (full) required.push('native_contracts', ...packageJobs, ...windowsSmokes);
   else if (packages) required.push(...prPackages);
   if (native) required.push('native_contracts');
   if (release) required.push(...releaseSmokes);
@@ -57,7 +58,7 @@ test('all thirteen runtime packages match the planned matrix and depend on the c
     if (row.backend !== 'cpu') assert.ok(body.includes(`package_${row.host.replaceAll('-', '_')}_cpu`));
     assert.equal(body.includes("needs.changes.outputs.packages == 'true'"), prPackages.includes(job));
     const needsSeparateSmoke = releaseSmokes.includes(job.replace('package_', 'release_smoke_'));
-    assert.equal(body.includes('smoke: artifact'), row.validation === 'artifact' || needsSeparateSmoke);
+    assert.equal(body.includes('smoke: artifact'), row.host === 'windows-x86_64' || needsSeparateSmoke);
     if (row.validation === 'artifact') assert.ok(body.includes(row.runner[0]));
     if (row.host === 'windows-x86_64' && row.backend === 'cuda') {
       assert.ok(body.includes(`windows-cuda: '${row.toolkit}'\n`));
@@ -128,7 +129,7 @@ test('PR plans exclude full-only targets independently of their smoke evidence',
   const rocm = full.find(row => row.id === 'linux-x86_64-rocm');
   assert.equal(rocm.validation, 'inference');
   assert.equal(rocm.full_only, true);
-  assert.equal(full.filter(row => row.validation === 'artifact').length, 4);
+  assert.equal(full.filter(row => row.validation === 'artifact').length, 1);
   assert.ok(!pr.some(row => row.id === rocm.id));
   const release = results({ full: true, release: true });
   release.plan.outputs.runtimes = JSON.stringify({ include: full });
@@ -498,7 +499,26 @@ test('main can reuse only a receipt for the exact release dispatch and candidate
 
 test('every candidate checkout opts in to fork code only for the approved-fork controller (real #222 context)', () => {
   const refs = workflow.match(/^ +ref: \$\{\{ env\.SKIPPY_CI_SOURCE_REF \}\}\n.*$/gm);
-  assert.equal(refs.length, 20);
+  assert.equal(refs.length, 22);
   for (const ref of refs) assert.match(ref, /\n +allow-unsafe-pr-checkout: \$\{\{ inputs\.approved_fork_pr != '' \}\}$/);
   assert.equal(workflow.match(/allow-unsafe-pr-checkout:/g).length, refs.length);
+});
+
+
+test('full CI requires both Windows GPU results and PR checks skip them', () => {
+  for (const release of [false, true]) {
+    const full = results({ full: true, release });
+    assert.doesNotThrow(() => gate(full, release));
+    for (const job of windowsSmokes) {
+      for (const result of ['skipped', 'failure', 'cancelled', undefined]) {
+        const missing = structuredClone(full);
+        missing[job] = result ? { result } : undefined;
+        assert.throws(() => gate(missing, release), new RegExp(job));
+      }
+    }
+  }
+  const pr = results({ packages: true });
+  assert.doesNotThrow(() => gate(pr));
+  pr.smoke_windows_cuda.result = 'success';
+  assert.throws(() => gate(pr), /smoke_windows_cuda must be skipped/);
 });
