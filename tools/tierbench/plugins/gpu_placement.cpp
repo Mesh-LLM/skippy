@@ -36,6 +36,7 @@ constexpr Memory memory_of(Placement where) {
 
 struct Placed {
     std::size_t bytes = 0;
+    std::size_t host_page = page;
     unsigned blocks = 0;
     Timer timer;
     Owned memory{nullptr, release_pageable};
@@ -55,6 +56,7 @@ std::unique_ptr<Placed> start(std::uint64_t bytes, const tierbench_env* env, tie
     }
     auto work = std::make_unique<Placed>();
     work->bytes = static_cast<std::size_t>(bytes);
+    work->host_page = env->page_size ? static_cast<std::size_t>(env->page_size) : page;
     work->blocks = static_cast<unsigned>(std::max(attribute(gpu_attr_sm_count, device), 1)) * 8;
     work->sink = allocate(Memory::device, 64, error);
     if (!work->sink || !start_timer(work->timer, error)) {
@@ -119,13 +121,50 @@ void* setup_transfer(std::uint64_t bytes, const tierbench_env* env, tierbench_er
     return work->device ? work.release() : nullptr;
 }
 
-// each iteration waits for its copy, as a checkpoint save or restore does
-template <class Issue>
-int synchronized(Placed& work, std::uint64_t iterations, tierbench_measure* out, tierbench_error* error, Issue issue) {
+volatile unsigned char host_sink = 0;
+
+auto host_pages(const Placed& work) {
+    return std::views::iota(std::size_t{0}, (work.bytes + work.host_page - 1) / work.host_page)
+         | std::views::transform([&work](std::size_t i) { return i * work.host_page; });
+}
+
+// the host uses what a save produced, so pages the GPU pulled across come back
+void host_read(const Placed& work) {
+    auto bytes = static_cast<const volatile unsigned char*>(work.memory.get());
+    unsigned char acc = 0;
+    std::ranges::for_each(host_pages(work), [&](std::size_t at) { acc ^= bytes[at]; });
+    host_sink = acc;
+}
+
+// the host produced what a restore consumes, so its pages start on the host
+void host_write(Placed& work) {
+    auto bytes = static_cast<volatile unsigned char*>(work.memory.get());
+    std::ranges::for_each(host_pages(work), [&](std::size_t at) { bytes[at] = static_cast<unsigned char>(at); });
+}
+
+template <class Copy>
+GPU(Error_t) save(Placed& work, Copy copy) {
+    auto status = copy();
+    if (status == GPU(Success)) {
+        status = GPU(StreamSynchronize)(work.timer.stream);
+    }
+    if (status == GPU(Success)) {
+        host_read(work);
+    }
+    return status;
+}
+
+template <class Copy>
+GPU(Error_t) restore(Placed& work, Copy copy) {
+    host_write(work);
+    auto status = copy();
+    return status == GPU(Success) ? GPU(StreamSynchronize)(work.timer.stream) : status;
+}
+
+template <class Step>
+int per_iteration(Placed& work, std::uint64_t iterations, tierbench_measure* out, tierbench_error* error, Step step) {
     auto each = std::views::iota(std::uint64_t{0}, iterations);
-    auto failed = std::ranges::find_if(each, [&](std::uint64_t) {
-        return !ok(issue(), error, "copy") || !ok(GPU(StreamSynchronize)(work.timer.stream), error, "synchronize");
-    });
+    auto failed = std::ranges::find_if(each, [&](std::uint64_t) { return !ok(step(), error, "save or restore"); });
     if (failed != each.end()) {
         return 1;
     }
@@ -133,30 +172,40 @@ int synchronized(Placed& work, std::uint64_t iterations, tierbench_measure* out,
     return 0;
 }
 
+GPU(Error_t) pull(const void* source, void* target, Placed& work) {
+    return static_cast<GPU(Error_t)>(tierbench_gpu_pull(source, target, work.bytes, work.timer.stream));
+}
+
 int run_save_memcpy(void* state, std::uint64_t iterations, tierbench_measure* out, tierbench_error* error) {
     auto& work = *static_cast<Placed*>(state);
-    return synchronized(work, iterations, out, error, [&] {
-        return GPU(MemcpyAsync)(work.memory.get(), work.device.get(), work.bytes, GPU(MemcpyDefault), work.timer.stream);
+    return per_iteration(work, iterations, out, error, [&] {
+        return save(work, [&] {
+            return GPU(MemcpyAsync)(work.memory.get(), work.device.get(), work.bytes, GPU(MemcpyDefault),
+                                    work.timer.stream);
+        });
     });
 }
 
 int run_save_kernel(void* state, std::uint64_t iterations, tierbench_measure* out, tierbench_error* error) {
     auto& work = *static_cast<Placed*>(state);
-    return synchronized(work, iterations, out, error,
-                        [&] { return tierbench_gpu_pull(work.device.get(), work.view, work.bytes, work.timer.stream); });
+    return per_iteration(work, iterations, out, error,
+                         [&] { return save(work, [&] { return pull(work.device.get(), work.view, work); }); });
 }
 
 int run_restore_memcpy(void* state, std::uint64_t iterations, tierbench_measure* out, tierbench_error* error) {
     auto& work = *static_cast<Placed*>(state);
-    return synchronized(work, iterations, out, error, [&] {
-        return GPU(MemcpyAsync)(work.device.get(), work.memory.get(), work.bytes, GPU(MemcpyDefault), work.timer.stream);
+    return per_iteration(work, iterations, out, error, [&] {
+        return restore(work, [&] {
+            return GPU(MemcpyAsync)(work.device.get(), work.memory.get(), work.bytes, GPU(MemcpyDefault),
+                                    work.timer.stream);
+        });
     });
 }
 
 int run_restore_kernel(void* state, std::uint64_t iterations, tierbench_measure* out, tierbench_error* error) {
     auto& work = *static_cast<Placed*>(state);
-    return synchronized(work, iterations, out, error,
-                        [&] { return tierbench_gpu_pull(work.view, work.device.get(), work.bytes, work.timer.stream); });
+    return per_iteration(work, iterations, out, error,
+                         [&] { return restore(work, [&] { return pull(work.view, work.device.get(), work); }); });
 }
 
 constexpr tierbench_case cases[] = {
@@ -182,6 +231,8 @@ constexpr tierbench_case cases[] = {
      setup_transfer<Placement::mapped, Access::copy>, run_save_memcpy, teardown},
     {"save-kernel-mapped", "kernel-copy-sync-mapped-pinned", TIERBENCH_GPU, TIERBENCH_HOST, TIERBENCH_BYTES, page,
      large, setup_transfer<Placement::mapped, Access::kernel>, run_save_kernel, teardown},
+    {"save-kernel-managed", "kernel-copy-sync-managed", TIERBENCH_GPU, TIERBENCH_HOST, TIERBENCH_BYTES, page, large,
+     setup_transfer<Placement::managed, Access::kernel>, run_save_kernel, teardown},
     {"save-kernel-system", "kernel-copy-sync-pageable", TIERBENCH_GPU, TIERBENCH_HOST, TIERBENCH_BYTES, page, large,
      setup_transfer<Placement::system, Access::kernel>, run_save_kernel, teardown},
     {"restore-memcpy-pageable", "memcpy-sync-pageable", TIERBENCH_HOST, TIERBENCH_GPU, TIERBENCH_BYTES, page, large,
@@ -190,6 +241,8 @@ constexpr tierbench_case cases[] = {
      setup_transfer<Placement::mapped, Access::copy>, run_restore_memcpy, teardown},
     {"restore-kernel-mapped", "kernel-copy-sync-mapped-pinned", TIERBENCH_HOST, TIERBENCH_GPU, TIERBENCH_BYTES, page,
      large, setup_transfer<Placement::mapped, Access::kernel>, run_restore_kernel, teardown},
+    {"restore-kernel-managed", "kernel-copy-sync-managed", TIERBENCH_HOST, TIERBENCH_GPU, TIERBENCH_BYTES, page,
+     large, setup_transfer<Placement::managed, Access::kernel>, run_restore_kernel, teardown},
     {"restore-kernel-system", "kernel-copy-sync-pageable", TIERBENCH_HOST, TIERBENCH_GPU, TIERBENCH_BYTES, page,
      large, setup_transfer<Placement::system, Access::kernel>, run_restore_kernel, teardown},
 };

@@ -135,12 +135,12 @@ The `cuda-placement` and `hip-placement` cases ask whether a buffer the GPU uses
 |---|---|
 | `read-device`, `read-mapped`, `read-managed`, `read-system` | a kernel reading the buffer 8 times over, from `cudaMalloc`, mapped pinned host, managed, or plain `aligned_alloc` memory |
 | `write-*` | a kernel writing the buffer once, in the same four placements |
-| `save-memcpy-pageable`, `save-memcpy-pinned` | device to host with `cudaMemcpyAsync`, waiting for each copy as a checkpoint save does |
-| `save-kernel-mapped`, `save-kernel-system` | the same save as a copy kernel writing straight into host memory |
-| `restore-*` | the reverse of each save |
+| `save-memcpy-pageable`, `save-memcpy-pinned` | device to host with `cudaMemcpyAsync`, waiting for each copy as a checkpoint save does, then the host reading one byte of every page |
+| `save-kernel-mapped`, `save-kernel-managed`, `save-kernel-system` | the same save as a copy kernel writing straight into host-visible memory |
+| `restore-*` | the reverse of each save: the host writes one byte of every page, then the copy to the device |
 
 `read-system`, `write-system` and the `-kernel-system` cases need a GPU that can address pageable memory. Elsewhere they are recorded as `unsupported`. The plugin's facts carry `pageable_memory_access`, `pageable_uses_host_page_tables` and the managed-memory attributes, which say how the GPU reaches host memory. Read them beside the rows.
 
-Managed memory is first touched on the host, so the warmup repetitions include any migration to the GPU.
+The `read-*` and `write-*` rows are steady state: the buffer stays where the GPU last used it. A GPU that addresses managed or pageable memory by migrating it (`pageable_uses_host_page_tables` false, as on discrete cards) moves those pages into its own memory during the warmups, so `read-managed` and `read-system` then match `read-device` without reading the host at all. The `save-*` and `restore-*` rows count the round trip: the host touches every page in each repetition, so migrated pages move back.
 
 Kernels use plain loops: ranges are not available in device code.
