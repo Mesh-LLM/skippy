@@ -114,6 +114,10 @@ and lifecycle evidence before deleting a successful attempt. Host-specific
 configuration, Windows disks, signed drivers and the prepared launcher archive
 remain operator-controlled artifacts outside Git.
 
+After retaining the smoke evidence, the workflow removes its copied product,
+model and driver inputs from the native runner workspace. Repeated jobs must not
+accumulate these large disposable files on hosts with small root filesystems.
+
 Installation and offline checks do not establish GPU qualification. Both actual
 Windows GPU smokes and cancellation/reset restoration must succeed before the
 rehearsal is considered ready.

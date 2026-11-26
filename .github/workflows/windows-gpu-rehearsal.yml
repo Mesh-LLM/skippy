@@ -174,3 +174,7 @@ jobs:
           path: target/windows-evidence
           if-no-files-found: warn
           retention-days: 14
+      - name: Reclaim copied VM inputs
+        if: always()
+        shell: bash
+        run: rm -rf -- target/windows-input
