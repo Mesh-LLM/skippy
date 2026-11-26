@@ -85,17 +85,17 @@ def launch(pilot, path, body, deadline, split):
 def wait(pilot, handle, row, sha, output, deadline):
     logs = NativeLogs(pilot, row, output)
     if handle.startswith("frm_"):
-        formation = pilot.api("GET", f"/v1/formations/{handle}")
+        formation = pilot.api("GET", f"/v1/formations/{handle}", status_deadline=deadline)
         leader = next((member for member in formation["members"] if member.get("role") == "leader"), {})
         handle = resource_id(leader.get("job_id"))
     while time.monotonic() < deadline:
-        job = pilot.api("GET", f"/v1/jobs/{handle}")
+        job = pilot.api("GET", f"/v1/jobs/{handle}", status_deadline=deadline)
         write_json(output / f"{row}-job.json", job)
         status = job["status"]
         formation = None
         if job.get("formation_id"):
             formation_id = resource_id(job["formation_id"])
-            formation = pilot.api("GET", f"/v1/formations/{formation_id}")
+            formation = pilot.api("GET", f"/v1/formations/{formation_id}", status_deadline=deadline)
             write_json(output / f"{row}-formation.json", formation)
         finished = status in TERMINAL and (not formation or formation.get("status") in TERMINAL)
         logs.capture(job, formation, deadline, final=finished or status in FAILURE)

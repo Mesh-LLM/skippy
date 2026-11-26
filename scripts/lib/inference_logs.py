@@ -40,7 +40,7 @@ class NativeLogs:
                 if member_id != job["id"]:
                     try:
                         worker = self.pilot.api("GET", f"/v1/jobs/{member_id}",
-                                                deadline=min(deadline, time.monotonic() + 5))
+                                                status_deadline=min(deadline, time.monotonic() + 5))
                         jobs.append((worker, "worker"))
                     except Exception as error:
                         self.diagnostic(f"{member_id}: {type(error).__name__}; log capture incomplete")
@@ -64,7 +64,7 @@ class NativeLogs:
         deadline = min(deadline, time.monotonic() + 5)
         while time.monotonic() < deadline:
             page = self.pilot.api("GET", f"/v1/runs/{run_id}/logs/full?since={cursor}&limit=500",
-                                  deadline=deadline)
+                                  status_deadline=deadline)
             if page.get("run_id") != run_id:
                 raise ValueError("native log run identity mismatch")
             if page.get("gap_at") is not None:

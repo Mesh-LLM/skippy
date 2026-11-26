@@ -361,6 +361,32 @@ test('protected fork completion wakes the aggregate for the candidate, not main,
     { ...forkJobs()[1], id: 200, run_attempt: 2, conclusion: 'skipped' }], forkRuns: [forkRun({ run_attempt: 2 })] })).state, 'failure');
 });
 
+test('a fork run held for maintainer approval is pending, not failed (real #222 context)', async () => {
+  const fork = { head: { sha, repo: { id: 7 } }, base: { repo: { id: 42 } } };
+  const held = run('ci.yml', 1, { event: 'pull_request', conclusion: 'action_required' });
+  const result = await evaluate({ pr: fork, runs: [held] });
+  assert.equal(result.state, 'pending');
+  assert.equal(result.calls.at(-1).description, 'Waiting for a maintainer to approve workflows');
+  assert.deepEqual(result.failures, []);
+  // A real failure beside the held run still blocks.
+  const failed = await evaluate({ pr: fork, runs: [held, run('docs.yml', 2, { conclusion: 'failure' })] });
+  assert.equal(failed.state, 'failure');
+});
+
+test('a fork PR links PR checks to its approved fork run and names the jobs it waits for (real #222 context)', async () => {
+  const url = id => `https://github.com/Mesh-LLM/skippy/actions/runs/${id}`;
+  const cuda = 'ci / Build, package, and smoke · Linux ARM64 CUDA 13';
+  const jobs = [...forkJobs(), { id: 300, name: cuda, run_attempt: 1, status: 'queued', conclusion: null }];
+  const running = (await evaluate({ ...forkOptions(), forkRuns: [forkRun({ status: 'in_progress', conclusion: null })], jobs })).calls.at(-1);
+  assert.deepEqual([running.state, running.description, running.target_url],
+    ['pending', `Approved fork CI: waiting for ${cuda}`, url(100)]);
+  assert.equal((await evaluate(forkOptions())).calls.at(-1).target_url, url(100));
+  // Before the approved run exists, and on same-repository PRs, the link stays on the aggregate's own run.
+  const before = (await evaluate({ ...forkOptions(), forkRuns: [] })).calls.at(-1);
+  assert.deepEqual([before.description, before.target_url], ['Waiting for applicable PR checks to finish', url(42)]);
+  assert.equal((await evaluate()).calls.at(-1).target_url, url(42));
+});
+
 test('base Depot configuration does not change any fork producer (real #218 context)', async () => {
   const files = [inferenceChange, { filename: 'ci/Dockerfile' }, { filename: 'docs-site/index.mdx' }];
   for (const depot of [false, true]) {

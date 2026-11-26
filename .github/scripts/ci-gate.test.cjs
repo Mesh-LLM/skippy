@@ -69,6 +69,22 @@ test('all thirteen runtime packages match the planned matrix and depend on the c
   assert.doesNotThrow(() => gate(results({ full: true })));
 });
 
+test('macOS packaging checks the pinned Rust toolchain before building', () => {
+  const action = readFileSync(join(__dirname, '../actions/ci-package/action.yml'), 'utf8');
+  assert.match(action, /if: runner\.os == 'macOS'\n +shell: bash\n +run: bash scripts\/ci-macos-rust\.sh/);
+  assert.ok(action.indexOf('uses: ./.github/actions/source') < action.indexOf('ci-macos-rust.sh'));
+  assert.ok(action.indexOf('ci-macos-rust.sh') < action.indexOf('just ci-host'));
+});
+
+test('separate device smoke consumes prebuilt artifacts without restoring build caches', () => {
+  const action = readFileSync(join(__dirname, '../actions/ci-smoke/action.yml'), 'utf8');
+  assert.doesNotMatch(action, /uses: \.\/.github\/actions\/cache/);
+  assert.match(action, /inputs\.download-package != 'true'.*env\.SKIPPY_CI_MODEL/);
+  assert.ok(action.indexOf('Check release device scratch storage') < action.indexOf('actions/download-artifact'));
+  assert.match(action, /export TMPDIR="\$RUNNER_TEMP"/);
+  assert.match(action, /device-evidence-\$\{\{ inputs\.runtime_id \}\}/);
+});
+
 test('release publication consumes prepared assets and independently verifies their receipt', () => {
   const release = readFileSync(join(__dirname, '../workflows/release.yml'), 'utf8');
   const verify = release.split('\n  verify:\n')[1].split('\n  publish:\n')[0];
@@ -478,4 +494,11 @@ test('main can reuse only a receipt for the exact release dispatch and candidate
   assert.equal(await checked(commit, { ...run, head_branch: 'other' }, receipt), undefined);
   assert.equal(await checked(commit, run, { ...receipt, name: 'other-receipt' }), undefined);
   assert.equal(await checked(commit, run, { ...receipt, expired: true }), undefined);
+});
+
+test('every candidate checkout opts in to fork code only for the approved-fork controller (real #222 context)', () => {
+  const refs = workflow.match(/^ +ref: \$\{\{ env\.SKIPPY_CI_SOURCE_REF \}\}\n.*$/gm);
+  assert.equal(refs.length, 20);
+  for (const ref of refs) assert.match(ref, /\n +allow-unsafe-pr-checkout: \$\{\{ inputs\.approved_fork_pr != '' \}\}$/);
+  assert.equal(workflow.match(/allow-unsafe-pr-checkout:/g).length, refs.length);
 });

@@ -166,9 +166,11 @@ artifact upload. Verify those on a real qualification run after merge.
 Release candidates are admitted only from scheduled or manually dispatched
 protected-main Release runs, with their exact source parent, candidate ref and
 run trailer verified. JY reads retry transient disconnects, timeouts and HTTP
-408/429/500/502/503/504 responses up to four attempts, waiting 1, 2 and 4 seconds.
-Authentication and launch/cancellation writes are not replayed. Exhausted reads
-still fail qualification and trigger the existing cleanup.
+408/429/500/502/503/504 responses. Status reads for already-launched jobs and
+formations use backoff with jitter for up to five minutes within the remaining
+qualification deadline. Other reads try up to four times. Authentication and
+launch/cancellation writes keep their existing single-attempt behavior.
+Exhausted status reads fail qualification and trigger cleanup.
 The admitted profile distinguishes a scheduled Release call from the scheduled
 nightly ladder: only the nightly ladder adds smoke rows, collects public metrics
 and requires nightly report publication in its summary.
@@ -592,6 +594,12 @@ resolves the immutable public model URL and verifies the family manifest's size
 and SHA-256. A runner-provided `SKIPPY_CI_MODEL` is verified without downloading.
 This command sets the path for subsequent Actions steps; locally export the path
 before running `just ci-smoke`. Default `just test` does not download models.
+
+Separate release GPU smoke jobs download the verified product archive and use
+`RUNNER_TEMP` for extraction on the device runner. Size that filesystem for the
+expanded archive and leave room in the workspace for the compressed archive
+and a downloaded model if the image supplies none. These jobs consume a
+prebuilt CLI and runtime and skip Cargo and Actions model cache restoration.
 
 Inference smoke executes the bundled CLI and runtime, checks generated tokens
 in a completion, and verifies graceful shutdown. Metal, CUDA and ROCm require

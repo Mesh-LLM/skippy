@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::cli::NativeMtpOpenAiAbArgs;
 
-use super::stage_process::Stage1LaunchReport;
+use super::{MtpCaseMode, stage_process::Stage1LaunchReport};
 
 pub(super) struct RemoteStageGuard {
     host: String,
@@ -18,8 +18,7 @@ pub(super) fn spawn_remote_stage1(
     run_id: &str,
     config_path: &Path,
     topology_path: &Path,
-    native_mtp_enabled: bool,
-    batched_verify_enabled: bool,
+    mode: MtpCaseMode,
 ) -> Result<(RemoteStageGuard, Stage1LaunchReport)> {
     let remote_dir = format!(
         "{}/{}",
@@ -58,8 +57,7 @@ pub(super) fn spawn_remote_stage1(
         remote_log: &remote_log,
         remote_pid: &remote_pid,
         startup_timeout_secs: args.server.startup_timeout_secs,
-        native_mtp_enabled,
-        batched_verify_enabled,
+        mode,
     });
     let output = Command::new("ssh")
         .arg(host)
@@ -103,8 +101,7 @@ struct RemoteStageCommand<'a> {
     remote_log: &'a str,
     remote_pid: &'a str,
     startup_timeout_secs: u64,
-    native_mtp_enabled: bool,
-    batched_verify_enabled: bool,
+    mode: MtpCaseMode,
 }
 
 fn remote_stage_command(args: RemoteStageCommand<'_>) -> String {
@@ -115,11 +112,6 @@ fn remote_stage_command(args: RemoteStageCommand<'_>) -> String {
         command.push_str(" && ");
     }
     command.push_str("SKIPPY_TELEMETRY_STDERR=1 ");
-    command.push_str("SKIPPY_NATIVE_MTP_ENABLED=");
-    command.push_str(if args.native_mtp_enabled { "1 " } else { "0 " });
-    if !args.batched_verify_enabled {
-        command.push_str("SKIPPY_NATIVE_MTP_BATCHED_VERIFY=0 ");
-    }
     command.push_str("nohup ");
     command.push_str(&shell_quote(args.remote_bin));
     command.push_str(" serve --stage-transport binary --worker-only --config ");
@@ -128,6 +120,9 @@ fn remote_stage_command(args: RemoteStageCommand<'_>) -> String {
     command.push_str(&shell_quote(args.remote_topology));
     command.push_str(" --startup-timeout-secs ");
     command.push_str(&args.startup_timeout_secs.to_string());
+    command.push(' ');
+    // These arguments come only from the closed internal case modes.
+    command.push_str(&args.mode.worker_cli_args().join(" "));
     command.push_str(" --telemetry-level debug > ");
     command.push_str(&shell_quote(args.remote_log));
     command.push_str(" 2>&1 < /dev/null & pid=$!; echo $pid > ");
@@ -246,7 +241,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn remote_stage_command_quotes_paths_and_sets_mtp_env() {
+    fn remote_stage_command_quotes_paths_and_sets_mtp_controls() {
         let command = remote_stage_command(RemoteStageCommand {
             workdir: Some("/tmp/work dir"),
             remote_bin: "target/debug/skippy",
@@ -255,21 +250,21 @@ mod tests {
             remote_log: "/tmp/run/stage1.log",
             remote_pid: "/tmp/run/stage1.pid",
             startup_timeout_secs: 790,
-            native_mtp_enabled: true,
-            batched_verify_enabled: false,
+            mode: MtpCaseMode::SingleDraft,
         });
 
         assert!(command.contains("cd '/tmp/work dir' && "));
-        assert!(command.contains("SKIPPY_NATIVE_MTP_ENABLED=1"));
         assert!(command.contains(" --startup-timeout-secs 790 "));
-        assert!(command.contains("SKIPPY_NATIVE_MTP_BATCHED_VERIFY=0"));
+        assert!(command.contains("--native-mtp=true"));
+        assert!(!command.contains("--speculative-strategy"));
+        assert!(!command.contains("--mtp-max-tokens"));
         assert!(command.contains(
             "'target/debug/skippy' serve --stage-transport binary --worker-only --config"
         ));
         assert!(command.contains("'/tmp/run/stage'\"'\"'1.json'"));
 
         let batched_command = remote_stage_command(RemoteStageCommand {
-            batched_verify_enabled: true,
+            mode: MtpCaseMode::DefaultDraft,
             ..RemoteStageCommand {
                 workdir: None,
                 remote_bin: "/bin/skippy",
@@ -278,10 +273,10 @@ mod tests {
                 remote_log: "/tmp/stage1.log",
                 remote_pid: "/tmp/stage1.pid",
                 startup_timeout_secs: 1800,
-                native_mtp_enabled: true,
-                batched_verify_enabled: false,
+                mode: MtpCaseMode::Disabled,
             }
         });
-        assert!(!batched_command.contains("SKIPPY_NATIVE_MTP_BATCHED_VERIFY"));
+        assert!(batched_command.contains("--native-mtp=true"));
+        assert!(!batched_command.contains("--mtp-max-tokens"));
     }
 }

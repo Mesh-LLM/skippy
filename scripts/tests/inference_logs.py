@@ -112,8 +112,8 @@ class LogTests(unittest.TestCase):
     def test_busy_run_yields_to_other_attempts_and_next_status_poll(self):
         cursors = iter(range(20))
 
-        def read(_method, path, *, deadline):
-            self.assertLessEqual(deadline, self.now + 5)
+        def read(_method, path, *, status_deadline):
+            self.assertLessEqual(status_deadline, self.now + 5)
             if "run_busy/" in path:
                 self.advance(1)
                 return page("run_busy", next(cursors), ["busy"], caught_up=False)
@@ -139,9 +139,9 @@ class LogTests(unittest.TestCase):
         self.assertNotIn("do not expose response", self.stderr.getvalue())
 
     def test_dead_worker_is_bounded_and_leader_logs_are_retained(self):
-        def read(_method, path, *, deadline):
+        def read(_method, path, *, status_deadline):
             if path == "/v1/jobs/job_b":
-                self.advance(deadline - self.now)
+                self.advance(status_deadline - self.now)
                 raise TimeoutError()
             return page("run_a", 0, ["leader tail"], complete=True)
 

@@ -17,7 +17,7 @@ from .ci_targets import require_host, validate_native_identity
 
 def verify_product(host, runtime, product_input, product):
     require_host(host)
-    artifacts.unpack(product_input, product)
+    artifacts.unpack(product_input, product, check_space=True)
     artifacts.verify(product, "product", host["target"], runtime["id"])
     binary = artifacts.binary(product.resolve(), host["os"])
     env = environment()

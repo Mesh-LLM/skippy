@@ -27,9 +27,11 @@ module.exports = async function aggregate({ github, context, core, depot = false
       core.info('Ignoring a closed PR or superseded source');
       continue;
     }
+    // An approved fork's native jobs run under main, so the PR page does not list them: link the status to that run.
+    let forkRun;
     const status = (state, description) => github.rest.repos.createCommitStatus({
       ...repo, sha: source, context: 'PR checks', state, description,
-      target_url: `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`
+      target_url: `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${forkRun?.id || context.runId}`
     });
     try {
       await status('pending', 'Checking all applicable PR workflows');
@@ -59,13 +61,16 @@ module.exports = async function aggregate({ github, context, core, depot = false
         const key = `${run.workflow_id}:${run.event}`;
         if (!latest.has(key) || latest.get(key).id < run.id) latest.set(key, run);
       }
-      let pending = false;
+      let pending = false, awaitingApproval = false;
       for (const run of latest.values()) {
         const path = workflowPath(run);
         const requiredFork = path === '.github/workflows/fork-native.yml' && expected.get(path) === run.event;
         const requiredInference = path === '.github/workflows/inference.yml' && expected.get(path) === run.event;
         if (expected.get(path) === run.event) expected.delete(path);
+        if (requiredFork) forkRun = run;
         if (run.status !== 'completed') pending = true;
+        // GitHub completes a fork run it is holding for maintainer approval; nothing has run or failed yet.
+        else if (!sameRepositoryPR && run.event === 'pull_request' && run.conclusion === 'action_required') awaitingApproval = true;
         else if (!accepted.has(run.conclusion)) throw new Error(`${run.name}: ${run.conclusion || 'incomplete'}`);
         else if (requiredInference) await requireInferenceJobs(github, repo, run);
         else if (requiredFork) await forkRuns.requireForkJobs(github, repo, run, files);
@@ -96,7 +101,14 @@ module.exports = async function aggregate({ github, context, core, depot = false
       const { data: current } = await github.rest.pulls.get({ ...repo, pull_number: pr.number });
       if (current.state !== 'open' || current.head.sha !== source) continue;
       validateAcceptance(current.body);
-      if (pending || expected.size) {
+      if (awaitingApproval) {
+        await status('pending', 'Waiting for a maintainer to approve workflows');
+      } else if (forkRun && forkRun.status !== 'completed') {
+        const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun,
+          { ...repo, run_id: forkRun.id, filter: 'latest', per_page: 100 });
+        const waiting = jobs.filter(job => job.status !== 'completed').map(job => job.name).join(', ');
+        await status('pending', `Approved fork CI: waiting for ${waiting || 'jobs to start'}`.slice(0, 140));
+      } else if (pending || expected.size) {
         await status('pending', 'Waiting for applicable PR checks to finish');
       } else {
         await status('success', 'All applicable PR checks passed or were intentionally skipped');

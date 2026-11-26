@@ -22,6 +22,20 @@ RUNTIME = {"id": "linux-x86_64-cpu", "backend": "cpu", "gpu_architectures": ""}
 
 
 class DeviceSmokeContract(unittest.TestCase):
+    def test_smoke_unpack_rejects_low_disk_space_before_writing_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            producer = root / "producer"
+            producer.mkdir()
+            (producer / "skippy").write_bytes(b"CLI")
+            product = root / "product"
+            ci_artifacts.archive(producer, product / "runtime.tar.gz")
+            scratch = root / "scratch"
+            with patch.object(shutil, "disk_usage", return_value=SimpleNamespace(free=2)):
+                with self.assertRaisesRegex(ValueError, "needs 3 bytes, only 2 bytes free"):
+                    ci_artifacts.unpack(product, scratch, check_space=True)
+            self.assertEqual(list(scratch.iterdir()), [])
+
     def assert_device(self, backend, device, *, offload=True, passes=True):
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "server.log"
