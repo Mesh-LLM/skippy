@@ -1750,3 +1750,37 @@ synthetic 512-task materializer contract and scorer selftests pass; these are
 not model qualification. No version 3 scored result or current-source
 performance result exists yet. Version 2's failure and the historical
 cross-engine discrepancies remain intact.
+
+Four source-pinned, $0, model-specific version 3 **prompt materialization only**
+jobs were submitted: Qwen3.5 `job_4mnrckk6j1ppe45`, Coder
+`job_z8sxnjxrah9jcq3`, Qwen3.6 `job_3c0gwq4g7g9gdw4`, and Flash
+`job_r8d6dqd53bqw8pp`. The sealed spec SHA256 values are recorded in the
+ignored fix ledger. These jobs calibrate native chat tokenization and attempt
+to form exact-512 rendered prompts; they do not produce scored task answers.
+Qwen3.5 completed its independent model, source, prompt, native setting,
+cache, and thermal audit: 512 distinct exact-512 rendered prompts, 33/33 Metal
+layers, and nominal thermal boundaries. Its prompt archive SHA256 is
+`242d7fb4ba12d657e8dc135a7a3b15c4bc0688ed34fa0de747680ed7cdcef3bc`;
+the local audit SHA256 is
+`e05a8dd0bc013429827abdc24a69292241b8b5c20f1f4aa799740d6f5371b9ed`.
+Coder and Qwen3.6 subsequently passed the same prompt-only audit: each has
+512 exact-512 prompts, full Metal, the exact pinned shards, and nominal
+thermals. Flash's first attempt `job_r8d6dqd53bqw8pp` failed **before prompt
+generation**. Its 93 GB split-shard hashes passed, but the shared launcher
+resolved the first staged shard name to an opaque blob name; llama.cpp rejected
+that name as an invalid split file. The failed job, spec, and server log are
+preserved. A new sealed harness-only attempt `job_98bffc3r9w9wgr5` passes the
+verified snapshot filename to the same pinned server. No model, weight,
+precision, native code, or runtime changed. A completed prompt archive is not
+a scored quality result.
+
+The first prospective scored-cell spec was rejected **before job creation**:
+embedding the complete prompt corpus made `runtime.command` 96 KB, above JY's
+16 KB schema limit. Its spec and rejection remain in the fix ledger. The three
+independently audited Qwen3.5, Coder and Qwen3.6 prompt archives are now
+committed as compressed, hash-checked synthetic fixtures under
+`pr-evidence/`; the scored runner reads the exact archive from its source-
+pinned checkout. Qwen3.5 and Qwen3.6 materializations yielded identical
+prompt bytes under their respective pinned native tokenizers. Flash remains
+pending its new split-shard launch. This packaging change does not alter task
+values, scoring, requests, or any native runtime.
