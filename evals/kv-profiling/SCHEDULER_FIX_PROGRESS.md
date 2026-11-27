@@ -1865,10 +1865,19 @@ and audit SHA256 is
 `8ce26d9d69e6e9f92260af7211eb7656f35395197fcaa2fb314bdbbee77c3600`.
 Raw and parsed outputs agree on all 512 tasks with the earlier thermal-invalid
 Skippy diagnostic, establishing repeatability but not changing that attempt's
-invalid status. The matched vanilla unified cell is already running. No
-current-source fixed-output performance cell is promoted while this quality
-gate remains unproven; a measured cause for the two answer differences is
-still needed before any targeted runtime edit.
+invalid status. The matched vanilla unified cell `job_fynjrbshsntma0f` also
+passed: 512/512 responses, seven ≥120-second pauses, nominal pressure at all
+boundaries, 33/33 Metal layers, F16 KV and caches off. It scored 281/512;
+its parsed and raw answers exactly match the matched separate-slot control
+on every task. Its archive SHA256 is
+`698cf8661aba96d27142c3e3df7de367f71857ed169247c2c53499ba9d5288e6`
+and audit SHA256 is
+`5a2c30615b4b03073a6d51858b342f72e2a5b163108ac0421e32f8f156dd9962`.
+The same two adverse IDs therefore give **UNPROVEN** versus both vanilla
+layouts at the registered 95%/2% boundary. No current-source fixed-output
+performance cell is promoted while this quality gate remains unproven; a
+measured cause for the two answer differences is still needed before any
+targeted runtime edit.
 
 The [version 3 protocol](SCHEDULER_TASK_QUALITY_V3_PROTOCOL.md) now registers
 one independent 512-task confirmatory extension before any extension model
@@ -1878,4 +1887,17 @@ It preserves the first-half **UNPROVEN** verdict and uses a stricter one-sided
 97.5% bound for a single pooled 1024-task final look, with no further
 extension. The original scorer manifest and baseline score hashes remain
 unchanged under the amended generator. No extension prompt, score, A/A, or
-timing result exists yet.
+timing result exists yet. The exact Qwen3.5 extension prompt-only job
+`job_6qq8wfgp3ysax0c` ran at PR source
+`431b570c91d876d7826cb808217bb1cb364fff65`, spec SHA256
+`e06aa9fc7587689620f02d6047366c6241265e3a69cf45fe218f73a57501c539`,
+and local runner SHA256
+`a4acd3877f4a3b2dcc169c39a0d9c118ba0e6e1239f6e81d2d9cd071372700b2`.
+It completed and passed independent native model, source, chat-calibration,
+512-token, full-Metal, cache and thermal audits. The raw prompt SHA256 is
+`4472d7e0d91ca34894742c93ac3019febf9994c3b8b4bc5cb1e951fff3a474b2`,
+compressed source fixture SHA256
+`d33f10f14e93f27214fe761e95329a82afd7235013fa74519e0cdd056c6ea8d6`,
+evidence archive SHA256
+`08cc87462e385d567af5e84ea8053feae530c380bd8988aa1ae0cd2beaa862ac`.
+No extension task answer has been generated or scored.

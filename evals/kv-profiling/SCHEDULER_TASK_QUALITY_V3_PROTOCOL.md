@@ -119,6 +119,15 @@ byte; amended source SHA256 is
 `1bfaf5bf3e348dc6cdccbb798b045121afa01156cb3489e4341b0d0b5568e20c`.
 Its selftest verifies task disjointness and original-manifest identity. The
 new item values and all scoring code are fixed before extension prompting.
+The first exact-model prompt materialization, for Qwen3.5-4B, was independently
+audited after this registration: 512 rendered inputs of exactly 512 tokens,
+full Metal and nominal thermal gates. Its compressed
+[prompt archive](pr-evidence/task-quality-v3-extension-qwen35-4b-prompts.json.xz)
+has SHA256
+`d33f10f14e93f27214fe761e95329a82afd7235013fa74519e0cdd056c6ea8d6`;
+the [evidence manifest](pr-evidence/task-quality-v3-extension-prompts.json)
+records job, spec, runner and source hashes. Prompt materialization does not
+score a task or establish the follow-up quality result.
 
 Score the original and extension halves independently and require at least
 200 correct vanilla items **in each half** for each layout. Only if both
