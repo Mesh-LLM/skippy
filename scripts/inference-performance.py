@@ -28,7 +28,7 @@ from lib.performance_arms import build, capabilities, may_reject, server_args, s
 from lib.performance_backends import BACKENDS
 from lib.performance_load import run_point, tokenizer
 from lib.performance_plan import (SCENARIO, arms, branch_name, job_spec, models, nodes, pull_request_head,
-                                  pull_request_number, round_order, scenario)
+                                  pull_request_number, round_order, scenario, trace_environment)
 from lib.performance_report import markdown, rows, summarize
 
 REPO = "Mesh-LLM/skippy"
@@ -107,14 +107,19 @@ def admit(evidence):
     pins = nodes([node.strip() for node in os.environ.get("NODES", "").split(",") if node.strip()])
     rounds = int(os.environ.get("ROUNDS") or 3)
     servers = [server.strip() for server in os.environ.get("SERVERS", "").split(",") if server.strip()] or None
+    pairs = [pair.strip() for pair in os.environ.get("TRACE_ENV", "").split(",") if pair.strip()]
+    if not all("=" in pair for pair in pairs):
+        raise ValueError("TRACE_ENV takes comma-separated NAME=VALUE pairs")
+    trace_env = dict(pair.split("=", 1) for pair in pairs)
     jobs = [{"label": node or "any",
              "spec": job_spec(harness, arm_list, keys, rounds, node, node or "any",
-                              trace=trace, backend=backend, servers=servers)}
+                              trace=trace, backend=backend, servers=servers, trace_env=trace_env)}
             for node in (pins or [None])]
     evidence.mkdir(parents=True, exist_ok=True)
     write_json(evidence / "plan.json", {"harness": harness, "backend": backend, "arms": arm_list,
                                         "models": keys,
                                         "rounds": rounds, "trace": trace, "servers": servers,
+                                        "trace_env": trace_env,
                                         "pull_requests": pull_requests,
                                         "branches": branches,
                                         "committed_at": committed_at(arm_list), "jobs": jobs})
@@ -240,6 +245,7 @@ def native_plan():
     if (plan["arms"] != expected or plan["models"] != models(plan["models"])
             or type(plan.get("trace")) is not bool):
         raise ValueError("performance plan arms, models or trace flag are malformed")
+    trace_environment(plan.get("trace_env", {}), plan["trace"])
     return plan
 
 
@@ -281,24 +287,25 @@ def ready(server, seconds):
     raise RuntimeError("server did not become ready")
 
 
-def traced(built, help_text, args, applied, missing, trace):
+def traced(built, help_text, args, applied, missing, trace, trace_env):
     """Debug telemetry for a diagnostic pass, its spans and gauges as OTLP/JSON lines."""
     if built["kind"] == "skippy" and supports(help_text, "--telemetry-level"):
         args += ["--telemetry-level", "debug"]
         applied["telemetry_level"] = "debug"
     else:
         missing.append("--telemetry-level")
-    return {"SKIPPY_TELEMETRY_OTLP_FILE": str(trace.parent / f"{trace.name}.otlp.jsonl"),
+    return {**trace_env, "SKIPPY_TELEMETRY_OTLP_FILE": str(trace.parent / f"{trace.name}.otlp.jsonl"),
             "SKIPPY_TELEMETRY_OTLP_METRICS_FILE": str(trace.parent / f"{trace.name}.metrics.jsonl")}
 
 
 def measure(built, help_text, model, inputs, key, index, server, shape, output, trace=None,
-            prefixes=("MTL",)):
+            prefixes=("MTL",), trace_env=None):
     """`index` is the round, or None for a diagnostic pass that writes `trace`."""
     coordinate = f'{inputs["repo"]}@{inputs["revision"]}'
     args, applied, missing = server_args(built, help_text, model, coordinate,
                                          shape["context_per_lane"], server)
-    overrides = None if trace is None else traced(built, help_text, args, applied, missing, trace)
+    overrides = None if trace is None else traced(built, help_text, args, applied, missing, trace,
+                                                  trace_env or {})
     pass_name = "trace" if index is None else f"r{index + 1}"
     name = f'{key}-{pass_name}-{built["label"]}-{server["id"]}'
     log = output / f"{name}.log"
@@ -347,7 +354,8 @@ def execute():
               "arms": built, "rounds": plan["rounds"], "models": {}, "samples": []}
     if plan["trace"]:
         # Tracing slows the arm it runs on, so its samples never join the comparison.
-        record["diagnostic"] = {"telemetry": "debug", "arm": "candidate", "samples": []}
+        record["diagnostic"] = {"telemetry": "debug", "arm": "candidate", "env": plan.get("trace_env", {}),
+                                "samples": []}
         TRACES.mkdir(parents=True, exist_ok=True)
     try:
         for key in plan["models"]:
@@ -372,7 +380,8 @@ def execute():
                 for server in shape["servers"]:
                     record["diagnostic"]["samples"] += measure(
                         candidate, helps["candidate"], model, inputs, key, None, server, shape, output,
-                        trace=TRACES / f'{key}-{server["id"]}', prefixes=entry["device_prefixes"])
+                        trace=TRACES / f'{key}-{server["id"]}', prefixes=entry["device_prefixes"],
+                        trace_env=plan.get("trace_env", {}))
                     write_json(output / "performance.json", record)
     finally:
         write_json(output / "performance.json", record)

@@ -96,6 +96,20 @@ class PlanTests(unittest.TestCase):
         for ref in ("branch:", "branch:a b", "branches:x", "pr:130"):
             self.assertIsNone(performance_plan.branch_name(ref))
 
+    def test_a_trace_environment_is_ggml_switches_for_the_trace_pass(self):
+        arm_list = performance_plan.arms(self.candidate, self.baseline, self.pin)
+        def plan(**options):
+            spec = performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 1, "macstudio-2l0352", "m1",
+                                             **options)
+            return json.loads(spec["runtime"]["env"]["SKIPPY_PERFORMANCE_PLAN"])
+        switch = {"GGML_METAL_OP_PROFILE": "1"}
+        self.assertEqual(plan(trace=True, trace_env=switch)["trace_env"], switch)
+        self.assertNotIn("trace_env", plan(trace=True))
+        for refused in ({"trace_env": switch}, {"trace": True, "trace_env": {"PATH": "/tmp"}},
+                        {"trace": True, "trace_env": {"GGML_METAL_OP_PROFILE": 1}}):
+            with self.assertRaises(ValueError):
+                plan(**refused)
+
     def test_every_arm_leads_one_round(self):
         arm_list = performance_plan.arms(self.candidate, self.baseline, self.pin)
         firsts = [performance_plan.round_order(arm_list, index)[0]["label"] for index in range(3)]

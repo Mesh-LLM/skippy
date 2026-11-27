@@ -15,6 +15,7 @@ SCENARIO = ROOT / "ci/inference-performance.json"
 SKIPPY = "https://github.com/Mesh-LLM/skippy.git"
 LLAMA = "https://github.com/ggml-org/llama.cpp.git"
 SHA = re.compile(r"[0-9a-f]{40}")
+TRACE_SWITCH = re.compile(r"GGML_[A-Z0-9_]+")
 PULL_REQUEST = re.compile(r"pr:([1-9][0-9]{0,6})")
 BRANCH = re.compile(r"branch:([A-Za-z0-9._/-]{1,200})")
 NODE = re.compile(r"[A-Za-z0-9._-]{1,64}")
@@ -117,12 +118,26 @@ def nodes(values):
     return values
 
 
-def job_spec(harness, arm_list, keys, rounds, node, label, *, trace=False, backend="metal", servers=None):
+def trace_environment(values, trace):
+    """Environment for the diagnostic pass alone, such as GGML_METAL_OP_PROFILE=1. Only ggml's
+    own switches: they change how a backend runs, not the process or where telemetry goes."""
+    if type(values) is not dict or not all(type(name) is str and TRACE_SWITCH.fullmatch(name)
+                                           and type(value) is str for name, value in values.items()):
+        raise ValueError("a trace environment holds GGML_ switches with string values")
+    if values and not trace:
+        raise ValueError("a trace environment needs the trace pass it applies to")
+    return values
+
+
+def job_spec(harness, arm_list, keys, rounds, node, label, *, trace=False, backend="metal", servers=None,
+             trace_env=None):
     """`trace` adds one diagnostic pass of the candidate with debug telemetry, kept out
-    of the measurements: tracing costs time, so a traced arm is not a comparable one."""
+    of the measurements: tracing costs time, so a traced arm is not a comparable one.
+    `trace_env` is extra environment for that pass only."""
     count(rounds, "rounds")
     if type(trace) is not bool:
         raise ValueError("trace must be true or false")
+    trace_env = trace_environment(trace_env or {}, trace)
     if rounds > MAX_ROUNDS:
         raise ValueError(f"at most {MAX_ROUNDS} rounds fit the job's time budget")
     if backend not in BACKENDS:
@@ -150,6 +165,8 @@ def job_spec(harness, arm_list, keys, rounds, node, label, *, trace=False, backe
             "rounds": rounds, "trace": trace}
     if servers is not None:
         plan["servers"] = servers
+    if trace_env:
+        plan["trace_env"] = trace_env
     points = [point for server in shape["servers"] for point in server["points"]]
     return {
         "name": f"skippy-inference-performance-{label}",
