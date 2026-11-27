@@ -1,7 +1,6 @@
 """Offline Vulkan device admission and exact-archive release evidence contracts."""
 
 import importlib.util
-import io
 import json
 import os
 import shutil
@@ -146,19 +145,22 @@ class VulkanSdkInstaller(unittest.TestCase):
     def test_checksum_failure_cannot_extract_or_execute_a_download(self):
         installer = self.installer()
         with tempfile.TemporaryDirectory() as directory:
+            def download(args, **kwargs):
+                self.assertEqual(args[0], "curl")
+                Path(args[args.index("--output") + 1]).write_bytes(b"corrupt SDK")
+
             with (patch.dict(os.environ, RUNNER_TEMP=directory),
                   patch.object(installer.platform, "system", return_value="Windows"),
                   patch.object(installer.platform, "machine", return_value="AMD64"),
-                  patch.object(installer, "urlopen", return_value=io.BytesIO(b"corrupt SDK")),
-                  patch.object(installer, "command") as command):
+                  patch.object(installer, "command", side_effect=download) as command):
                 with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
                     installer.install(installer.VERSION)
-                command.assert_not_called()
+                self.assertEqual(command.call_count, 1)
                 self.assertEqual(list(Path(directory).iterdir()), [])
 
     def test_other_versions_and_platforms_never_download(self):
         installer = self.installer()
-        with (patch.object(installer, "urlopen") as download,
+        with (patch.object(installer, "command") as download,
               patch.object(installer.platform, "system", return_value="Darwin")):
             with self.assertRaisesRegex(ValueError, "pinned SDK"):
                 installer.install(installer.VERSION)
