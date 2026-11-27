@@ -163,6 +163,16 @@ class PairedTests(unittest.TestCase):
         github.assert_called_once_with("repos/Mesh-LLM/skippy/git/ref/heads/main")
         output.assert_called_once_with(source=CANDIDATE, profile="pr", baseline=BASELINE)
 
+        # A manual PR-profile run on a branch must not call that branch "main".
+        github.reset_mock()
+        output.reset_mock()
+        with patch.dict(os.environ, GITHUB_EVENT_NAME="workflow_dispatch", GITHUB_EVENT_PATH="event.json",
+                        GITHUB_SHA=CANDIDATE, QUALIFICATION_PROFILE="pr"), \
+                patch.dict(admit.__globals__, read_json=Mock(return_value={}), github=github, output=output):
+            admit()
+        github.assert_called_once_with("repos/Mesh-LLM/skippy/git/ref/heads/main")
+        output.assert_called_once_with(source=CANDIDATE, profile="pr", baseline=BASELINE)
+
 
 if __name__ == "__main__":
     unittest.main()
