@@ -14,6 +14,7 @@ struct BatchTiming {
     lock_wait_ms: f64,
     lock_hold_ms: f64,
     kv_used_cells: Option<u64>,
+    max_context_tokens: u64,
 }
 
 impl SchedulerWorker {
@@ -106,6 +107,7 @@ impl SchedulerWorker {
         let kv_used_cells = runnable.first().and_then(|(request, _)| {
             sample_kv_used_cells(self.telemetry.as_ref(), &mut runtime, &request.session_id)
         });
+        let max_context_tokens = deepest_context(&runtime, &runnable);
         drop(runtime);
         drop(entered);
         self.record_compute(hold);
@@ -114,6 +116,7 @@ impl SchedulerWorker {
             lock_wait_ms,
             lock_hold_ms: hold.as_secs_f64() * 1_000.0,
             kv_used_cells,
+            max_context_tokens,
         };
         self.record_direct_batch(&runnable, &timing, span);
         let reply_span = ActiveSpan::start(
@@ -184,13 +187,7 @@ impl SchedulerWorker {
                 ),
                 (
                     "skippy.scheduler.max_context_tokens".to_string(),
-                    json!(
-                        requests
-                            .iter()
-                            .filter_map(|(r, _)| r.positions.iter().max())
-                            .max()
-                            .map_or(0, |position| i64::from(*position) + 1)
-                    ),
+                    json!(timing.max_context_tokens),
                 ),
                 (
                     "skippy.scheduler.batch_wait_max_ms".to_string(),
@@ -231,6 +228,17 @@ fn retain_active(batch: Vec<DirectIteration>) -> Vec<DirectIteration> {
 }
 
 /// Align every retained request with its session's current token position.
+/// The longest session once the batch has run, which is what its deepest
+/// attention addressed. Positions cannot say: a prefill chunk leaves them
+/// empty and continues its session.
+fn deepest_context(runtime: &RuntimeState, requests: &[Runnable]) -> u64 {
+    requests
+        .iter()
+        .filter_map(|(request, _)| runtime.session_token_count(&request.session_id))
+        .max()
+        .unwrap_or(0)
+}
+
 fn align_requests(runtime: &mut RuntimeState, batch: Vec<DirectIteration>) -> Vec<Runnable> {
     batch
         .into_iter()
