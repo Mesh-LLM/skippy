@@ -1023,7 +1023,13 @@ fn batch_settings_reach_the_stage_config() {
         "--model",
         "missing.gguf",
         "--batch-policy",
-        "arrival_order",
+        "prompt_order",
+        "--batch-prefill-prompts",
+        "2",
+        "--batch-prefill-wait",
+        "active",
+        "--batch-mixing",
+        "separate",
         "--batch-decode-window-us",
         "500",
         "--batch-prefill-window-per-token-us",
@@ -1041,7 +1047,19 @@ fn batch_settings_reach_the_stage_config() {
     args.public.settings.apply_stage(&mut stage).unwrap();
     assert_eq!(
         stage.batch.policy,
-        Some(skippy_protocol::BatchPolicyKind::ArrivalOrder)
+        Some(skippy_protocol::BatchPolicyKind::PromptOrder)
+    );
+    assert_eq!(
+        stage.batch.prefill_prompts,
+        std::num::NonZeroU32::new(2).map(skippy_protocol::PrefillPrompts::AtMost)
+    );
+    assert_eq!(
+        stage.batch.prefill_wait,
+        Some(skippy_protocol::PrefillWait::Active)
+    );
+    assert_eq!(
+        stage.batch.mixing,
+        Some(skippy_protocol::BatchMixing::Separate)
     );
     assert_eq!(stage.batch.decode_window_us, Some(500));
     assert_eq!(stage.batch.prefill_window_per_token_us, Some(40));

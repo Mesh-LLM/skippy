@@ -18,14 +18,31 @@ struct BatchTiming {
 }
 
 impl SchedulerWorker {
+    /// What one direct batch may hold.
+    pub(super) fn batch_limits(&self) -> BatchLimits {
+        let tuning = self.batch_policy.tuning();
+        BatchLimits {
+            lanes: self.direct_group_batch_size,
+            token_budget: self.max_direct_iteration_tokens,
+            prefill_prompts: tuning.prefill_prompts,
+            mixing: tuning.mixing,
+        }
+    }
+
     /// Align and execute a direct batch, then deliver each request's own result.
     pub(super) fn run_direct_iteration_batch(&mut self) {
+        // The whole queue, not only the batch: a cancelled prompt waiting
+        // behind older ones would otherwise hold its place until its turn.
+        drop_inactive(&mut self.direct_iterations);
+        if self.direct_iterations.is_empty() {
+            return;
+        }
+        let limits = self.batch_limits();
         let (batch, rejection) = take_batch(
             &mut self.direct_iterations,
             self.batch_policy.as_ref(),
             self.active_runtime_sessions,
-            self.direct_group_batch_size,
-            self.max_direct_iteration_tokens,
+            limits,
         );
         if let (Some(rejection), Some(telemetry)) = (rejection, self.telemetry.as_ref()) {
             telemetry.emit(
@@ -43,10 +60,6 @@ impl SchedulerWorker {
             );
         }
         debug_assert!(!batch.is_empty(), "validated direct queue must yield work");
-        let active = retain_active(batch);
-        if active.is_empty() {
-            return;
-        }
         // The lease span covers lock request through release; native calls
         // made under it nest beneath it.
         let span = ActiveSpan::start(
@@ -65,7 +78,7 @@ impl SchedulerWorker {
             "stage.scheduler_align",
             SpanLevel::Debug,
         );
-        let runnable = align_requests(&mut runtime, active);
+        let runnable = align_requests(&mut runtime, batch);
         align_span.end();
         if runnable.is_empty() {
             drop(entered);
@@ -82,7 +95,7 @@ impl SchedulerWorker {
                 sampling: request.sampling.as_ref(),
                 input: request.input.as_ref(),
                 sample_last: request.sample_last,
-                phase: request.phase,
+                phase: request.work.phase(),
             })
             .collect::<Vec<_>>();
         #[cfg(test)]
@@ -141,7 +154,7 @@ impl SchedulerWorker {
     ) {
         let decode_steps = requests
             .iter()
-            .filter(|(request, _)| request.phase == IterationBatchPhase::Decode)
+            .filter(|(request, _)| request.work == IterationWork::Generation)
             .count();
         self.compute_meter.record_decode_tokens(decode_steps as u64);
         resource_metrics::record_decode_tokens(decode_steps as u64);
@@ -176,7 +189,7 @@ impl SchedulerWorker {
                     json!(
                         requests
                             .iter()
-                            .filter(|(r, _)| r.phase == IterationBatchPhase::Prefill)
+                            .filter(|(r, _)| r.work.phase() == IterationBatchPhase::Prefill)
                             .map(|(r, _)| r.token_ids.len())
                             .sum::<usize>()
                     ),
@@ -214,8 +227,9 @@ impl SchedulerWorker {
 }
 
 /// Remove cancelled requests before a direct batch enters native execution.
-fn retain_active(batch: Vec<DirectIteration>) -> Vec<DirectIteration> {
-    batch
+/// Fail every queued request that is cancelled or past its deadline.
+fn drop_inactive(queue: &mut VecDeque<DirectIteration>) {
+    *queue = std::mem::take(queue)
         .into_iter()
         .filter_map(|request| match request.ensure_active() {
             Ok(()) => Some(request),
@@ -224,7 +238,7 @@ fn retain_active(batch: Vec<DirectIteration>) -> Vec<DirectIteration> {
                 None
             }
         })
-        .collect()
+        .collect();
 }
 
 /// Align every retained request with its session's current token position.

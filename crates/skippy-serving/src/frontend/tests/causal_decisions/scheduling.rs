@@ -1,6 +1,7 @@
 //! Readouts share normal batching and drain admitted work before cleanup.
 
 use super::*;
+use crate::frontend::iteration_scheduler::iteration_work::PromptStart;
 use crate::frontend::iteration_scheduler::readout::ReadoutIteration;
 use skippy_inference_api::CancellationToken;
 
@@ -62,6 +63,7 @@ fn causal_decisions_scheduler_batches_and_drains_cancelled_waves() -> Result<()>
     ];
     let make = |session| ReadoutIteration {
         session_id: session,
+        prompt: PromptStart::next(),
         position: 0,
         tokens: &tokens,
         selected_tokens: &selected,

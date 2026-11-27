@@ -62,8 +62,7 @@ impl SchedulerWorker {
         let Gather { target, window } = self.batch_policy.gather(&BatchView::of(
             &self.direct_iterations,
             self.active_runtime_sessions,
-            self.direct_group_batch_size,
-            self.max_direct_iteration_tokens,
+            self.batch_limits(),
         ));
         let queued_before = self.direct_iterations.len();
         if target <= queued_before {

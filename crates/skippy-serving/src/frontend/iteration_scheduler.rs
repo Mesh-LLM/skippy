@@ -6,11 +6,13 @@ mod detached_runtime;
 mod direct_batch;
 mod direct_execution;
 mod direct_reply;
+pub(crate) mod iteration_work;
 pub(crate) mod readout;
 mod step_telemetry;
 
 use self::batch_policy::{
-    BatchPlatform, BatchPolicy, BatchTuning, BatchView, Gather, batch_policy, take_batch,
+    BatchLimits, BatchPlatform, BatchPolicy, BatchTuning, BatchView, Gather, batch_policy,
+    take_batch,
 };
 use self::cache_runtime::{
     CacheAffinityRefresh, CacheRuntimeQueue, CacheRuntimeTelemetry,
@@ -25,6 +27,7 @@ use self::direct_batch::{
 #[cfg(test)]
 use self::direct_batch::{direct_coalesce_target, take_direct_iteration_batch};
 use self::direct_reply::DirectReply;
+use self::iteration_work::IterationWork;
 use self::step_telemetry::{StepTiming, sample_kv_used_cells};
 use crate::frontend::admission::DECODE_BATCH_HEADROOM_TOKENS;
 use crate::frontend::generation::TokenControl;
@@ -155,7 +158,7 @@ struct DirectIteration {
     input: Option<ActivationFrame>,
     sample_last: bool,
     selected_tokens: Option<Vec<i32>>,
-    phase: IterationBatchPhase,
+    work: IterationWork,
     deadline: Option<Instant>,
     cancellation: Option<skippy_inference_api::CancellationToken>,
     enqueued_at: Instant,
@@ -527,6 +530,18 @@ impl IterationScheduler {
                     json!(batch_tuning.prefill_window_max.as_millis()),
                 ),
                 (
+                    "skippy.scheduler.batch_prefill_prompts".to_string(),
+                    json!(batch_tuning.prefill_prompts),
+                ),
+                (
+                    "skippy.scheduler.batch_prefill_wait".to_string(),
+                    json!(batch_tuning.prefill_wait),
+                ),
+                (
+                    "skippy.scheduler.batch_mixing".to_string(),
+                    json!(batch_tuning.mixing),
+                ),
+                (
                     "skippy.scheduler.cache_policy".to_string(),
                     json!("weighted_lpm_aging_dfs_waiting_prefix"),
                 ),
@@ -735,12 +750,14 @@ impl IterationScheduler {
             positions,
             sampling,
             sample_last,
-            phase,
+            IterationWork::unchunked(phase),
             None,
             None,
         )
     }
 
+    /// Submit one iteration. Every chunk of a prompt passes the same
+    /// [`IterationWork::Prompt`], so the batch policy can order prompts.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn execute_iteration_on(
         &self,
@@ -750,7 +767,7 @@ impl IterationScheduler {
         positions: &[i32],
         sampling: Option<&SamplingConfig>,
         sample_last: bool,
-        phase: IterationBatchPhase,
+        work: IterationWork,
         deadline: Option<Instant>,
         cancellation: Option<&skippy_inference_api::CancellationToken>,
     ) -> InferenceResult<SchedulerIterationOutcome> {
@@ -763,7 +780,7 @@ impl IterationScheduler {
             sampling,
             None,
             sample_last,
-            phase,
+            work,
             deadline,
             cancellation,
         )
@@ -790,7 +807,7 @@ impl IterationScheduler {
             sampling,
             input,
             sample_last,
-            IterationBatchPhase::Decode,
+            IterationWork::Generation,
             None,
             None,
         )
@@ -808,7 +825,7 @@ impl IterationScheduler {
         sampling: Option<&SamplingConfig>,
         input: Option<ActivationFrame>,
         sample_last: bool,
-        phase: IterationBatchPhase,
+        work: IterationWork,
         deadline: Option<Instant>,
         cancellation: Option<&skippy_inference_api::CancellationToken>,
     ) -> InferenceResult<SchedulerIterationOutcome> {
@@ -829,7 +846,7 @@ impl IterationScheduler {
                 input,
                 sample_last,
                 selected_tokens: None,
-                phase,
+                work,
                 deadline,
                 cancellation: cancellation.cloned(),
                 enqueued_at: Instant::now(),
@@ -1658,7 +1675,8 @@ fn build_scheduler_config(
         // Recurrent models can become substantially slower when several
         // independent prompt rows share one native prefill call. Preserve
         // decode batching, but serialize recurrent prefills through the same
-        // scheduler worker.
+        // scheduler worker. This governs planned requests only; direct
+        // iterations follow the stage's `batch.prefill_prompts`.
         max_prefill_sequences_per_iteration: if recurrent_bytes_per_sequence > 0 {
             1
         } else {

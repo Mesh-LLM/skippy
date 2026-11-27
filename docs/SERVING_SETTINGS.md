@@ -76,7 +76,6 @@ kv_cache_disk = "off"
 [scheduling]
 generation_concurrency = 2
 continuous_batching = true
-prefill_chunk_size = 64
 
 [sampling]
 temperature = 0.6
@@ -396,7 +395,10 @@ known size. Use them without `--prompt` or `--stage-transport`.
 | `--pipeline-decode-groups` | `pipeline_decode_groups` | Number of decode dispatch groups |
 | `--prefill-coalesce-max-ms` | `prefill_coalesce_max_ms` | Longest a prompt waits for others to join its prefill wave, in milliseconds; zero never waits |
 | `--sample-threads` | `sample_threads` | Threads that sample one decode wave: 0 as many as the wave and the hardware allow, 1 the scheduler thread alone, N at most N |
-| `--batch-policy` | `batch_policy` | Algorithm that forms the scheduler's batches: arrival_order |
+| `--batch-policy` | `batch_policy` | Algorithm that forms the scheduler's batches: arrival_order, or prompt_order to prefill the oldest prompts first |
+| `--batch-prefill-prompts` | `batch_prefill_prompts` | How many prompts one batch prefills: all, or at most N; unset, all under arrival_order and 1 under prompt_order |
+| `--batch-prefill-wait` | `batch_prefill_wait` | How long a batch that holds a prompt waits for more requests: wave (default) for a full set of lanes, or active for the sessions already running |
+| `--batch-mixing` | `batch_mixing` | Whether a batch may hold prompt chunks and generated tokens together: mixed (default), or separate for one kind per batch |
 | `--batch-decode-window-us` | `batch_decode_window_us` | How long generated tokens wait for the other active requests to join their batch, in microseconds |
 | `--batch-prefill-window-per-token-us` | `batch_prefill_window_per_token_us` | How long a prompt waits for others to join its prefill wave, per prompt token, in microseconds |
 | `--generation-signal-window` | `generation_signal_window` | Generation signal observation window in tokens |

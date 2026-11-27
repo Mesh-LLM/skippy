@@ -1,5 +1,6 @@
 //! Checkpoint-aware prefill yields native iterations between exact boundaries.
 use super::*;
+use crate::frontend::local_generation::resident_prefill::PromptPrefill;
 
 pub(super) fn deferred_suffix_prefill_enabled(
     scheduling: Option<CacheSchedulingPolicy>,
@@ -195,6 +196,8 @@ impl StageOpenAiBackend {
             max_tokens,
         );
         if deferred_suffix_prefill && capacity.admitted {
+            let prompt =
+                PromptPrefill::begin(session_id, cache_operation_deadline, request.cancellation);
             let exact_state = self
                 .kv
                 .as_ref()
@@ -226,12 +229,10 @@ impl StageOpenAiBackend {
                     continue;
                 };
                 let checkpoint_prefill = self.prefill_suffix(
-                    session_id,
+                    &prompt,
                     &request.prompt_token_ids[suffix_start..boundary],
                     None,
                     false,
-                    cache_operation_deadline,
-                    request.cancellation,
                 )?;
                 checkpoint_chunks =
                     checkpoint_chunks.saturating_add(checkpoint_prefill.chunk_count);
@@ -257,12 +258,10 @@ impl StageOpenAiBackend {
             }
 
             let suffix_outcome = self.prefill_suffix(
-                session_id,
+                &prompt,
                 &request.prompt_token_ids[suffix_start..],
                 request.sampling.enabled.then_some(request.sampling),
                 max_tokens > 0,
-                cache_operation_deadline,
-                request.cancellation,
             )?;
             prompt_prefill_sample = if max_tokens > 0 {
                 Some(suffix_outcome.predicted.ok_or_else(|| {

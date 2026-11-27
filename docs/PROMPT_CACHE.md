@@ -98,8 +98,9 @@ Prefix lookup and restore run as one cache operation under the runtime lock.
 - `cooperative` (default): the operation restores the prefix only. The suffix
   is submitted as iteration batches, chunked at `n_ubatch`, which coalesce
   with other requests' prompt chunks and with decode rows in the same native
-  step. Four prompts arriving together prefill as one wave, and running
-  requests keep decoding between chunks.
+  step. Under the default `arrival_order` batch policy, four prompts arriving
+  together prefill as one wave; `prompt_order` prefills the oldest first.
+  Running requests keep decoding between chunks.
 - `serialized`: the operation prefills the whole prompt itself. One prompt
   enters at a time and every other request's decode waits for it. This was
   the implicit behaviour for attention models before the policy existed; keep

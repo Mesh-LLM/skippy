@@ -1,5 +1,6 @@
 //! Unsampled causal iterations share the normal direct-iteration queue.
 
+use super::iteration_work::PromptStart;
 use super::*;
 use skippy_inference_api::CancellationToken;
 
@@ -7,6 +8,8 @@ use skippy_inference_api::CancellationToken;
 /// row is read; an empty selection computes KV/frontier state without logits.
 pub(crate) struct ReadoutIteration<'a> {
     pub session_id: &'a str,
+    /// The readout this step belongs to, shared by all of its steps.
+    pub prompt: PromptStart,
     pub position: u64,
     pub tokens: &'a [i32],
     pub selected_tokens: &'a [i32],
@@ -53,7 +56,7 @@ impl IterationScheduler {
                     input: request.input,
                     sample_last: false,
                     selected_tokens: Some(request.selected_tokens.to_vec()),
-                    phase: IterationBatchPhase::Prefill,
+                    work: IterationWork::Prompt(request.prompt),
                     deadline: None,
                     cancellation: request.cancellation,
                     enqueued_at: Instant::now(),

@@ -103,13 +103,16 @@ The environment overrides are `SKIPPY_SERVE_ON_DEMAND`,
 | --- | --- |
 | `generation_concurrency` | Set active generation lanes |
 | `continuous_batching` | Serve concurrent lanes in the iteration scheduler |
-| `batch_policy` | Select the arrival-order batch policy |
+| `batch_policy` | Select `arrival_order` (default), or `prompt_order` to prefill the oldest prompts first |
+| `batch_prefill_prompts` | Cap the prompts one batch prefills: `all`, or a count. Unset, `arrival_order` takes all and `prompt_order` takes 1 |
+| `batch_prefill_wait` | Select `wave` (default), where a batch holding a prompt waits for a full set of lanes, or `active`, where it waits only for the sessions already running |
+| `batch_mixing` | Select `mixed` (default), where generated tokens join batches that hold prompt chunks, or `separate`, where each batch holds one kind |
 | `batch_decode_window_us`, `batch_prefill_window_per_token_us` | Tune batch gathering latency |
 | `prefill_coalesce_max_ms` | Cap the total batching wait for a prefill wave. Use `0` to skip the wait. |
 | `sample_threads` | Select pooled sampling (0), inline sampling (1), or a thread cap |
 | `generation_queue_capacity` | Bound queued requests |
 | `generation_admission_timeout_secs` | Bound queue wait time. Defaults to `0`, which waits until cancellation. |
-| `prefill_chunk_size`, `prefill_chunk_policy` | Configure chunked prefill |
+| `prefill_chunk_size`, `prefill_chunk_policy` | Configure the chunks stage 0 of a split prefills and sends downstream. Local serving prefills in `microbatch_size` chunks. |
 
 ## `[sampling]`
 

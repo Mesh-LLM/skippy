@@ -334,14 +334,100 @@ pub enum BatchPolicyKind {
     /// and the token budget.
     #[default]
     ArrivalOrder,
+    /// The oldest prompts prefill first, one at a time unless
+    /// `prefill_prompts` allows more.
+    PromptOrder,
 }
 
 impl BatchPolicyKind {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ArrivalOrder => "arrival_order",
+            Self::PromptOrder => "prompt_order",
         }
     }
+}
+
+/// How many prompts one batch prefills. The wire is `"all"` or a positive
+/// count; zero is refused rather than read as either.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "PrefillPromptsWire", into = "PrefillPromptsWire")]
+pub enum PrefillPrompts {
+    /// Every queued prompt the lanes and the token budget leave room for.
+    All,
+    /// At most this many; one prefills a prompt at a time.
+    AtMost(NonZeroU32),
+}
+
+impl PrefillPrompts {
+    /// One prompt at a time.
+    pub const ONE: Self = Self::AtMost(NonZeroU32::MIN);
+
+    /// Whether one batch may prefill `prompts` prompts.
+    pub fn allows(self, prompts: usize) -> bool {
+        match self {
+            Self::All => true,
+            Self::AtMost(limit) => prompts <= usize::try_from(limit.get()).unwrap_or(usize::MAX),
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum PrefillPromptsWire {
+    Count(u32),
+    Every(EveryPrompt),
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum EveryPrompt {
+    All,
+}
+
+impl TryFrom<PrefillPromptsWire> for PrefillPrompts {
+    type Error = &'static str;
+
+    fn try_from(wire: PrefillPromptsWire) -> Result<Self, Self::Error> {
+        match wire {
+            PrefillPromptsWire::Every(EveryPrompt::All) => Ok(Self::All),
+            PrefillPromptsWire::Count(count) => NonZeroU32::new(count)
+                .map(Self::AtMost)
+                .ok_or("prefill_prompts is all or a count of at least 1"),
+        }
+    }
+}
+
+impl From<PrefillPrompts> for PrefillPromptsWire {
+    fn from(prompts: PrefillPrompts) -> Self {
+        match prompts {
+            PrefillPrompts::All => Self::Every(EveryPrompt::All),
+            PrefillPrompts::AtMost(limit) => Self::Count(limit.get()),
+        }
+    }
+}
+
+/// How long a batch that holds a prompt waits for more requests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrefillWait {
+    /// For a full wave of lanes, up to a window sized to the prompt, so
+    /// prompts that arrive together prefill together.
+    Wave,
+    /// For the sessions already running, up to the decode window, as a batch
+    /// of generated tokens does.
+    Active,
+}
+
+/// Whether one batch may hold prompt chunks and generated tokens together.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BatchMixing {
+    /// Generated tokens join batches that hold prompt chunks.
+    Mixed,
+    /// Prompt chunks or generated tokens, never both; the request at the
+    /// head of the queue decides which.
+    Separate,
 }
 
 /// Batch-forming settings. A value left unset is the one the policy chooses
@@ -359,6 +445,15 @@ pub struct BatchConfig {
     /// prompt token, in microseconds. `prefill_coalesce_max_ms` caps the total.
     #[serde(default)]
     pub prefill_window_per_token_us: Option<u32>,
+    /// How many prompts one batch prefills.
+    #[serde(default)]
+    pub prefill_prompts: Option<PrefillPrompts>,
+    /// How long a batch that holds a prompt waits for more requests.
+    #[serde(default)]
+    pub prefill_wait: Option<PrefillWait>,
+    /// Whether prompt chunks and generated tokens share a batch.
+    #[serde(default)]
+    pub mixing: Option<BatchMixing>,
 }
 
 impl BatchConfig {
@@ -795,6 +890,34 @@ mod sample_threads_tests {
             serde_json::to_value(capped).unwrap()["sample_threads"],
             serde_json::json!(6)
         );
+    }
+}
+
+#[cfg(test)]
+mod prefill_prompts_tests {
+    use super::{BatchConfig, PrefillPrompts};
+    use serde_json::json;
+    use std::num::NonZeroU32;
+
+    #[test]
+    fn prefill_prompts_is_all_or_a_positive_count() {
+        let read =
+            |value| serde_json::from_value::<BatchConfig>(json!({ "prefill_prompts": value }));
+        assert_eq!(
+            read(json!("all")).unwrap().prefill_prompts,
+            Some(PrefillPrompts::All)
+        );
+        let two = read(json!(2)).unwrap();
+        assert_eq!(
+            two.prefill_prompts,
+            NonZeroU32::new(2).map(PrefillPrompts::AtMost)
+        );
+        assert_eq!(
+            serde_json::to_value(two).unwrap()["prefill_prompts"],
+            json!(2)
+        );
+        assert!(read(json!(0)).is_err());
+        assert!(read(json!("some")).is_err());
     }
 }
 

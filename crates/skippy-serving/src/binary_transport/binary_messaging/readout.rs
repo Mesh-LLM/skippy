@@ -19,6 +19,7 @@ use crate::binary_transport::{
     WireCondition, forwarded_stage_message, write_stage_message_conditioned,
 };
 use crate::frontend::iteration_scheduler::IterationScheduler;
+use crate::frontend::iteration_scheduler::iteration_work::PromptStart;
 use crate::frontend::iteration_scheduler::readout::ReadoutIteration;
 
 pub(super) struct ReadoutStage<'a> {
@@ -58,6 +59,8 @@ impl ReadoutStage<'_> {
             .scheduler
             .execute_readout_wave(vec![ReadoutIteration {
                 session_id: session,
+                // A downstream stage runs its upstream's steps as they come.
+                prompt: PromptStart::next(),
                 position,
                 tokens: &message.tokens,
                 selected_tokens: &message.readout_tokens,

@@ -114,6 +114,8 @@ impl ServeSettings {
                 bytes(value)?
             } else if spec.name == "prefix-cache-retention-tokens" {
                 retention(value)?
+            } else if spec.name == "batch-prefill-prompts" {
+                prefill_prompts(value)
             } else if spec.name == "prefix-cache" {
                 Value::String(
                     match value.as_str().context("prefix-cache must be a string")? {
@@ -473,6 +475,15 @@ fn retention(value: &Value) -> Result<Value> {
         .or_else(|| value.as_str().and_then(|text| text.parse::<u64>().ok()))
         .context("prefix-cache-retention-tokens must be a token count or unbounded")?;
     Ok(json!({ "tokens": tokens }))
+}
+
+/// A count given as text becomes a number, so `PrefillPrompts` alone decides
+/// which values are valid.
+fn prefill_prompts(value: &Value) -> Value {
+    value
+        .as_str()
+        .and_then(|text| text.parse::<u64>().ok())
+        .map_or_else(|| value.clone(), Value::from)
 }
 
 pub(super) fn set(object: &mut Value, path: &str, value: Value) {

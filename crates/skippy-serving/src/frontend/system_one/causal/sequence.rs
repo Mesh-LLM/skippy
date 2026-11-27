@@ -5,6 +5,7 @@ use crate::binary_transport::{forwarded_stage_message, write_stage_message_condi
 use crate::frontend::generation::{
     InferenceBackendMode, PersistentStageLane, PersistentStageLanePool,
 };
+use crate::frontend::iteration_scheduler::iteration_work::PromptStart;
 use crate::frontend::iteration_scheduler::readout::ReadoutIteration;
 use crate::frontend::util::openai_io_error;
 use crate::frontend::wire_messages::{OpenAiPrefillChunk, embedded_prefill_message};
@@ -23,6 +24,8 @@ pub(super) struct DecisionSequence<'a> {
     pub evaluated: usize,
     pub cached: usize,
     prompt_tokens: usize,
+    /// Every step of this readout queues as one prompt.
+    prompt: PromptStart,
     closed: bool,
 }
 
@@ -79,6 +82,7 @@ impl<'a> DecisionSequence<'a> {
             evaluated: 0,
             cached: 0,
             prompt_tokens: 0,
+            prompt: PromptStart::next(),
             closed: false,
         })
     }
@@ -132,6 +136,7 @@ impl<'a> DecisionSequence<'a> {
                 .iteration_scheduler
                 .execute_readout_wave(vec![ReadoutIteration {
                     session_id: &self.session,
+                    prompt: self.prompt,
                     position: self.position as u64,
                     tokens,
                     selected_tokens: selected,

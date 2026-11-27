@@ -7,6 +7,7 @@ use crate::frontend::generation::{
     GenerationCacheStats, LocalGeneration, PhaseTimer, StageOpenAiBackend, TokenControl,
     decode_token_phase,
 };
+use crate::frontend::iteration_scheduler::iteration_work::IterationWork;
 use crate::frontend::{NativeMtpDraft, NativeMtpDraftOrigin};
 
 use super::token_generation::{DecodeState, decode_native_mtp};
@@ -86,7 +87,7 @@ impl StageOpenAiBackend {
                 &[],
                 request.sampling.enabled.then_some(request.sampling),
                 true,
-                skippy_runtime::IterationBatchPhase::Decode,
+                IterationWork::Generation,
                 None,
                 request.cancellation,
             )?;

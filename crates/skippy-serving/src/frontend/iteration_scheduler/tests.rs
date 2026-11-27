@@ -16,7 +16,7 @@ pub(super) fn direct_iteration(session_id: &str, token_count: usize) -> DirectIt
         input: None,
         sample_last: true,
         selected_tokens: None,
-        phase: IterationBatchPhase::Prefill,
+        work: IterationWork::unchunked(IterationBatchPhase::Prefill),
         deadline: None,
         cancellation: None,
         enqueued_at: Instant::now(),
@@ -170,7 +170,7 @@ fn direct_iteration_rechecks_deadline_after_worker_reply() {
             &[],
             None,
             false,
-            IterationBatchPhase::Prefill,
+            IterationWork::unchunked(IterationBatchPhase::Prefill),
             Some(deadline),
             None,
         )

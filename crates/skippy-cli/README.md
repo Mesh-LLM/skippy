@@ -193,9 +193,11 @@ no public API, so `--prompt` and `--worker-only` cannot be combined. The binary
 stage transport is the only split path. Workers expose the binary protocol
 on their stage listener; stage zero exposes the public OpenAI and Anthropic APIs.
 
-Serving tuning flags use names such as `--bind-addr`,
-`--generation-concurrency`, and `--prefill-chunk-size` for both local and
-binary stage serving. Compatibility guardrails use `--guardrails`.
+Serving tuning flags use names such as `--bind-addr` and
+`--generation-concurrency` for both local and binary stage serving.
+`--prefill-chunk-size` sizes the chunks stage 0 of a split prefills and sends
+downstream; local serving prefills in `--microbatch-size` chunks. Compatibility
+guardrails use `--guardrails`.
 
 `plan-split` admits every native stage before writing configs. Its output
 directory must not exist. The generated stage files, not the diagnostic

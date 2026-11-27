@@ -24,11 +24,12 @@ pub use admission::{
     StageAdmissionSidecar, StageAdmissionSidecarKind,
 };
 pub use config::{
-    ActivationDType, ActivationDescriptor, ActivationLayout, BatchConfig, BatchPolicyKind,
-    FlashAttentionType, GlmDsaPolicy, HostExpertLayers, HostExpertPolicy, LoadMode, PeerConfig,
-    SampleThreads, SplitMode, StageActivationCodec, StageActivationCodecPolicy, StageConfig,
-    StageDevice, StageIdentity, StageKvCacheCodec, StageKvCacheConfig, StageKvCacheMode,
-    StageKvRetention, StagePrefillAdmission, StageTopology, StageTopologyEntry,
+    ActivationDType, ActivationDescriptor, ActivationLayout, BatchConfig, BatchMixing,
+    BatchPolicyKind, FlashAttentionType, GlmDsaPolicy, HostExpertLayers, HostExpertPolicy,
+    LoadMode, PeerConfig, PrefillPrompts, PrefillWait, SampleThreads, SplitMode,
+    StageActivationCodec, StageActivationCodecPolicy, StageConfig, StageDevice, StageIdentity,
+    StageKvCacheCodec, StageKvCacheConfig, StageKvCacheMode, StageKvRetention,
+    StagePrefillAdmission, StageTopology, StageTopologyEntry,
 };
 pub use messages::{
     AckMessage, DecodeTokenMessage, ErrorMessage, FinalPrefillChunkMessage, MessageBase,
