@@ -184,8 +184,8 @@ def collect(pilot, job, plan, label, evidence):
     write_json(evidence / f"{label}-performance.json", result)
     (evidence / f"{label}-rows.jsonl").write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n"
-                for row in rows(result, scenario(), plan["committed_at"], job["id"], plan["pull_requests"],
-                                     plan.get("branches"))),
+                for row in rows(result, scenario(plan.get("servers")), plan["committed_at"], job["id"],
+                                plan["pull_requests"], plan.get("branches"))),
         encoding="utf-8")
     if plan["trace"]:
         download(pilot, run_id, "traces.tar.gz", evidence / f"{label}-traces.tar.gz")
