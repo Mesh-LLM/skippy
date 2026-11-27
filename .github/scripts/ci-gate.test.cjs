@@ -87,14 +87,22 @@ test('separate device smoke consumes prebuilt artifacts without restoring build 
 
 test('full Vulkan smoke uses literal NVIDIA and AMD pool routes and requires both results', () => {
   for (const [vendor, group, device] of [
-    ['nvidia', 'jy-rnr_p0zx3thw895vrka', '--gpus all'],
+    ['nvidia', 'jy-rnr_p0zx3thw895vrka', null],
     ['amd', 'jy-rnr_gsxt2m73mgpcbbh', '--device=/dev/dri'],
   ]) {
     const key = `smoke_linux_x86_64_vulkan_${vendor}`;
     const smoke = workflow.split(`\n  ${key}:\n`)[1].split(/\n  \w+:\n/)[0];
     assert.match(smoke, /needs: \[plan, package_linux_x86_64_vulkan\]/);
     assert.ok(smoke.includes(`group: ${group}\n`));
-    assert.ok(smoke.includes(device));
+    if (vendor === 'nvidia') {
+      assert.doesNotMatch(smoke, /^    container:/m);
+      assert.doesNotMatch(smoke, /rocm-workspace/);
+      assert.match(smoke, /uses: \.\/.github\/actions\/setup/);
+    } else {
+      assert.ok(smoke.includes(device));
+      assert.match(smoke, /^    container:/m);
+      assert.match(smoke, /rocm-workspace/);
+    }
     assert.ok(smoke.includes(`SKIPPY_CI_VULKAN_VENDOR: ${vendor}\n`));
     assert.ok(smoke.includes(`evidence-suffix: -${vendor}\n`));
     assert.doesNotMatch(smoke, /matrix\./);

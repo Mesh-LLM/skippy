@@ -1031,13 +1031,7 @@ jobs:
     permissions:
       contents: read
       packages: read
-    container:
-      # Use the established Ubuntu 24.04 image so the shared CLI keeps its ABI baseline.
-      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-cuda13@${{ needs.plan.outputs.cuda13_digest }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-      options: --user 0 --gpus all --env NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics --cpus=8 --memory=16g --pids-limit=4096
+    # This pool already runs inside its pinned GPU image, without a Docker socket.
     timeout-minutes: 40
     env:
       NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
@@ -1049,10 +1043,9 @@ jobs:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
-      - uses: ./.github/actions/rocm-workspace
-      - name: Trust the host-owned checkout inside the job container
-        shell: bash
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
       - uses: ./.github/actions/source
         with:
           artifact: ${{ inputs.candidate_artifact }}
