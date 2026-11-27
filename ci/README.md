@@ -154,7 +154,15 @@ budget waits for placement instead of failing fast. Branch PRs retain
 same-repository/collaborator admission; forks use the approved
 controller above. Both retain a fresh-head check and all seven GPU smoke
 configurations. The credentialed controller runs only protected source.
-Python admission verifies trust and source identity.
+Python admission verifies trust and source identity. A green native PR run therefore
+cannot validate changes to that controller. The candidate's `just ci-automation`
+runs a credential-free streaming rehearsal in `Automation checks`: synthetic API
+pages exercise the real controller and log forwarder through a buffered subprocess
+pipe. Standalone, leader and worker lines must arrive before the parent permits
+completion, and saved log contents must match. Look for `[stream-proof-` lines and
+`STREAMING PROOF PASSED` in the Actions output. This proves incremental candidate
+output reaches Actions before merge; it does not qualify the live lab API or
+artifact upload. Verify those on a real qualification run after merge.
 Release candidates are admitted only from scheduled or manually dispatched
 protected-main Release runs, with their exact source parent, candidate ref and
 run trailer verified. JY reads retry transient disconnects, timeouts and HTTP
@@ -167,6 +175,16 @@ The admitted profile distinguishes a scheduled Release call from the scheduled
 nightly ladder: only the nightly ladder adds smoke rows, collects public metrics
 and requires nightly report publication in its summary.
 The syntax/dependency classifier and offline replay command have been removed.
+Native attempt logs stream into the qualification Actions step, including both
+split members and retries. The evidence artifact retains per-attempt JSONL logs
+and capture-gap diagnostics. Log polling uses five-second per-attempt/worker-read
+budgets inside a thirty-second capture budget, including the final tail. Read
+socket timeouts and retry admission use the remaining budget; these are not
+hard process deadlines for authentication, slow response bodies or local output.
+Capture errors are isolated so other attempts can still be collected. Incomplete
+capture is reported without replacing the native qualification verdict; cancellation
+still propagates. Results comments direct readers to GitHub Actions logs and saved
+evidence, not an external lab console.
 The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
 `gh` and `jq`; it needs no Rust setup or compilation. It checks receipt source,
 configuration and native-attempt identity, updates only its bot-owned comment,
