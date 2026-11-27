@@ -2,6 +2,7 @@ use super::{
     GgufCompactMeta, GgufHeader, GgufReader, GgufType, open_gguf_header, read_gguf_string,
     read_gguf_value_as_bool_list, read_gguf_value_as_f32, read_gguf_value_as_string_opt,
     read_gguf_value_as_u32, read_gguf_value_as_u32_list, read_u32, skip_gguf_value,
+    skip_gguf_value_counting,
 };
 use std::io::{Seek, SeekFrom};
 use std::path::Path;
@@ -22,6 +23,7 @@ pub fn scan_gguf_compact_meta(path: &Path) -> Option<GgufCompactMeta> {
         architecture,
         ..GgufCompactMeta::default()
     };
+    let mut tokenizer_tokens = None;
     for _ in 0..n_kv {
         let key = read_gguf_string(&mut reader).ok()?;
         let value_type = GgufType::from_u32(read_u32(&mut reader).ok()?)?;
@@ -40,6 +42,9 @@ pub fn scan_gguf_compact_meta(path: &Path) -> Option<GgufCompactMeta> {
                 meta.tokenizer_model_name =
                     read_gguf_value_as_string_opt(&mut reader, value_type).ok()??;
             }
+            "tokenizer.ggml.tokens" => {
+                tokenizer_tokens = skip_gguf_value_counting(&mut reader, value_type).ok()?;
+            }
             _ => match key.split_once('.') {
                 Some((namespace, field)) if namespace == meta.architecture => {
                     read_structural_field(&mut reader, value_type, field, &mut meta)?;
@@ -47,6 +52,12 @@ pub fn scan_gguf_compact_meta(path: &Path) -> Option<GgufCompactMeta> {
                 _ => skip_gguf_value(&mut reader, value_type).ok()?,
             },
         }
+    }
+    // Most converters write no `<arch>.vocab_size`; llama.cpp counts the
+    // tokenizer's tokens instead, and so does this when the key is absent.
+    if meta.vocab_size == 0 {
+        meta.vocab_size =
+            tokenizer_tokens.map_or(0, |count| u32::try_from(count).unwrap_or(u32::MAX));
     }
     derive_attention_widths(&mut meta);
     Some(meta)
@@ -251,6 +262,45 @@ mod tests {
         let result = scan_gguf_compact_meta(&path);
         std::fs::remove_file(path).unwrap();
         result
+    }
+
+    fn vocabulary_header(tokens: &[&str], declared: Option<u32>) -> Option<GgufCompactMeta> {
+        let mut bytes = b"GGUF".to_vec();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        let count = 2 + u64::from(declared.is_some());
+        bytes.extend_from_slice(&count.to_le_bytes());
+        architecture(&mut bytes);
+        string(&mut bytes, "tokenizer.ggml.tokens");
+        bytes.extend_from_slice(&(GgufType::Array as u32).to_le_bytes());
+        bytes.extend_from_slice(&(GgufType::String as u32).to_le_bytes());
+        bytes.extend_from_slice(&(tokens.len() as u64).to_le_bytes());
+        for token in tokens {
+            string(&mut bytes, token);
+        }
+        if let Some(declared) = declared {
+            string(&mut bytes, "future.vocab_size");
+            bytes.extend_from_slice(&(GgufType::Uint32 as u32).to_le_bytes());
+            bytes.extend_from_slice(&declared.to_le_bytes());
+        }
+        let unique = unique_suffix();
+        let path = std::env::temp_dir().join(format!("gguf-vocabulary-{unique}.gguf"));
+        std::fs::write(&path, bytes).unwrap();
+        let result = scan_gguf_compact_meta(&path);
+        std::fs::remove_file(path).unwrap();
+        result
+    }
+
+    #[test]
+    fn vocab_size_counts_the_tokenizer_tokens_when_the_architecture_declares_none() {
+        let meta = vocabulary_header(&["a", "b", "c"], None).expect("header scans");
+        assert_eq!(meta.vocab_size, 3);
+    }
+
+    #[test]
+    fn a_declared_vocab_size_wins_over_the_token_count() {
+        let meta = vocabulary_header(&["a", "b", "c"], Some(8)).expect("header scans");
+        assert_eq!(meta.vocab_size, 8);
     }
 
     #[test]
