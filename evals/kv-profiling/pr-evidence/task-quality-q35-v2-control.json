@@ -1,0 +1,28 @@
+{
+  "schema": "scheduler-task-quality-v2-control-result-v1",
+  "model": "Qwen3.5-4B",
+  "arm": "vanilla separate slots, first A control",
+  "source_head": "360b1bce6ed2d2dc9e865a47e6707807f4cb608b",
+  "job_id": "job_v7akh7s4ba6k0k5",
+  "run_id": "run_peqwnw491pcs918",
+  "spec_sha256": "74880f5dc900fdb0190d6de6db0172c39a909cd2658cac10fcad172defb20601",
+  "prompt_manifest_sha256": "ccf46ac48e9257d29b8bcf0ba188bbc01e1fe380badfdace807fb524b2bca302",
+  "server_sha256": "b4749cc9402e0d702f8dff962b14f077f3b784c9747f53b7d94bc2470e4e572a",
+  "response_sha256": "52dff7b886b298f72cec7c5d9f21f89a7a1a10761d52b5478ea3fef4cad8df4d",
+  "evidence_tar_sha256": "fc7e46392265037de06a669c3124199940a572f57d9d9531c399a896514db1d4",
+  "audit": {
+    "completed_requests": 256,
+    "exact_input_tokens_each": 512,
+    "output_tokens_each": 32,
+    "full_metal_layers": "33/33",
+    "thermal": "nominal",
+    "cache": "off",
+    "request_and_native_gates": "pass",
+    "scorer_correct": 0,
+    "parseable_final_integer": 3,
+    "finish_reason_length": 256,
+    "baseline_correct_minimum": 200,
+    "baseline_gate": "FAIL"
+  },
+  "interpretation": "The raw completion endpoint continued or repeated the prompt for most tasks and every response reached the forced 32-token length. This first control fails the registered baseline-correct threshold; no Skippy task-quality or four-model non-regression inference follows. Raw responses and the independent audit remain in the local job artifact."
+}

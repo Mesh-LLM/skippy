@@ -1667,3 +1667,29 @@ The durable materializer now matches the Coder-tested source at SHA256
 This is fixture construction only. No model outputs have been scored, no
 current-source timing cells have run, and four-model non-regression remains
 **UNPROVEN**.
+
+## 2026-11-27: first prospective quality control fails baseline gate
+
+The current PR head `360b1bce` was built through `just build metal` in the
+source-pinned $0 M1 Ultra workspace. Its sealed 32-file product manifest and
+native source identity passed independent hash verification. The first version
+2 quality control, unchanged vanilla separate slots on exact CI Qwen3.5-4B,
+ran as `job_v7akh7s4ba6k0k5` (spec SHA256
+`74880f5dc900fdb0190d6de6db0172c39a909cd2658cac10fcad172defb20601`).
+The independent audit verified 256/256 complete requests, exact 512 input and
+32 output tokens each, 33/33 Metal layers, F16 KV, 16×8192 context,
+batch/microbatch 512, cache off, exact model/server/fixture/request hashes,
+and nominal thermal boundaries. The raw response archive SHA256 is
+`fc7e46392265037de06a669c3124199940a572f57d9d9531c399a896514db1d4`.
+
+The preregistered final-line scorer marked **0/256 correct**, below its
+required 200 baseline-correct items. Only three final lines were parseable
+integers, and all 256 responses ended at the forced 32-token length. Raw
+completions often continue or repeat the prompt. This is a failed baseline
+quality gate, not evidence of a Skippy regression or of model task quality in
+normal chat use. The [compact result](pr-evidence/task-quality-q35-v2-control.json)
+preserves the identifiers and hashes; the full raw responses and independent
+audit are retained locally under
+`target/scheduler-fixes/artifacts/task-quality-q35-vanilla-a/`. No A/A,
+candidate quality, or version 2 timing results are promoted after this failed
+gate. The four-model non-regression claim remains **UNPROVEN**.
