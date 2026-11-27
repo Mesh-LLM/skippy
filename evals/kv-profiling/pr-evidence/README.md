@@ -1,5 +1,14 @@
 # Scheduler PR evidence snapshot
 
+One-off profiling source is omitted from the final PR diff. The
+[source hash manifest](scheduler-tool-source-hashes.json) lists its exact
+paths and SHA256 values at immutable commit
+[`75c04415`](https://github.com/Mesh-LLM/skippy/tree/75c04415c299bb30858639a92880dec77f28f351/scripts).
+The owner also has a SHA-verified local backup under ignored `target/`.
+The task-quality scorer and prompt materializer remain in this PR because
+the prospective quality gate still uses them. The audited results below
+were produced before the one-off scripts were removed.
+
 This directory contains compact audited results for
 the four exact CI qualification models. [The manifest](manifest.json) gives
 the SHA256 of every snapshot and its source, the SHA256 of each full local suite, and the JY

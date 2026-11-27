@@ -45,14 +45,19 @@ check, warning-denying all-target Clippy, and tests with the dynamic native
 runtime feature. The isolated native Metal replay used `just native-full-replay metal` (336 passed, one skipped). The Qwen3.5 serving integration and c128
 retest ran on the pinned M1 Ultra and passed their registered native, request,
 cache, and thermal audits; the c128 exact cross-engine and absolute TTFT gates
-failed as shown below. `python3 -m compileall -q scripts`, the archived-source hash check and current Coder screen audit, the task-quality
-scorer/materializer selftests, the four-table recomputation, source
-attestation, and `git diff --check` pass. The C++ facade suite remains unrun:
+failed as shown below. Before pruning the one-off tools, the independent
+current Coder screen audit, four-table recomputation, and source attestation
+passed. The C++ facade suite remains unrun:
 GoogleTest v1.18.0 was not supplied and no replacement was downloaded.
-Sixty-six completed one-off diagnostic scripts were moved byte-for-byte
-to the [historical source archive](https://github.com/Mesh-LLM/skippy/blob/abad1885/scripts/scheduler-archive/README.md),
-with per-file hashes; 53 profiling scripts remain at their original
-paths, including all active qualification and PR audit entry points. The sealed historical job payloads retain their original layout.
+The 118 one-off profiling files have been removed from this PR after a
+SHA-verified local backup (`bb5c99bd0a30abfb3f047642bfe31723ce04b6b686de4a78f502bc681ba60d67`).
+Their original source is available at immutable
+[commit `75c04415`](https://github.com/Mesh-LLM/skippy/tree/75c04415c299bb30858639a92880dec77f28f351/scripts),
+with per-file hashes in the [review manifest](pr-evidence/scheduler-tool-source-hashes.json).
+The task-quality scorer and materializer remain for the prospective gate.
+`python3 -m compileall -q scripts`, the scorer/materializer selftests, and
+`git diff --check` pass after pruning. Sealed historical JY payloads retain
+their original executable layout.
 The sealed pre-port Coder balanced screen, $0 JY job `job_trqshv7hbbqdmzv` (spec SHA256 `5ed0241dd4743447ccaad72c12df3f2a07237391c599a7c437ef588c8d15a204`), completed and passed its 192-request exact-output audit; its separate-slot E2E non-inferiority bound remains unproven. Qwen3.6 and Flash
 current-candidate balanced load checks have not run because correctness
 diagnostics remain unresolved.

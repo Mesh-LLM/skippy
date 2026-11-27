@@ -1,5 +1,20 @@
 # Scheduler fix and retest progress
 
+## 2026-11-27: one-off scheduler tooling removed from the PR
+
+The owner asked to remove profiling scripts that are not durable tools and to
+keep a local backup. Before pruning, 121 files were copied into the ignored
+`target/scheduler-fixes/backups/profile-scheduler-sources-20261127.tar.gz`
+(SHA256 `bb5c99bd0a30abfb3f047642bfe31723ce04b6b686de4a78f502bc681ba60d67`).
+The archive was reopened and every file checked against its byte size and
+SHA256. Each file was also checked against immutable source commit
+[`75c04415`](https://github.com/Mesh-LLM/skippy/tree/75c04415c299bb30858639a92880dec77f28f351/scripts).
+The [source hash manifest](pr-evidence/scheduler-tool-source-hashes.json)
+records all 121 paths, the 118 one-off files removed from the PR, and the
+three files retained for the registered task-quality work. The sealed JY
+payloads, original failure logs, audited result snapshots, and four PR tables
+remain unchanged. The backup is local and intentionally ignored by Git.
+
 ## 2026-11-27 00:10 UTC: Coder balanced screen audited; tooling archived
 
 The sealed $0 Coder screen `job_trqshv7hbbqdmzv` completed on
@@ -33,7 +48,7 @@ and the corrected audit passed without changing run data or settings.
 
 The profiling-tool inventory found 119 `profile-scheduler-*` files. Sixty-six
 completed one-off sources with no scanned active/spec/document references were
-moved byte-for-byte to [the historical archive](../../scripts/scheduler-archive/README.md),
+moved byte-for-byte to [the historical archive at commit `75c04415`](https://github.com/Mesh-LLM/skippy/tree/75c04415c299bb30858639a92880dec77f28f351/scripts/scheduler-archive),
 with individual SHA256 values in its manifest. The active qualification and
 PR audit entry points remain at their original paths. Historical sealed job
 payloads preserve the original executable layout for exact replay. Python
