@@ -1,0 +1,219 @@
+From bb465d61c666859668d6688e3553b07d3e4baad8 Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Sat, 28 Nov 2026 03:43:53 +1100
+Subject: [PATCH] metal: trace command buffers in chunked graph submission
+
+---
+ ggml/src/ggml-metal/ggml-metal-context.m  | 32 ++++++++++++++-----
+ ggml/src/ggml-metal/ggml-metal-timing.cpp |  8 +++--
+ ggml/src/ggml-metal/ggml-metal-timing.h   |  2 ++
+ tests/test-skippy-tracing-metal.cpp       | 39 ++++++++++++++++-------
+ 4 files changed, 60 insertions(+), 21 deletions(-)
+
+diff --git a/ggml/src/ggml-metal/ggml-metal-context.m b/ggml/src/ggml-metal/ggml-metal-context.m
+index fdaf0fc14..423606e34 100644
+--- a/ggml/src/ggml-metal/ggml-metal-context.m
++++ b/ggml/src/ggml-metal/ggml-metal-context.m
+@@ -579,6 +579,15 @@ static enum ggml_status ggml_metal_graph_compute_by_class(ggml_metal_t ctx, stru
+     return GGML_STATUS_SUCCESS;
+ }
+ 
++static int ggml_metal_chunk_end(const struct ggml_cgraph * gf, int start) {
++    int end = start;
++    // A fusion cannot span command buffers.
++    while (end < MIN(start + 256, gf->n_nodes)) {
++        end += ggml_metal_fusion_max(gf, end);
++    }
++    return MIN(end, gf->n_nodes);
++}
++
+ enum ggml_status ggml_metal_graph_compute(ggml_metal_t ctx, struct ggml_cgraph * gf) {
+     if (ctx->has_error) {
+         GGML_LOG_ERROR("%s: backend is in error state from a previous command buffer failure - recreate the backend to recover\n", __func__);
+@@ -685,20 +694,26 @@ enum ggml_status ggml_metal_graph_compute(ggml_metal_t ctx, struct ggml_cgraph *
+         // is encoded, so the GPU runs a chunk while the next one is encoded. the path below lets the GPU wait while the
+         // last 90% of the nodes are encoded. the abort callback and the capture keep the path below
+         if (n_cb == 1 && ctx->abort_callback == NULL && !use_capture) {
+-            const int n_nodes_chunk = 256;
+-
+-            for (int i0 = 0; i0 < gf->n_nodes; ) {
+-                // a fusion cannot span two command buffers, so a chunk ends at the end of a fusable group
+-                int i1 = i0;
+-                while (i1 < MIN(i0 + n_nodes_chunk, gf->n_nodes)) {
+-                    i1 += ggml_metal_fusion_max(gf, i1);
++            const bool time_chunks = ggml_metal_timing_enabled();
++            int n_chunks = 0;
++            if (time_chunks) {
++                for (int i = 0; i < gf->n_nodes; i = ggml_metal_chunk_end(gf, i)) {
++                    ++n_chunks;
+                 }
+-                i1 = MIN(i1, gf->n_nodes);
++            }
++
++            int chunk_index = 0;
++            for (int i0 = 0; i0 < gf->n_nodes; ++chunk_index) {
++                const int i1 = ggml_metal_chunk_end(gf, i0);
+ 
+                 id<MTLCommandBuffer> cmd_buf = [queue commandBufferWithUnretainedReferences];
+                 [cmd_buf retain];
+                 [cmd_buf enqueue];
+ 
++                ggml_metal_timing_record_t record = time_chunks ?
++                        ggml_metal_time_nodes(ctx, cmd_buf, chunk_index, n_chunks, i0, i1, false) : NULL;
++                ggml_metal_timing_encode_start(record);
++
+                 ggml_metal_op_t ctx_op = ggml_metal_op_init(ctx->dev, cmd_buf, gf, ctx->finfo, i0, i1,
+                         ctx->use_concurrency, false, ctx->debug_graph);
+ 
+@@ -713,6 +728,7 @@ enum ggml_status ggml_metal_graph_compute(ggml_metal_t ctx, struct ggml_cgraph *
+ 
+                 ggml_metal_op_free(ctx_op);
+ 
++                ggml_metal_timing_encode_end(record);
+                 [cmd_buf commit];
+ 
+                 // checked and released by ggml_metal_synchronize
+diff --git a/ggml/src/ggml-metal/ggml-metal-timing.cpp b/ggml/src/ggml-metal/ggml-metal-timing.cpp
+index 477058b20..89e7db442 100644
+--- a/ggml/src/ggml-metal/ggml-metal-timing.cpp
++++ b/ggml/src/ggml-metal/ggml-metal-timing.cpp
+@@ -280,14 +280,18 @@ uint32_t ggml_metal_timing_next_context_id(void) {
+     return g_next_context_id.fetch_add(1, std::memory_order_relaxed) + 1;
+ }
+ 
++bool ggml_metal_timing_enabled(void) {
++    return g_callback.load(std::memory_order_acquire) != nullptr ||
++            g_span_callback.load(std::memory_order_acquire) != nullptr;
++}
++
+ ggml_metal_timing_record_t ggml_metal_timing_begin(
+         uint32_t context_id,
+         uint32_t compute_index,
+         uint32_t command_index,
+         uint32_t command_count,
+         uint32_t node_count) {
+-    if (g_callback.load(std::memory_order_acquire) == nullptr &&
+-            g_span_callback.load(std::memory_order_acquire) == nullptr) {
++    if (!ggml_metal_timing_enabled()) {
+         return nullptr;
+     }
+ 
+diff --git a/ggml/src/ggml-metal/ggml-metal-timing.h b/ggml/src/ggml-metal/ggml-metal-timing.h
+index 3cbe29099..d370b42dc 100644
+--- a/ggml/src/ggml-metal/ggml-metal-timing.h
++++ b/ggml/src/ggml-metal/ggml-metal-timing.h
+@@ -20,6 +20,8 @@ typedef struct ggml_metal_timing_record * ggml_metal_timing_record_t;
+ // a process-unique id for a new Metal context
+ uint32_t ggml_metal_timing_next_context_id(void);
+ 
++bool ggml_metal_timing_enabled(void);
++
+ // NULL unless a command timing or trace span callback is installed;
+ // captures the calling thread's tag
+ ggml_metal_timing_record_t ggml_metal_timing_begin(
+diff --git a/tests/test-skippy-tracing-metal.cpp b/tests/test-skippy-tracing-metal.cpp
+index dc9cacbcc..9806a373d 100644
+--- a/tests/test-skippy-tracing-metal.cpp
++++ b/tests/test-skippy-tracing-metal.cpp
+@@ -13,6 +13,7 @@
+ #include <chrono>
+ #include <cstdint>
+ #include <cstdio>
++#include <cstdlib>
+ #include <cstring>
+ #include <mutex>
+ #include <string>
+@@ -55,11 +56,6 @@ void receive_span(const skippy_native_span_v1 * span, void *) {
+             span->start_unix_ns, span->end_unix_ns });
+ }
+ 
+-size_t received_count() {
+-    std::lock_guard<std::mutex> lock(g_mutex);
+-    return g_received.size();
+-}
+-
+ bool has_span(const char * name, uint64_t parent) {
+     std::lock_guard<std::mutex> lock(g_mutex);
+     for (const auto & span : g_spans) {
+@@ -73,6 +69,7 @@ bool has_span(const char * name, uint64_t parent) {
+ } // namespace
+ 
+ int main() {
++    CHECK(setenv("GGML_METAL_OP_PROFILE", "0", 1) == 0);
+     ggml_backend_t backend = ggml_backend_metal_init();
+     if (backend == nullptr) {
+         std::fprintf(stderr, "no Metal device; skipping\n");
+@@ -84,12 +81,16 @@ int main() {
+     CHECK(has_span("mtl.library_init", 0));
+     CHECK(skippy_set_gpu_command_timing_callback(receive, nullptr) == SKIPPY_STATUS_OK);
+ 
+-    ggml_init_params params = { ggml_tensor_overhead() * 8 + ggml_graph_overhead(), nullptr, true };
++    constexpr int extra_nodes = 512;
++    ggml_init_params params = { ggml_tensor_overhead() * (extra_nodes + 8) + ggml_graph_overhead(), nullptr, true };
+     ggml_context * ctx = ggml_init(params);
+     CHECK(ctx != nullptr);
+     ggml_tensor * a = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 4096);
+     ggml_tensor * b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 4096);
+     ggml_tensor * c = ggml_add(ctx, ggml_mul(ctx, a, b), b);
++    for (int i = 0; i < extra_nodes; ++i) {
++        c = i % 2 == 0 ? ggml_sqr(ctx, c) : ggml_sqrt(ctx, c);
++    }
+     ggml_cgraph * gf = ggml_new_graph(ctx);
+     ggml_build_forward_expand(gf, c);
+ 
+@@ -108,7 +109,13 @@ int main() {
+     CHECK(has_span("mtl.pipeline_compile", TAG));
+ 
+     // completion handlers run after the GPU finishes, possibly after synchronize returns
+-    for (int i = 0; i < 200 && received_count() == 0; ++i) {
++    for (int i = 0; i < 200; ++i) {
++        {
++            std::lock_guard<std::mutex> lock(g_mutex);
++            if (!g_received.empty() && g_received.size() == g_received.front().command_count) {
++                break;
++            }
++        }
+         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+     }
+ 
+@@ -117,14 +124,20 @@ int main() {
+         std::lock_guard<std::mutex> lock(g_mutex);
+         received = g_received;
+     }
+-    CHECK(!received.empty());
++    CHECK(received.size() > 1);
++
++    std::vector<float> output(4096);
++    ggml_backend_tensor_get(c, output.data(), 0, ggml_nbytes(c));
++    for (float value : output) {
++        CHECK(value == 2.0f);
++    }
+ 
+     const char * backend_name = ggml_backend_reg_name(ggml_backend_metal_reg());
+     const int64_t submitted_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+             submitted.time_since_epoch()).count();
+-    // Mul/add and empty trailing command buffers are neither attention,
+-    // mat-muls, recurrent state nor KV writes.
++    // Pointwise nodes are neither attention, mat-muls, recurrent state nor KV writes.
+     uint32_t other_nodes = 0;
++    std::vector<bool> commands(received.size(), false);
+     for (const auto & t : received) {
+         std::fprintf(stderr, "timing: command=%u/%u nodes=%u class=%s other=%u\n",
+                 t.command_index, t.command_count, t.node_count, t.op_class, t.other_nodes);
+@@ -132,8 +145,12 @@ int main() {
+         CHECK(std::strcmp(t.op_class, "other") == 0);
+         CHECK(t.attention_nodes == 0 && t.matmul_nodes == 0 && t.recurrent_nodes == 0 && t.kv_write_nodes == 0);
+         CHECK(t.layer == -1);
++        CHECK(t.command_count == received.size());
++        CHECK(t.command_index < commands.size());
++        CHECK(!commands[t.command_index]);
++        commands[t.command_index] = true;
+     }
+-    CHECK(other_nodes == 2);
++    CHECK(other_nodes == extra_nodes + 2);
+     for (const auto & t : received) {
+         CHECK(t.tag == TAG);
+         CHECK(std::strcmp(t.backend_name, backend_name) == 0);
+-- 
+2.56.0
+
