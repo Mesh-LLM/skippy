@@ -229,10 +229,6 @@ jobs:
     - name: Trust the host-owned checkout inside the job container
       shell: bash
       run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-    - uses: ./.github/actions/source
-      with:
-        artifact: ${{ inputs.candidate_artifact }}
-        sha: ${{ inputs.candidate_sha }}
     - name: Provision Vulkan loader and device inspection
       run: bash scripts/ci-vulkan-runtime.sh
     - uses: ./.github/actions/ci-smoke
