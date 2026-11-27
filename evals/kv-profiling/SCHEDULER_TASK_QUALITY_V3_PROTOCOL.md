@@ -54,6 +54,12 @@ For each model, use the pinned vanilla model's live `/apply-template` and
 effective tokens including the chat template** with
 `chat_template_kwargs: {"enable_thinking": false}`. Preserve the unchanged
 task after neutral padding, every rendered-token digest and the prompt SHA.
+Calibrate whether native tokenization of the rendered template adds a special
+token using one fixed, unscored, non-task chat request per model, record both
+tokenizer counts and actual `usage.prompt_tokens`, and select only a matching
+mode. A calibration failure blocks that model; calibration output is never
+scored. The model-specific prompt archive is sealed after calibration and
+before any scored task output.
 Seal the 512 model-specific prompts before any scored response. Check actual
 `usage.prompt_tokens == 512` independently on both vanilla layouts and
 Skippy; a shape mismatch blocks that arm. Do not silently switch endpoint or
