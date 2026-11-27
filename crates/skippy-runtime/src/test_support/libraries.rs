@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 /// names the PARENT of one or more `<runtime-id>/{manifest.json,lib/*}`
 /// subdirectories (see `dist/native-runtimes/README.md` and
 /// `skippy-runtime-install`'s own discovery convention), not a flat
-/// directory of libraries. Prefers each candidate's own `manifest.json`
+/// directory of libraries. A runtime directory named directly, the one with
+/// the `manifest.json`, is read the same way. Prefers each candidate's own `manifest.json`
 /// `runtime.libraries` ORDER — dependencies before the primary
 /// `libllama.dylib` — over a lexicographic guess, since symbol-search order
 /// in `skippy-ffi::dynamic::Symbols::load_paths` walks the list in reverse
@@ -16,6 +17,9 @@ use std::path::{Path, PathBuf};
 /// inverting the manifest's own dependency-then-primary contract.
 pub fn discover_libraries(bundle_dir: &Path) -> Vec<PathBuf> {
     if let Some(libraries) = libraries_from_flat_dir(bundle_dir) {
+        return libraries;
+    }
+    if let Some(libraries) = libraries_from_manifest(bundle_dir) {
         return libraries;
     }
     let Ok(entries) = std::fs::read_dir(bundle_dir) else {
@@ -66,4 +70,46 @@ fn libraries_from_manifest(runtime_dir: &Path) -> Option<Vec<PathBuf>> {
         .filter(|path| path.is_file())
         .collect();
     (!libraries.is_empty()).then_some(libraries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::discover_libraries;
+    use std::path::Path;
+
+    /// A runtime directory as the packager lays it out, with its libraries
+    /// listed dependency first.
+    fn runtime_dir(parent: &Path) -> std::path::PathBuf {
+        let runtime = parent.join("skippy-native-runtime-windows-x86_64-vulkan");
+        std::fs::create_dir_all(runtime.join("lib")).unwrap();
+        for library in ["ggml.dll", "llama.dll"] {
+            std::fs::write(runtime.join("lib").join(library), b"").unwrap();
+        }
+        std::fs::write(
+            runtime.join("manifest.json"),
+            r#"{"runtime":{"libraries":["lib/ggml.dll","lib/llama.dll"]}}"#,
+        )
+        .unwrap();
+        runtime
+    }
+
+    #[test]
+    fn the_parent_of_a_runtime_finds_its_libraries_in_manifest_order() {
+        let parent = tempfile::tempdir().unwrap();
+        let runtime = runtime_dir(parent.path());
+        assert_eq!(
+            discover_libraries(parent.path()),
+            vec![runtime.join("lib/ggml.dll"), runtime.join("lib/llama.dll")]
+        );
+    }
+
+    #[test]
+    fn a_runtime_named_directly_finds_the_same_libraries() {
+        let parent = tempfile::tempdir().unwrap();
+        let runtime = runtime_dir(parent.path());
+        assert_eq!(
+            discover_libraries(&runtime),
+            vec![runtime.join("lib/ggml.dll"), runtime.join("lib/llama.dll")]
+        );
+    }
 }

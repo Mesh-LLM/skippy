@@ -31,7 +31,7 @@ fn load_bundle_from_env() -> Result<(), String> {
         return Ok(());
     }
     let bundle_dir = std::env::var_os(BUNDLE_DIR_ENV).ok_or_else(|| {
-        format!("this test calls into the native runtime; set {BUNDLE_DIR_ENV} to a runtime bundle")
+        format!("this test calls into the native runtime; set {BUNDLE_DIR_ENV} to a runtime bundle or the directory that holds it")
     })?;
     let bundle_dir = std::path::Path::new(&bundle_dir);
     let libraries = libraries::discover_libraries(bundle_dir);
