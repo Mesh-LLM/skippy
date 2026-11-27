@@ -141,7 +141,7 @@ concurrency coalescing. If prior coverage cannot be verified, require both
 device smokes and Graph Contracts. The gate rejects missing, skipped, failed
 or cancelled selected jobs. Exact promoted-release receipt reuse avoids
 repeating validated work. Scheduled, manual and reusable full validation
-require all thirteen packages and Graph Contracts. Main merges do not start the
+require all fourteen packages and Graph Contracts. Main merges do not start the
 separate Spark qualification ladder.
 
 The protected inference workflow has its own qualification paths, separate from
@@ -223,7 +223,7 @@ for the Linux ARM64 CUDA 13 device job. Compiler-only CUDA builds always use the
 manifest architecture lists. The only source override is the immutable bundle
 produced by the protected-main llama upgrade workflow.
 
-`targets.json` defines four hosts and thirteen active runtimes. After the
+`targets.json` defines four hosts and fourteen active runtimes. After the
 automation checks and Quality canary, each CPU job builds and verifies its
 runtime and the shared CLI for that platform. Linux x64 builds its shared CLI
 on Ubuntu 24.04 for compatibility with the compiler images. Each backend
@@ -239,9 +239,9 @@ Spark pool; x64 CUDA 13 device coverage remains required for releases. The full
 CI gate matches all package jobs to the plan and checks required device results.
 
 Full CI and releases also require archive checks for Windows x64 CPU, CUDA 12,
-CUDA 13 and ROCm 7.2.0. The Windows jobs use Windows
+CUDA 13, ROCm 7.2.0 and Vulkan. The Windows jobs use Windows
 Server 2022 for the pinned SDKs and compatible MSVC toolset. CUDA
-components and the HIP SDK are downloaded from checksum-pinned inputs. The
+components, the HIP SDK and the Vulkan SDK are downloaded from checksum-pinned inputs. The
 Windows CUDA installer includes the NVML development component for both pinned
 toolkits and requires a nonempty `include/nvml.h` before exposing the toolkit
 to package builds. This supplies headers for llama.cpp's driver-library lookup.
@@ -264,9 +264,9 @@ Native runners carry `self-hosted`, `Linux`, `X64`, `skippy-ephemeral`, and
 
 The job remains full-only: nightly, manual full CI, release candidates and
 llama-upgrade full validation require it; routine PR and main-push checks do
-not run it. The short plan retains eight runtimes and full CI retains thirteen.
+not run it. The short plan retains eight runtimes and full CI retains fourteen.
 `full_only` selects scheduling independently of the manifest's `validation`
-evidence requirement. Linux ROCm requires inference evidence; the four Windows
+evidence requirement. Linux ROCm requires inference evidence; the five Windows
 runtimes remain archive-only. No package or release smoke jobs are added, and
 the standalone rehearsal workflow has been removed.
 
@@ -597,8 +597,8 @@ smoke commands use Python 3.9 or later. Release inventory uses Python
 3.11 or later for TOML parsing. With uv installed, Justfile recipes run Python
 on the interpreter `.python-version` names. Set `SKIPPY_PYTHON` to select
 another. The shell scripts read it too. Both profiles validate the full
-manifest. The short plan lists eight runtimes; the full plan adds the five
-`full_only` rows: Linux ROCm with GPU inference and four Windows archive checks.
+manifest. The short plan lists eight runtimes; the full plan adds the six
+`full_only` rows: Linux ROCm with GPU inference and five Windows archive checks.
 When package checks are selected, short CI builds and runs device smoke for macOS ARM64 Metal and Linux
 ARM64 CUDA 13. The Linux x64 CUDA packages build in full CI and receive device
 smoke during release validation.
@@ -620,10 +620,10 @@ workflow and roster from the same protected revision.
    run inference, and upload `release-device-evidence-*`. Release verification
    checks each result against the SHA-256 of the corresponding product archive.
    Linux ROCm supplies inference evidence in its product artifact, without a
-   separate device job. The four Windows variants supply archive smoke evidence.
+   separate device job. The five Windows variants supply archive smoke evidence.
 4. Release verification prepares the complete asset directory once. The publisher
    checks its roster, hashes, and catalog against the separately transferred
-   candidate receipt before promotion. Release notes identify the four Windows variants
+   candidate receipt before promotion. Release notes identify the five Windows variants
    awaiting inference qualification.
 5. The hosted CI gate reads the dependency results and the validated plan
    without checkout or Rust setup. Required work must pass and unselected work

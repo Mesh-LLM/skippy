@@ -45,8 +45,8 @@ test('protected pull_request_target skips CI when trusted admission skips change
   assert.equal(shouldRun({ changes: { result: 'success' } }), true);
 });
 
-test('all thirteen runtime packages match the planned matrix and depend on the canary', () => {
-  assert.equal(packageJobs.length, 13);
+test('all fourteen runtime packages match the planned matrix and depend on the canary', () => {
+  assert.equal(packageJobs.length, 14);
   assert.deepEqual(declared.filter(job => job.startsWith('package_')).sort(), packageJobs.sort());
   for (const row of rows) {
     const job = `package_${row.id.replaceAll('-', '_')}`;
@@ -64,6 +64,9 @@ test('all thirteen runtime packages match the planned matrix and depend on the c
     }
     if (row.host === 'windows-x86_64' && row.backend === 'rocm') {
       assert.ok(body.includes(`windows-rocm: '${row.toolkit}'\n`));
+    }
+    if (row.host === 'windows-x86_64' && row.backend === 'vulkan') {
+      assert.ok(body.includes(`windows-vulkan: '${row.toolkit}'\n`));
     }
   }
   assert.doesNotThrow(() => gate(results({ full: true })));
@@ -122,18 +125,18 @@ test('PR plans exclude full-only targets independently of their smoke evidence',
   const pr = plan('pr').runtimes.include;
   const full = plan('full').runtimes.include;
   assert.equal(pr.length, 8);
-  assert.equal(full.length, 13);
+  assert.equal(full.length, 14);
   assert.ok(pr.every(row => row.validation === 'inference'));
   assert.deepEqual(full.filter(row => !row.full_only), pr);
   const rocm = full.find(row => row.id === 'linux-x86_64-rocm');
   assert.equal(rocm.validation, 'inference');
   assert.equal(rocm.full_only, true);
-  assert.equal(full.filter(row => row.validation === 'artifact').length, 4);
+  assert.equal(full.filter(row => row.validation === 'artifact').length, 5);
   assert.ok(!pr.some(row => row.id === rocm.id));
   const release = results({ full: true, release: true });
   release.plan.outputs.runtimes = JSON.stringify({ include: full });
   assert.doesNotThrow(() => gate(release, true));
-  // An eight-package controller must reject a thirteen-package candidate.
+  // An eight-package controller must reject a fourteen-package candidate.
   for (const row of full.filter(row => row.full_only)) {
     delete release['package_' + row.id.replaceAll('-', '_')];
   }

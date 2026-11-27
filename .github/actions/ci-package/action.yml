@@ -22,6 +22,9 @@ inputs:
   windows-rocm:
     description: Pinned ROCm version whose HIP SDK is provisioned on the hosted Windows builder.
     default: ''
+  windows-vulkan:
+    description: Pinned Vulkan SDK version to provision on the hosted Windows builder.
+    default: ''
   containerized:
     description: Use the preinstalled toolchain in a Skippy compiler image.
     default: 'false'
@@ -86,13 +89,19 @@ runs:
       env:
         ROCM_VERSION: ${{ inputs.windows-rocm }}
       run: ./scripts/install-windows-rocm-sdk.ps1 -ExpectedVersion "$env:ROCM_VERSION"
+    - name: Provision the Vulkan SDK on Windows
+      if: inputs.windows-vulkan != ''
+      shell: pwsh
+      env:
+        VULKAN_VERSION: ${{ inputs.windows-vulkan }}
+      run: ./scripts/install-windows-vulkan-sdk.ps1 -ExpectedVersion "$env:VULKAN_VERSION"
     - name: Provision the Linux ROCm BLAS libraries
       if: inputs.runtime-id == 'linux-x86_64-rocm'
       shell: bash
       run: bash scripts/ci-rocm-blas.sh
     - uses: ./.github/actions/cache
       with:
-        scope: package-${{ inputs.runtime-id }}-${{ inputs.compiler-image-digest || inputs.windows-cuda || inputs.windows-rocm || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}
+        scope: package-${{ inputs.runtime-id }}-${{ inputs.compiler-image-digest || inputs.windows-cuda || inputs.windows-rocm || inputs.windows-vulkan || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}
         download-scope: ${{ inputs.build-cli == 'true' && 'host' || 'tools' }}
         build-paths: |
           target/debug
@@ -112,7 +121,7 @@ runs:
         fi
     - uses: ./.github/actions/sccache
       with:
-        scope: package-${{ inputs.runtime-id }}-${{ inputs.windows-cuda || inputs.windows-rocm || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}-${{ env.SKIPPY_CUDA_ARCHITECTURE_MODE }}
+        scope: package-${{ inputs.runtime-id }}-${{ inputs.windows-cuda || inputs.windows-rocm || inputs.windows-vulkan || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}-${{ env.SKIPPY_CUDA_ARCHITECTURE_MODE }}
         native-windows-cuda-namespace: ${{ steps.cuda-cache.outputs.namespace }}
     - uses: ./.github/actions/native-source
     - name: Build and verify the platform CLI

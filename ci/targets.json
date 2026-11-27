@@ -235,6 +235,19 @@
         "windows-2022"
       ],
       "full_only": true
+    },
+    {
+      "id": "windows-x86_64-vulkan",
+      "display_name": "Windows x86_64, Vulkan SDK 1.4.328.1",
+      "host": "windows-x86_64",
+      "backend": "vulkan",
+      "toolkit": "1.4.328.1",
+      "gpu_architectures": "",
+      "validation": "artifact",
+      "runner": [
+        "windows-2022"
+      ],
+      "full_only": true
     }
   ]
 }

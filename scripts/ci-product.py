@@ -110,6 +110,16 @@ def build_runtime(host, runtime):
             "SKIPPY_ROCM_VERSION": toolkit,
             "LLAMA_STAGE_AMDGPU_TARGETS": arches,
         })
+    elif backend == "vulkan":
+        # The pinned SDK sets VULKAN_SDK; check it before a three-hour build
+        # fails late on a missing shader compiler.
+        sdk = Path(os.environ.get("VULKAN_SDK", ""))
+        toolkit = runtime["toolkit"]
+        glslc = sdk / ("Bin/glslc.exe" if host["os"] == "windows" else "bin/glslc")
+        if not os.environ.get("VULKAN_SDK") or not glslc.is_file():
+            raise ValueError(f"expected the Vulkan SDK {toolkit} with glslc under VULKAN_SDK")
+        if sdk.name != toolkit:
+            raise ValueError(f"expected Vulkan SDK {toolkit}, found {sdk}")
     # The Windows build waits for its outputs, but toolchain helpers can stay
     # in the job after it exits. Drain the job before verifying those outputs.
     command(["just", "release-runtime-build", backend, host["target"]],

@@ -21,14 +21,14 @@ directory. Every release therefore makes hosts download its runtime, and changed
 runtime contents can never ship under an earlier release's identity.
 
 `release.yml` stages the version commit, then calls the same `ci.yml` used by PRs and main in release CUDA
-architecture mode. It requires thirteen complete bundles across four hosts.
+architecture mode. It requires fourteen complete bundles across four hosts.
 
 | Platform | Bundles |
 | --- | --- |
 | macOS arm64 | CPU, Metal |
 | Linux x86_64 | CPU, CUDA 12, CUDA 13, ROCm 7.2.4 |
 | Linux arm64 | CPU, CUDA 12, CUDA 13 |
-| Windows x86_64 | CPU, CUDA 12, CUDA 13, ROCm 7.2.0 |
+| Windows x86_64 | CPU, CUDA 12, CUDA 13, ROCm 7.2.0, Vulkan |
 
 The Windows bundles and Linux ROCm bundle require archive validation. Release
 notes mark them as awaiting inference qualification.

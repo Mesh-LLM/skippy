@@ -48,7 +48,7 @@ contract; no downstream product's workflow topology applies here.
   which runs it expects. Hosted offline
   automation gates Quality canary and package jobs; Quality canary gates package
   jobs whenever source checks apply. Full CI
-  runs Graph Contracts in parallel with thirteen build, package and smoke jobs.
+  runs Graph Contracts in parallel with fourteen build, package and smoke jobs.
   Each CPU job supplies a shared platform CLI to its backend jobs. Routine CI
   uses two device jobs and checks the three remaining CUDA archives on hosted
   compiler-image runners.
@@ -137,7 +137,7 @@ contract; no downstream product's workflow topology applies here.
   Only the publisher receives scoped publication credentials. It can publish only the
   exact candidate selected by successful full CI. The four established inference
   models retain their separate PR/manual/nightly/release workflow.
-- `ci/targets.json` owns four host definitions and thirteen runtime definitions.
+- `ci/targets.json` owns four host definitions and fourteen runtime definitions.
   `enabled_hosts` selects the active CI and release roster. Require the evidence
   declared for every release asset. Call out pending inference qualification
   for archive-only targets in the release notes.

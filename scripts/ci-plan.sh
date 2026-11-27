@@ -26,6 +26,8 @@ result="$(jq -cer --arg profile "$profile" '
     elif $r.backend == "rocm" and ($h.id == "linux-x86_64" or $h.id == "windows-x86_64") and
          ($r.toolkit | test("^7\\.[0-9]+\\.[0-9]+$")) and
          ($r.gpu_architectures | test("^gfx[0-9a-f]+(;gfx[0-9a-f]+)*$")) then "rocm"
+    elif $r.backend == "vulkan" and $h.id == "windows-x86_64" and
+         ($r.toolkit | test("^1\\.[0-9]+\\.[0-9]+\\.[0-9]+$")) and $r.gpu_architectures == "" then "vulkan"
     else null end;
   def expected_runtime_runner($h; $variant; $validation):
     if $variant == "cpu" or $validation == "artifact" then $h.runner
@@ -100,7 +102,7 @@ result="$(jq -cer --arg profile "$profile" '
   | if any(.hosts[];
       . as $h | (if $h.os == "macos" then ["cpu", "metal"]
                  elif $h.id == "linux-x86_64" then ["cpu", "cuda12", "cuda13", "rocm"]
-                 elif $h.id == "windows-x86_64" then ["cpu", "cuda12", "cuda13", "rocm"]
+                 elif $h.id == "windows-x86_64" then ["cpu", "cuda12", "cuda13", "rocm", "vulkan"]
                  else ["cpu", "cuda12", "cuda13"] end) as $required
       | any($required[]; . as $variant | ([$m.runtimes[] as $r | ($m.hosts[] | select(.id == $r.host)) as $rh | select($r.host == $h.id and runtime_variant($r; $rh) == $variant)] | length) == 0))
     then error("missing required host runtime variant") else . end
