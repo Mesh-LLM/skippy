@@ -320,7 +320,7 @@ pub const OPTIONS: &[OptionSpec] = &[
         "scheduling",
         "batch.policy",
         Kind::Text,
-        "Algorithm that forms the scheduler's batches: arrival_order, or prompt_order to prefill the oldest prompts first",
+        "Algorithm that forms the scheduler's batches: prompt_order (default) to prefill the oldest prompts first, or arrival_order",
     ),
     option(
         "batch-prefill-prompts",
@@ -334,7 +334,7 @@ pub const OPTIONS: &[OptionSpec] = &[
         "scheduling",
         "batch.prefill_wait",
         Kind::Text,
-        "How long a batch that holds a prompt waits for more requests: wave (default) for a full set of lanes, or active for the sessions already running",
+        "How long a batch that holds a prompt waits for more requests: active (default) for the sessions already running, or wave for a full set of lanes",
     ),
     option(
         "batch-mixing",
@@ -348,14 +348,14 @@ pub const OPTIONS: &[OptionSpec] = &[
         "scheduling",
         "batch.wait_sessions",
         Kind::Text,
-        "Which sessions a batch waits for: runtime (default) for every session the runtime holds, or direct for only the prompts in their chunked prefill and the requests generating tokens",
+        "Which sessions a batch waits for: direct (default) for only the prompts in their chunked prefill and the requests generating tokens, or runtime for every session the runtime holds",
     ),
     option(
         "batch-prefill-chunk",
         "scheduling",
         "batch.prefill_chunk",
         Kind::Text,
-        "How many prompt tokens one step takes: microbatch (default) for one microbatch, or adaptive for up to a whole batch while no other request is generating tokens and batch-prefill-shared-tokens while some are",
+        "How many prompt tokens one step takes: adaptive (default) for up to a whole batch while no other request is generating tokens and batch-prefill-shared-tokens while some are, or microbatch for one microbatch",
     ),
     option(
         "batch-prefill-shared-tokens",
@@ -369,7 +369,7 @@ pub const OPTIONS: &[OptionSpec] = &[
         "scheduling",
         "batch.checkpoint_align",
         Kind::Text,
-        "Where a prompt's shared-prefix checkpoint lands: stride (default), one cache stride before the prompt's tail, or microbatch, the microbatch boundary at or below that",
+        "Where a prompt's shared-prefix checkpoint lands: microbatch (default), the microbatch boundary at or below one cache stride before the prompt's tail, or stride, that point itself",
     ),
     option(
         "batch-decode-window-us",

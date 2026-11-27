@@ -36,8 +36,8 @@ fn at_most(prompts: u32) -> PrefillPrompts {
     PrefillPrompts::AtMost(NonZeroU32::new(prompts).unwrap())
 }
 
-fn default_tuning() -> BatchTuning {
-    BatchTuning::resolve(BatchPlatform::Other, &BatchConfig::default(), None)
+fn wave_tuning() -> BatchTuning {
+    BatchTuning::resolve(BatchPlatform::Other, &wave_config(), None)
 }
 
 const DECODE: IterationWork = IterationWork::Generation;
@@ -63,9 +63,11 @@ fn device_names_map_to_platforms() {
     );
 }
 
-/// Every backend starts from the values the scheduler has always used.
+/// Every backend starts from the same values: prompt order, one prompt a
+/// batch, waiting only for the sessions handing in steps.
 #[test]
 fn unset_tuning_is_the_scheduler_default_on_every_platform() {
+    assert_eq!(BatchPolicyKind::default(), BatchPolicyKind::PromptOrder);
     for platform in [
         BatchPlatform::Metal,
         BatchPlatform::Cuda,
@@ -77,17 +79,18 @@ fn unset_tuning_is_the_scheduler_default_on_every_platform() {
         assert_eq!(tuning.decode_window, Duration::from_millis(2));
         assert_eq!(tuning.prefill_window_per_token, Duration::from_micros(15));
         assert_eq!(tuning.prefill_window_max, Duration::from_millis(8));
-        assert_eq!(tuning.prefill_prompts, PrefillPrompts::All);
-        assert_eq!(tuning.prefill_wait, PrefillWait::Wave);
+        assert_eq!(tuning.prefill_prompts, PrefillPrompts::ONE);
+        assert_eq!(tuning.prefill_wait, PrefillWait::Active);
         assert_eq!(tuning.mixing, BatchMixing::Mixed);
+        assert_eq!(tuning.wait_sessions, WaitSessions::Direct);
     }
-    let prompt_order = BatchConfig {
-        policy: Some(BatchPolicyKind::PromptOrder),
+    let arrival_order = BatchConfig {
+        policy: Some(BatchPolicyKind::ArrivalOrder),
         ..BatchConfig::default()
     };
     assert_eq!(
-        BatchTuning::resolve(BatchPlatform::Other, &prompt_order, None).prefill_prompts,
-        PrefillPrompts::ONE
+        BatchTuning::resolve(BatchPlatform::Other, &arrival_order, None).prefill_prompts,
+        PrefillPrompts::All
     );
 }
 
@@ -117,7 +120,7 @@ fn configured_tuning_replaces_the_platform_values() {
 #[test]
 fn a_prompt_gathers_a_full_wave_and_generation_the_active_sessions() {
     let policy = ArrivalOrder {
-        tuning: default_tuning(),
+        tuning: wave_tuning(),
     };
     let mut with_prompt = view(
         vec![queued("a", 1, DECODE), queued("b", 512, prompt(0))],
@@ -145,7 +148,7 @@ fn a_prompt_gathers_a_full_wave_and_generation_the_active_sessions() {
     let active = ArrivalOrder {
         tuning: BatchTuning {
             prefill_wait: PrefillWait::Active,
-            ..default_tuning()
+            ..wave_tuning()
         },
     };
     assert_eq!(
@@ -160,7 +163,7 @@ fn a_prompt_gathers_a_full_wave_and_generation_the_active_sessions() {
 #[test]
 fn arrival_order_keeps_every_rule() {
     let policy = ArrivalOrder {
-        tuning: default_tuning(),
+        tuning: wave_tuning(),
     };
     let view = view(
         vec![
@@ -224,7 +227,7 @@ fn a_later_request_may_not_overtake_its_own_session() {
 #[test]
 fn prompt_order_runs_the_oldest_prompts_and_every_generated_token() {
     let policy = PromptOrder {
-        tuning: default_tuning(),
+        tuning: wave_tuning(),
     };
     let mut view = view(
         vec![
@@ -259,7 +262,7 @@ fn a_batch_prefills_no_more_prompts_than_its_limit() {
     );
     view.limits.prefill_prompts = PrefillPrompts::ONE;
     let arrival = ArrivalOrder {
-        tuning: default_tuning(),
+        tuning: wave_tuning(),
     };
     assert_eq!(arrival.select(&view), Selection(vec![0, 2]));
     assert_eq!(
@@ -310,7 +313,7 @@ fn the_head_waits_only_while_older_prompts_take_its_room() {
 #[test]
 fn separate_batches_take_the_kind_at_the_head() {
     let arrival = ArrivalOrder {
-        tuning: default_tuning(),
+        tuning: wave_tuning(),
     };
     let mut prompt_first = view(
         vec![

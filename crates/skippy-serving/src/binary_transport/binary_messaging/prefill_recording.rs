@@ -164,9 +164,11 @@ mod tests {
     use skippy_protocol::binary::StageStateHeader;
     use skippy_runtime::ModelStateKind;
 
-    /// Build a prefill fixture with a complete cacheable prompt identity.
+    /// Build a prefill fixture with a complete cacheable prompt identity and
+    /// shared checkpoints on the stride grid.
     fn exact_prefill_fixture(prompt_token_count: i32) -> (KvStageIntegration, StageWireMessage) {
-        let config = prefix_cache_test_config();
+        let mut config = prefix_cache_test_config();
+        config.batch.checkpoint_align = Some(skippy_protocol::CheckpointAlign::Stride);
         let kv = KvStageIntegration::from_test_state(&config, ModelStateKind::Recurrent)
             .unwrap()
             .expect("exact cache enabled");

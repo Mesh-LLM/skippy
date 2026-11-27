@@ -332,10 +332,10 @@ impl StageActivationCodecPolicy {
 pub enum BatchPolicyKind {
     /// Requests join a batch in the order they arrived, up to the lane count
     /// and the token budget.
-    #[default]
     ArrivalOrder,
     /// The oldest prompts prefill first, one at a time unless
     /// `prefill_prompts` allows more.
+    #[default]
     PromptOrder,
 }
 

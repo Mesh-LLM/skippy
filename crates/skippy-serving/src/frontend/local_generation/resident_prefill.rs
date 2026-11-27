@@ -31,7 +31,7 @@ impl PrefillChunking {
             .clamp(1, MAX_NATIVE_ITERATION_TOKENS);
         let step = step_tokens.clamp(1, MAX_NATIVE_ITERATION_TOKENS);
         let tokens = |count: usize| NonZeroUsize::new(count).unwrap_or(NonZeroUsize::MIN);
-        match batch.prefill_chunk.unwrap_or(PrefillChunk::Microbatch) {
+        match batch.prefill_chunk.unwrap_or(PrefillChunk::Adaptive) {
             PrefillChunk::Microbatch => Self::Fixed(tokens(microbatch)),
             PrefillChunk::Adaptive => Self::Adaptive {
                 alone: tokens(step),
@@ -196,8 +196,20 @@ mod tests {
     }
 
     #[test]
+    fn unset_chunking_is_adaptive() {
+        assert_eq!(
+            PrefillChunking::resolve(&BatchConfig::default(), Some(512), 2048),
+            PrefillChunking::resolve(&adaptive(None), Some(512), 2048)
+        );
+    }
+
+    #[test]
     fn microbatch_chunks_do_not_follow_load() {
-        let chunking = PrefillChunking::resolve(&BatchConfig::default(), Some(512), 2048);
+        let microbatch = BatchConfig {
+            prefill_chunk: Some(PrefillChunk::Microbatch),
+            ..BatchConfig::default()
+        };
+        let chunking = PrefillChunking::resolve(&microbatch, Some(512), 2048);
         assert_eq!(chunking.next(4620, 0), 512);
         assert_eq!(chunking.next(4620, 3), 512);
         assert_eq!(chunking.next(7, 0), 7);

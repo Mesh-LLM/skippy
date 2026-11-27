@@ -962,7 +962,7 @@ fn shared_checkpoint_align(config: &StageConfig) -> NonZeroU64 {
     match config
         .batch
         .checkpoint_align
-        .unwrap_or(CheckpointAlign::Stride)
+        .unwrap_or(CheckpointAlign::Microbatch)
     {
         CheckpointAlign::Stride => NonZeroU64::MIN,
         CheckpointAlign::Microbatch => NonZeroU64::new(u64::from(

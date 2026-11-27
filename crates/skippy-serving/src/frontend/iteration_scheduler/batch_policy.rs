@@ -116,9 +116,9 @@ impl BatchTuning {
                     BatchPolicyKind::ArrivalOrder => PrefillPrompts::All,
                     BatchPolicyKind::PromptOrder => PrefillPrompts::ONE,
                 },
-                prefill_wait: PrefillWait::Wave,
+                prefill_wait: PrefillWait::Active,
                 mixing: BatchMixing::Mixed,
-                wait_sessions: WaitSessions::Runtime,
+                wait_sessions: WaitSessions::Direct,
             },
         };
         Self {
@@ -221,12 +221,24 @@ pub(super) trait BatchPolicy: Send {
     fn select(&self, view: &BatchView<'_>) -> Selection;
 }
 
-/// The policy a stage gets when it configures nothing, on an unnamed backend.
+/// The settings the scheduler's mechanics tests are written against: arrival
+/// order, a prompt waiting for a full wave, and every runtime session awaited.
 #[cfg(test)]
-pub(in crate::frontend::iteration_scheduler) fn default_policy() -> Box<dyn BatchPolicy> {
+pub(in crate::frontend::iteration_scheduler) fn wave_config() -> BatchConfig {
+    BatchConfig {
+        policy: Some(BatchPolicyKind::ArrivalOrder),
+        prefill_wait: Some(PrefillWait::Wave),
+        wait_sessions: Some(WaitSessions::Runtime),
+        ..BatchConfig::default()
+    }
+}
+
+/// The [`wave_config`] policy, on an unnamed backend.
+#[cfg(test)]
+pub(in crate::frontend::iteration_scheduler) fn wave_policy() -> Box<dyn BatchPolicy> {
     batch_policy(
-        BatchPolicyKind::default(),
-        BatchTuning::resolve(BatchPlatform::Other, &BatchConfig::default(), None),
+        BatchPolicyKind::ArrivalOrder,
+        BatchTuning::resolve(BatchPlatform::Other, &wave_config(), None),
     )
 }
 

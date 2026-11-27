@@ -395,14 +395,14 @@ known size. Use them without `--prompt` or `--stage-transport`.
 | `--pipeline-decode-groups` | `pipeline_decode_groups` | Number of decode dispatch groups |
 | `--prefill-coalesce-max-ms` | `prefill_coalesce_max_ms` | Longest a prompt waits for others to join its prefill wave, in milliseconds; zero never waits |
 | `--sample-threads` | `sample_threads` | Threads that sample one decode wave: 0 as many as the wave and the hardware allow, 1 the scheduler thread alone, N at most N |
-| `--batch-policy` | `batch_policy` | Algorithm that forms the scheduler's batches: arrival_order, or prompt_order to prefill the oldest prompts first |
+| `--batch-policy` | `batch_policy` | Algorithm that forms the scheduler's batches: prompt_order (default) to prefill the oldest prompts first, or arrival_order |
 | `--batch-prefill-prompts` | `batch_prefill_prompts` | How many prompts one batch prefills: all, or at most N; unset, all under arrival_order and 1 under prompt_order |
-| `--batch-prefill-wait` | `batch_prefill_wait` | How long a batch that holds a prompt waits for more requests: wave (default) for a full set of lanes, or active for the sessions already running |
+| `--batch-prefill-wait` | `batch_prefill_wait` | How long a batch that holds a prompt waits for more requests: active (default) for the sessions already running, or wave for a full set of lanes |
 | `--batch-mixing` | `batch_mixing` | Whether a batch may hold prompt chunks and generated tokens together: mixed (default), or separate for one kind per batch |
-| `--batch-wait-sessions` | `batch_wait_sessions` | Which sessions a batch waits for: runtime (default) for every session the runtime holds, or direct for only the prompts in their chunked prefill and the requests generating tokens |
-| `--batch-prefill-chunk` | `batch_prefill_chunk` | How many prompt tokens one step takes: microbatch (default) for one microbatch, or adaptive for up to a whole batch while no other request is generating tokens and batch-prefill-shared-tokens while some are |
+| `--batch-wait-sessions` | `batch_wait_sessions` | Which sessions a batch waits for: direct (default) for only the prompts in their chunked prefill and the requests generating tokens, or runtime for every session the runtime holds |
+| `--batch-prefill-chunk` | `batch_prefill_chunk` | How many prompt tokens one step takes: adaptive (default) for up to a whole batch while no other request is generating tokens and batch-prefill-shared-tokens while some are, or microbatch for one microbatch |
 | `--batch-prefill-shared-tokens` | `batch_prefill_shared_tokens` | Tokens in an adaptive step shared with requests generating tokens, theirs included (default: one microbatch) |
-| `--batch-checkpoint-align` | `batch_checkpoint_align` | Where a prompt's shared-prefix checkpoint lands: stride (default), one cache stride before the prompt's tail, or microbatch, the microbatch boundary at or below that |
+| `--batch-checkpoint-align` | `batch_checkpoint_align` | Where a prompt's shared-prefix checkpoint lands: microbatch (default), the microbatch boundary at or below one cache stride before the prompt's tail, or stride, that point itself |
 | `--batch-decode-window-us` | `batch_decode_window_us` | How long generated tokens wait for the other active requests to join their batch, in microseconds |
 | `--batch-prefill-window-per-token-us` | `batch_prefill_window_per_token_us` | How long a prompt waits for others to join its prefill wave, per prompt token, in microseconds |
 | `--generation-signal-window` | `generation_signal_window` | Generation signal observation window in tokens |

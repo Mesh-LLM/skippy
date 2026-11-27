@@ -380,7 +380,7 @@ mod tests {
                 ctx_size: 8192,
                 n_ubatch: Some(512),
                 batch: skippy_protocol::BatchConfig {
-                    checkpoint_align: Some(align),
+                    checkpoint_align: align,
                     ..Default::default()
                 },
                 kv_cache: Some(StageKvCacheConfig {
@@ -396,13 +396,14 @@ mod tests {
                 .exact_shared_checkpoint_token_count(4619)
         };
         assert_eq!(
-            shared_checkpoint(skippy_protocol::CheckpointAlign::Stride),
+            shared_checkpoint(Some(skippy_protocol::CheckpointAlign::Stride)),
             Some(4480)
         );
         assert_eq!(
-            shared_checkpoint(skippy_protocol::CheckpointAlign::Microbatch),
+            shared_checkpoint(Some(skippy_protocol::CheckpointAlign::Microbatch)),
             Some(4096)
         );
+        assert_eq!(shared_checkpoint(None), Some(4096));
     }
 
     #[test]
@@ -487,6 +488,7 @@ mod tests {
             .as_mut()
             .unwrap()
             .shared_prefix_stride_tokens = 128;
+        config.batch.checkpoint_align = Some(skippy_protocol::CheckpointAlign::Stride);
         let kv =
             KvStageIntegration::from_test_state(&config, skippy_runtime::ModelStateKind::Recurrent)
                 .unwrap()

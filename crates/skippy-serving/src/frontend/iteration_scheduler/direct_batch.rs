@@ -4,7 +4,7 @@ use super::DIRECT_ITERATION_COALESCE_WINDOW;
 use super::DirectIteration;
 use super::MAX_NATIVE_ITERATION_TOKENS;
 #[cfg(test)]
-use super::batch_policy::{BatchLimits, BatchPlatform, BatchTuning, default_policy, take_batch};
+use super::batch_policy::{BatchLimits, BatchPlatform, BatchTuning, take_batch, wave_policy};
 use skippy_inference_api::{InferenceError, InferenceResult};
 #[cfg(test)]
 use skippy_protocol::BatchConfig;
@@ -128,14 +128,14 @@ pub(super) const fn effective_scheduler_lane_count(
     }
 }
 
-/// A batch chosen by the default policy.
+/// A batch chosen by the [`wave_policy`].
 #[cfg(test)]
 pub(super) fn take_direct_iteration_batch(
     queue: &mut VecDeque<DirectIteration>,
     max_batch_size: usize,
     token_budget: usize,
 ) -> Vec<DirectIteration> {
-    let policy = default_policy();
+    let policy = wave_policy();
     let tuning = policy.tuning();
     let limits = BatchLimits {
         lanes: max_batch_size,

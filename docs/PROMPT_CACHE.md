@@ -100,11 +100,13 @@ Prefix lookup and restore run as one cache operation under the runtime lock.
 `kv_cache.prefill_admission` decides who prefills the rest of the prompt:
 
 - `cooperative` (default): the operation restores the prefix only. The suffix
-  is submitted as iteration batches, chunked at `n_ubatch`, which coalesce
-  with other requests' prompt chunks and with decode rows in the same native
-  step. Under the default `arrival_order` batch policy, four prompts arriving
-  together prefill as one wave; `prompt_order` prefills the oldest first.
-  Running requests keep decoding between chunks.
+  is submitted as iteration batches, which coalesce with other requests'
+  prompt chunks and with decode rows in the same native step. Under the
+  default `prompt_order` batch policy the oldest prompt prefills first, a
+  whole batch a step while nothing else generates and a microbatch shared
+  with the generated tokens while something does; under `arrival_order`, four
+  prompts arriving together prefill as one wave. Running requests keep
+  decoding between chunks.
 - `serialized`: the operation prefills the whole prompt itself. One prompt
   enters at a time and every other request's decode waits for it. This was
   the implicit behaviour for attention models before the policy existed; keep
