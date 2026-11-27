@@ -263,13 +263,16 @@ at eight runtimes; the full roster has fifteen.
 
 The Linux archive is built on hosted Ubuntu 24.04, then the same bytes run
 on the existing x64 CUDA 13 NVIDIA pool and the x64 ROCm AMD pool. Both literal-pool device
-jobs must succeed in the full CI gate. They use the existing digest-pinned
-Ubuntu 24.04 CUDA compiler container for its runtime environment, with NVIDIA
-GPU access plus the graphics capability, or AMD `/dev/dri` access. Neither smoke
-job rebuilds the product or replaces host drivers. The container installs the
-Vulkan loader and inspection tools; AMD additionally uses Mesa's RADV driver.
-Hardware ICD selection excludes software rasterizers. Native workspace ownership
-is restored by the existing container cleanup action.
+jobs must succeed in the full CI gate. NVIDIA smoke runs directly inside the
+pool's existing digest-pinned GPU runner image as its unprivileged runner account;
+that image has graphics-capable driver injection and no nested Docker socket.
+Its ephemeral setup installs `libegl1`, which NVIDIA loads even for headless
+Vulkan initialization.
+AMD smoke uses the digest-pinned Ubuntu 24.04 CUDA compiler container with
+`/dev/dri`, installing the Vulkan loader, inspection tools and Mesa's RADV driver.
+Neither job rebuilds the product or replaces host drivers. Hardware ICD selection
+excludes software rasterizers. AMD restores native workspace ownership through the
+existing container cleanup action; NVIDIA uses the runner container lifecycle.
 
 Smoke forces Vulkan runtime selection, admits only real GPUs from the assigned
 vendor, records Vulkan API and driver versions, and requires positive GPU layer

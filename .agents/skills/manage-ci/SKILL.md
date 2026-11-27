@@ -64,7 +64,10 @@ contract; no downstream product's workflow topology applies here.
   independently of their smoke evidence policy. Vulkan Linux x64 and Windows x64 packages use pinned Vulkan SDK tooling.
   Full CI tests the exact Linux Vulkan archive on both existing x64 NVIDIA CUDA 13
   and AMD ROCm pools; both source- and archive-bound vendor receipts are required
-  for release verification. Windows Vulkan retains archive-only evidence.
+  for release verification. NVIDIA uses the pool's existing GPU Actions container
+  directly (no Docker socket), with `libegl1` for headless driver initialization.
+  AMD uses the compiler job container with `/dev/dri` and RADV.
+  Windows Vulkan retains archive-only evidence.
   The package jobs verify their toolchains.
   The lightweight CI gate checks the validated matrix and requires all applicable results.
 - `.github/workflows/fork-native.yml` handles approved fork CI completion using
