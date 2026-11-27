@@ -125,10 +125,6 @@ def execute(profile, key, mode):
     worker = os.environ.get("JIANYANG_ROLE") == "worker"
     if worker and mode != "split":
         raise ValueError("worker role requires split qualification")
-    # Diagnostic branch only: keep the leader unchanged and disable the
-    # transport worker's otherwise implicit two-token rollback reservation.
-    if worker:
-        os.environ["SKIPPY_RS_SEQ"] = "0"
     output = Path(os.environ["JIANYANG_ARTIFACT_DIR"])
     output.mkdir(parents=True, exist_ok=True)
     record(output, sha)
