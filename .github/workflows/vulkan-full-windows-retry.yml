@@ -1,0 +1,90 @@
+# Retry the timed-out Windows CUDA 13 producer on its production runner.
+name: Vulkan full CI Windows retry
+on:
+  push:
+    branches: [rehearsal/vulkan-full-ci]
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_PROFILE_RELEASE_DEBUG: '0'
+  CARGO_PROFILE_BENCH_DEBUG: '0'
+  SCCACHE_GHA_ENABLED: 'true'
+  SKIPPY_REQUIRE_SCCACHE: '1'
+  SKIPPY_CUDA_ARCHITECTURE_MODE: release
+  SKIPPY_CI_575ff0fffd1a18432c642ce7ebdc2bc4fe26d7d2_REF: 575ff0fffd1a18432c642ce7ebdc2bc4fe26d7d2
+  SKIPPY_ARTIFACT_SCOPE: ci
+jobs:
+  admission:
+    name: Admit exact source and reuse verified Windows CLI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          script: |
+            if (context.repo.owner !== 'Mesh-LLM' || context.repo.repo !== 'skippy' || context.eventName !== 'push' || context.ref !== 'refs/heads/rehearsal/vulkan-full-ci') throw new Error('Invalid retry caller');
+            const {data: permission} = await github.rest.repos.getCollaboratorPermissionLevel({...context.repo, username: context.actor});
+            if (!['admin', 'maintain', 'write'].includes(permission.permission)) throw new Error('Repository writer required');
+            const {data: pr} = await github.rest.pulls.get({...context.repo, pull_number: 234});
+            if (pr.state !== 'open' || pr.head.repo.id !== pr.base.repo.id || pr.head.sha !== '575ff0fffd1a18432c642ce7ebdc2bc4fe26d7d2') throw new Error('PR source changed');
+            const {data: run} = await github.rest.actions.getWorkflowRun({...context.repo, run_id: 45983266818});
+            if (run.status !== 'completed' || run.head_sha !== 'bf7413a5a456f8f2bbaa4c4eb00f67d0fe137d4c' || run.path !== '.github/workflows/vulkan-full-rehearsal.yml') throw new Error('Unexpected original rehearsal');
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {...context.repo, run_id: 45983266818, filter: 'latest', per_page: 100});
+            const required = ["Build, package, and smoke \u00b7 macOS ARM64 CPU", "Build, package, and smoke \u00b7 macOS ARM64 Metal", "Build, package, and smoke \u00b7 Linux x64 CPU", "Build, package, and smoke \u00b7 Linux x64 CUDA 12", "Build, package, and smoke \u00b7 Linux x64 CUDA 13", "Build, package, and smoke \u00b7 Linux x64 ROCm", "Build, package, and smoke \u00b7 Linux ARM64 CPU", "Build, package, and smoke \u00b7 Linux ARM64 CUDA 12", "Build, package, and smoke \u00b7 Linux ARM64 CUDA 13", "Build and verify archive \u00b7 Windows x64 CPU", "Build and verify archive \u00b7 Windows x64 CUDA 12", "Build and verify archive \u00b7 Windows x64 ROCm", "Build and verify archive \u00b7 Linux x64 Vulkan", "Build and verify archive \u00b7 Windows x64 Vulkan", "Select checks by path", "Validate build targets", "Automation checks", "Quality canary", "Check llama.cpp Graph Contracts, patches, and API docs", "Vulkan GPU smoke \u00b7 Linux x64 \u00b7 nvidia", "Vulkan GPU smoke \u00b7 Linux x64 \u00b7 amd"];
+            for (const name of required) {
+              const matches = jobs.filter(j => j.name === name);
+              if (matches.length !== 1 || matches[0].status !== 'completed' || matches[0].conclusion !== 'success') throw new Error('Missing successful original job: ' + name);
+            }
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          github-token: ${{ github.token }}
+          run-id: 45983266818
+          name: ci-host-windows-x86_64
+          path: windows-host
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: ci-host-windows-x86_64
+          path: windows-host
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+  package_windows_x86_64_cuda13:
+    name: Build and verify archive · Windows x64 CUDA 13
+    needs: admission
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-windows-2022-8' || 'windows-2022' }}
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: full
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-cuda13
+          host-id: windows-x86_64
+          setup-host: 'true'
+          smoke: artifact
+          windows-cuda: '13.1.2'
+  full_gate:
+    name: Full CI gate with retained successful jobs
+    needs: [admission, package_windows_x86_64_cuda13]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        with:
+          script: |
+            for (const [name, job] of Object.entries(JSON.parse(process.env.RESULTS))) {
+              if (job.result !== 'success') throw new Error(name + ' did not succeed');
+            }
+            core.summary.addHeading('Complete exact-source full matrix').addRaw('All 15 runtime packages, Graph Contracts, Quality and both Vulkan vendors passed. 21 successful jobs are retained from run 45983266818; Windows CUDA 13 is rebuilt and archive-smoked here on its production Depot runner.').write();
