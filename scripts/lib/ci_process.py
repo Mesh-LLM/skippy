@@ -60,8 +60,11 @@ def group_alive(child):
     except ProcessLookupError:
         return False
     except PermissionError:
-        if not exited:
+        # The child can exit between poll() and killpg(), leaving a group
+        # visible to a different reaper. Recheck before treating it as live.
+        if child.poll() is None:
             raise
+        exited = True
     if not exited:
         return True
     # A group containing only unreaped descendants can still be visible to
