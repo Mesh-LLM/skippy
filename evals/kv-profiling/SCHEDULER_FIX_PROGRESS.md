@@ -1,5 +1,32 @@
 # Scheduler fix and retest progress
 
+## 2026-11-27: Coder first paired c1 quality comparison audited
+
+The current-source Coder Skippy cell `job_z2jb5x6k3tgc7vf` completed 512/512
+requests and passed the independent exact-pin, source, full 49-layer Metal,
+F16 KV, 16×8192 context, batch/microbatch 512, cache-off and cooled nominal
+thermal audit. It scored **313/512** correct. Both separately audited vanilla
+layouts scored **314/512** and produced identical raw text on all 512 tasks.
+The registered scorer, replayed from saved raw responses, finds two adverse
+Skippy tasks among 314 vanilla-correct tasks (`assignment-114` and
+`ordering-013`). Its exact one-sided 95% upper bound is **1.99136%**, narrowly
+below the strict 2% margin, so this **first paired comparison passes** against
+both layouts. Candidate raw text differs from vanilla on 29 tasks; those
+exact-output discrepancies remain visible.
+
+The [compact first-cell evidence](pr-evidence/task-quality-v3-coder-c1-first-cells.tar.xz)
+(SHA256 `9df7e86f57a4a8f2fc782543643e78fd33ed7612b7f94084b9723e6bf694cd90`)
+contains all three raw score inputs, scores, independent audits, both
+comparisons and a manifest of job/spec/source/artifact hashes. Its
+[summary](pr-evidence/task-quality-v3-coder-c1-first-cells-summary.json)
+has SHA256 `ce19fe2727017d99dc9ef1bf67e4c0850e9b190948a202f3d8a5ab327c86a27f`.
+The ignored local builder reproduced both hashes twice.
+
+This is **not yet a Coder c1 gate pass**: the three presealed, reverse-order
+fresh-process A/A and candidate repeats have not completed. Loaded quality,
+current-source fixed-output timing, and four-model non-regression remain
+**UNPROVEN**. The original exact-output and latency failures are preserved.
+
 ## 2026-11-27: three more c1 reference baselines audited
 
 The cooled, source-pinned vanilla separate-slot c1 cells for the other three
