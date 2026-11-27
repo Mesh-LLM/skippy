@@ -22,4 +22,17 @@ jobs:
           id -u
           command -v just
           command -v vulkaninfo
-          vulkaninfo --summary
+          printf 'Capabilities: %s\nLibrary path: %s\n' "${NVIDIA_DRIVER_CAPABILITIES:-unset}" "${LD_LIBRARY_PATH:-unset}"
+          printf 'ICD override: %s %s\n' "${VK_DRIVER_FILES:-unset}" "${VK_ICD_FILENAMES:-unset}"
+          ldconfig -p | rg 'vulkan|GLX_nvidia|glvkspirv|gpucomp' || true
+          for path in /etc/vulkan/icd.d/*.json /usr/share/vulkan/icd.d/*.json; do
+            test -f "$path" || continue
+            printf '%s\n' "$path"
+            cat "$path"
+          done
+          for path in /usr/lib/x86_64-linux-gnu/libGLX_nvidia.so.0 /usr/local/nvidia/lib64/libGLX_nvidia.so.0; do
+            test -f "$path" || continue
+            readlink -f "$path"
+            ldd "$path"
+          done
+          VK_LOADER_DEBUG=error,warn,driver vulkaninfo --summary
