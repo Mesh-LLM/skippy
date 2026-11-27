@@ -43,6 +43,13 @@ class ReadRecoveryTests(unittest.TestCase):
                 self.assertEqual(self.pilot.api("GET", self.path), {"status": "running"})
                 self.assertEqual(send.call_count, 2)
 
+    def test_http_error_retains_ray_id_for_log_correlation(self):
+        error = HTTPError("https://pilot.jianyang.cloud" + self.path, 500, "Unavailable",
+                          {"CF-Ray": "test-ray"}, io.BytesIO(b"temporary failure"))
+        with patch.object(self.pilot.opener, "open", side_effect=error):
+            with self.assertRaisesRegex(PilotHTTPError, r"^JY HTTP 500: temporary failure \(Cloudflare Ray test-ray\)$"):
+                self.pilot.request("GET", self.path)
+
     def test_persistent_disconnect_stops_after_four_attempts(self):
         with patch.object(self.pilot.opener, "open", side_effect=RemoteDisconnected("still down")) as send:
             with self.assertRaisesRegex(RemoteDisconnected, "still down"):
@@ -84,6 +91,16 @@ class ReadRecoveryTests(unittest.TestCase):
         cleanup = Mock()
         return dispatch, {"plan": Mock(return_value={"rows": [row]}), "launch": launch, "cancel": cleanup}
 
+    def use_fake_clock(self):
+        clock = [0.0]
+
+        def advance(seconds):
+            clock[0] += seconds
+
+        self.sleep.side_effect = advance
+        self.enterContext(patch.object(jy_qualification.time, "monotonic", side_effect=lambda: clock[0]))
+        self.enterContext(patch.object(jy_qualification.random, "uniform", return_value=0))
+
     def test_polling_disconnect_does_not_cancel_or_relaunch_native_formation(self):
         sha = "a" * 40
         succeeded = {"status": "succeeded", "repo_rev": sha, "formation_id": "frm_test"}
@@ -99,9 +116,40 @@ class ReadRecoveryTests(unittest.TestCase):
             self.assertEqual(json.loads((Path(tmp) / "model-split-formation.json").read_text()),
                              {"status": "succeeded"})
 
+    def test_status_survives_beyond_one_retry_burst_for_a_whole_formation(self):
+        self.use_fake_clock()
+        sha = "a" * 40
+        succeeded = {"status": "succeeded", "repo_rev": sha, "formation_id": "frm_test"}
+        errors = [TimeoutError() for _ in range(7)]
+        errors += [HTTPError("https://pilot.jianyang.cloud" + self.path, 500, "Unavailable",
+                             {"CF-Ray": "test-ray"}, io.BytesIO(b"D1 unavailable"))]
+        replies = [*errors, io.BytesIO(json.dumps(succeeded).encode()),
+                   io.BytesIO(b'{"status":"running"}'),
+                   io.BytesIO(json.dumps(succeeded).encode()),
+                   io.BytesIO(b'{"status":"succeeded"}')]
+        with TemporaryDirectory() as tmp, patch.object(self.pilot.opener, "open", side_effect=replies) as send:
+            dispatch, mocks = self.dispatch()
+            with patch.dict(dispatch.__globals__, mocks):
+                dispatch(self.pilot, "release", sha, Path(tmp), "model-split")
+            mocks["launch"].assert_called_once()
+            mocks["cancel"].assert_not_called()
+            self.assertEqual([item.args[0] for item in self.sleep.call_args_list], [1, 2, 4, 8, 16, 30, 30, 30, 5])
+            paths = [item.args[0].selector for item in send.call_args_list]
+            self.assertEqual(paths, [self.path] * 9 + ["/v1/formations/frm_test", self.path,
+                                                     "/v1/formations/frm_test"])
+
+    def test_status_respects_the_shorter_qualification_deadline(self):
+        self.use_fake_clock()
+        with patch.object(self.pilot.opener, "open", side_effect=TimeoutError("still down")) as send:
+            with self.assertRaises(TimeoutError):
+                self.pilot.api("GET", self.path, status_deadline=2)
+        self.assertEqual([item.kwargs["timeout"] for item in send.call_args_list], [2, 1])
+
     def test_exhausted_polling_still_cancels_the_native_job(self):
+        self.use_fake_clock()
         with TemporaryDirectory() as tmp, \
-                patch.object(self.pilot.opener, "open", side_effect=RemoteDisconnected("still down")) as send:
+                patch.object(self.pilot.opener, "open", side_effect=RemoteDisconnected("still down")) as send, \
+                patch.object(jy_qualification, "STATUS_READ_BUDGET", 8):
             dispatch, mocks = self.dispatch()
             with patch.dict(dispatch.__globals__, mocks):
                 with self.assertRaises(RemoteDisconnected):

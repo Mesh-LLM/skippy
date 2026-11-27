@@ -292,7 +292,7 @@ fn run_split_prefix_hit_case(
     })
 }
 
-fn source_model_sha256(model: &Path) -> Result<String> {
+pub(crate) fn source_model_sha256(model: &Path) -> Result<String> {
     let mut file =
         fs::File::open(model).with_context(|| format!("failed to open {}", model.display()))?;
     let mut hasher = Sha256::new();

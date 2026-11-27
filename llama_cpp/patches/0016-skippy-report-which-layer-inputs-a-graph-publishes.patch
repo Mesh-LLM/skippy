@@ -1,17 +1,16 @@
-From f1ac190fd220e6d7cea890df77e5119320269372 Mon Sep 17 00:00:00 2001
+From c772cecc84b1bce5c0832f72c1f1d180efc21b51 Mon Sep 17 00:00:00 2001
 From: Mesh-LLM CI <ci@mesh-llm.local>
-Date: Mon, 9 Nov 2026 09:18:19 +1100
-Subject: [PATCH 16/32] skippy: report published layer inputs including head
- input
+Date: Thu, 29 Oct 2026 19:55:52 -0400
+Subject: [PATCH] skippy: report published layer inputs including head input
 
 ---
- src/llama-context.cpp | 46 ++++++++++++++++++++++++++++++++++++++++++-
- src/llama-context.h   |  7 +++++++
- src/llama-ext.h       |  5 +++++
- 3 files changed, 57 insertions(+), 1 deletion(-)
+ src/llama-context.cpp | 46 +++++++++++++++++++++++++++++++++++++-
+ src/llama-context.h   |  7 ++++++
+ src/llama-ext.h       | 52 +++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 104 insertions(+), 1 deletion(-)
 
 diff --git a/src/llama-context.cpp b/src/llama-context.cpp
-index eb0e23fff..bc031e147 100644
+index b5bf1c84f..dabcf5553 100644
 --- a/src/llama-context.cpp
 +++ b/src/llama-context.cpp
 @@ -25,6 +25,7 @@
@@ -22,7 +21,7 @@ index eb0e23fff..bc031e147 100644
  #include <stdexcept>
  #include <string>
  #include <unordered_map>
-@@ -1514,9 +1515,10 @@ void llama_context::set_embeddings_nextn(bool value, bool masked) {
+@@ -1503,9 +1504,10 @@ void llama_context::set_embeddings_nextn(bool value, bool masked) {
  }
  
  void llama_context::set_embeddings_layer_inp(uint32_t lid, bool enable) {
@@ -34,7 +33,7 @@ index eb0e23fff..bc031e147 100644
  
      if (cparams.embeddings_layer_inp[lid] == enable) return;
      ++computation_generation;
-@@ -2285,6 +2287,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
+@@ -2269,6 +2271,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
  int llama_context::decode(
          const llama_batch_ext & batch_inp,
          const skippy_graph_build_inputs & graph_build_inputs) {
@@ -42,7 +41,7 @@ index eb0e23fff..bc031e147 100644
      if (!memory) {
          LLAMA_LOG_DEBUG("%s: cannot decode batches with this context (calling encode() instead)\n", __func__);
          return encode(batch_inp, graph_build_inputs);
-@@ -3219,6 +3222,43 @@ bool llama_context::get_input_activation_frontier(std::vector<skippy_activation_
+@@ -3181,6 +3184,43 @@ bool llama_context::get_input_activation_frontier(std::vector<skippy_activation_
      return true;
  }
  
@@ -86,7 +85,7 @@ index eb0e23fff..bc031e147 100644
  ggml_cgraph * llama_context::graph_reserve(uint32_t                          n_tokens,
                                             uint32_t                          n_seqs,
                                             uint32_t                          n_outputs,
-@@ -5165,6 +5205,10 @@ void llama_set_embeddings_layer_inp(llama_context * ctx, uint32_t lid, bool valu
+@@ -5115,6 +5155,10 @@ void llama_set_embeddings_layer_inp(llama_context * ctx, uint32_t lid, bool valu
      ctx->set_embeddings_layer_inp(lid, value);
  }
  
@@ -98,7 +97,7 @@ index eb0e23fff..bc031e147 100644
      ctx->set_nextn_layer_offset(offset);
  }
 diff --git a/src/llama-context.h b/src/llama-context.h
-index 0232c2cf7..d699a1088 100644
+index c26fdd615..75cea4e84 100644
 --- a/src/llama-context.h
 +++ b/src/llama-context.h
 @@ -14,6 +14,7 @@
@@ -120,7 +119,7 @@ index 0232c2cf7..d699a1088 100644
      void set_embeddings_layer_inp_dev(bool value);
  
      // whether decode accepts entries whose embd is a row of ctx_other's layer input device buffer
-@@ -398,6 +403,8 @@ private:
+@@ -397,6 +402,8 @@ private:
      const llama_model & model;
  
      llama_cparams cparams;
@@ -130,18 +129,68 @@ index 0232c2cf7..d699a1088 100644
      const skippy_graph_build_inputs graph_build_inputs;
      uint64_t computation_generation = 0;
 diff --git a/src/llama-ext.h b/src/llama-ext.h
-index 5fc6dbe5b..630a97f14 100644
+index da6387f43..a4486f61e 100644
 --- a/src/llama-ext.h
 +++ b/src/llama-ext.h
-@@ -166,6 +166,11 @@ LLAMA_API float * llama_get_embeddings_nextn_ith(struct llama_context * ctx, int
- // Set whether the context outputs the input embeddings of a specific layer
- LLAMA_API void llama_set_embeddings_layer_inp(struct llama_context * ctx, uint32_t lid, bool value);
+@@ -152,6 +152,58 @@ LLAMA_API bool llama_batch_ext_set_decision_group(struct llama_batch_ext * batch
+ // Label of option i of a decision model ("<arch>.decision.labels"), nullptr past the last one
+ LLAMA_API const char * llama_model_decision_label(const struct llama_model * model, uint32_t i);
  
++// mirrors:
++// LLAMA_API float * llama_get_embeddings(struct llama_context * ctx);
++LLAMA_API float * llama_get_embeddings_nextn(struct llama_context * ctx);
++
++// LLAMA_API float * llama_get_embeddings_ith(struct llama_context * ctx, int32_t i);
++LLAMA_API float * llama_get_embeddings_nextn_ith(struct llama_context * ctx, int32_t i);
++
++// Set whether the context outputs the input embeddings of a specific layer
++LLAMA_API void llama_set_embeddings_layer_inp(struct llama_context * ctx, uint32_t lid, bool value);
++
 +// Whether the model's graph publishes the input of layer lid (lid == n_layer: the
 +// last layer's output) when it is captured. Builds the graph once, without
 +// running it; capturing a layer the graph does not publish aborts the decode.
 +LLAMA_API bool llama_layer_inp_published(struct llama_context * ctx, uint32_t lid);
 +
- // mirrors:
- // LLAMA_API float * llama_get_embeddings(struct llama_context * ctx);
- LLAMA_API float * llama_get_embeddings_layer_inp(struct llama_context * ctx, uint32_t lid);
++// mirrors:
++// LLAMA_API float * llama_get_embeddings(struct llama_context * ctx);
++LLAMA_API float * llama_get_embeddings_layer_inp(struct llama_context * ctx, uint32_t lid);
++
++// Write the enabled layer inputs to a device buffer [n_layer_inp*n_embd, n_batch] instead of host memory.
++// Row r holds the token at batch index r, layers in ascending layer id order.
++LLAMA_API void llama_set_embeddings_layer_inp_dev(struct llama_context * ctx, bool value);
++
++// Whether decode accepts entries added with llama_batch_ext_add_embd_row()
++// (needs a DFlash/DSpark decoder context whose ctx_other has a layer input device buffer).
++LLAMA_API bool llama_supports_embd_row(const struct llama_context * ctx);
++
++// Add an entry whose embedding is row `row` of the layer input device buffer of ctx_other.
++// All entries of the batch must be of this kind. Positions are set with llama_batch_ext_set_pos(), n_pos_per_embd of them.
++// Returns the batch index (>= 0), or the llama_batch_ext_add() error codes.
++LLAMA_API int32_t llama_batch_ext_add_embd_row(struct llama_batch_ext * batch, llama_seq_id seq_id, int32_t row);
++
++LLAMA_API llama_context * llama_get_ctx_other(struct llama_context * ctx);
++
++// Write the unmasked h_nextn rows (see llama_set_embeddings_nextn) of each decode to a device buffer
++// [n_embd_out, n_batch + n_seq_max] instead of host memory: row r < n_batch is the token at batch index r of the last decode,
++// row n_batch + s is free for the caller, e.g. for seq s (see llama_set_embeddings_nextn_rows()).
++// Returns false if the buffer cannot be used, the rows are then extracted to host memory.
++LLAMA_API bool llama_set_embeddings_nextn_dev(struct llama_context * ctx, bool value);
++
++// Copy rows of the h_nextn device buffer to or from host memory, ordered after the last decode and its readers
++LLAMA_API bool llama_get_embeddings_nextn_rows(struct llama_context * ctx, int64_t row0, int64_t n_rows, float * out);
++LLAMA_API bool llama_set_embeddings_nextn_rows(struct llama_context * ctx, int64_t row0, int64_t n_rows, const float * data);
++
++// Read the state rows of batches (see llama_batch_ext_set_embd_state_row()) from the h_nextn device buffer of src.
++// Returns whether decode accepts batches with state rows.
++LLAMA_API bool llama_set_embd_state_src(struct llama_context * ctx, struct llama_context * src);
++
++// The state of entry idx is row `row` of the h_nextn device buffer of the context set with llama_set_embd_state_src().
++// All entries of a batch have a state row, or none.
++LLAMA_API bool llama_batch_ext_set_embd_state_row(struct llama_batch_ext * batch, int32_t idx, int32_t row);
++
+ //
+ // model/context data extraction
+ //
+-- 
+2.56.1
+

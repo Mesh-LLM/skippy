@@ -2,7 +2,7 @@
 name = "skippy-model-hf"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Hugging Face model repository integration for Skippy"
 repository = "https://github.com/Mesh-LLM/skippy"

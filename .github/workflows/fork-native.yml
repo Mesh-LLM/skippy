@@ -1,0 +1,78 @@
+name: Approved fork CI
+# The protected aggregate uses this source-bound title; workflow_run itself
+# records main as head_sha, not the candidate that caused the upstream run.
+run-name: >-
+  ${{ github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.id != github.event.repository.id &&
+      github.event.workflow_run.path == '.github/workflows/ci.yml' &&
+      github.event.workflow_run.head_sha || 'Ignored fork CI trigger' }}
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  packages: read
+concurrency:
+  group: approved-fork-${{ github.event.workflow_run.path }}-${{ github.event.workflow_run.head_repository.id }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+jobs:
+  admission:
+    if: >-
+      github.repository == 'Mesh-LLM/skippy' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.id != github.event.repository.id &&
+      github.event.workflow_run.path == '.github/workflows/ci.yml'
+    # This new controller is not in the protected native/Depot runner allowlist.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      source: ${{ steps.admit.outputs.source }}
+      number: ${{ steps.admit.outputs.number }}
+      routes: ${{ steps.admit.outputs.routes }}
+      ci: ${{ steps.admit.outputs.ci }}
+      inference: ${{ steps.admit.outputs.inference }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: main
+          persist-credentials: false
+      - id: admit
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            await require('./.github/scripts/fork-admission.cjs')({
+              github, context, core
+            });
+  ci:
+    needs: admission
+    if: needs.admission.outputs.ci == 'true'
+    cache-mode: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      profile: pr
+      # Same as a branch PR: build CUDA for the assigned GPU so the build is
+      # the same size and reads the same compiler cache. The workflow_call
+      # default is the release architecture set.
+      cuda_architecture_mode: native
+      source_ref: ${{ needs.admission.outputs.source }}
+      approved_fork_pr: ${{ needs.admission.outputs.number }}
+      approved_fork_routes: ${{ needs.admission.outputs.routes }}
+  inference:
+    needs: admission
+    if: needs.admission.outputs.inference == 'true'
+    permissions:
+      contents: read
+      actions: read
+      # Required by the reusable controller's target-PR reporting job (skipped for forks).
+      pull-requests: write
+      statuses: write
+    uses: ./.github/workflows/inference.yml
+    with:
+      approved_fork_pr: ${{ needs.admission.outputs.number }}
+    secrets:
+      JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}

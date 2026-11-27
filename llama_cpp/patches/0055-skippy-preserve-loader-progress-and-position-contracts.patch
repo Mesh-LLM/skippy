@@ -1,0 +1,442 @@
+From e5c110740185f6e068e56168b74f1bc695be4404 Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Wed, 25 Nov 2026 11:11:17 +1100
+Subject: [PATCH] skippy: preserve loader, sampling and position contracts
+
+---
+ include/skippy/state.h                        |  2 +
+ src/llama-context.cpp                         | 13 ++---
+ src/llama-kv-cache.cpp                        | 19 ++++++++
+ src/llama-model-loader.cpp                    |  5 +-
+ src/skippy/model_loading.cpp                  |  2 +-
+ src/skippy/sampling_config.cpp                |  5 ++
+ src/skippy/tests/sampling_history.cpp         | 22 +++++++++
+ tests/test-batch-alloc.cpp                    | 30 ++++++++++++
+ tests/test-graph-contract-fixture.h           | 26 +++++++++-
+ tests/test-skippy-cachegen-import.cpp         | 47 +++++++++++++++++--
+ tests/test-skippy-model-loader-accounting.cpp | 24 ++++++++++
+ 11 files changed, 182 insertions(+), 13 deletions(-)
+
+diff --git a/include/skippy/state.h b/include/skippy/state.h
+index fc5dcd389..6f8a93484 100644
+--- a/include/skippy/state.h
++++ b/include/skippy/state.h
+@@ -36,6 +36,8 @@ LLAMA_API uint32_t skippy_model_kv_pool_cells(const struct skippy_model * model)
+ enum skippy_kv_page_flag {
+     SKIPPY_KV_PAGE_FLAG_V_TRANSPOSED      = 1 << 0,
+     SKIPPY_KV_PAGE_FLAG_HAS_K_IDX         = 1 << 1,
++    /** Secondary position axes equal token_start + row; no position sideband is needed. */
++    SKIPPY_KV_PAGE_FLAG_CANONICAL_POSITIONS = 1 << 2,
+ };
+ 
+ enum skippy_kv_page_codec {
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index a742ba235..2cf413d2d 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -2418,11 +2418,6 @@ int llama_context::decode(
+ 
+     GGML_ASSERT((cparams.causal_attn || cparams.n_ubatch >= n_tokens_all) && "non-causal attention requires n_ubatch >= n_tokens");
+ 
+-    if (t_compute_start_us == 0) {
+-        t_compute_start_us = ggml_time_us();
+-    }
+-    n_queued_tokens += n_tokens_all;
+-
+     // TODO: this clear of the buffer can easily be forgotten - need something better
+     // sync first so any in-flight async copies into embd_seq complete before it is freed
+     if (!embd_seq.empty()) {
+@@ -2432,6 +2427,12 @@ int llama_context::decode(
+     output_swaps.clear();
+     embd_batch_idxs.clear();
+ 
++    // Synchronizing the preceding decode must not account this batch's work.
++    if (t_compute_start_us == 0) {
++        t_compute_start_us = ggml_time_us();
++    }
++    n_queued_tokens += n_tokens_all;
++
+     sched_reserve(graph_build_inputs);
+ 
+     bool did_optimize = false;
+@@ -5058,7 +5059,7 @@ llama_context * llama_init_from_model_with_graph_inputs(
+     }
+ 
+     if (params.ctx_type == LLAMA_CONTEXT_TYPE_MTP &&
+-        model->hparams.n_layer_nextn == 0) {
++        (model->hparams.n_layer_nextn == 0 || model->hparams.router_layer >= 0)) {
+         LLAMA_LOG_WARN("%s: context type MTP requested but model doesn't contain MTP layers\n", __func__);
+         return nullptr;
+     }
+diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
+index 692a3bc8f..849362823 100644
+--- a/src/llama-kv-cache.cpp
++++ b/src/llama-kv-cache.cpp
+@@ -2000,6 +2000,18 @@ bool llama_kv_cache::stage_export_kv_page(
+         return false;
+     }
+ 
++    // Version 1 carries no per-axis position sideband. Admit M-RoPE pages
++    // only when reconstructing every axis from the scalar position is exact.
++    if (hparams.n_pos_per_embd() > 1) {
++        for (const uint32_t idx : cell_idxs) {
++            const auto & ext = cells.ext_get(idx);
++            if (ext.x != cells.pos_get(idx) || ext.y != cells.pos_get(idx)) {
++                error = "native KV pages cannot encode differing secondary positions";
++                return false;
++            }
++        }
++    }
++
+     std::vector<const kv_layer *> selected;
+     selected.reserve(layers.size());
+     uint32_t k_row_bytes = 0;
+@@ -2091,6 +2103,9 @@ bool llama_kv_cache::stage_export_kv_page(
+     out_desc->k_idx_row_bytes = k_idx_row_bytes;
+     out_desc->payload_bytes = payload_bytes;
+     out_desc->flags = v_trans ? SKIPPY_KV_PAGE_FLAG_V_TRANSPOSED : 0;
++    if (hparams.n_pos_per_embd() > 1) {
++        out_desc->flags |= SKIPPY_KV_PAGE_FLAG_CANONICAL_POSITIONS;
++    }
+     if (k_idx_row_bytes > 0) {
+         out_desc->flags |= SKIPPY_KV_PAGE_FLAG_HAS_K_IDX;
+     }
+@@ -2177,6 +2192,10 @@ bool llama_kv_cache::stage_import_kv_page(
+         error = "unsupported native KV page descriptor version";
+         return false;
+     }
++    if (hparams.n_pos_per_embd() > 1 && !(desc.flags & SKIPPY_KV_PAGE_FLAG_CANONICAL_POSITIONS)) {
++        error = "native KV page import requires canonical secondary positions";
++        return false;
++    }
+     if (desc.layer_start < 0 ||
+             desc.layer_end <= desc.layer_start ||
+             static_cast<uint32_t>(desc.layer_end) > hparams.n_layer_all ||
+diff --git a/src/llama-model-loader.cpp b/src/llama-model-loader.cpp
+index 0e1fe9f27..9db5329d9 100644
+--- a/src/llama-model-loader.cpp
++++ b/src/llama-model-loader.cpp
+@@ -1701,7 +1701,10 @@ void llama_model_loader::init_mappings(bool prefetch, llama_mlocks * mlock_mmaps
+     // unmap weights that a later context still has to upload.
+     size_data = 0;
+     if (!ctx_map.empty()) {
+-        for (const auto & [_, ctx] : ctx_map) {
++        for (const auto & [key, ctx] : ctx_map) {
++            if (!key.resident) {
++                continue;
++            }
+             for (ggml_tensor * tensor = ggml_get_first_tensor(ctx.get());
+                     tensor != nullptr;
+                     tensor = ggml_get_next_tensor(ctx.get(), tensor)) {
+diff --git a/src/skippy/model_loading.cpp b/src/skippy/model_loading.cpp
+index 5f100aa46..364ae850e 100644
+--- a/src/skippy/model_loading.cpp
++++ b/src/skippy/model_loading.cpp
+@@ -534,7 +534,7 @@ static bool skippy_should_create_native_mtp_sidecar(
+         config == nullptr ||
+         !skippy_runtime_is_terminal_stage(config) ||
+         config->mtp_source != SKIPPY_MTP_SOURCE_INTEGRATED ||
+-        model->hparams.n_layer_nextn == 0) {
++        model->hparams.n_layer_nextn == 0 || model->hparams.router_layer >= 0) {
+         return false;
+     }
+ 
+diff --git a/src/skippy/sampling_config.cpp b/src/skippy/sampling_config.cpp
+index 6be5559e2..32b36bdcd 100644
+--- a/src/skippy/sampling_config.cpp
++++ b/src/skippy/sampling_config.cpp
+@@ -102,6 +102,11 @@ static common_params_sampling sampling_params(const skippy_sampling_config * con
+ static void chat_params(common_params_sampling & params, const llama_vocab * vocab, const json & metadata,
+         bool configure_reasoning) {
+     const auto grammar = metadata.value("grammar", std::string());
++    if (!grammar.empty() && params.ignore_eos) {
++        // The upstream grammar requires an EOG token to finish. Do not
++        // silently remove ignore_eos or defeat that grammar invariant.
++        throw std::invalid_argument("ignore_eos cannot be combined with a grammar; grammar completion requires EOG");
++    }
+     if (!grammar.empty()) {
+         params.grammar = {COMMON_GRAMMAR_TYPE_TOOL_CALLS, grammar};
+     }
+diff --git a/src/skippy/tests/sampling_history.cpp b/src/skippy/tests/sampling_history.cpp
+index db4a27bd2..9d465e25f 100644
+--- a/src/skippy/tests/sampling_history.cpp
++++ b/src/skippy/tests/sampling_history.cpp
+@@ -8,6 +8,7 @@
+ #include "llama-graph.h"
+ #include "ggml-backend.h"
+ #include "../../../common/sampling.h"
++#include "../../../vendor/nlohmann/json.hpp"
+ 
+ #include "log_gate.h"
+ static const skippy::log_gate::installer skippy_log_gate_installer{};
+@@ -265,6 +266,26 @@ void release(skippy_session * session) {
+     ok(status, error);
+ }
+ 
++void grammar_eog_policy(skippy_model * model) {
++    for (const bool grammar : {false, true}) {
++        for (const bool ignore_eos : {false, true}) {
++            auto * session = create(model);
++            auto config = sampling_config();
++            config.ignore_eos = ignore_eos;
++            nlohmann::ordered_json metadata = nlohmann::ordered_json::object();
++            if (grammar) { metadata["grammar"] = "root ::= \"a\""; }
++            bool rejected = false;
++            try {
++                CHECK(skippy_initialize_chat_sampler(session, &config, metadata, nullptr));
++            } catch (const std::invalid_argument & error) {
++                rejected = std::string(error.what()).find("ignore_eos cannot be combined with a grammar") != std::string::npos;
++            }
++            CHECK(rejected == (grammar && ignore_eos));
++            release(session);
++        }
++    }
++}
++
+ void grammar_restore(skippy_model * model, bool full, bool lazy) {
+     const auto sampling = sampling_config();
+     const std::vector<llama_token> prefix(256, 1);
+@@ -1054,6 +1075,7 @@ int main(int argc, char ** argv) {
+     } else if (raw_reclaim) {
+         raw_import_reclaims_chunks(model);
+     } else {
++        grammar_eog_policy(model);
+         for (const bool full : {false, true}) {
+             if (grammar) {
+                 for (const bool lazy : {false, true}) {
+diff --git a/tests/test-batch-alloc.cpp b/tests/test-batch-alloc.cpp
+index 5bf099d6c..e51474720 100644
+--- a/tests/test-batch-alloc.cpp
++++ b/tests/test-batch-alloc.cpp
+@@ -926,6 +926,36 @@ static void test_mrope(testing & t) {
+ static void test_compat(testing & t) {
+     llama_vocab vocab;
+ 
++    t.test("mixed_activation_positions_follow_each_sequence", [&](testing & t) {
++        mock_memory mem;
++        mem.ranges[0] = mem.ranges[1] = {0, 9};
++        const llama_pos image_pos[4] = {9, 1, 2, 0};
++        batch_builder bb(2, &mem, 4, 4, /*n_vocab*/100);
++        bb.add_embd(image_pos, {0}, false);
++        bb.add_tok(3, 10, 1, true);
++        llama_batch_allocr allocator(4, true);
++        t.assert_true("activation row may overlap, token sequence starts strictly after cache",
++            allocator.init(bb.b, vocab, false));
++        const auto ubatch = allocator.split_simple(2);
++        t.assert_equal(image_pos[0], ubatch.pos[0]);
++        t.assert_equal(image_pos[1], ubatch.pos[2]);
++        t.assert_equal(image_pos[2], ubatch.pos[4]);
++        bb.b.tokens[1].pos[0] = 9;
++        t.assert_true("plain-token first row remains strict in a mixed batch",
++            !allocator.init(bb.b, vocab, false));
++        bb.b.tokens[1].pos[0] = 10;
++        // Activation imports retain token IDs as sidebands. Their first-row
++        // rule must still use the supplied activation positions.
++        bb.b.tokens[0].id = 5;
++        bb.b.tokens[0].has_embd = false;
++        t.assert_true("token sideband keeps the activation overlap rule",
++            allocator.init(bb.b, vocab, false, true));
++        const auto imported = allocator.split_simple(2);
++        t.assert_equal(image_pos[0], imported.pos[0]);
++        t.assert_equal(image_pos[1], imported.pos[2]);
++        t.assert_equal(image_pos[2], imported.pos[4]);
++    });
++
+     t.test("activation_tokens_keep_mrope_image_positions", [&](testing & t) {
+         mock_memory mem;
+         mem.ranges[0] = {0, 24};
+diff --git a/tests/test-graph-contract-fixture.h b/tests/test-graph-contract-fixture.h
+index 3a520bdda..252811ec1 100644
+--- a/tests/test-graph-contract-fixture.h
++++ b/tests/test-graph-contract-fixture.h
+@@ -41,6 +41,10 @@ static int save_graph_contract_fixture(llm_arch arch, const std::string & out, u
+     auto metadata = get_gguf_ctx(arch, moe_mandatory(arch) || arch == LLM_ARCH_NEMOTRON_H_MOE || arch == LLM_ARCH_INKLING || arch == LLM_ARCH_GRANITE_MOE, 0, glm_dsa_indexshare_fixture::DEFAULT,
+             256, 8, false, layers + mtp_layers, arch == LLM_ARCH_QWEN4EXP ? width / 4 : width);
+     kv_writer kv(arch, metadata.get());
++    if (arch == LLM_ARCH_MINIMAX_M3) {
++        // Zero forced-local blocks is still a sparse indexed checkpoint.
++        kv.add_kv(LLM_KV_ATTENTION_INDEXER_LOCAL_BLOCKS, uint32_t(0));
++    }
+     if (arch == LLM_ARCH_BAILINGMOE3) {
+         kv.add_kv(LLM_KV_SWIGLU_CLAMP_EXP, std::vector<float>(layers, 4.0f));
+         kv.add_kv(LLM_KV_SWIGLU_CLAMP_SHEXP, std::vector<float>(layers, 5.0f));
+@@ -108,6 +112,9 @@ static int save_graph_contract_fixture(llm_arch arch, const std::string & out, u
+     params.n_gpu_layers = 0;
+     llama_model_ptr model(llama_model_init_from_user(metadata.get(), [](ggml_tensor *, void *) {}, nullptr, params));
+     if (!model) { throw std::runtime_error("cannot construct synthetic graph contract model"); }
++    if (arch == LLM_ARCH_MINIMAX_M3 && model->hparams.indexer_n_head == 0) {
++        throw std::runtime_error("zero forced-local blocks disabled the MiniMax-M3 indexer");
++    }
+     const uint32_t runtime_width = arch == LLM_ARCH_DEEPSEEK4
+             ? model->hparams.n_embd : model->hparams.n_embd_out();
+     if (model->hparams.n_layer() != layers || (model->hparams.router_layer >= 0 ? 0 : model->hparams.n_layer_nextn) != mtp_layers ||
+@@ -128,8 +135,23 @@ static int save_graph_contract_fixture(llm_arch arch, const std::string & out, u
+     }
+     for (const auto & item : llama_internal_get_tensor_map(model.get())) {
+         if (replaced_qkv.count(item.second->name)) { continue; }
+-        if (gguf_find_tensor(output.get(), item.second->name) < 0) {
+-            gguf_add_tensor(output.get(), item.second);
++        ggml_tensor tensor = *item.second;
++        if (arch == LLM_ARCH_GRANITE_SWITCH) {
++            // Pin the legacy checkpoint layout independently of the builder's
++            // preferred output names, so deleting its fallback fails this test.
++            std::string name = tensor.name;
++            for (const char * projection : {"q", "k", "v"}) {
++                for (const char * part : {"a", "b"}) {
++                    const std::string packed = ".attn_qkv.lora_" + std::string(part) + "_" + projection;
++                    if (name.size() >= packed.size() && name.compare(name.size() - packed.size(), packed.size(), packed) == 0) {
++                        name.replace(name.size() - packed.size(), packed.size(), ".attn_" + std::string(projection) + ".lora_" + part);
++                    }
++                }
++            }
++            ggml_set_name(&tensor, name.c_str());
++        }
++        if (gguf_find_tensor(output.get(), tensor.name) < 0) {
++            gguf_add_tensor(output.get(), &tensor);
+         }
+     }
+     if (arch == LLM_ARCH_MIMO2 && mtp_layers) {
+diff --git a/tests/test-skippy-cachegen-import.cpp b/tests/test-skippy-cachegen-import.cpp
+index f0d28e15c..3dcc05c64 100644
+--- a/tests/test-skippy-cachegen-import.cpp
++++ b/tests/test-skippy-cachegen-import.cpp
+@@ -143,8 +143,9 @@ std::unique_ptr<llama_kv_cache> make_cache(const llama_model & model, const llam
+ 
+ // Writes n_tokens positions into cells 0..n_tokens-1 so the page exports as a
+ // single contiguous range, which is what stage_export_kv_page requires.
+-bool populate(llama_kv_cache & kv, uint32_t n_tokens) {
+-    std::vector<llama_pos>     pos(n_tokens);
++bool populate(llama_kv_cache & kv, uint32_t n_tokens, bool spatial = false, bool divergent = false) {
++    const uint32_t n_pos = spatial ? 4 : 1;
++    std::vector<llama_pos>     pos(n_tokens * n_pos);
+     std::vector<llama_seq_id>  seq_ids(n_tokens, 0);
+     std::vector<llama_seq_id *> seq_id(n_tokens);
+     std::vector<int32_t>       n_seq_id(n_tokens, 1);
+@@ -153,6 +154,9 @@ bool populate(llama_kv_cache & kv, uint32_t n_tokens) {
+     seq_idx[0] = 0;
+     for (uint32_t i = 0; i < n_tokens; ++i) {
+         pos[i]      = static_cast<llama_pos>(i);
++        for (uint32_t axis = 1; axis < n_pos; ++axis) {
++            pos[axis * n_tokens + i] = static_cast<llama_pos>(i + (divergent && axis == 2 ? 7 : 0));
++        }
+         seq_id[i]   = &seq_ids[i];
+     }
+     llama_ubatch ubatch = {};
+@@ -161,7 +165,7 @@ bool populate(llama_kv_cache & kv, uint32_t n_tokens) {
+     ubatch.n_seq_tokens = n_tokens;
+     ubatch.n_seqs       = 1;
+     ubatch.n_seqs_unq   = 1;
+-    ubatch.n_pos        = 1;
++    ubatch.n_pos        = n_pos;
+     ubatch.pos          = pos.data();
+     ubatch.n_seq_id     = n_seq_id.data();
+     ubatch.seq_id       = seq_id.data();
+@@ -227,6 +231,40 @@ struct import_result {
+     std::string error;
+ };
+ 
++bool multi_axis_pages_require_lossless_positions(const llama_model & model) {
++    auto hparams = make_hparams(false);
++    hparams.rope_type = LLAMA_ROPE_TYPE_MROPE;
++    auto source = make_cache(model, hparams);
++    if (!populate(*source, page_token_count, true)) { return false; }
++    skippy_kv_page_desc desc{};
++    std::vector<uint8_t> payload;
++    std::string error;
++    if (!export_page(*source, page_token_count, desc, payload, error) ||
++            !(desc.flags & SKIPPY_KV_PAGE_FLAG_CANONICAL_POSITIONS)) { return false; }
++    auto target = make_cache(model, hparams);
++    auto unknown_positions = desc;
++    unknown_positions.flags &= ~uint64_t(SKIPPY_KV_PAGE_FLAG_CANONICAL_POSITIONS);
++    if (target->stage_import_kv_page(0, unknown_positions, payload.data(), payload.size(), error) ||
++            error.find("canonical secondary positions") == std::string::npos || target->seq_pos_max(0) != -1) {
++        return false;
++    }
++    bool unsupported = false, invalid = false;
++    if (target->stage_import_cachegen_kv_page(0, unknown_positions, nullptr, 0, 0,
++            error, unsupported, invalid, true) ||
++            error.find("canonical secondary positions") == std::string::npos || target->seq_pos_max(0) != -1) {
++        return false;
++    }
++    if (!target->stage_import_kv_page(0, desc, payload.data(), payload.size(), error)) { return false; }
++    skippy_kv_page_desc restored{};
++    std::vector<uint8_t> restored_payload;
++    if (!export_page(*target, page_token_count, restored, restored_payload, error) ||
++            restored.flags != desc.flags || restored_payload != payload) { return false; }
++    auto multimodal = make_cache(model, hparams);
++    if (!populate(*multimodal, page_token_count, true, true)) { return false; }
++    return !export_page(*multimodal, page_token_count, desc, payload, error) &&
++            error.find("differing secondary positions") != std::string::npos;
++}
++
+ import_result import_page(
+         llama_kv_cache &                  kv,
+         const skippy_kv_page_desc &       desc,
+@@ -255,6 +293,9 @@ int main() {
+     if (!cachegen_slots_preserve_other_sequences(*model)) {
+         return fail("CacheGen allocation can displace another sequence's SWA cells");
+     }
++    if (!multi_axis_pages_require_lossless_positions(*model)) {
++        return fail("native and CacheGen pages lost multi-axis position semantics");
++    }
+     const llama_hparams mla_hparams = make_hparams(true);
+     std::unique_ptr<llama_kv_cache> mla_kv = make_cache(*model, mla_hparams);
+     if (!populate(*mla_kv, page_token_count)) {
+diff --git a/tests/test-skippy-model-loader-accounting.cpp b/tests/test-skippy-model-loader-accounting.cpp
+index 22b92c0a8..4145b5b0b 100644
+--- a/tests/test-skippy-model-loader-accounting.cpp
++++ b/tests/test-skippy-model-loader-accounting.cpp
+@@ -1,5 +1,7 @@
+ #include "llama.h"
+ #include "llama-model-loader.h"
++#include "llama-model.h"
++#include "llama-context.h"
+ #include "skippy.h"
+ 
+ #include <cmath>
+@@ -140,6 +142,10 @@ static bool check_context_load_lifecycle(const char * model_path) {
+     ggml_context * synthetic_ctx_raw = synthetic_ctx.get();
+     const auto cpu_buft = ggml_backend_cpu_buffer_type();
+     loader.ctx_map.emplace(llama_model_loader::ctx_key{cpu_buft, /*lazy=*/false, /*resident=*/true}, std::move(accounting_ctx));
++    // A full GGUF also contains weights for metadata-only stage contexts.
++    // They must not hold progress below completion or keep mmap ranges alive.
++    auto nonresident = make_accounting_context(weight);
++    loader.ctx_map.emplace(llama_model_loader::ctx_key{cpu_buft, /*lazy=*/false, /*resident=*/false}, std::move(nonresident));
+     loader.init_mappings(false);
+ 
+     const size_t weight_size = ggml_nbytes(weight);
+@@ -214,6 +220,23 @@ static bool check_contextless_fallback(const char * model_path) {
+     return true;
+ }
+ 
++static bool check_router_is_not_mtp(const char * model_path) {
++    auto params = llama_model_default_params();
++    params.n_gpu_layers = 0;
++    llama_model * model = llama_model_load_from_file(model_path, params);
++    if (!model) { return false; }
++    model->hparams.n_layer_nextn = 1;
++    model->hparams.router_layer = model->hparams.n_layer_all - 1;
++    auto context_params = llama_context_default_params();
++    context_params.ctx_type = LLAMA_CONTEXT_TYPE_MTP;
++    context_params.n_ctx = 128;
++    auto * context = llama_init_from_model(model, context_params);
++    const bool rejected = context == nullptr;
++    llama_free(context);
++    llama_model_free(model);
++    return rejected;
++}
++
+ static bool check_multilane_context_capacity(const char * model_path) {
+     skippy_runtime_config config = skippy_runtime_config_default();
+     config.ctx_size = 256;
+@@ -261,6 +284,7 @@ int main(int argc, char ** argv) {
+     llama_backend_init();
+ 
+     if (!check_context_load_lifecycle(argv[1]) ||
++            !check_router_is_not_mtp(argv[1]) ||
+             !check_contextless_fallback(argv[1]) ||
+             !check_exact_resident_selection(argv[1]) ||
+             !check_multilane_context_capacity(argv[1])) {
+-- 
+2.56.0
+

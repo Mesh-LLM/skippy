@@ -22,6 +22,9 @@ inputs:
   windows-rocm:
     description: Pinned ROCm version whose HIP SDK is provisioned on the hosted Windows builder.
     default: ''
+  vulkan-version:
+    description: Pinned Vulkan SDK version for Linux or Windows builds.
+    default: ''
   containerized:
     description: Use the preinstalled toolchain in a Skippy compiler image.
     default: 'false'
@@ -65,6 +68,14 @@ runs:
       with:
         artifact: ${{ inputs.candidate-artifact }}
         sha: ${{ inputs.candidate-sha }}
+    - name: Set up the pinned macOS Rust toolchain
+      if: runner.os == 'macOS'
+      shell: bash
+      run: bash scripts/ci-macos-rust.sh
+    - name: Verify real AMD device access and pinned toolkit
+      if: inputs.runtime-id == 'linux-x86_64-rocm' && inputs.smoke == 'inference'
+      shell: bash
+      run: just ci-rocm-preflight
     - name: Provision NVIDIA CUDA on Windows
       if: inputs.windows-cuda != ''
       shell: bash
@@ -72,6 +83,13 @@ runs:
         CUDA_VERSION: ${{ inputs.windows-cuda }}
       run: |
         "$SKIPPY_PYTHON" scripts/ci-windows-cuda.py "$CUDA_VERSION"
+    - name: Provision the pinned Vulkan SDK
+      if: inputs.vulkan-version != ''
+      shell: bash
+      env:
+        VULKAN_VERSION: ${{ inputs.vulkan-version }}
+      run: |
+        just ci-vulkan-sdk "$VULKAN_VERSION"
     - name: Provision AMD HIP SDK on Windows
       if: inputs.windows-rocm != ''
       shell: pwsh
@@ -84,7 +102,7 @@ runs:
       run: bash scripts/ci-rocm-blas.sh
     - uses: ./.github/actions/cache
       with:
-        scope: package-${{ inputs.runtime-id }}-${{ inputs.compiler-image-digest || inputs.windows-cuda || inputs.windows-rocm || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}
+        scope: package-${{ inputs.runtime-id }}-${{ inputs.compiler-image-digest || inputs.windows-cuda || inputs.windows-rocm || inputs.vulkan-version || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}
         download-scope: ${{ inputs.build-cli == 'true' && 'host' || 'tools' }}
         build-paths: |
           target/debug
@@ -104,7 +122,7 @@ runs:
         fi
     - uses: ./.github/actions/sccache
       with:
-        scope: package-${{ inputs.runtime-id }}-${{ inputs.windows-cuda || inputs.windows-rocm || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}-${{ env.SKIPPY_CUDA_ARCHITECTURE_MODE }}
+        scope: package-${{ inputs.runtime-id }}-${{ inputs.windows-cuda || inputs.windows-rocm || inputs.vulkan-version || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}-${{ env.SKIPPY_CUDA_ARCHITECTURE_MODE }}
         native-windows-cuda-namespace: ${{ steps.cuda-cache.outputs.namespace }}
     - uses: ./.github/actions/native-source
     - name: Build and verify the platform CLI

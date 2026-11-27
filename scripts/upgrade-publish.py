@@ -58,12 +58,41 @@ def authenticated(*args):
         raise RuntimeError(f"authenticated {args[0]} failed") from None
 
 
+def description(candidate):
+    sha = validate_sha(candidate["candidate_sha"])
+    upstream = validate_sha(candidate["upstream_sha"])
+    run = os.environ["GITHUB_RUN_ID"]
+    if not run.isdecimal():
+        raise ValueError("invalid workflow run ID")
+    return (
+        "## Original problem\n\n"
+        f"Integrate llama.cpp `{upstream}` with Skippy's native stage implementation. Tracks #12.\n\n"
+        "## Diagnostics\n\n"
+        f"[Upstream revision](https://github.com/ggml-org/llama.cpp/commit/{upstream}). "
+        f"[Upgrade checks and repair evidence](https://github.com/{REPO}/actions/runs/{run}).\n\n"
+        "## Fix\n\n"
+        "Update the pinned native source, ordered patch queues, generated bindings and source-recipe identity. "
+        f"The exact independently verified candidate is `{sha}`.\n\n"
+        "## Compatibility\n\n"
+        "Native ABI and graph contracts are checked by the existing CI gates. The native source-recipe "
+        "identity changes with the pin and patch queue; runtime artifacts are built from this candidate.\n\n"
+        "## Validation\n\n"
+        "The controller's CPU `just lint`, `just test` and `just llama-check` gates passed, followed by "
+        "independent full CI on this exact candidate. The linked run records the selected platform "
+        "builds and smoke results. No additional live-model inference battery was run.\n\n"
+        "## Acceptance criteria\n\n"
+        "- [x] I ran the relevant local checks, or explained why they do not apply.\n"
+        "- [x] I agree to license my contributions under the Apache License, Version 2.0.\n"
+    )
+
+
 def publish(candidate):
     sha, upstream = candidate["candidate_sha"], candidate["upstream_sha"]
     current = open_upgrade(upstream)
     if current:
         print(current)
         return
+    body_text = description(candidate)
     branch = "automation/llama-" + sha[:12]
     authenticated("git", "push", f"https://github.com/{REPO}.git", f"{sha}:refs/heads/{branch}")
     existing = json.loads(authenticated("gh", "pr", "list", "--repo", REPO, "--head", branch,
@@ -75,12 +104,7 @@ def publish(candidate):
         return
     with tempfile.TemporaryDirectory() as tmp:
         body = Path(tmp) / "body.md"
-        body.write_text(
-            f"Upgrade Skippy's native inference engine to llama.cpp `{upstream}`.\n\n"
-            "This candidate passed the existing full CI, including synthetic graph and execution "
-            "contracts. No additional live-model inference battery was run. Tracks #12.\n\n"
-            f"Candidate: `{sha}`\n", encoding="utf-8",
-        )
+        body.write_text(body_text, encoding="utf-8")
         print(authenticated("gh", "pr", "create", "--repo", REPO, "--base", "main", "--head", branch,
                             "--title", f"Upgrade llama.cpp to {upstream[:12]}", "--body-file", str(body)))
 
