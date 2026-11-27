@@ -64,15 +64,17 @@ hf_cache_dir() {
   else echo "$HOME/.cache/huggingface/hub"; fi
 }
 
-# ensure_model QUANT -> local path of the pinned file in the HF cache
+# ensure_model QUANT -> local path of the pinned file in the HF cache.
+# Called inside $(...): everything it has to say goes to stderr, or the log lines end up
+# in the caller's `path` and the file check fails on a multi-line string.
 ensure_model() {
   local quant="$1" tool path
   if tool="$(command -v hf || command -v huggingface-cli)"; then
-    log "downloading (if absent) with $tool: $HF_REPO Inkling-2-Mini-$quant.gguf @$HF_REVISION"
+    log "downloading (if absent) with $tool: $HF_REPO Inkling-2-Mini-$quant.gguf @$HF_REVISION" 1>&2
     path="$("$tool" download "$HF_REPO" "Inkling-2-Mini-${quant}.gguf" --revision "$HF_REVISION" \
-      2>>"$OUT/hf_download_${quant}.log" | tail -n 1)"
+      2>>"$OUT/hf_download_${quant}.log" | awk '{sub(/^[[:space:]]*path:[[:space:]]*/, "")} /^\//{p=$0} END{print p}')"
   else
-    log "no hf CLI found; falling back to the huggingface_hub Python API"
+    log "no hf CLI found; falling back to the huggingface_hub Python API" 1>&2
     python3 -m pip install --user -q huggingface_hub >>"$OUT/hf_download_${quant}.log" 2>&1
     path="$(python3 - "$HF_REPO" "Inkling-2-Mini-${quant}.gguf" "$HF_REVISION" 2>>"$OUT/hf_download_${quant}.log" <<'PY'
 import sys
@@ -82,8 +84,8 @@ PY
 )"
   fi
   if [[ -z "$path" || ! -f "$path" ]]; then
-    log "model file not found for $quant (path '$path')"
-    tail -n 20 "$OUT/hf_download_${quant}.log" 2>/dev/null
+    log "model file not found for $quant (path '$path')" 1>&2
+    tail -n 20 "$OUT/hf_download_${quant}.log" 2>/dev/null 1>&2
     return 1
   fi
   printf '%s\n' "$path"

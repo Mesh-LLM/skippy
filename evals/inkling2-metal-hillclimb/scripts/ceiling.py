@@ -74,11 +74,23 @@ def main():
 
     inv = load(args.inventory)
     meta = inv["metadata"]
+
+    # Architecture keys are prefixed with the model's architecture (`inkling2_loop.*`
+    # here); older inventories used `inkling.*`. Resolve under the real prefix first, or
+    # the head counts read as zero and the KV bytes and attention FLOPs vanish silently.
+    arch = str(meta.get("general.architecture") or "")
+
+    def mkey(name, default=None):
+        for prefix in (arch, "inkling"):
+            if prefix and (prefix + "." + name) in meta:
+                return meta[prefix + "." + name]
+        return default
+
     remap = dict(item.split("=", 1) for item in args.remap)
     trunk = args.trunk_layers
     loop = parse_layers(args.loop_layers, trunk)
-    top_k = args.top_k or int(meta.get("inkling.expert_used_count") or 8)
-    experts = args.experts or int(meta.get("inkling.expert_count") or 128)
+    top_k = args.top_k or int(mkey("expert_used_count") or 8)
+    experts = args.experts or int(mkey("expert_count") or 128)
     visits = {layer: (args.loop_passes if layer in loop else 1) for layer in range(trunk)}
     total_visits = sum(visits.values())
 
@@ -108,12 +120,13 @@ def main():
             weights[cat] += tensor["bytes"]
 
     # Active parameters per token (prefill FLOPs use them), from element counts by dtype.
-    head_dim = int(meta.get("inkling.attention.key_length") or 0)
-    value_dim = int(meta.get("inkling.attention.value_length") or head_dim)
-    heads = int(meta.get("inkling.attention.head_count") or 0)
-    kv_heads = as_list(meta.get("inkling.attention.head_count_kv"), trunk)
-    swa = as_list(meta.get("inkling.attention.sliding_window_pattern"), trunk)
-    window = int(meta.get("inkling.attention.sliding_window") or 1024)
+    head_dim = int(mkey("attention.key_length") or 0)
+    value_dim = int(mkey("attention.value_length") or head_dim)
+    head_counts = as_list(mkey("attention.head_count"), trunk)
+    heads = int(max((h for h in head_counts if h), default=0))
+    kv_heads = as_list(mkey("attention.head_count_kv"), trunk)
+    swa = as_list(mkey("attention.sliding_window_pattern"), trunk)
+    window = int(mkey("attention.sliding_window") or 1024)
     bytes_per_elem = {"F32": 4.0, "F16": 2.0, "BF16": 2.0, "Q8_0": 34.0 / 32, "IQ4_NL": 18.0 / 32,
                       "Q4_0": 18.0 / 32, "Q4_K": 144.0 / 256, "Q6_K": 210.0 / 256, "Q5_K": 176.0 / 256,
                       "Q4_1": 20.0 / 32, "Q5_0": 22.0 / 32, "Q5_1": 24.0 / 32, "Q2_K": 84.0 / 256,

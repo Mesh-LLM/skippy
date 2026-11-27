@@ -4,7 +4,8 @@ name class and layer. Standard library only (Python >= 3.9); reads only the head
 
   python3 gguf_inventory.py MODEL.gguf --tag NAME [--out inventory.json]
 
-Prints one line, `INKLING2_RESULT NAME <json>`, so a job log carries the whole summary.
+Prints one line, `INKLING2_RESULT NAME <json>`, so a job log carries the whole summary
+(in `INKLING2_RESULT_PART` lines when it exceeds 6 KB; the job log drops longer lines).
 The byte counts come from the checkpoint (quantization included), which is what a
 decode step streams from memory; they are the input to the ceiling arithmetic.
 """
@@ -15,6 +16,22 @@ import os
 import re
 import struct
 import sys
+
+# A job log line must stay well under 64 KB: the lab agent retries an oversized append
+# forever and every later line of the run waits behind it. A large model's summary is
+# printed in parts that collect.py reassembles.
+LINE_LIMIT = 6000
+
+
+def print_result(tag, text):
+    if len(text) <= LINE_LIMIT:
+        print("INKLING2_RESULT %s %s" % (tag, text), flush=True)
+        return
+    parts = [text[i:i + LINE_LIMIT] for i in range(0, len(text), LINE_LIMIT)]
+    print("INKLING2_RESULT_PARTS %s %d" % (tag, len(parts)), flush=True)
+    for i, part in enumerate(parts, 1):
+        print("INKLING2_RESULT_PART %s %d %d %s" % (tag, i, len(parts), part), flush=True)
+
 
 # ggml_type -> (name, elements per block, bytes per block)
 GGML_TYPES = {
@@ -218,7 +235,7 @@ def main():
     if args.out:
         with open(args.out, "w") as f:
             f.write(text + "\n")
-    print("INKLING2_RESULT %s %s" % (args.tag, text))
+    print_result(args.tag, text)
     return 0
 
 

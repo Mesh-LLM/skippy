@@ -213,11 +213,27 @@ def main():
     return emit(result, args)
 
 
+# A job log line must stay well under 64 KB: the lab agent retries an oversized append
+# forever and every later line of the run waits behind it. The profile JSON with its raw
+# steps is several hundred KB, so it is printed in parts that collect.py reassembles.
+LINE_LIMIT = 6000
+
+
+def print_result(tag, text):
+    if len(text) <= LINE_LIMIT:
+        print("INKLING2_RESULT %s %s" % (tag, text), flush=True)
+        return
+    parts = [text[i:i + LINE_LIMIT] for i in range(0, len(text), LINE_LIMIT)]
+    print("INKLING2_RESULT_PARTS %s %d" % (tag, len(parts)), flush=True)
+    for i, part in enumerate(parts, 1):
+        print("INKLING2_RESULT_PART %s %d %d %s" % (tag, i, len(parts), part), flush=True)
+
+
 def emit(result, args):
     text = json.dumps(result, separators=(",", ":"))
     with open(args.out, "w") as f:
         f.write(text + "\n")
-    print("INKLING2_RESULT %s %s" % (args.tag, text), flush=True)
+    print_result(args.tag, text)
     brief = {k: result.get(k) for k in ("decode_step_count", "prefill_like_computes", "commands_missing", "per_step", "by_class")}
     print("profile summary: " + json.dumps(brief), file=sys.stderr, flush=True)
     return 0 if "error" not in result else 1
