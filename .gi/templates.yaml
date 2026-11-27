@@ -930,6 +930,84 @@
         "HF_HOME": "/mnt/model-store/huggingface",
         "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
       }
+    },
+    {
+      "key": "inkling2-metal-preflight",
+      "name": "Inkling 2 Metal host preflight",
+      "group": "Inference",
+      "target": {
+        "executor": "lab",
+        "selector": {
+          "os": {
+            "family": "macos"
+          },
+          "arch": {
+            "in": [
+              "aarch64"
+            ]
+          },
+          "accelerator": {
+            "backend": "metal"
+          },
+          "memory": {
+            "system_gib": {
+              "min": 64
+            }
+          },
+          "network": {
+            "in": [
+              "james-lab"
+            ]
+          }
+        }
+      },
+      "build": "",
+      "command": "cd \"$JIANYANG_REPO_DIR\" && bash evals/inkling2-metal-hillclimb/scripts/preflight.sh",
+      "budget": {
+        "max_usd": 0,
+        "max_duration_s": 600,
+        "grace_s": 30
+      },
+      "retain": "never"
+    },
+    {
+      "key": "inkling2-metal-baseline",
+      "name": "Inkling 2 Mini Metal decode baseline",
+      "group": "Inference",
+      "target": {
+        "executor": "lab",
+        "selector": {
+          "os": {
+            "family": "macos"
+          },
+          "arch": {
+            "in": [
+              "aarch64"
+            ]
+          },
+          "accelerator": {
+            "backend": "metal"
+          },
+          "memory": {
+            "system_gib": {
+              "min": 64
+            }
+          },
+          "network": {
+            "in": [
+              "james-lab"
+            ]
+          }
+        }
+      },
+      "build": "cd \"${repo_dir}\" && bash evals/inkling2-metal-hillclimb/scripts/bootstrap_tools.sh && just build backend=\"metal\"",
+      "budget": {
+        "max_usd": 0,
+        "max_duration_s": 14400,
+        "grace_s": 120
+      },
+      "retain": "never",
+      "command": "cd \"$JIANYANG_REPO_DIR\" && bash evals/inkling2-metal-hillclimb/scripts/run_baseline.sh"
     }
   ]
 }
