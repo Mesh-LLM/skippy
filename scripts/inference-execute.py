@@ -22,6 +22,7 @@ from lib.inference_inputs import admit, fixture, input_hashes, record
 from lib.inference_ladder import plan
 from lib.inference_admission import split_admissions_digest
 from lib.inference_probe import measure
+from lib.inference_prefill_diagnostic import capture as diagnostic_capture, require_cached
 
 
 def authority():
@@ -188,7 +189,8 @@ if __name__ == "__main__":
     parser.add_argument("mode")
     args = parser.parse_args()
     try:
-        with cancel_on_signal():
+        require_cached(fixture(args.model))
+        with cancel_on_signal(), diagnostic_capture():
             execute(args.profile, args.model, args.mode)
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt) as error:
         sys.exit(str(error))
