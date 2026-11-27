@@ -1,8 +1,8 @@
-From ef158eb319a95c174fab6627065df0ff93563210 Mon Sep 17 00:00:00 2001
+From 3f3e735ce498ef21ee91cf1ea903e6f5a8dcccfe Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Sun, 8 Nov 2026 20:18:33 +1100
-Subject: [PATCH 30/32] llama: zero KV pool cells as the high-water mark
- advances, not at creation
+Subject: [PATCH] llama: zero KV pool cells as the high-water mark advances,
+ not at creation
 
 Clearing the whole pool at creation makes every page resident before the
 first request: with four lanes at the default context that is 48 GiB charged
@@ -47,7 +47,7 @@ index 4383bd3ff..fced5e821 100644
      GGML_API enum ggml_backend_buffer_usage ggml_backend_buffer_get_usage     (ggml_backend_buffer_t buffer);
      GGML_API ggml_backend_buffer_type_t     ggml_backend_buffer_get_type      (ggml_backend_buffer_t buffer);
 diff --git a/ggml/src/ggml-backend.cpp b/ggml/src/ggml-backend.cpp
-index 7cf2c6580..6988537ed 100644
+index 7b4ef7aba..b6a601fc6 100644
 --- a/ggml/src/ggml-backend.cpp
 +++ b/ggml/src/ggml-backend.cpp
 @@ -385,6 +385,10 @@ size_t ggml_backend_buffer_get_alloc_size(ggml_backend_buffer_t buffer, const st
@@ -62,7 +62,7 @@ index 7cf2c6580..6988537ed 100644
      return ggml_backend_buft_is_host(ggml_backend_buffer_get_type(buffer));
  }
 diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
-index 1245efd8d..eb4a69a0f 100644
+index ee7840800..42c5c9436 100644
 --- a/src/llama-kv-cache.cpp
 +++ b/src/llama-kv-cache.cpp
 @@ -62,6 +62,14 @@ static void ggml_gen_hadamard(ggml_tensor * tensor) {
@@ -133,7 +133,7 @@ index 1245efd8d..eb4a69a0f 100644
      {
          const size_t memory_size_k     = size_k_bytes();
          const size_t memory_size_v     = size_v_bytes();
-@@ -470,9 +508,37 @@ void llama_kv_cache::clear(bool data) {
+@@ -467,9 +505,37 @@ void llama_kv_cache::clear(bool data) {
          for (auto & [_, buf] : ctxs_bufs) {
              ggml_backend_buffer_clear(buf.get(), 0);
          }
@@ -171,7 +171,7 @@ index 1245efd8d..eb4a69a0f 100644
  bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
      skippy_trace::scope trace("llama.kv_seq_rm", "seq", seq_id);
      // TODO: refactor [TAG_KV_CACHE_SHARE_CELLS]
-@@ -1381,6 +1447,14 @@ void llama_kv_cache::apply_ubatch(const slot_info & sinfo, const llama_ubatch &
+@@ -1366,6 +1432,14 @@ void llama_kv_cache::apply_ubatch(const slot_info & sinfo, const llama_ubatch &
  
      assert(ubatch.n_tokens == sinfo.n_stream()*sinfo.size());
  
@@ -187,10 +187,10 @@ index 1245efd8d..eb4a69a0f 100644
          for (uint32_t ii = 0; ii < sinfo.size(); ++ii) {
              const uint32_t i = s*sinfo.size() + ii;
 diff --git a/src/llama-kv-cache.h b/src/llama-kv-cache.h
-index 2be616364..5e4dd63cb 100644
+index 4bd818c34..e3f1cbbfa 100644
 --- a/src/llama-kv-cache.h
 +++ b/src/llama-kv-cache.h
-@@ -282,6 +282,21 @@ public:
+@@ -285,6 +285,21 @@ public:
      std::vector<uint32_t> find_chunked_cells(
              const llama_ubatch & ubatch, const llama_kv_cells & cells, uint32_t head_cur) const;
  
@@ -213,7 +213,7 @@ index 2be616364..5e4dd63cb 100644
      void apply_ubatch(const slot_info & sinfo, const llama_ubatch & ubatch);
  
 diff --git a/src/llama-memory.cpp b/src/llama-memory.cpp
-index 042aab608..80dbd10c8 100644
+index 80099e76a..46f1697af 100644
 --- a/src/llama-memory.cpp
 +++ b/src/llama-memory.cpp
 @@ -86,11 +86,13 @@ ggml_backend_buffer_ptr llama_memory_bufs::alloc_buf(ggml_context * ctx, ggml_ba
@@ -248,5 +248,5 @@ index 37d01ed11..b6b84c315 100644
      // the memory used by the tensors: the buffer sizes, or the simulated sizes if no_alloc is set
      std::map<ggml_backend_buffer_type_t, size_t> memory_breakdown() const;
 -- 
-2.43.0
+2.56.1
 

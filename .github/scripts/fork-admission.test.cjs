@@ -96,6 +96,8 @@ test('wrapper uses protected reusable pipelines, receives no fork artifacts and 
   assert.match(workflow, /uses: \.\/\.github\/workflows\/inference.yml/);
   const ci = workflow.split('\n  ci:\n')[1].split('\n  inference:\n')[0];
   assert.doesNotMatch(ci, /secrets|: write/);
+  // Branch PRs build CUDA in native mode; a different mode is a bigger build in another compiler-cache namespace.
+  assert.match(ci, /\n      cuda_architecture_mode: native\n/);
 });
 
 test('the reusable CI rejects other callers, stale heads and malformed protected routes', async () => {

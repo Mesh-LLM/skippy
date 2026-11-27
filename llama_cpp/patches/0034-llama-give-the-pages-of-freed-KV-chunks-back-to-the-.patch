@@ -1,8 +1,7 @@
-From 90f39c2bf6ed09ba619d9e2a47e48b85334529b7 Mon Sep 17 00:00:00 2001
+From 10daa0408eb557e98b5c1e18c99341f9ad52cd69 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Mon, 9 Nov 2026 10:27:08 +1100
-Subject: [PATCH 31/32] llama: give the pages of freed KV chunks back to the
- kernel
+Subject: [PATCH] llama: give the pages of freed KV chunks back to the kernel
 
 With the pool zeroed lazily, resident memory follows the high-water mark:
 cells a finished request held stay resident after seq_rm frees them, so a
@@ -29,7 +28,7 @@ Claude-Session: https://claude.ai/code/session_01QA3dWey3RBtBgDz1Tery9Y
  3 files changed, 177 insertions(+), 1 deletion(-)
 
 diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
-index a36b29e5a..7d099082c 100644
+index 42c5c9436..778c4de61 100644
 --- a/src/llama-kv-cache.cpp
 +++ b/src/llama-kv-cache.cpp
 @@ -15,13 +15,66 @@
@@ -99,7 +98,7 @@ index a36b29e5a..7d099082c 100644
  // orthonormal Walsh-Hadamard rotation matrix
  // note: res^2 == I
  static void ggml_gen_hadamard(ggml_tensor * tensor) {
-@@ -337,6 +390,8 @@ llama_kv_cache::llama_kv_cache(
+@@ -342,6 +395,8 @@ llama_kv_cache::llama_kv_cache(
          }
      }
  
@@ -108,7 +107,7 @@ index a36b29e5a..7d099082c 100644
      {
          const size_t memory_size_k     = size_k_bytes();
          const size_t memory_size_v     = size_v_bytes();
-@@ -504,7 +559,9 @@ void llama_kv_cache::clear(bool data) {
+@@ -506,7 +561,9 @@ void llama_kv_cache::clear(bool data) {
              ggml_backend_buffer_clear(buf.get(), 0);
          }
          cells_cleared = get_size();
@@ -118,7 +117,7 @@ index a36b29e5a..7d099082c 100644
  }
  
  void llama_kv_cache::clear_cells_through(uint32_t cell) {
-@@ -532,6 +589,88 @@ void llama_kv_cache::clear_eagerly() {
+@@ -534,6 +591,88 @@ void llama_kv_cache::clear_eagerly() {
          clear_cells_through(get_size() - 1);
      }
      clear_lazily = false;
@@ -207,7 +206,7 @@ index a36b29e5a..7d099082c 100644
  }
  
  bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
-@@ -634,6 +773,12 @@ bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
+@@ -624,6 +763,12 @@ bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
          }
      }
  
@@ -220,7 +219,7 @@ index a36b29e5a..7d099082c 100644
      return true;
  }
  
-@@ -756,6 +901,8 @@ void llama_kv_cache::seq_keep(llama_seq_id seq_id) {
+@@ -746,6 +891,8 @@ void llama_kv_cache::seq_keep(llama_seq_id seq_id) {
      if (new_head != cells.size() && new_head < head) {
          head = new_head;
      }
@@ -229,7 +228,7 @@ index a36b29e5a..7d099082c 100644
  }
  
  void llama_kv_cache::seq_add(llama_seq_id seq_id, llama_pos p0, llama_pos p1, llama_pos shift) {
-@@ -807,6 +954,8 @@ void llama_kv_cache::seq_add(llama_seq_id seq_id, llama_pos p0, llama_pos p1, ll
+@@ -797,6 +944,8 @@ void llama_kv_cache::seq_add(llama_seq_id seq_id, llama_pos p0, llama_pos p1, ll
      // If we freed up a slot, set head to it so searching can start there.
      // Otherwise we just start the next search from the beginning.
      head = new_head != cells.size() ? new_head : 0;
@@ -238,7 +237,7 @@ index a36b29e5a..7d099082c 100644
  }
  
  void llama_kv_cache::seq_div(llama_seq_id seq_id, llama_pos p0, llama_pos p1, int d) {
-@@ -1443,11 +1592,14 @@ void llama_kv_cache::apply_ubatch(const slot_info & sinfo, const llama_ubatch &
+@@ -1433,11 +1582,14 @@ void llama_kv_cache::apply_ubatch(const slot_info & sinfo, const llama_ubatch &
      assert(ubatch.n_tokens == sinfo.n_stream()*sinfo.size());
  
      // every cell this ubatch writes, and so every cell attention may read, lies below the mark
@@ -255,7 +254,7 @@ index a36b29e5a..7d099082c 100644
  
      for (uint32_t s = 0; s < sinfo.n_stream(); ++s) {
 diff --git a/src/llama-kv-cache.h b/src/llama-kv-cache.h
-index 5e4dd63cb..24212edb2 100644
+index e3f1cbbfa..6cda2cc51 100644
 --- a/src/llama-kv-cache.h
 +++ b/src/llama-kv-cache.h
 @@ -5,6 +5,7 @@
@@ -266,7 +265,7 @@ index 5e4dd63cb..24212edb2 100644
  #include <unordered_map>
  #include <string>
  #include <vector>
-@@ -297,6 +298,22 @@ public:
+@@ -300,6 +301,22 @@ public:
      // the K, V and K_idx tensors this cache allocated; a layer shared with another cache has none here
      std::vector<ggml_tensor *> cell_tensors;
  
@@ -290,10 +289,10 @@ index 5e4dd63cb..24212edb2 100644
      void apply_ubatch(const slot_info & sinfo, const llama_ubatch & ubatch);
  
 diff --git a/src/llama-kv-cells.h b/src/llama-kv-cells.h
-index 0e42a587a..1743c8fae 100644
+index 8775a4e6b..94caf7c83 100644
 --- a/src/llama-kv-cells.h
 +++ b/src/llama-kv-cells.h
-@@ -131,6 +131,13 @@ public:
+@@ -139,6 +139,13 @@ public:
          return pos[i] == -1;
      }
  
@@ -308,5 +307,5 @@ index 0e42a587a..1743c8fae 100644
          return used.size();
      }
 -- 
-2.43.0
+2.56.1
 

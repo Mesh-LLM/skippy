@@ -55,6 +55,10 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       profile: pr
+      # Same as a branch PR: build CUDA for the assigned GPU so the build is
+      # the same size and reads the same compiler cache. The workflow_call
+      # default is the release architecture set.
+      cuda_architecture_mode: native
       source_ref: ${{ needs.admission.outputs.source }}
       approved_fork_pr: ${{ needs.admission.outputs.number }}
       approved_fork_routes: ${{ needs.admission.outputs.routes }}

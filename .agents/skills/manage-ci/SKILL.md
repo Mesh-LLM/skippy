@@ -48,7 +48,7 @@ contract; no downstream product's workflow topology applies here.
   which runs it expects. Hosted offline
   automation gates Quality canary and package jobs; Quality canary gates package
   jobs whenever source checks apply. Full CI
-  runs Graph Contracts in parallel with thirteen build, package and smoke jobs.
+  runs Graph Contracts in parallel with fifteen build, package and smoke jobs.
   Each CPU job supplies a shared platform CLI to its backend jobs. Routine CI
   uses two device jobs and checks the three remaining CUDA archives on hosted
   compiler-image runners.
@@ -60,8 +60,15 @@ contract; no downstream product's workflow topology applies here.
   job or duplicate CLI build is needed. Restore candidate source before HIP
   preflight, retain BLAS device kernels, normalize cached numeric owners, and
   restore native workspace ownership after cache post hooks. The short plan
-  validates the whole manifest and excludes those five `full_only` jobs
-  independently of their smoke evidence policy. The package jobs verify their toolchains.
+  validates the whole manifest and excludes those seven `full_only` jobs
+  independently of their smoke evidence policy. Vulkan Linux x64 and Windows x64 packages use pinned Vulkan SDK tooling.
+  Full CI tests the exact Linux Vulkan archive on both existing x64 NVIDIA CUDA 13
+  and AMD ROCm pools; both source- and archive-bound vendor receipts are required
+  for release verification. NVIDIA uses the pool's existing GPU Actions container
+  directly (no Docker socket), with `libegl1` for headless driver initialization.
+  AMD uses the compiler job container with `/dev/dri` and RADV.
+  Windows Vulkan retains archive-only evidence.
+  The package jobs verify their toolchains.
   The lightweight CI gate checks the validated matrix and requires all applicable results.
 - `.github/workflows/fork-native.yml` handles approved fork CI completion using
   protected code and the same CI/inference reusable workflows. The PR aggregate
@@ -137,7 +144,7 @@ contract; no downstream product's workflow topology applies here.
   Only the publisher receives scoped publication credentials. It can publish only the
   exact candidate selected by successful full CI. The four established inference
   models retain their separate PR/manual/nightly/release workflow.
-- `ci/targets.json` owns four host definitions and thirteen runtime definitions.
+- `ci/targets.json` owns four host definitions and fifteen runtime definitions.
   `enabled_hosts` selects the active CI and release roster. Require the evidence
   declared for every release asset. Call out pending inference qualification
   for archive-only targets in the release notes.
@@ -173,6 +180,9 @@ contract; no downstream product's workflow topology applies here.
   The protected controller checks producer path, repository, event, attempt,
   source and live PR identity, and repeats selected CI rather than trusting fork
   artifacts or test claims. Unapproved code remains on the isolated route.
+  The fork's own `pull_request` run selects no automation, source or package
+  checks: it is only the approval gate, and the controller runs each selected
+  check once. A fork lint or test failure therefore appears after approval.
   Checkouts of the candidate in `ci.yml` set `allow-unsafe-pr-checkout` only
   when that controller supplied the PR; `actions/checkout` refuses fork code in
   a `workflow_run` workflow without it.

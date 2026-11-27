@@ -74,11 +74,11 @@ pub struct EmbeddedOpenAiStageOptions {
 }
 
 impl BinaryStageOptions {
-    /// Size known plans before opening the stage. A transport-only stage has
-    /// no proposal-window contract, so retain the historical two-input floor;
-    /// larger incoming windows still use checkpoint/replay fallback.
+    /// Reserve rollback for known speculative plans before opening the stage.
+    /// Plain transport workers need none; unplanned verification windows use
+    /// the existing checkpoint/replay fallback.
     pub(super) fn recurrent_rollback_tokens(&self) -> u32 {
-        let planned = self.openai.as_ref().map_or(2, |openai| {
+        let planned = self.openai.as_ref().map_or(0, |openai| {
             openai.speculative.recurrent_rollback_tokens(
                 (self.resolved_mtp_source() != MtpSource::Disabled)
                     .then_some(openai.native_mtp_max_tokens),
@@ -120,7 +120,11 @@ mod tests {
     fn options() -> BinaryStageOptions {
         BinaryStageOptions {
             tuning: Default::default(),
-            config: StageConfig::default(),
+            config: StageConfig {
+                stage_id: "worker".into(),
+                layer_end: 1,
+                ..StageConfig::default()
+            },
             topology: None,
             bind_addr: "127.0.0.1:0".parse().unwrap(),
             metrics_otlp_grpc: None,
@@ -143,13 +147,42 @@ mod tests {
     }
 
     #[test]
-    fn unknown_binary_verifiers_keep_a_compatibility_floor() {
+    fn ordinary_binary_workers_disable_recurrent_rollback() {
+        let options = options();
+        assert_eq!(options.recurrent_rollback_tokens(), 0);
+        assert_eq!(runtime_rollback_tokens(&options), 0);
+    }
+
+    #[test]
+    fn native_mtp_workers_retain_recurrent_rollback() {
         let mut options = options();
-        assert_eq!(options.recurrent_rollback_tokens(), 2);
+        options.native_mtp_enabled = true;
+        options.config.native_mtp_enabled = true;
+        assert_eq!(options.resolved_mtp_source(), MtpSource::Integrated);
+        assert_eq!(runtime_rollback_tokens(&options), 2);
+    }
+
+    #[test]
+    fn split_dflash_workers_reserve_their_verification_window() {
+        let mut options = options();
         options.split_dflash = Some(crate::split_dflash::SplitDFlashStage {
             max_draft_tokens: Some(7),
             ..Default::default()
         });
         assert_eq!(options.recurrent_rollback_tokens(), 8);
+        assert_eq!(runtime_rollback_tokens(&options), 8);
+        options.split_dflash = Some(Default::default());
+        assert_eq!(runtime_rollback_tokens(&options), 16);
+    }
+
+    fn runtime_rollback_tokens(options: &BinaryStageOptions) -> u32 {
+        let overrides = crate::runtime_state::RuntimeLaunchOverrides {
+            mtp_source: options.resolved_mtp_source(),
+            recurrent_rollback_tokens: options.recurrent_rollback_tokens(),
+            ..Default::default()
+        };
+        crate::runtime_state::runtime_config_from_stage_config(&options.config, &overrides)
+            .unwrap()
+            .recurrent_rollback_tokens
     }
 }

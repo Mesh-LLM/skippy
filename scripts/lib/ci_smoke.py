@@ -13,6 +13,7 @@ from pathlib import Path
 from . import ci_artifacts as artifacts
 from .ci_process import command, environment, start, stop
 from .ci_targets import require_host, validate_native_identity
+from .ci_vulkan import preflight as vulkan_preflight
 
 
 def verify_product(host, runtime, product_input, product):
@@ -74,7 +75,8 @@ def curl(args, seconds, *, local=True):
 
 
 def require_device(logs, server, deadline, backend):
-    prefixes = {"cuda": ("CUDA",), "metal": ("MTL", "Metal"), "rocm": ("ROCm", "HIP")}[backend]
+    prefixes = {"cuda": ("CUDA",), "metal": ("MTL", "Metal"), "rocm": ("ROCm", "HIP"),
+                "vulkan": ("Vulkan",)}[backend]
     readers = [path.open("rb") for path in logs]
     selected = offloaded = False
     try:
@@ -135,8 +137,10 @@ def smoke(host, runtime, product_input):
         raise ValueError("SKIPPY_CI_MODEL must point at the pinned Qwen3 dense fixture")
     model = Path(model_path).resolve(strict=True)
     backend, variant = runtime["backend"], runtime["id"]
-    gpu = backend != "cpu"
     output = product_input / "evidence"
+    vulkan_vendor = os.environ.get("SKIPPY_CI_VULKAN_VENDOR")
+    vulkan_devices = vulkan_preflight(vulkan_vendor, output) if backend == "vulkan" else None
+    gpu = backend != "cpu"
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         product = root / "product"
@@ -171,4 +175,6 @@ def smoke(host, runtime, product_input):
             "source": artifacts.source(), "variant": variant, "backend": backend,
             "archive_sha256": artifacts.digest(product_input / f"skippy-{variant}.tar.gz"),
             "gpu_offload_required": gpu, "model_sha256": digest, "response": response,
+            **({"vulkan_vendor": vulkan_vendor, "vulkan_devices": vulkan_devices}
+               if vulkan_devices is not None else {}),
         })
