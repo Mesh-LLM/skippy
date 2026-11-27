@@ -1,0 +1,36 @@
+From 03b26bfb832c874ca7442a6f28e5d15035ea898e Mon Sep 17 00:00:00 2001
+From: Skippy contributors <ci@skippy.local>
+Date: Sat, 28 Nov 2026 01:39:44 +1100
+Subject: [PATCH] ggml-cuda: let GGML_CUDA_INTEGRATED report integrated devices
+
+Upstream reports every CUDA device as discrete (#16308), to avoid the
+corrupted output seen on Jetson Orin (#15034), whose cause was never
+found. A discrete device cannot read CUDA host buffers, so on a GB10
+every graph input is copied from host memory to device memory before a
+graph runs, although on that chip both are the same memory.
+
+GGML_CUDA_INTEGRATED=1 restores the device's own integrated flag, so the
+scheduler leaves graph inputs in host buffers for kernels to read in
+place. It stays off by default until the corruption is understood; the
+switch exists to reproduce it.
+---
+ ggml/src/ggml-cuda/ggml-cuda.cu | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
+index d28665fea..7943360f1 100644
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -357,7 +357,11 @@ static ggml_cuda_device_info ggml_cuda_init() {
+ 
+         info.default_tensor_split[id] = total_vram;
+         total_vram += device_vram;
+-        info.devices[id].integrated = false; // Temporarily disabled due to issues with corrupted output (e.g. #15034)
++        // off unless asked: upstream reports corrupted output on integrated devices (#15034)
++        info.devices[id].integrated = prop.integrated && ggml_cuda_env_flag("GGML_CUDA_INTEGRATED");
++        if (info.devices[id].integrated) {
++            GGML_LOG_INFO("%s: device %d reads host buffers in place (GGML_CUDA_INTEGRATED)\n", __func__, id);
++        }
+         info.devices[id].nsm        = prop.multiProcessorCount;
+         info.devices[id].smpb       = prop.sharedMemPerBlock;
+         info.devices[id].warp_size  = prop.warpSize;
