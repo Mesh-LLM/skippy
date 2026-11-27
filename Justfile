@@ -201,6 +201,10 @@ inference-execute profile model mode:
     @"{{ automation_python }}" scripts/inference-execute.py "$@"
 
 [positional-arguments]
+inference-paired model mode baseline:
+    @"{{ automation_python }}" scripts/inference-paired.py "$@"
+
+[positional-arguments]
 inference-cancel ledger="target/ci-evidence/inference/jobs.json":
     @"{{ automation_python }}" scripts/inference-dispatch.py cancel "$@"
 

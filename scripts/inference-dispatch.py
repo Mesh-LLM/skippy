@@ -16,6 +16,7 @@ from lib.inference_ladder import plan
 from lib.inference_nightly_metrics import collect_nightly
 from lib.inference_throughput import collect
 from lib.jy_qualification import Pilot, placement
+from lib.inference_paired_collect import collect_pairs
 
 TERMINAL = {"succeeded", "failed", "cancelled", "expired"}
 FAILURE = TERMINAL - {"succeeded"}
@@ -119,8 +120,12 @@ def record(ledger, identifiers):
         temporary.unlink(missing_ok=True)
 
 
-def dispatch(pilot, profile, sha, output, configuration, collect_public=False):
+def dispatch(pilot, profile, sha, output, configuration, collect_public=False, baseline=None):
     result = plan(profile, sha)
+    if profile == "pr":
+        if baseline is None or not re.fullmatch(r"[0-9a-f]{40}", baseline):
+            raise ValueError("PR comparisons require an admitted immutable main SHA")
+        result["baseline_sha"] = baseline
     if configuration is not None:
         result["rows"] = [row for row in result["rows"] if row["id"] == configuration]
         if len(result["rows"]) != 1:
@@ -133,7 +138,7 @@ def dispatch(pilot, profile, sha, output, configuration, collect_public=False):
     # Manual qualification may queue behind another PR's atomic Spark pair;
     # a PR profile waits for placement instead of failing fast, and the job
     # timeout in inference.yml carries the same headroom.
-    deadline = time.monotonic() + (5400 if profile == "pr" else 21000)
+    deadline = time.monotonic() + (15000 if profile == "pr" else 21000)
     try:
         for row in result["rows"]:
             identity, mode = row["id"], row["mode"]
@@ -147,6 +152,8 @@ def dispatch(pilot, profile, sha, output, configuration, collect_public=False):
                            "model_key": model_key},
                 "idempotency_key": f"inference-{run_id}-{profile}-{attempt}-{identity}-{sha}",
             }
+            if profile == "pr":
+                body["inputs"]["baseline_sha"] = baseline
             launched = launch(pilot, f"/v1/repos/skippy/templates/{template}/launch", body,
                               deadline, mode == "split")
             handle = resource_id(launched.get("job_id"))
@@ -154,6 +161,8 @@ def dispatch(pilot, profile, sha, output, configuration, collect_public=False):
             record(ledger, identifiers)
             write_json(output / f"{identity}-launch.json", launched)
             job = wait(pilot, handle, identity, sha, output, deadline)
+            if profile == "pr":
+                collect_pairs(pilot, job, row, sha, baseline, output)
             if collect_public:
                 collect_nightly(pilot, job, row, sha, output, model_key, profile)
             elif profile == "pr":
@@ -178,12 +187,13 @@ def main():
     action.add_argument("output", type=Path)
     action.add_argument("configuration", nargs="?")
     action.add_argument("--collect-public", action="store_true")
+    action.add_argument("--baseline", help="Protected admission's immutable main SHA")
     actions.add_parser("cancel").add_argument("ledger", type=Path)
     actions.add_parser("control-preflight")
     args = parser.parse_args()
     pilot = Pilot()
     if args.action == "dispatch":
-        dispatch(pilot, args.profile, args.sha, args.output, args.configuration, args.collect_public)
+        dispatch(pilot, args.profile, args.sha, args.output, args.configuration, args.collect_public, args.baseline)
     elif args.action == "cancel":
         cancel(pilot, args.ledger)
     else:

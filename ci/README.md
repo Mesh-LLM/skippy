@@ -172,6 +172,46 @@ The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
 configuration and native-attempt identity, updates only its bot-owned comment,
 and refuses to replace results for a newer commit or workflow attempt.
 
+PR throughput comparisons pin current protected main during admission, regardless
+of the latest nightly outcome. Each PR-profile native job builds that main commit
+in a separate disposable worktree and retains the candidate build. Both revisions
+run inside the same exclusive job or atomic two-Spark formation. The two roles
+keep their placement and wait at a barrier after each restarted server arm.
+Build hashes, source commits, host/kernel/driver identities, raw responses and
+client timings remain in the lab evidence. All builds finish before measurement.
+
+The fixed design runs six main/main pairs for noise calibration, followed by six
+main/candidate pairs, alternating A/B and B/A order. Every arm repeats each of
+the three prompt shapes three times. A shape-matched 64-token warmup precedes
+each uncached 128-token measured response at concurrency one. Prefixes differ
+between repetitions; cached or truncated responses invalidate the evidence.
+Quality, offload, streaming and native split admission checks run for every arm.
+No changes to the workload fixtures are accepted between the two revisions.
+
+The controller recomputes per-shape server-phase rates and paired log-ratio
+Student-t intervals (six pairs, df=5, pointwise 95%). It does not treat nested
+requests as independent rounds or combine different prompt lengths. A/A noise
+is the maximum absolute log-interval endpoint, converted back to a percentage.
+A performance verdict requires the candidate interval to clear that envelope;
+an A/A interval excluding equality, or an envelope above 5%, makes the comparison
+inconclusive. These per-metric intervals have no matrix-wide multiplicity
+correction. Qualification still tests correctness and complete evidence;
+inconclusive performance is not a claimed win or loss. The PR table reports the
+interval and noise alongside each estimate. Historical runs never replace a
+missing paired comparison.
+
+Scheduled PR-profile smoke rows run the same design with main in both arms;
+their paired receipts retain the noise check in Actions artifacts. The twelve
+AgentX workloads and their saved historical baseline policy are separate.
+The paired native budget is four hours, with additional controller cleanup time.
+Offline protocol, statistics and reporting checks run with `just ci-automation`.
+They do not establish device qualification or a measured noise floor.
+
+Deployment requires the protected controller to reach main and JY's installed
+`.gi/templates.yaml` definitions to be synced. Before that controller is merged,
+old controllers retain their legacy smoke behavior through the template's
+explicit `legacy` default; they cannot produce a paired comparison receipt.
+
 The shared report renderer takes normalized qualification JSON. It renders
 Mermaid charts for Actions summaries and saves the Hugging Face card’s PNG
 charts in `charts/` beside its README. PNG export uses the reporting

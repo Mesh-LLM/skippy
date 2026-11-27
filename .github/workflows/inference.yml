@@ -98,6 +98,7 @@ jobs:
     outputs:
       source: ${{ steps.admission.outputs.source || github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.sha }}
       profile: ${{ steps.admission.outputs.profile || 'pr' }}
+      baseline: ${{ steps.admission.outputs.baseline || steps.admission.outputs.source }}
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       # Credentialed controller source always comes from protected main.
@@ -131,7 +132,7 @@ jobs:
       max-parallel: 3
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
-    timeout-minutes: ${{ matrix.profile == 'pr' && 100 || 360 }}
+    timeout-minutes: ${{ matrix.profile == 'pr' && 260 || 360 }}
     env:
       EVIDENCE: target/ci-evidence/inference-${{ matrix.id }}
     steps:
@@ -145,11 +146,13 @@ jobs:
           SOURCE_SHA: ${{ needs.plan.outputs.source }}
           PROFILE: ${{ matrix.profile }}
           CONFIGURATION: ${{ matrix.configuration }}
+          BASELINE_SHA: ${{ needs.plan.outputs.baseline }}
           NIGHTLY_PUBLICATION: ${{ needs.plan.outputs.profile == 'nightly' && github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'Mesh-LLM/skippy' }}
           JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
         run: |
           flags=()
           if [[ "$NIGHTLY_PUBLICATION" == true ]]; then flags+=(--collect-public); fi
+          if [[ "$PROFILE" == pr ]]; then flags+=(--baseline "$BASELINE_SHA"); fi
           just inference-dispatch "$PROFILE" "$SOURCE_SHA" "$EVIDENCE" "$CONFIGURATION" "${flags[@]}"
       - name: Cancel outstanding JY jobs and formations
         if: cancelled() || failure()
@@ -270,6 +273,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ needs.plan.outputs.source || github.event.pull_request.head.sha }}
+          BASELINE_SHA: ${{ needs.plan.outputs.baseline }}
           PLAN: ${{ needs.plan.result }}
           REQUIRED: 'true'
           RESULT: ${{ needs.qualification.result }}

@@ -513,7 +513,7 @@
       }
     },
     {
-      "name": "Short Spark PR inference smoke",
+      "name": "Paired Spark PR inference qualification",
       "group": "Inference",
       "target": {
         "executor": "lab",
@@ -640,23 +640,30 @@
             }
           ],
           "default": "Qwen3.5-4B"
+        },
+        {
+          "key": "baseline_sha",
+          "label": "Admitted main commit",
+          "kind": "text",
+          "required": true,
+          "default": "legacy"
         }
       ],
       "budget": {
         "max_usd": 0,
-        "max_duration_s": 1800,
+        "max_duration_s": 14400,
         "grace_s": 60
       },
       "retain": "never",
       "key": "inference-pr-standalone",
-      "command": "cd \"$JIANYANG_REPO_DIR\" && just inference-execute ${profile} ${model_key} standalone",
+      "command": "cd \"$JIANYANG_REPO_DIR\" && just inference-paired ${model_key} standalone ${baseline_sha}",
       "env": {
         "HF_HOME": "/mnt/model-store/huggingface",
         "HF_HUB_CACHE": "/mnt/model-store/huggingface/hub"
       }
     },
     {
-      "name": "Short Spark PR inference smoke",
+      "name": "Paired Spark PR inference qualification",
       "group": "Inference",
       "target": {
         "executor": "lab",
@@ -895,16 +902,23 @@
               "label": "spark-001272"
             }
           ]
+        },
+        {
+          "key": "baseline_sha",
+          "label": "Admitted main commit",
+          "kind": "text",
+          "required": true,
+          "default": "legacy"
         }
       ],
       "budget": {
         "max_usd": 0,
-        "max_duration_s": 1800,
+        "max_duration_s": 14400,
         "grace_s": 60
       },
       "retain": "never",
       "key": "inference-pr-split",
-      "command": "cd \"$JIANYANG_REPO_DIR\" && just inference-execute ${profile} ${model_key} split",
+      "command": "cd \"$JIANYANG_REPO_DIR\" && just inference-paired ${model_key} split ${baseline_sha}",
       "roles": [
         {
           "name": "leader",

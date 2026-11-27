@@ -16,9 +16,13 @@ RECORD = ("Requests traverse a gateway and inference workers; keep their routing
           "and cache state consistent.")
 
 
-def payload(model, index, warmup):
+def payload(model, index, warmup, repetition=None):
     # Different early tokens prevent prefix reuse; equal shapes warm the same kernels.
     prefix = "A" if warmup else "B"
+    if repetition is not None:
+        if type(repetition) is not int or not 0 <= repetition < 3:
+            raise ValueError("invalid repeated probe index")
+        prefix = chr(65 + repetition * 6 + index * 2 + (0 if warmup else 1))
     prompt = f"{prefix}{index}\n" + "\n".join(
         f"Record {item}: {RECORD}" for item in range(PARAGRAPHS[index])
     ) + "\nWrite a detailed engineering analysis of this service, with concrete examples."
@@ -55,9 +59,10 @@ def validate_evidence(evidence, model):
             or evidence["status"] != "passed" or len(evidence["samples"]) != len(PARAGRAPHS)):
         raise ValueError("incomplete warm throughput probe evidence")
     responses = []
+    repetition = evidence.get("repetition")
     for index, sample in enumerate(evidence["samples"]):
-        warm = validate_response(sample["warmup"], payload(model, index, True))
-        measured = validate_response(sample["measured"], payload(model, index, False))
+        warm = validate_response(sample["warmup"], payload(model, index, True, repetition))
+        measured = validate_response(sample["measured"], payload(model, index, False, repetition))
         if warm != measured:
             raise ValueError("throughput warmup and measurement have different prompt shapes")
         responses.append(sample["measured"]["response"])
@@ -76,18 +81,20 @@ def send(request, sample):
         sample["client_ms"] = (time.perf_counter_ns() - started) / 1_000_000
 
 
-def measure(model, output):
+def measure(model, output, repetition=None):
     evidence = {"schema_version": 1, "workload": WORKLOAD, "status": "incomplete", "samples": []}
+    if repetition is not None:
+        evidence["repetition"] = repetition
     try:
         for index in range(len(PARAGRAPHS)):
             sample = {}
             evidence["samples"].append(sample)
             sample["warmup"] = {}
-            send(payload(model, index, True), sample["warmup"])
-            validate_response(sample["warmup"], payload(model, index, True))
+            send(payload(model, index, True, repetition), sample["warmup"])
+            validate_response(sample["warmup"], payload(model, index, True, repetition))
             sample["measured"] = {}
-            send(payload(model, index, False), sample["measured"])
-            validate_response(sample["measured"], payload(model, index, False))
+            send(payload(model, index, False, repetition), sample["measured"])
+            validate_response(sample["measured"], payload(model, index, False, repetition))
         evidence["status"] = "passed"
         validate_evidence(evidence, model)
     except Exception as error:

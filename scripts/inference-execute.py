@@ -117,7 +117,7 @@ def acknowledge_worker():
             connection.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 22\r\nConnection: close\r\n\r\n" + body)
 
 
-def execute(profile, key, mode):
+def execute(profile, key, mode, repetitions=1):
     sha, gpu = authority()
     result = plan(profile, sha)
     if not any(row["id"] == f"{key}-{mode}" for row in result["rows"]):
@@ -161,7 +161,10 @@ def execute(profile, key, mode):
             score(coordinate, output, profile)
             if profile == "pr":
                 streaming(coordinate, output)
-                measure(coordinate, output)
+                for repetition in range(repetitions):
+                    probe_output = output if repetition == 0 else output / f"probe-{repetition}"
+                    probe_output.mkdir(parents=True, exist_ok=True)
+                    measure(coordinate, probe_output, repetition if repetitions > 1 else None)
                 scope = "GPU startup, deterministic endpoint repeats and bounded streaming smoke"
             else:
                 performance(profile, coordinate, context, output, inputs)
