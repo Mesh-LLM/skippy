@@ -21,7 +21,7 @@ function results({ automation = true, code = true, packages = false, native = fa
   if (automation) required.push('automation');
   if (selected) required.push('plan');
   if (code) required.push('quality');
-  if (full) required.push('native_contracts', 'smoke_linux_x86_64_vulkan', ...packageJobs);
+  if (full) required.push('native_contracts', 'smoke_linux_x86_64_vulkan_nvidia', 'smoke_linux_x86_64_vulkan_amd', ...packageJobs);
   else if (packages) required.push(...prPackages);
   if (native) required.push('native_contracts');
   if (release) required.push(...releaseSmokes);
@@ -85,21 +85,25 @@ test('separate device smoke consumes prebuilt artifacts without restoring build 
   assert.match(action, /device-evidence-\$\{\{ inputs\.runtime_id \}\}/);
 });
 
-test('full Vulkan smoke reuses NVIDIA and AMD pools and requires both vendor archives', () => {
-  const smoke = workflow.split('\n  smoke_linux_x86_64_vulkan:\n')[1].split('\n  gate:\n')[0];
-  assert.match(smoke, /needs: \[plan, package_linux_x86_64_vulkan\]/);
-  for (const vendor of ['nvidia', 'amd']) assert.match(smoke, new RegExp(`vendor: ${vendor}`));
-  assert.match(smoke, /jy-rnr_p0zx3thw895vrka/);
-  assert.match(smoke, /jy-rnr_gsxt2m73mgpcbbh/);
-  assert.match(smoke, /--gpus all/);
-  assert.match(smoke, /--device=\/dev\/dri/);
-  assert.match(smoke, /NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics/);
-  assert.match(smoke, /download-package: 'true'/);
-  assert.match(smoke, /evidence-suffix: -\$\{\{ matrix.vendor \}\}/);
-  const needs = results({ full: true });
-  for (const result of ['skipped', 'failure', 'cancelled']) {
-    needs.smoke_linux_x86_64_vulkan.result = result;
-    assert.throws(() => gate(needs), /smoke_linux_x86_64_vulkan must be success/);
+test('full Vulkan smoke uses literal NVIDIA and AMD pool routes and requires both results', () => {
+  for (const [vendor, group, device] of [
+    ['nvidia', 'jy-rnr_p0zx3thw895vrka', '--gpus all'],
+    ['amd', 'jy-rnr_gsxt2m73mgpcbbh', '--device=/dev/dri'],
+  ]) {
+    const key = `smoke_linux_x86_64_vulkan_${vendor}`;
+    const smoke = workflow.split(`\n  ${key}:\n`)[1].split(/\n  \w+:\n/)[0];
+    assert.match(smoke, /needs: \[plan, package_linux_x86_64_vulkan\]/);
+    assert.ok(smoke.includes(`group: ${group}\n`));
+    assert.ok(smoke.includes(device));
+    assert.ok(smoke.includes(`SKIPPY_CI_VULKAN_VENDOR: ${vendor}\n`));
+    assert.ok(smoke.includes(`evidence-suffix: -${vendor}\n`));
+    assert.doesNotMatch(smoke, /matrix\./);
+    assert.match(smoke, /download-package: 'true'/);
+    const needs = results({ full: true });
+    for (const result of ['skipped', 'failure', 'cancelled']) {
+      needs[key].result = result;
+      assert.throws(() => gate(needs), new RegExp(`${key} must be success`));
+    }
   }
 });
 
@@ -516,7 +520,7 @@ test('main can reuse only a receipt for the exact release dispatch and candidate
 
 test('every candidate checkout opts in to fork code only for the approved-fork controller (real #222 context)', () => {
   const refs = workflow.match(/^ +ref: \$\{\{ env\.SKIPPY_CI_SOURCE_REF \}\}\n.*$/gm);
-  assert.equal(refs.length, 23);
+  assert.equal(refs.length, 24);
   for (const ref of refs) assert.match(ref, /\n +allow-unsafe-pr-checkout: \$\{\{ inputs\.approved_fork_pr != '' \}\}$/);
   assert.equal(workflow.match(/allow-unsafe-pr-checkout:/g).length, refs.length);
 });
