@@ -1,0 +1,403 @@
+From 5d1cccbd016d8fec9f53ca6a82f6405fee1f3330 Mon Sep 17 00:00:00 2001
+From: Skippy contributors <ci@skippy.local>
+Date: Sat, 28 Nov 2026 02:34:42 +1100
+Subject: [PATCH 52/52] skippy: keep resident recurrent checkpoints in shared
+ recurrent cells
+
+A resident prefix save copied the lane's recurrent state, 50 MiB for
+qwen35-4b, into pinned host memory, and every restore copied it back. In
+a GB10 rate-run trace, 104 saves took a median 1.5 ms, and the 16 that
+grew the pinned pool took about 20 ms each, all under the runtime lock.
+
+Where the recurrent memory has resident cells, a save now shares the
+lane's cell with the cache sequence and a restore shares it with the
+restoring lane, so neither copies the state. The lane's next decode
+moves it to a free cell through the gather every decode runs anyway, and
+the checkpoint's cell is never written. Exporting a checkpoint in a cell
+writes that cell, so cold offload and handoff read the same bytes.
+
+Each checkpoint in a cell holds one of the n_rs_resident cells, which
+always leaves a lane a free cell to move to. With none free, or with a
+rollback pending on the lane, the state is copied to host memory as
+before. A cell counts toward the resident byte budget as the copy it
+replaces, so eviction is unchanged. A lane that shares a cell cannot
+roll back until a decode has moved it to a cell of its own.
+
+Integrated GPUs get four cells per lane by default, since their device
+memory is host memory; each costs a recurrent state and its snapshot
+rows. Other devices, Metal included, get none, as before.
+SKIPPY_RESIDENT_CELLS overrides the count.
+
+skippy_sampling_history_{qwen35,granitehybrid}_resident_cells run the
+resident ownership test with one cell: its checkpoint must be in the
+cell, and a second checkpoint a host copy.
+---
+ src/CMakeLists.txt                    |   8 ++
+ src/skippy/model_loading.cpp          |  21 ++++-
+ src/skippy/resident_prefix.cpp        | 119 ++++++++++++++++++++------
+ src/skippy/runtime_types.h            |  36 +++++++-
+ src/skippy/tests/sampling_history.cpp |  13 +++
+ 5 files changed, 167 insertions(+), 30 deletions(-)
+
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 86e25d60f..272448706 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -494,6 +494,14 @@ if (LLAMA_STAGE_BUILD_TESTS)
+     endif()
+     add_skippy_sampling_history_tests(qwen35 skippy-noalloc-qwen35-fixture recurrent)
+     add_skippy_sampling_history_tests(granitehybrid skippy-noalloc-granite-hybrid-fixture recurrent)
++    function(add_skippy_resident_cell_test family fixture)
++        add_test(NAME skippy_sampling_history_${family}_resident_cells
++            COMMAND skippy-sampling-history "${SKIPPY_MODEL_FIXTURE_DIR}/${family}-dense.gguf" resident recurrent)
++        set_tests_properties(skippy_sampling_history_${family}_resident_cells PROPERTIES
++            FIXTURES_REQUIRED ${fixture} ENVIRONMENT "SKIPPY_RESIDENT_CELLS=1")
++    endfunction()
++    add_skippy_resident_cell_test(qwen35 skippy-noalloc-qwen35-fixture)
++    add_skippy_resident_cell_test(granitehybrid skippy-noalloc-granite-hybrid-fixture)
+ 
+     function(add_skippy_sampling_history_state_tests family fixture state)
+         add_test(NAME skippy_sampling_history_${family}_state
+diff --git a/src/skippy/model_loading.cpp b/src/skippy/model_loading.cpp
+index 5f100aa46..f71962baa 100644
+--- a/src/skippy/model_loading.cpp
++++ b/src/skippy/model_loading.cpp
+@@ -565,6 +565,11 @@ static bool skippy_resolve_tristate(int32_t tristate, bool derived_default) {
+     return derived_default;
+ }
+ 
++static bool skippy_on_integrated_devices(const llama_model & model) {
++    return !model.devices.empty() && std::all_of(model.devices.begin(), model.devices.end(),
++            [](const auto & device) { return ggml_backend_dev_type(device.dev) == GGML_BACKEND_DEVICE_TYPE_IGPU; });
++}
++
+ static bool skippy_context_capacity(
+         const skippy_runtime_config * config,
+                          uint32_t   lane_count,
+@@ -743,6 +748,7 @@ enum skippy_status skippy_finish_model_open(
+         params.cb_eval = skippy_glm_dsa_op_timing_cb;
+         params.cb_eval_user_data = stage_model;
+     }
++    uint32_t n_rs_resident = 0;
+     if (llm_arch_is_recurrent(model->arch) || llm_arch_is_hybrid(model->arch)) {
+         params.n_seq_max = std::max<uint32_t>(params.n_seq_max, std::max<uint32_t>(2, stage_model->lane_count * 2));
+         // Rollback snapshots for in-place speculative verify: a window of N
+@@ -752,6 +758,13 @@ enum skippy_status skippy_finish_model_open(
+         const uint32_t planned_rs_seq = config != nullptr ? config->recurrent_rollback_tokens : 2;
+         const uint32_t default_rs_seq = std::min<uint32_t>(planned_rs_seq, 64);
+         params.n_rs_seq = skippy_env_u32("SKIPPY_RS_SEQ", default_rs_seq, 0, 64);
++        // Recurrent cells for resident checkpoints, by default only where device
++        // memory is host memory: each costs a state and its snapshot rows. Four
++        // per lane held every checkpoint of the 4-lane rate runs.
++        // SKIPPY_RESIDENT_CELLS overrides it; 0 copies every checkpoint to the host.
++        const uint32_t default_cells = skippy_on_integrated_devices(*model) ? 4 * stage_model->lane_count : 0;
++        n_rs_resident = skippy_env_u32("SKIPPY_RESIDENT_CELLS", default_cells, 0, LLAMA_MAX_SEQ);
++        stage_model->resident_cells = skippy_resident_cells(n_rs_resident);
+         params.kv_unified = true;
+     }
+     const auto reject_configuration = [&](const char * message) {
+@@ -781,7 +794,8 @@ enum skippy_status skippy_finish_model_open(
+         return reject_configuration("an exporting stage with multiple lanes requires a unified KV cache");
+     }
+ 
+-    const skippy_graph_build_inputs graph_build_inputs = skippy_graph_build_inputs_from_config(config);
++    skippy_graph_build_inputs graph_build_inputs = skippy_graph_build_inputs_from_config(config);
++    graph_build_inputs.n_rs_resident = n_rs_resident;
+     skippy_trace::scope context_trace("llama.context_init");
+     context_trace.set_detail("target");
+     stage_model->ctx = llama_init_from_model_with_graph_inputs(model, params, graph_build_inputs);
+@@ -895,9 +909,12 @@ enum skippy_status skippy_finish_model_open(
+         // MTP consumes raw multirow outputs, without session backend samplers.
+         mtp_params.n_outputs_max_per_seq = 0;
+         mtp_params.embeddings = false;
++        // resident checkpoints hold the target context's state only
++        skippy_graph_build_inputs mtp_inputs = graph_build_inputs;
++        mtp_inputs.n_rs_resident = 0;
+         skippy_trace::scope mtp_trace("llama.context_init");
+         mtp_trace.set_detail("mtp");
+-        stage_model->mtp_ctx = llama_init_from_model_with_graph_inputs(model, mtp_params, graph_build_inputs);
++        stage_model->mtp_ctx = llama_init_from_model_with_graph_inputs(model, mtp_params, mtp_inputs);
+         mtp_trace.end();
+         if (stage_model->mtp_ctx != nullptr) {
+             skippy_apply_kv_memory_config(stage_model->mtp_ctx->get_memory(), config);
+diff --git a/src/skippy/resident_prefix.cpp b/src/skippy/resident_prefix.cpp
+index 0efdf8c8c..7261e5282 100644
+--- a/src/skippy/resident_prefix.cpp
++++ b/src/skippy/resident_prefix.cpp
+@@ -16,6 +16,7 @@
+ #include <cstring>
+ #include <limits>
+ #include <stdexcept>
++#include <variant>
+ 
+ namespace {
+ 
+@@ -137,6 +138,12 @@ skippy_status validate_checkpoint(skippy_session * session, int32_t cache_seq_id
+         skippy_set_error(error, SKIPPY_STATUS_INVALID_ARGUMENT, "resident attention prefix is incomplete");
+         return SKIPPY_STATUS_INVALID_ARGUMENT;
+     }
++    auto * recurrent = skippy_memory_recurrent_adapter(session->ctx->get_memory());
++    if (recurrent && std::holds_alternative<skippy_resident_cell>(found->second.recurrent)
++            && recurrent->seq_pos_max(cache_seq_id) != static_cast<llama_pos>(count) - 1) {
++        skippy_set_error(error, SKIPPY_STATUS_INVALID_ARGUMENT, "resident recurrent cell no longer holds the prefix");
++        return SKIPPY_STATUS_INVALID_ARGUMENT;
++    }
+     return SKIPPY_STATUS_OK;
+ }
+ 
+@@ -159,10 +166,16 @@ skippy_status restore_checkpoint(skippy_session * session, int32_t cache_seq_id,
+     const auto & checkpoint = session->stage_model->resident_prefixes.at(cache_seq_id);
+     try {
+         if (auto * recurrent = skippy_memory_recurrent_adapter(memory)) {
+-            checkpoint_reader reader(checkpoint.recurrent.data(), checkpoint.recurrent.size());
+-            recurrent->state_read(reader, session->seq_id, LLAMA_STATE_SEQ_FLAGS_NONE);
+-            if (reader.n_bytes() != checkpoint.recurrent.size()) {
+-                throw std::runtime_error("resident recurrent checkpoint has trailing data");
++            if (std::holds_alternative<skippy_resident_cell>(checkpoint.recurrent)) {
++                // the lane's first decode moves it to a cell of its own, gathering the state as every decode does
++                recurrent->seq_cp(cache_seq_id, session->seq_id, -1, -1);
++            } else {
++                const auto & bytes = std::get<skippy_checkpoint_bytes>(checkpoint.recurrent);
++                checkpoint_reader reader(bytes.data(), bytes.size());
++                recurrent->state_read(reader, session->seq_id, LLAMA_STATE_SEQ_FLAGS_NONE);
++                if (reader.n_bytes() != bytes.size()) {
++                    throw std::runtime_error("resident recurrent checkpoint has trailing data");
++                }
+             }
+         }
+         if (auto * attention = attention_memory(memory)) {
+@@ -200,6 +213,57 @@ bool used_attention_cells(llama_memory_t memory, uint64_t * cells) {
+     return false;
+ }
+ 
++// A lane whose cell holds its state outright, with no rollback pending, shares
++// the cell with the cache sequence while a resident cell is free; otherwise the
++// state is copied to host memory.
++void capture_recurrent(skippy_session * session, llama_memory_recurrent & recurrent, int32_t cache_seq_id,
++        skippy_resident_checkpoint & checkpoint) {
++    const auto lane = static_cast<size_t>(session->seq_id);
++    auto & model = *session->stage_model;
++    recurrent_buffer_writer measure;
++    recurrent.state_write(measure, session->seq_id, LLAMA_STATE_SEQ_FLAGS_NONE);
++    const bool whole_cell = lane < recurrent.tails.size() && recurrent.tails[lane] >= 0
++            && lane < recurrent.rs_idx.size() && recurrent.rs_idx[lane] == 0
++            && static_cast<size_t>(cache_seq_id) < recurrent.tails.size();
++    if (whole_cell && model.resident_cells.take()) {
++        checkpoint.recurrent = skippy_resident_cell{measure.n_bytes()};
++        recurrent.seq_cp(session->seq_id, cache_seq_id, -1, -1);
++        return;
++    }
++    model.resident_host_pool.use_type(checkpoint_host_type(recurrent));
++    auto & bytes = std::get<skippy_checkpoint_bytes>(checkpoint.recurrent);
++    bytes.resize(measure.n_bytes());
++    auto writer = llama_io_write_host_create(bytes.data(), bytes.size());
++    recurrent.state_write(*writer, session->seq_id, LLAMA_STATE_SEQ_FLAGS_NONE);
++    if (writer->n_bytes() != bytes.size()) {
++        throw std::runtime_error("resident recurrent checkpoint size changed during capture");
++    }
++    // Upstream's host writer defers tensor reads until destruction.
++    // Finish them while the destination and resident owner are stable,
++    // before publishing either the checkpoint or its attention alias.
++    writer.reset();
++}
++
++// The cache sequence leaves its cell, which stays the lane's until the lane moves on.
++void release_recurrent(skippy_model & model, llama_memory_recurrent * recurrent, int32_t cache_seq_id,
++        const skippy_resident_checkpoint & checkpoint) {
++    if (!std::holds_alternative<skippy_resident_cell>(checkpoint.recurrent)) { return; }
++    if (recurrent) { recurrent->seq_rm(cache_seq_id, -1, -1); }
++    model.resident_cells.give();
++}
++
++// what exporting the checkpoint writes
++size_t recurrent_size(const skippy_resident_recurrent & recurrent) {
++    if (const auto * cell = std::get_if<skippy_resident_cell>(&recurrent)) { return cell->bytes; }
++    return std::get<skippy_checkpoint_bytes>(recurrent).size();
++}
++
++// what the checkpoint keeps allocated, so a cell counts as the copy it replaces
++size_t recurrent_held_bytes(const skippy_resident_recurrent & recurrent) {
++    if (const auto * cell = std::get_if<skippy_resident_cell>(&recurrent)) { return cell->bytes; }
++    return std::get<skippy_checkpoint_bytes>(recurrent).capacity();
++}
++
+ } // namespace
+ 
+ void skippy_checkpoint_host_pool::use_type(ggml_backend_buffer_type_t type) {
+@@ -264,33 +328,24 @@ enum skippy_status skippy_session_save_prefix(skippy_session * session, int32_t
+         checkpoint.tokens.assign(session->token_history.begin(), session->token_history.begin() + token_count);
+         skippy_synchronize_context_if_pending(session->stage_model);
+         auto * memory = session->ctx->get_memory();
+-        if (auto * recurrent = skippy_memory_recurrent_adapter(memory)) {
+-            pool.use_type(checkpoint_host_type(*recurrent));
+-            recurrent_buffer_writer measure;
+-            recurrent->state_write(measure, session->seq_id, LLAMA_STATE_SEQ_FLAGS_NONE);
+-            checkpoint.recurrent.resize(measure.n_bytes());
+-            auto writer = llama_io_write_host_create(checkpoint.recurrent.data(), checkpoint.recurrent.size());
+-            recurrent->state_write(*writer, session->seq_id, LLAMA_STATE_SEQ_FLAGS_NONE);
+-            if (writer->n_bytes() != checkpoint.recurrent.size()) {
+-                throw std::runtime_error("resident recurrent checkpoint size changed during capture");
+-            }
+-            // Upstream's host writer defers tensor reads until destruction.
+-            // Finish them while the destination and resident owner are stable,
+-            // before publishing either the checkpoint or its attention alias.
+-            writer.reset();
+-        }
++        auto * recurrent = skippy_memory_recurrent_adapter(memory);
+         // Allocate metadata first. On allocation failure during seq_cp, remove
+-        // every partially attached attention reference and unpublished map node.
++        // every partially attached attention reference, the recurrent cell and
++        // the unpublished map node.
+         auto [entry, inserted] = checkpoints.try_emplace(cache_seq_id);
+         GGML_ASSERT(inserted);
+         auto * attention = attention_memory(memory);
+         try {
++            if (recurrent) {
++                capture_recurrent(session, *recurrent, cache_seq_id, checkpoint);
++            }
+             if (attention) {
+                 attention->seq_cp(session->seq_id, cache_seq_id, 0, static_cast<llama_pos>(token_count));
+             }
+             entry->second = std::move(checkpoint);
+         } catch (...) {
+             if (attention) { attention->seq_rm(cache_seq_id, -1, -1); }
++            release_recurrent(*session->stage_model, recurrent, cache_seq_id, checkpoint);
+             checkpoints.erase(entry);
+             throw;
+         }
+@@ -336,7 +391,12 @@ enum skippy_status skippy_session_drop_sequence(skippy_session * session, int32_
+                 return SKIPPY_STATUS_RUNTIME_ERROR;
+             }
+         }
+-        session->stage_model->resident_prefixes.erase(cache_seq_id);
++        auto & checkpoints = session->stage_model->resident_prefixes;
++        if (const auto found = checkpoints.find(cache_seq_id); found != checkpoints.end()) {
++            release_recurrent(*session->stage_model, skippy_memory_recurrent_adapter(session->ctx->get_memory()),
++                    cache_seq_id, found->second);
++            checkpoints.erase(found);
++        }
+         return skippy_success(error);
+     } catch (const std::exception & exception) { return native_error(error, exception); }
+ }
+@@ -355,7 +415,7 @@ enum skippy_status skippy_session_resident_prefix_bytes(skippy_session * session
+         const auto & checkpoints = session->stage_model->resident_prefixes;
+         const auto found = checkpoints.find(cache_seq_id);
+         if (found != checkpoints.end()) {
+-            *output = found->second.recurrent.capacity() + found->second.tokens.capacity() * sizeof(llama_token);
++            *output = recurrent_held_bytes(found->second.recurrent) + found->second.tokens.capacity() * sizeof(llama_token);
+         }
+         return skippy_success(error);
+     } catch (const std::exception & exception) { return native_error(error, exception); }
+@@ -438,13 +498,20 @@ enum skippy_status skippy_session_export_resident_recurrent_state(skippy_session
+             skippy_set_error(error, SKIPPY_STATUS_INVALID_ARGUMENT, "resident checkpoint is unavailable");
+             return SKIPPY_STATUS_INVALID_ARGUMENT;
+         }
+-        const auto & payload = found->second.recurrent;
+-        *bytes = payload.size();
+-        if (payload.empty()) { return skippy_success(error); }
+-        if (!output || capacity < payload.size()) {
++        *bytes = recurrent_size(found->second.recurrent);
++        if (*bytes == 0) { return skippy_success(error); }
++        if (!output || capacity < *bytes) {
+             skippy_set_error(error, SKIPPY_STATUS_BUFFER_TOO_SMALL, "recurrent output buffer is too small");
+             return SKIPPY_STATUS_BUFFER_TOO_SMALL;
+         }
++        if (std::holds_alternative<skippy_resident_cell>(found->second.recurrent)) {
++            skippy_synchronize_context_if_pending(session->stage_model);
++            recurrent_buffer_writer writer(output, capacity);
++            skippy_memory_recurrent_adapter(session->ctx->get_memory())->state_write(writer, cache_seq_id,
++                    LLAMA_STATE_SEQ_FLAGS_NONE);
++            return skippy_success(error);
++        }
++        const auto & payload = std::get<skippy_checkpoint_bytes>(found->second.recurrent);
+         std::memcpy(output, payload.data(), payload.size());
+         return skippy_success(error);
+     } catch (const std::exception & exception) { return native_error(error, exception); }
+diff --git a/src/skippy/runtime_types.h b/src/skippy/runtime_types.h
+index f5870bd83..b933f9abe 100644
+--- a/src/skippy/runtime_types.h
++++ b/src/skippy/runtime_types.h
+@@ -14,6 +14,7 @@
+ #include <string>
+ #include <type_traits>
+ #include <utility>
++#include <variant>
+ #include <vector>
+ 
+ enum skippy_glm_dsa_op_kind {
+@@ -139,11 +140,41 @@ struct skippy_checkpoint_allocator {
+ 
+ using skippy_checkpoint_bytes = std::vector<uint8_t, skippy_checkpoint_allocator<uint8_t>>;
+ 
++// The recurrent cell the cache sequence shares with the lane that saved it,
++// owned by the recurrent memory; bytes is what exporting it writes.
++struct skippy_resident_cell {
++    size_t bytes = 0;
++};
++
++using skippy_resident_recurrent = std::variant<skippy_checkpoint_bytes, skippy_resident_cell>;
++
++// Recurrent cells beyond the lanes' own (n_rs_resident). A checkpoint in a cell
++// holds one, so a lane leaving a shared cell always finds a free one.
++class skippy_resident_cells {
++public:
++    skippy_resident_cells() = default;
++    explicit skippy_resident_cells(uint32_t capacity) : capacity(capacity) {}
++
++    bool take() {
++        if (held == capacity) { return false; }
++        ++held;
++        return true;
++    }
++    void give() noexcept {
++        GGML_ASSERT(held > 0);
++        --held;
++    }
++
++private:
++    uint32_t capacity = 0;
++    uint32_t held = 0;
++};
++
+ // Cache-owned checkpoints outlive execution lanes. Attention remains in the
+-// native shared cell pool; only the fixed-size recurrent component is copied.
++// native shared cell pool; the recurrent component is a copy or a cell.
+ struct skippy_resident_checkpoint {
+     std::vector<llama_token> tokens;
+-    skippy_checkpoint_bytes recurrent;
++    skippy_resident_recurrent recurrent;
+ };
+ 
+ struct skippy_model {
+@@ -176,6 +207,7 @@ struct skippy_model {
+     std::mutex resident_prefix_mutex;
+     // declared first so it outlives the checkpoints it holds
+     skippy_checkpoint_host_pool resident_host_pool;
++    skippy_resident_cells resident_cells;
+     std::map<int32_t, skippy_resident_checkpoint> resident_prefixes;
+     std::mutex chat_templates_mutex;
+     void * chat_templates = nullptr;
+diff --git a/src/skippy/tests/sampling_history.cpp b/src/skippy/tests/sampling_history.cpp
+index db4a27bd2..141c63e59 100644
+--- a/src/skippy/tests/sampling_history.cpp
++++ b/src/skippy/tests/sampling_history.cpp
+@@ -740,6 +740,19 @@ void resident_prefix_ownership(skippy_model * model, bool typed = false) {
+         ok(skippy_session_resident_prefix_bytes(source, cache_id, &unchanged_bytes, &error), error);
+         CHECK(unchanged_bytes == checkpoint_bytes);
+     }
++    const char * cells = std::getenv("SKIPPY_RESIDENT_CELLS");
++    if (require_recurrent && cells && std::strcmp(cells, "1") == 0) {
++        CHECK(std::holds_alternative<skippy_resident_cell>(model->resident_prefixes.at(cache_id).recurrent));
++        // the one resident cell is held, so the next checkpoint is a host copy
++        auto * other = create(model);
++        prefill(other, std::vector<llama_token>(16, 3));
++        error = nullptr;
++        ok(skippy_session_save_prefix(other, cache_id + 1, 16, &error), error);
++        CHECK(std::holds_alternative<skippy_checkpoint_bytes>(model->resident_prefixes.at(cache_id + 1).recurrent));
++        error = nullptr;
++        ok(skippy_session_drop_sequence(other, cache_id + 1, &error), error);
++        release(other);
++    }
+     for (const auto token : suffix_a) { prefill(source, {token}); }
+     const auto expected_a = decode_logits(source, suffix_a.back());
+     const auto expected_page_a = export_page(source, source->n_past);

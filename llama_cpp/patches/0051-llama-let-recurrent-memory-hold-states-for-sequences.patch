@@ -1,0 +1,449 @@
+From 782973f56a6c905496eaa435c6240f78bf9a4c04 Mon Sep 17 00:00:00 2001
+From: Skippy contributors <ci@skippy.local>
+Date: Sat, 28 Nov 2026 02:26:37 +1100
+Subject: [PATCH 51/52] llama: let recurrent memory hold states for sequences
+ that do not run
+
+A recurrent memory has one cell per sequence and finds a sequence's cell
+at cells[seq_id], so every sequence id must be below the number of
+cells. Skippy keeps resident prefixes under cache sequence ids past
+n_seq_max, so their recurrent state cannot stay in the memory: every
+save copies it out to the host and every restore copies it back.
+
+Each sequence's cell is now recorded in a tails table of its own, and
+n_rs_resident, a Skippy build input beside kv_rows, adds cells beyond
+n_seq_max. A memory with those cells accepts every sequence id a unified
+cache does.
+seq_cp already lets sequences share a cell, and the first decode of a
+sharing sequence moves it to a free cell through the s_copy gather the
+graph runs anyway, so a sequence that never runs can hold a state
+without it being copied.
+
+With n_rs_resident = 0, the default, the memory has the same cells and
+accepts the same sequence ids as before.
+---
+ src/llama-context.cpp          |  2 +
+ src/llama-cparams.h            |  1 +
+ src/llama-graph.h              |  2 +
+ src/llama-memory-recurrent.cpp | 96 +++++++++++++++++-----------------
+ src/llama-memory-recurrent.h   |  6 ++-
+ src/llama-model.cpp            | 10 ++--
+ src/skippy/verify_window.cpp   |  4 +-
+ 7 files changed, 66 insertions(+), 55 deletions(-)
+
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index 1858847f7..2c489d560 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -222,6 +222,7 @@ llama_context::llama_context(
+                         __func__, cparams.n_rs_seq);
+         cparams.n_rs_seq = 0;
+     }
++    cparams.n_rs_resident = this->graph_build_inputs.n_rs_resident;
+ 
+     cparams.n_threads               = params.n_threads;
+     cparams.n_threads_batch         = params.n_threads_batch;
+@@ -475,6 +476,7 @@ llama_context::llama_context(
+     LLAMA_LOG_INFO("%s: freq_base     = %.1f\n", __func__, cparams.rope_freq_base);
+     LLAMA_LOG_INFO("%s: freq_scale    = %g\n",   __func__, cparams.rope_freq_scale);
+     LLAMA_LOG_INFO("%s: n_rs_seq      = %u\n",   __func__, cparams.n_rs_seq);
++    LLAMA_LOG_INFO("%s: n_rs_resident = %u\n",   __func__, cparams.n_rs_resident);
+     LLAMA_LOG_INFO("%s: n_outputs_max = %u\n",   __func__, cparams.n_outputs_max);
+ 
+     if (cparams.n_ctx_seq < hparams.n_ctx_train) {
+diff --git a/src/llama-cparams.h b/src/llama-cparams.h
+index 2b38e73d5..582224c73 100644
+--- a/src/llama-cparams.h
++++ b/src/llama-cparams.h
+@@ -14,6 +14,7 @@ struct llama_cparams {
+     uint32_t n_ubatch;
+     uint32_t n_seq_max;
+     uint32_t n_rs_seq;        // number of recurrent-state snapshots per seq for rollback
++    uint32_t n_rs_resident;   // recurrent-state cells beyond n_seq_max, for sequences that do not run
+     uint32_t n_outputs_max;   // max outputs supported by the context
+     uint32_t n_outputs_max_per_seq;
+     int32_t  n_threads;       // number of threads to use for generation
+diff --git a/src/llama-graph.h b/src/llama-graph.h
+index 20e4cc9b5..45d9a04f9 100644
+--- a/src/llama-graph.h
++++ b/src/llama-graph.h
+@@ -104,6 +104,8 @@ struct skippy_graph_build_inputs {
+     // whether a context may read a unified pool through per-owner row lists
+     // where its backend supports them; false keeps ordinary attention
+     bool kv_rows = true;
++    // recurrent-state cells beyond n_seq_max, for sequences that keep a state without running
++    uint32_t n_rs_resident = 0;
+ 
+     bool topology_equal(const skippy_graph_build_inputs & other) const;
+ };
+diff --git a/src/llama-memory-recurrent.cpp b/src/llama-memory-recurrent.cpp
+index 1d50339f2..5807cdd65 100644
+--- a/src/llama-memory-recurrent.cpp
++++ b/src/llama-memory-recurrent.cpp
+@@ -27,7 +27,9 @@ llama_memory_recurrent::llama_memory_recurrent(
+                  uint32_t   mem_size,
+                  uint32_t   n_seq_max,
+                  uint32_t   n_rs_seq,
+-    const layer_filter_cb & filter) : hparams(model.hparams), n_seq_max(n_seq_max), ctxs_bufs(no_alloc) {
++    const layer_filter_cb & filter) : hparams(model.hparams),
++    // cells beyond one per batch sequence hold states for sequences that never run, under any id a unified cache accepts
++    n_seq_max(mem_size > n_seq_max ? LLAMA_MAX_SEQ : n_seq_max), ctxs_bufs(no_alloc) {
+     // MTP layers append recurrent state beyond the trunk layer count.
+     const int32_t n_layer = hparams.n_layer_all;
+ 
+@@ -36,10 +38,11 @@ llama_memory_recurrent::llama_memory_recurrent(
+     used = 0;
+ 
+     this->n_rs_seq = n_rs_seq;
+-    rs_idx.assign(n_seq_max, 0);
++    rs_idx.assign(this->n_seq_max, 0);
+ 
+     cells.clear();
+     cells.resize(mem_size);
++    tails.assign(this->n_seq_max, -1);
+ 
+     // define a comparator for the buft -> ctx map to ensure that the order is well-defined:
+     struct ggml_backend_buft_comparator {
+@@ -180,9 +183,9 @@ void llama_memory_recurrent::clear(bool data) {
+         cells[i].pos = -1;
+         cells[i].seq_id.clear();
+         cells[i].src = -1;
+-        cells[i].tail = -1;
+         cells[i].rs_max = 0;
+     }
++    std::fill(tails.begin(), tails.end(), -1);
+ 
+     head = 0;
+     used = 0;
+@@ -220,12 +223,8 @@ bool llama_memory_recurrent::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos
+ 
+     // models like Mamba or RWKV can't have a state partially erased at the end
+     // of the sequence because their state isn't preserved for previous tokens
+-    if (seq_id >= (int64_t) size) {
+-        // could be fatal
+-        return false;
+-    }
+     if (0 <= seq_id) {
+-        int32_t & tail_id = cells[seq_id].tail;
++        int32_t & tail_id = tails[seq_id];
+         if (tail_id >= 0) {
+             auto & cell = cells[tail_id];
+ 
+@@ -308,26 +307,26 @@ void llama_memory_recurrent::seq_cp(llama_seq_id seq_id_src, llama_seq_id seq_id
+         p1 = std::numeric_limits<llama_pos>::max();
+     }
+ 
+-    if ((uint32_t) seq_id_dst < size && (uint32_t) seq_id_src < size) {
+-        auto & tail_src = cells[seq_id_src];
+-        auto & tail_dst = cells[seq_id_dst];
+-        if (tail_dst.tail >= 0) {
++    if ((uint32_t) seq_id_dst < n_seq_max && (uint32_t) seq_id_src < n_seq_max) {
++        int32_t & tail_src = tails[seq_id_src];
++        int32_t & tail_dst = tails[seq_id_dst];
++        if (tail_dst >= 0) {
+             // clear destination seq_id if it wasn't empty
+-            auto & cell_dst = cells[tail_dst.tail];
++            auto & cell_dst = cells[tail_dst];
+ 
+             cell_dst.seq_id.erase(seq_id_dst);
+-            tail_dst.tail = -1;
++            tail_dst = -1;
+             if (cell_dst.seq_id.empty()) {
+                 cell_dst.pos = -1;
+                 cell_dst.src = -1;
+                 used -= 1;
+             }
+         }
+-        if (tail_src.tail >= 0) {
+-            auto & cell_src = cells[tail_src.tail];
++        if (tail_src >= 0) {
++            auto & cell_src = cells[tail_src];
+ 
+             cell_src.seq_id.insert(seq_id_dst);
+-            tail_dst.tail = tail_src.tail;
++            tail_dst = tail_src;
+         }
+     }
+ }
+@@ -336,11 +335,13 @@ void llama_memory_recurrent::seq_keep(llama_seq_id seq_id) {
+     skippy_trace::scope trace("llama.recurrent_seq_keep", "seq", seq_id);
+     uint32_t new_head = size;
+ 
+-    for (uint32_t i = 0; i < size; ++i) {
+-        if ((llama_seq_id) i != seq_id) {
+-            cells[i].tail = -1;
+-        }
++    const int32_t kept = 0 <= seq_id && (uint32_t) seq_id < n_seq_max ? tails[seq_id] : -1;
++    std::fill(tails.begin(), tails.end(), -1);
++    if (kept >= 0) {
++        tails[seq_id] = kept;
++    }
+ 
++    for (uint32_t i = 0; i < size; ++i) {
+         if (!cells[i].has_seq_id(seq_id)) {
+             if (cells[i].pos >= 0) {
+                 used--;
+@@ -385,8 +386,8 @@ void llama_memory_recurrent::seq_add(llama_seq_id seq_id, llama_pos p0, llama_po
+     }
+ 
+     // for Mamba-like or RWKV models, only the pos needs to be shifted
+-    if (0 <= seq_id && seq_id < (int64_t) size) {
+-        const int32_t tail_id = cells[seq_id].tail;
++    if (0 <= seq_id && seq_id < (int64_t) n_seq_max) {
++        const int32_t tail_id = tails[seq_id];
+         if (tail_id >= 0) {
+             auto & cell = cells[tail_id];
+             if (cell.has_seq_id(seq_id) && p0 <= cell.pos && cell.pos < p1) {
+@@ -415,8 +416,8 @@ void llama_memory_recurrent::seq_div(llama_seq_id seq_id, llama_pos p0, llama_po
+     }
+ 
+     // for Mamba-like or RWKV models, only the pos needs to be changed
+-    if (0 <= seq_id && seq_id < (int64_t) size) {
+-        const int32_t tail_id = cells[seq_id].tail;
++    if (0 <= seq_id && seq_id < (int64_t) n_seq_max) {
++        const int32_t tail_id = tails[seq_id];
+         if (tail_id >= 0) {
+             auto & cell = cells[tail_id];
+             if (cell.has_seq_id(seq_id) && p0 <= cell.pos && cell.pos < p1) {
+@@ -529,6 +530,7 @@ bool llama_memory_recurrent::prepare(const std::vector<llama_ubatch> & ubatches)
+     // simply remember the full state because it is very small for this type of cache
+     // TODO: optimize
+     auto org_cells = cells;
++    auto org_tails = tails;
+     auto org_used = used;
+     auto org_head = head;
+ 
+@@ -543,6 +545,7 @@ bool llama_memory_recurrent::prepare(const std::vector<llama_ubatch> & ubatches)
+ 
+     // restore the original state
+     cells = std::move(org_cells);
++    tails = std::move(org_tails);
+     used = org_used;
+     head = org_head;
+ 
+@@ -576,20 +579,20 @@ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
+         for (uint32_t j = 0; j < n_seq_id; ++j) {
+             const llama_seq_id seq_id = ubatch.seq_id[i][j];
+ 
+-            if (seq_id < 0 || (uint32_t) seq_id >= size) {
++            if (seq_id < 0 || (uint32_t) seq_id >= n_seq_max) {
+                 // too big seq_id
+                 // TODO: would it be possible to resize the cache instead?
+                 LLAMA_LOG_ERROR("%s: seq_id=%d >= n_seq_max=%u Try using a bigger --parallel value\n", __func__, seq_id, n_seq_max);
+                 return false;
+             }
+             if (j > 0) {
+-                auto & seq = cells[seq_id];
+-                if (seq.tail >= 0) {
+-                    auto & cell = cells[seq.tail];
++                int32_t & tail = tails[seq_id];
++                if (tail >= 0) {
++                    auto & cell = cells[tail];
+                     // clear cells from seq_ids that become shared
+                     // (should not normally happen, but let's handle it anyway)
+                     cell.seq_id.erase(seq_id);
+-                    seq.tail = -1;
++                    tail = -1;
+                     if (cell.seq_id.empty()) {
+                         cell.pos = -1;
+                         cell.src = -1;
+@@ -603,7 +606,7 @@ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
+ #ifndef NDEBUG
+     {
+         std::vector<int32_t> tails_verif;
+-        tails_verif.assign(size, -1);
++        tails_verif.assign(n_seq_max, -1);
+         for (uint32_t i = 0; i < size; ++i) {
+             auto & cell = cells[i];
+             for (llama_seq_id seq_id : cell.seq_id) {
+@@ -613,9 +616,9 @@ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
+                 tails_verif[seq_id] = i;
+             }
+         }
+-        for (uint32_t i = 0; i < size; ++i) {
+-            if (tails_verif[i] != cells[i].tail) {
+-                LLAMA_LOG_ERROR("%s: wrong tail for seq_id %d, (%d instead of %d)\n", __func__, i, cells[i].tail, tails_verif[i]);
++        for (uint32_t i = 0; i < n_seq_max; ++i) {
++            if (tails_verif[i] != tails[i]) {
++                LLAMA_LOG_ERROR("%s: wrong tail for seq_id %d, (%d instead of %d)\n", __func__, i, tails[i], tails_verif[i]);
+             }
+         }
+     }
+@@ -635,10 +638,10 @@ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
+     for (uint32_t s = 0; s < n_seqs; ++s) {
+         const uint32_t i = ubatch.seq_token_begin(s);
+         const llama_seq_id seq_id = ubatch.seq_id[i][0];
+-        auto & seq_meta = cells[seq_id];
++        int32_t & tail = tails[seq_id];
+         bool has_cell = false;
+-        if (seq_meta.tail >= 0) {
+-            auto & cell = cells[seq_meta.tail];
++        if (tail >= 0) {
++            auto & cell = cells[tail];
+             GGML_ASSERT(cell.has_seq_id(seq_id));
+             // does this seq_id "own" the cell?
+             if (cell.seq_id.size() == 1) { has_cell = true; }
+@@ -647,15 +650,15 @@ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
+             auto & empty_cell = cells[next_empty_cell];
+             GGML_ASSERT(empty_cell.is_empty());
+             // copy old tail into the empty cell
+-            if (seq_meta.tail >= 0) {
+-                auto & orig_cell = cells[seq_meta.tail];
++            if (tail >= 0) {
++                auto & orig_cell = cells[tail];
+                 empty_cell.pos = orig_cell.pos;
+                 empty_cell.src = orig_cell.src;
+                 orig_cell.seq_id.erase(seq_id);
+                 empty_cell.seq_id.insert(seq_id); // will be overwritten
+                 GGML_ASSERT(!orig_cell.is_empty()); // has at least one remaining seq_id
+             }
+-            seq_meta.tail = next_empty_cell;
++            tail = next_empty_cell;
+             // find next empty cell
+             if (s + 1 < n_seqs) {
+                 for (uint32_t j = 0; j < size; ++j) {
+@@ -666,15 +669,15 @@ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
+                 }
+             }
+         }
+-        if (min > seq_meta.tail) { min = seq_meta.tail; }
+-        if (max < seq_meta.tail) { max = seq_meta.tail; }
++        if (min > tail) { min = tail; }
++        if (max < tail) { max = tail; }
+     }
+ 
+     // gather and re-order
+     for (uint32_t s = 0; s < n_seqs; ++s) {
+         const uint32_t i = ubatch.seq_token_begin(s);
+         const int32_t dst_id = s + min;
+-        const int32_t src_id = cells[ubatch.seq_id[i][0]].tail;
++        const int32_t src_id = tails[ubatch.seq_id[i][0]];
+         if (dst_id != src_id) {
+             auto & dst_cell = cells[dst_id];
+             auto & src_cell = cells[src_id];
+@@ -684,8 +687,7 @@ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
+             std::swap(dst_cell.seq_id, src_cell.seq_id);
+ 
+             // swap tails
+-            for (uint32_t j = 0; j < size; ++j) {
+-                int32_t & tail = cells[j].tail;
++            for (int32_t & tail : tails) {
+                 if (tail == src_id) {
+                     tail = dst_id;
+                 } else if (tail == dst_id) {
+@@ -715,7 +717,7 @@ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
+         for (int32_t j = 0; j < ubatch.n_seq_id[i]; ++j) {
+             const llama_seq_id seq_id = ubatch.seq_id[i][j];
+             cell.seq_id.insert(seq_id);
+-            cells[seq_id].tail = cell_id;
++            tails[seq_id] = cell_id;
+         }
+     }
+ 
+@@ -1124,7 +1126,7 @@ bool llama_memory_recurrent::state_read_meta(llama_io_read_i & io, uint32_t cell
+ 
+                 cell.seq_id.insert(seq_id);
+ 
+-                int32_t & tail = cells[seq_id].tail;
++                int32_t & tail = tails[seq_id];
+                 if (tail != -1) {
+                     LLAMA_LOG_ERROR("%s: duplicate tail for seq_id %d in cell %d and %d\n", __func__, seq_id, i, tail);
+                     return false;
+diff --git a/src/llama-memory-recurrent.h b/src/llama-memory-recurrent.h
+index 97fcc2c7c..eef35591b 100644
+--- a/src/llama-memory-recurrent.h
++++ b/src/llama-memory-recurrent.h
+@@ -90,7 +90,6 @@ public:
+         llama_pos pos  = -1;
+         int32_t   src  = -1; // used to know where states should be copied from
+         int32_t   src0 = -1; // like src, but only used when setting the inputs (allowing to copy once)
+-        int32_t   tail = -1;
+ 
+         // largest rollback whose snapshot the last ubatch guarantees: a ubatch of n <= n_rs_seq + 1 tokens
+         // writes snapshots 0..n-1, a longer one only guarantees the final state (ggml_gated_delta_net)
+@@ -113,6 +112,10 @@ public:
+ 
+     std::vector<mem_cell> cells;
+ 
++    // [n_seq_max] the cell holding each sequence's state, or -1; indexed by sequence, not by cell,
++    // so a sequence id can exceed the number of cells
++    std::vector<int32_t> tails;
++
+     // per layer
+     std::vector<ggml_tensor *> r_l;
+     std::vector<ggml_tensor *> s_l;
+@@ -130,6 +133,7 @@ private:
+     //const llama_model & model;
+     const llama_hparams & hparams;
+ 
++    // sequence ids this memory accepts: n_seq_max, or every id when it has cells for sequences that do not run
+     const uint32_t n_seq_max = 1;
+ 
+     // ggml contexts for the RS cache along with the allocated backend buffers:
+diff --git a/src/llama-model.cpp b/src/llama-model.cpp
+index 0f4d15e68..a0bf84344 100644
+--- a/src/llama-model.cpp
++++ b/src/llama-model.cpp
+@@ -3215,7 +3215,7 @@ llama_memory_i * llama_model::create_memory(
+                     /* attn_swa_type     */ hparams.swa_type,
+                     /* recurrent_type_r  */ GGML_TYPE_F32,
+                     /* recurrent_type_s  */ GGML_TYPE_F32,
+-                    /* recurrent_rs_size */ std::max((uint32_t) 1, cparams.n_seq_max),
++                    /* recurrent_rs_size */ std::max((uint32_t) 1, cparams.n_seq_max) + cparams.n_rs_resident,
+                     /* n_seq_max         */ cparams.n_seq_max,
+                     /* n_rs_seq          */ cparams.n_rs_seq,
+                     /* offload           */ cparams.offload_kqv,
+@@ -3407,7 +3407,7 @@ llama_memory_i * llama_model::create_memory(
+                             GGML_TYPE_F32,
+                             GGML_TYPE_F32,
+                             cparams.offload_kqv,
+-                            std::max((uint32_t) 1, cparams.n_seq_max),
++                            std::max((uint32_t) 1, cparams.n_seq_max) + cparams.n_rs_resident,
+                             cparams.n_seq_max,
+                             cparams.n_rs_seq,
+                             skippy_select_stage_memory(nullptr, params.ctx_type, stage_selection, hparams.n_layer()));
+@@ -3494,7 +3494,7 @@ llama_memory_i * llama_model::create_memory(
+                             /* attn_n_ubatch     */ cparams.n_ubatch,
+                             /* recurrent_type_r  */ GGML_TYPE_F32,
+                             /* recurrent_type_s  */ GGML_TYPE_F32,
+-                            /* recurrent_rs_size */ std::max((uint32_t) 1, cparams.n_seq_max),
++                            /* recurrent_rs_size */ std::max((uint32_t) 1, cparams.n_seq_max) + cparams.n_rs_resident,
+                             /* n_seq_max         */ cparams.n_seq_max,
+                             /* n_rs_seq          */ cparams.n_rs_seq,
+                             /* offload           */ cparams.offload_kqv,
+@@ -3514,7 +3514,7 @@ llama_memory_i * llama_model::create_memory(
+                             /* attn_swa_type     */ hparams.swa_type,
+                             /* recurrent_type_k  */ GGML_TYPE_F32,
+                             /* recurrent_type_v  */ GGML_TYPE_F32,
+-                            /* recurrent_kv_size */ std::max((uint32_t) 1, cparams.n_seq_max),
++                            /* recurrent_kv_size */ std::max((uint32_t) 1, cparams.n_seq_max) + cparams.n_rs_resident,
+                             /* n_seq_max         */ cparams.n_seq_max,
+                             /* n_rs_seq          */ cparams.n_rs_seq,
+                             /* offload           */ cparams.offload_kqv,
+@@ -3534,7 +3534,7 @@ llama_memory_i * llama_model::create_memory(
+                             /* attn_swa_type     */ hparams.swa_type,
+                             /* recurrent_type_k  */ GGML_TYPE_F32,
+                             /* recurrent_type_v  */ GGML_TYPE_F32,
+-                            /* recurrent_kv_size */ std::max((uint32_t) 1, cparams.n_seq_max),
++                            /* recurrent_kv_size */ std::max((uint32_t) 1, cparams.n_seq_max) + cparams.n_rs_resident,
+                             /* n_seq_max         */ cparams.n_seq_max,
+                             /* n_rs_seq          */ cparams.n_rs_seq,
+                             /* offload           */ cparams.offload_kqv,
+diff --git a/src/skippy/verify_window.cpp b/src/skippy/verify_window.cpp
+index d5d27a1b3..d3eba7876 100644
+--- a/src/skippy/verify_window.cpp
++++ b/src/skippy/verify_window.cpp
+@@ -150,11 +150,11 @@ enum skippy_status skippy_settle_inplace_verify_window(
+         return SKIPPY_STATUS_RUNTIME_ERROR;
+     }
+     const auto seq = static_cast<size_t>(session->seq_id);
+-    if (seq >= recurrent->cells.size() || seq >= recurrent->rs_idx.size()) {
++    if (seq >= recurrent->tails.size() || seq >= recurrent->rs_idx.size()) {
+         skippy_set_error(out_error, SKIPPY_STATUS_RUNTIME_ERROR, "verify-window sequence has no recurrent cell");
+         return SKIPPY_STATUS_RUNTIME_ERROR;
+     }
+-    const int32_t tail_id = recurrent->cells[seq].tail;
++    const int32_t tail_id = recurrent->tails[seq];
+     if (tail_id < 0 || recurrent->rs_idx[seq] != 0) {
+         skippy_set_error(out_error, SKIPPY_STATUS_RUNTIME_ERROR, "verify-window rollback snapshot is unavailable");
+         return SKIPPY_STATUS_RUNTIME_ERROR;
