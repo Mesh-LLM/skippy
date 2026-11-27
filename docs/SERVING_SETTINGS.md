@@ -703,6 +703,8 @@ same JSON-lines format as the trace file. They cover:
 | `skippy.system.swap.used`, `skippy.system.memory.pressure`, `skippy.system.paging` | Swap in use, macOS pressure (1, 2, 4) and page-in/out and swap-in/out rates |
 | `skippy.gpu.busy`, `skippy.gpu.command_buffers`, `skippy.gpu.queue_wait` | GPU execution time per wall second, command buffers per second, and the mean wait before the GPU starts one |
 | `skippy.gpu.memory.usage`, `skippy.gpu.memory.limit` | Memory the device has allocated, and its recommended working set, by `device` |
+| `skippy.gpu.amdgpu.memory.usage`, `skippy.gpu.amdgpu.memory.limit` | On amdgpu cards, the driver's count of used memory by every process, and its size, by `card` and `region` (`vram`, `gtt`); on an APU such as Strix Halo most of a model is in GTT, which the device gauges do not see |
+| `skippy.process.gpu_memory.usage` | Memory this process holds resident on amdgpu cards, by `region` (`vram`, `gtt`) |
 | `skippy.gpu.input_bytes` | Bytes GPU commands read per second, by `op_class` (`attention`, `matmul`, `recurrent`, `kv_write`, `other`): gathers from and row writes into a cache count only their rows, and attention only the K/V rows it addresses |
 | `skippy.gpu.class_busy` | GPU execution time per wall second by `op_class`, only from graphs split by class (`GGML_METAL_OP_PROFILE=1`) |
 | `skippy.attention.kv_cells`, `skippy.attention.queries` | The most KV cells one attention query addressed in the interval (its row list, or the whole K/V span), and the most query rows one attention node processed |

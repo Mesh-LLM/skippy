@@ -30,10 +30,12 @@ use super::{
     trace_context::{Frame, SpanEvent},
 };
 
+mod amdgpu_memory;
 pub(crate) mod gpu_op_classes;
 pub(crate) mod kv_tiers;
 mod otlp_metrics;
 
+use amdgpu_memory::AmdgpuMemory;
 use gpu_op_classes::{GraphShape, OpClassCounters};
 use kv_tiers::KvTiers;
 pub(super) use otlp_metrics::OtlpMetricsSink;
@@ -216,6 +218,7 @@ impl Reading {
 struct Levels {
     system: Option<SystemMemory>,
     gpu_memory: Vec<GpuMemory>,
+    amdgpu: AmdgpuMemory,
     running: Option<u64>,
     waiting: Option<u64>,
     batch: Option<u64>,
@@ -261,6 +264,7 @@ fn levels(telemetry: &Telemetry, system: Option<SystemMemory>) -> Levels {
     Levels {
         system,
         gpu_memory: gpu_memory(),
+        amdgpu: AmdgpuMemory::now(),
         running: current(&SCHEDULER_RUNNING),
         waiting: current(&SCHEDULER_WAITING),
         batch: current(&SCHEDULER_BATCH),
@@ -282,6 +286,7 @@ fn gauges(before: &Reading, after: &Reading, levels: &Levels, time: u64) -> Vec<
     process_gauges(&mut metrics, before, after, seconds, time);
     system_gauges(&mut metrics, before, after, levels, seconds, time);
     gpu_gauges(&mut metrics, before, after, levels, seconds, time);
+    amdgpu_memory::gauges(&mut metrics, &levels.amdgpu, time);
     gpu_op_classes::gauges(
         &mut metrics,
         &before.op_classes,
@@ -705,6 +710,7 @@ fn snapshot(point: &str) -> BTreeMap<String, Value> {
             attrs.insert(key(name), json!(value));
         }
     }
+    amdgpu_memory::snapshot(&mut attrs, key);
     kv_tiers::snapshot(&mut attrs, key);
     attrs
 }
