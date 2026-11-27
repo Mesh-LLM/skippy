@@ -53,3 +53,7 @@ def validate_native_identity(directory, host, runtime, expected_arches=None):
             raise ValueError("ROCm manifest toolkit mismatch")
         if rocm["gpu_arches"] != runtime["gpu_architectures"].split(";"):
             raise ValueError("ROCm manifest architectures differ from the matrix")
+    elif runtime["backend"] == "vulkan":
+        toolchain = read_json(directory / "vulkan-toolchain.json")
+        if toolchain.get("sdk_version") != runtime["toolkit"]:
+            raise ValueError("Vulkan SDK toolkit mismatch")

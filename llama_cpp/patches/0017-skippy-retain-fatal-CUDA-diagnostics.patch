@@ -1,4 +1,4 @@
-From ade48252d41d7ee0458bcd0cddf9b165fb2b993a Mon Sep 17 00:00:00 2001
+From c576cca1db49f4316790078452f820a04e1fbe88 Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Tue, 17 Nov 2026 21:32:09 +1100
 Subject: [PATCH] skippy: retain fatal CUDA diagnostics during quiet device
@@ -9,10 +9,10 @@ Subject: [PATCH] skippy: retain fatal CUDA diagnostics during quiet device
  1 file changed, 4 insertions(+), 1 deletion(-)
 
 diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
-index 664a391af..38caaf041 100644
+index 1dd8e68e2..84d1e0f3d 100644
 --- a/ggml/src/ggml-cuda/ggml-cuda.cu
 +++ b/ggml/src/ggml-cuda/ggml-cuda.cu
-@@ -113,7 +113,10 @@ void ggml_cuda_error(const char * stmt, const char * func, const char * file, in
+@@ -118,7 +118,10 @@ void ggml_cuda_error(const char * stmt, const char * func, const char * file, in
      GGML_LOG_ERROR("  current device: %d, in function %s at %s:%d\n", id, func, file, line);
      GGML_LOG_ERROR("  %s\n", stmt);
      // abort with GGML_ABORT to get a stack trace
@@ -25,5 +25,5 @@ index 664a391af..38caaf041 100644
  
  // map a (possibly virtual) device id to the physical CUDA device that backs it
 -- 
-2.54.0 (Apple Git-157)
+2.56.1
 

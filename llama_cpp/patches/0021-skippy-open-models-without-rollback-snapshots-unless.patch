@@ -1,8 +1,8 @@
-From 4a207402e5e01a3378235f2042211e1b85918f14 Mon Sep 17 00:00:00 2001
+From 78d3fa59de260a92ab27077aec9322d99aa62ff4 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Tue, 10 Nov 2026 21:05:00 +1100
-Subject: [PATCH 18/32] skippy: open models without rollback snapshots unless a
- plan needs them
+Subject: [PATCH] skippy: open models without rollback snapshots unless a plan
+ needs them
 
 Restores three changes James Dumay made on the previous pin that the
 rebuilt queue lost.
@@ -758,5 +758,5 @@ index 000000000..8eacda334
 +    return 0;
 +}
 -- 
-2.43.0
+2.56.1
 

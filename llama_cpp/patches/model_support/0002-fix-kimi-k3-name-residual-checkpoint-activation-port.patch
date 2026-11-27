@@ -1,7 +1,7 @@
-From 77007e188f78d0eb57fec5113e8a9e5ebcb8e5ff Mon Sep 17 00:00:00 2001
+From 6fb9f66aa576166f5908d86a463c4e7602b0ec7d Mon Sep 17 00:00:00 2001
 From: James Dumay <jameswdumay@gmail.com>
 Date: Mon, 21 Sep 2026 05:48:09 +1000
-Subject: [PATCH 18/32] fix(kimi-k3): name residual checkpoint activation ports
+Subject: [PATCH] fix(kimi-k3): name residual checkpoint activation ports
 
 ---
  src/models/kimi-k3.cpp | 1 +
@@ -19,3 +19,6 @@ index 57b950e39..3a6ddaf0e 100644
              banked = true;
          }
  
+-- 
+2.56.1
+

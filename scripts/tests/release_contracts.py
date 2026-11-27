@@ -87,7 +87,7 @@ class SmokeEvidenceContract(unittest.TestCase):
         self.assertTrue(runtime["full_only"])
         self.assertEqual(runtime["validation"], "inference")
         artifact_only = [row["id"] for row in runtimes.values() if row["validation"] == "artifact"]
-        self.assertEqual(artifact_only, ["windows-x86_64-cpu"])
+        self.assertEqual(artifact_only, ["windows-x86_64-cpu", "windows-x86_64-vulkan"])
         self.assertTrue(all(variant.startswith("windows-") for variant in artifact_only))
         source, digest = "a" * 40, "b" * 64
         with tempfile.TemporaryDirectory() as tmp:
