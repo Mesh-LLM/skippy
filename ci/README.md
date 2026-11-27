@@ -286,6 +286,9 @@ system Vulkan loader. The backend-neutral CLI still cannot import Vulkan.
 The separate DGX Spark inference benchmark ladder and its published performance
 baselines remain CUDA-only; package smoke makes no performance claim.
 
+See the [Vulkan rehearsal record](../docs/design/VULKAN_CI_REHEARSAL.md) for the
+tested source, archive hashes, both vendor results and runner fixes.
+
 ## Linux ROCm device smoke
 
 The existing `package_linux_x86_64_rocm` job builds, packages and runs the
