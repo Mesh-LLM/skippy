@@ -63,7 +63,7 @@ fn record_stall(frame: &Frame, span: &NativeSpan) {
                 },
             );
         }
-        "mtl.buffer_alloc" => {
+        "mtl.buffer_alloc" | "cuda.buffer_alloc" | "rocm.buffer_alloc" | "musa.buffer_alloc" => {
             log_events::record_under(
                 frame,
                 &BufferAllocated {

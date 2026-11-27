@@ -5,7 +5,8 @@
 //!
 //! Classification is by span name. Serving names its spans `stage.*`, plus
 //! `skippy.process` for the root and `native.*` for native ABI calls; the
-//! native runtime names its own phases `skippy.*`, `llama.*` and `mtl.*`.
+//! native runtime names its own phases `skippy.*`, `llama.*`, and `mtl.*`,
+//! `cuda.*`, `rocm.*` or `musa.*` for its GPU backend.
 
 /// The `service.namespace` every component shares.
 pub(super) const SERVICE_NAMESPACE: &str = "skippy";
@@ -27,6 +28,15 @@ pub(super) fn component(name: &str) -> &'static str {
     }
     if starts("mtl.") {
         return "metal-gpu";
+    }
+    if starts("cuda.") {
+        return "cuda-gpu";
+    }
+    if starts("rocm.") {
+        return "rocm-gpu";
+    }
+    if starts("musa.") {
+        return "musa-gpu";
     }
     if starts("skippy.") {
         return "skippy-runtime";
@@ -90,6 +100,9 @@ mod tests {
         assert_eq!(component("mtl.library_compile"), "metal-compile");
         assert_eq!(component("mtl.command_buffer"), "metal-gpu");
         assert_eq!(component("mtl.execute"), "metal-gpu");
+        assert_eq!(component("cuda.command_buffer"), "cuda-gpu");
+        assert_eq!(component("rocm.download_async"), "rocm-gpu");
+        assert_eq!(component("musa.buffer_alloc"), "musa-gpu");
     }
 
     #[test]

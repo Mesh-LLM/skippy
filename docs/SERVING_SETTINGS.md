@@ -672,6 +672,22 @@ span shows, rerun the same workload with
 `/tmp/perf-metal-<pid>.gputrace`. Every Metal context counts separately, and
 the first to reach that index is the one captured.
 
+The CUDA backend, which ROCm and MUSA builds also compile, names its spans
+`cuda.*`, `rocm.*` or `musa.*`. Each graph compute is one `command_buffer`
+span with `encode`, `queue` and `execute` children and the same attributes,
+timed by a pair of events and reported when the stream is next synchronized.
+`upload`, `download` and `copy` are blocking copies (detail: the tensor, or
+the count for a batch), timed on the host. `upload_async`, `download_async`
+and `copy_async` are copies queued on a backend's stream, such as each step's
+logits, timed on the stream. `buffer_alloc` (detail: `device`, `managed` or
+`failed`) and `host_buffer_alloc` are device and pinned allocations,
+`pool_grow` adds memory to the pool, `pool_flush` is a failed allocation that
+synchronized the device to free the pool's cache, and `blas_init` creates a
+device's BLAS handle, which on ROCm initializes rocBLAS. On CUDA,
+`host_register` and `host_unregister` pin a caller's memory around a batched
+read and release it. Copies, allocations and pinning carry
+`skippy.native.bytes`.
+
 Debug telemetry also samples resource gauges, every 250 ms by default
 (`SKIPPY_TELEMETRY_METRICS_INTERVAL_MS`), and exports them as OTLP metrics to
 the same `--metrics-otlp-grpc` endpoint and, when

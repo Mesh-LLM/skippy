@@ -25,7 +25,7 @@ Severity numbers follow OpenTelemetry: 9 is info, 13 warn, 17 error.
 | `skippy.kv.admission_shortfall` | 13 | A request was admitted below the KV pool's free-space watermark after every releasable prefix was evicted | `skippy.kv.shortfall_tokens` |
 | `skippy.graph.reserved` | 13 | After the model was ready, the backend scheduler reserved compute buffers again (`llama.sched_reserve`), blocking the next graph | `skippy.native.duration_ms`, `skippy.native.detail` when the runtime names what it reserved for |
 | `skippy.gpu.pipeline_compiled` | 13 | After the model was ready, a GPU kernel pipeline was compiled on first use (`mtl.pipeline_compile`) | as above; the detail names the kernel |
-| `skippy.gpu.buffer_allocated` | 13 | After the model was ready, a device buffer was allocated (`mtl.buffer_alloc`) | as above |
+| `skippy.gpu.buffer_allocated` | 13 | After the model was ready, a device buffer was allocated (`mtl.buffer_alloc`, or `cuda.`, `rocm.` or `musa.buffer_alloc`) | as above |
 | `skippy.attention.path` | 9 | A backend's attention was first seen, or switched path | `skippy.gpu.backend`, `skippy.attention.path` (`row_lists`: flash attention over each sequence's own rows; `flash`: flash attention over the whole masked K/V span; `unfused`: masked soft max over the whole span), `skippy.attention.kv_cells`, `skippy.attention.queries` |
 | `skippy.gpu.op_profiling` | 13 | A backend first split a graph at op class boundaries (`GGML_METAL_OP_PROFILE=1`): its timings are inflated and only their shares compare | `skippy.gpu.backend` |
 

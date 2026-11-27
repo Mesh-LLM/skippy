@@ -147,7 +147,8 @@ native_stall_event!(
 );
 native_stall_event!(
     /// `skippy.gpu.buffer_allocated`: a device buffer was allocated while
-    /// serving (`mtl.buffer_alloc`), such as a grown compute buffer.
+    /// serving (`mtl.buffer_alloc`, or `cuda.`, `rocm.` or `musa.buffer_alloc`),
+    /// such as a grown compute buffer or memory pool.
     BufferAllocated,
     "skippy.gpu.buffer_allocated"
 );
