@@ -5,7 +5,7 @@
   "model": "Qwen3.5-4B exact CI pin",
   "server": "unchanged vanilla separate slots",
   "server_sha256": "b4749cc9402e0d702f8dff962b14f077f3b784c9747f53b7d94bc2470e4e572a",
-  "common": "16 selected tasks (four per stratum), Apple M1 Ultra, 33/33 Metal layers, 16 lanes x 8192 context, F16 KV, batch and microbatch 512, cache off, max_tokens 32, temperature 0, seed 42, nominal thermal",
+  "common": "Apple M1 Ultra, 33/33 Metal layers, 16 lanes x 8192 context, F16 KV, batch and microbatch 512, cache off, max_tokens 32, temperature 0, seed 42, nominal thermal. The first two pilots used 16 selected tasks (four per stratum); the full exploration used all original 256 tasks.",
   "default_thinking": {
     "job_id": "job_nh0gwp3ey5y957t",
     "run_id": "run_48b1fabbvwdz30h",
@@ -33,5 +33,20 @@
     "length_stop": 1,
     "request_delta": "chat_template_kwargs.enable_thinking=false"
   },
-  "conclusion": "Normal chat formatting is a distinct prompt shape from the registered 512-token raw-completion fixture. Disabling thinking recovers some final answers in this small probe, but does not rescue the failed version 2 gate or establish baseline suitability for a new fixture."
+  "full_thinking_disabled_exploration": {
+    "job_id": "job_7xb63ccte3ekrhv",
+    "run_id": "run_c77mxhvpr96yc26",
+    "source_head": "575c46a12cc49b4133ed50d60efdbd2693cd2d7c",
+    "spec_sha256": "aef77c61b15d60e2602a698b5e24097f969af99d9482805b770af852102b33e7",
+    "evidence_sha256": "b6380071038a90bd3d0c02739e90517d16beb7a74e7be478819999d7c89da66f",
+    "audit_sha256": "7d8d18dd2cd015ef70c01b8bda209efbb0890a21698254ff99acdc51e619a981",
+    "responses_sha256": "ad29e273f64a15118b90958869de215ff1cc1a71bd687c0523ab608016cef954",
+    "responses": 256,
+    "input_tokens_each": 523,
+    "final_answer_matches": 139,
+    "matches_by_stratum": {"arithmetic": 64, "extraction": 64, "ordering": 9, "assignment": 2},
+    "stop": 252,
+    "length_stop": 4
+  },
+  "conclusion": "Chat formatting is a distinct prompt shape from the registered 512-token raw-completion fixture. Disabling thinking recovers final answers, but the full original task fixture has only 139/256 correct on the vanilla baseline at 523 tokens, below the registered 200-correct prerequisite. These runs cannot rescue version 2."
 }

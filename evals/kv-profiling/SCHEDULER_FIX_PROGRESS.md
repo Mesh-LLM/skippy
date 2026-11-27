@@ -1716,3 +1716,37 @@ both raw archives and response hashes. All raw outputs remain in the ignored
 local artifacts. Neither changed request shape can retroactively repair the
 registered 512-token v2 baseline failure, and these small results cannot
 justify a quality or speed claim. No version 3 scored run has been registered.
+
+## 2026-11-27: full unscored chat diagnostic and held-out repair
+
+The complete original 256-task fixture was then run as an **unscored**
+nonthinking-chat diagnostic on exact CI Qwen3.5 vanilla separate slots:
+`job_7xb63ccte3ekrhv`, spec SHA256
+`aef77c61b15d60e2602a698b5e24097f969af99d9482805b770af852102b33e7`.
+Its first JY spec was rejected before job creation because the harness
+version label exceeded 64 characters; the rejected spec SHA256
+`d78523aa169956dea54faef05ea37e1f637abd346ad77c77b4a1fa36a67cc886`
+is retained. The submitted job completed 256/256 at 523 input tokens,
+with the exact pinned model and server, 33/33 Metal layers, F16 KV,
+16×8192 context, batch/microbatch 512, cache off and nominal thermal
+boundaries. The local independent audit at
+`target/scheduler-fixes/artifacts/task-quality-chat-no-thinking-full-explore/audit.json`
+has SHA256 `7d8d18dd2cd015ef70c01b8bda209efbb0890a21698254ff99acdc51e619a981`;
+the raw response archive SHA256 is
+`b6380071038a90bd3d0c02739e90517d16beb7a74e7be478819999d7c89da66f`.
+The original scorer's final-line rule matched 139/256 answers: arithmetic
+64/64, extraction 64/64, ordering 9/64, assignment 2/64. This confirms the
+original 256-item fixture misses its 200-correct baseline prerequisite even
+with final chat answers. The exploratory score is not a version 2 or 3
+quality result. The [compact evidence record](pr-evidence/task-quality-chat-pilots.json)
+now includes it.
+
+The separately [registered version 3 protocol](SCHEDULER_TASK_QUALITY_V3_PROTOCOL.md)
+retains all four task families and difficulty rules but uses a new held-out
+seed and 512 unique tasks, with nonthinking chat and exact 512 **rendered**
+input tokens. Its source manifest, generator/scorer, and materializer are
+sealed before any version 3 model-specific prompt or scored output. The
+synthetic 512-task materializer contract and scorer selftests pass; these are
+not model qualification. No version 3 scored result or current-source
+performance result exists yet. Version 2's failure and the historical
+cross-engine discrepancies remain intact.
