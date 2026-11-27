@@ -34,6 +34,18 @@ class ScenarioTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     performance_plan.scenario()
 
+    def test_evidence_ids_cannot_alias_or_escape_directories(self):
+        for key in ("server", "point"):
+            for invalid in ("./short", "../short", "a/b", "a\\b", ".", "..", "", 1):
+                broken = performance_plan.read_json(performance_plan.SCENARIO)
+                target = broken["servers"][0]
+                if key == "point":
+                    target = target["points"][0]
+                target["id"] = invalid
+                with self.subTest(key=key, invalid=invalid), patch.object(performance_plan, "read_json", return_value=broken):
+                    with self.assertRaises(ValueError):
+                        performance_plan.scenario()
+
 
 class PlanTests(unittest.TestCase):
     candidate, baseline, pin = "a" * 40, "b" * 40, "c" * 40
@@ -233,6 +245,21 @@ class ReportTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             summarize([{"model": "m", "server": "s", "point": "p", "arm": "candidate",
                         "metrics": {"output_tok_s": float("nan")}}])
+
+    def test_different_applied_settings_keep_measurements_without_health_verdict(self):
+        samples = [{"model": "m", "server": "s", "point": "p", "arm": arm,
+                    "metrics": {"output_tok_s": value}, "applied": applied, "unsupported": missing}
+                   for arm, value, applied, missing in (
+                       ("baseline", 100, {}, ["--kv-pool-tokens"]),
+                       ("candidate", 120, {"kv_pool_tokens": 16384}, []))]
+        result = summarize(samples)
+        self.assertEqual(set(result[0]["arms"]), {"baseline", "candidate"})
+        self.assertIsNone(result[0]["candidate_vs_baseline"])
+        report = markdown("test", "Mac", result, self.record)
+        self.assertIn("Different settings", report)
+        self.assertIn("0 improvements", report)
+        self.assertIn("100.0 (", report)
+        self.assertIn("120.0 (", report)
 
     def test_stored_rows_carry_their_arm_point_and_host_but_not_the_trace_pass(self):
         shape = performance_plan.scenario()

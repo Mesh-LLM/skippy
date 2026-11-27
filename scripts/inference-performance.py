@@ -71,7 +71,7 @@ def resolve(ref):
 
 def off_main(pull_requests):
     """A line for each arm taken from a pull request, so no report reads as main's."""
-    return "".join(f"The {label} is the head of #{number}, not a commit on main.\n\n"
+    return "".join(f"The {label} was selected from PR #{number}.\n\n"
                    for label, number in pull_requests.items() if number is not None)
 
 
@@ -118,13 +118,19 @@ def resource_id(identifier):
 
 def cancel(pilot, ledger):
     failures = []
-    for identifier in read_json(ledger):
+    for entry in read_json(ledger):
+        identifier = entry if isinstance(entry, str) else entry.get("id")
         try:
+            if identifier is None:
+                # JY replays the existing job for a project-scoped idempotency key.
+                recovered = pilot.api("POST", "/v1/jobs", {
+                    "spec": entry["spec"], "idempotency_key": entry["idempotency_key"]})
+                identifier = resource_id(recovered["id"])
             job = pilot.api("GET", f"/v1/jobs/{resource_id(identifier)}")
             if job.get("status") not in TERMINAL:
                 pilot.api("POST", f"/v1/jobs/{identifier}/cancel")
-        except (OSError, ValueError, KeyError, RuntimeError) as error:
-            failures.append(f"{identifier}: {error}")
+        except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
+            failures.append(f"{identifier or entry.get('idempotency_key')}: {error}")
     if failures:
         raise RuntimeError("could not cancel: " + "; ".join(failures))
 
@@ -171,30 +177,47 @@ def collect(pilot, job, plan, label, evidence):
         "".join(json.dumps(row, sort_keys=True) + "\n"
                 for row in rows(result, scenario(), plan["committed_at"], job["id"], plan["pull_requests"])),
         encoding="utf-8")
+    download(pilot, run_id, "aiperf.tar.gz", evidence / f"{label}-aiperf.tar.gz")
+    trace_notice = ""
     if plan["trace"]:
-        download(pilot, run_id, "traces.tar.gz", evidence / f"{label}-traces.tar.gz")
+        try:
+            download(pilot, run_id, "traces.tar.gz", evidence / f"{label}-traces.tar.gz")
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+            trace_notice = f"\nDiagnostic trace archive unavailable: {error}\n"
+    for failure in result.get("diagnostic", {}).get("failures", []):
+        trace_notice += f"\nDiagnostic trace failed: {failure}\n"
     host = f'{result["host"]["chip"]} ({result["host"].get("node") or "unknown node"})'
-    return markdown(f"Inference performance: {label}", host, summarize(result["samples"]), result)
+    return markdown(f"Inference performance: {label}", host, summarize(result["samples"]), result) + trace_notice
+
+
+def save_ledger(path, entries):
+    pending = path.with_suffix(".pending")
+    write_json(pending, entries)
+    pending.replace(path)
 
 
 def dispatch(evidence):
     pilot, plan = Pilot(), read_json(evidence / "plan.json")
-    ledger, identifiers = evidence / "jobs.json", []
-    write_json(ledger, identifiers)
+    ledger, submissions, identifiers = evidence / "jobs.json", [], []
+    save_ledger(ledger, submissions)
     run = f'{os.environ.get("GITHUB_RUN_ID", "local")}-{os.environ.get("GITHUB_RUN_ATTEMPT", "1")}'
     deadline = time.monotonic() + 20700
     try:
         for job in plan["jobs"]:
-            created = pilot.api("POST", "/v1/jobs", {
-                "spec": job["spec"], "idempotency_key": f'inference-performance-{run}-{job["label"]}'})
-            identifiers.append(resource_id(created["id"]))
-            write_json(ledger, identifiers)
+            entry = {"spec": job["spec"], "idempotency_key": f'inference-performance-{run}-{job["label"]}',
+                     "id": None}
+            submissions.append(entry)
+            save_ledger(ledger, submissions)
+            created = pilot.api("POST", "/v1/jobs", {key: entry[key] for key in ("spec", "idempotency_key")})
+            entry["id"] = resource_id(created["id"])
+            identifiers.append(entry["id"])
+            save_ledger(ledger, submissions)
             print(f'{job["label"]}: {created["id"]} {created.get("status")}', flush=True)
         finished = [wait(pilot, identifier, evidence, deadline) for identifier in identifiers]
     except (Exception, KeyboardInterrupt):
         try:
             cancel(pilot, ledger)
-        except (OSError, ValueError, KeyError, RuntimeError) as cleanup:
+        except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as cleanup:
             print(f"Cancellation incomplete: {cleanup}", file=sys.stderr)
         raise
     reports, failures = [], []
@@ -202,8 +225,13 @@ def dispatch(evidence):
         if job["status"] != "succeeded":
             failures.append(f'{spec["label"]}: {job["status"]}')
             continue
-        reports.append(collect(pilot, job, plan, spec["label"], evidence))
+        try:
+            reports.append(collect(pilot, job, plan, spec["label"], evidence))
+        except Exception as error:
+            failures.append(f'{spec["label"]}: collection failed: {error}')
     report = off_main(plan["pull_requests"]) + "\n".join(reports)
+    if failures:
+        report += "\n## Incomplete jobs or evidence\n\n" + "\n".join("- " + error for error in failures) + "\n"
     (evidence / "summary.md").write_text(report, encoding="utf-8")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
@@ -317,6 +345,7 @@ def execute():
         # Tracing slows the arm it runs on, so its samples never join the comparison.
         record["diagnostic"] = {"telemetry": "debug", "arm": "candidate", "samples": []}
         TRACES.mkdir(parents=True, exist_ok=True)
+    diagnostic_inputs = []
     try:
         for key in plan["models"]:
             inputs = fixture(key)
@@ -333,12 +362,18 @@ def execute():
                         record["samples"] += measure(entry, helps[entry["label"]], model, inputs, key,
                                                      index, server, shape, output)
                         write_json(output / "performance.json", record)
-            if plan["trace"]:
-                candidate = next(entry for entry in built if entry["label"] == "candidate")
+            diagnostic_inputs.append((key, model, inputs))
+        if plan["trace"]:
+            candidate = next(entry for entry in built if entry["label"] == "candidate")
+            record["diagnostic"]["failures"] = []
+            for key, model, inputs in diagnostic_inputs:
                 for server in shape["servers"]:
-                    record["diagnostic"]["samples"] += measure(
-                        candidate, helps["candidate"], model, inputs, key, None, server, shape, output,
-                        trace=TRACES / f'{key}-{server["id"]}')
+                    try:
+                        record["diagnostic"]["samples"] += measure(
+                            candidate, helps["candidate"], model, inputs, key, None, server, shape, output,
+                            trace=TRACES / f'{key}-{server["id"]}')
+                    except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
+                        record["diagnostic"]["failures"].append(f'{key}/{server["id"]}: {error}')
                     write_json(output / "performance.json", record)
     finally:
         write_json(output / "performance.json", record)

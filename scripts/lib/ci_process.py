@@ -68,11 +68,10 @@ def group_alive(child):
     except ProcessLookupError:
         return False
     except PermissionError:
-        if not exited:
+        # Recheck a child that may have exited between poll() and killpg().
+        if child.poll() is None:
             raise
-        # EPERM on signal-0 means the pgid now holds processes we cannot
-        # signal: the id was recycled after our group exited.
-        return False
+        exited = True
     if not exited:
         return True
     # A group containing only unreaped descendants can still be visible to

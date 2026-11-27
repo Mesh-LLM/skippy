@@ -1,15 +1,18 @@
 # Offline automation and reporting recipes; no native build inputs.
 
 inference-contracts:
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_build.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_markdown.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_nightly.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_performance_contracts.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/performance_controller_contracts.py
 
 inference-publication-test:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_publication.py
 
 automation-contracts: inference-contracts
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_process_contracts.py
     @"{{ automation_python }}" scripts/tests/ci_cuda_license.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/automation_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_contracts.py

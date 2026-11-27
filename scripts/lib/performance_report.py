@@ -15,8 +15,11 @@ HEADLINE = {"output_tok_s": "higher", "ttft_ms_p50": "lower", "itl_ms_p50": "low
 
 def summarize(samples):
     """Group by (model, server, point, metric), then by arm: median, min, max and n over rounds."""
-    groups = {}
+    groups, settings = {}, {}
     for sample in samples:
+        key = sample["model"], sample["server"], sample["point"]
+        settings.setdefault(key, {}).setdefault(sample["arm"], set()).add(json.dumps({
+            "applied": sample.get("applied", {}), "unsupported": sorted(sample.get("unsupported", []))}, sort_keys=True))
         for metric, value in sample["metrics"].items():
             if value is None:
                 continue
@@ -26,8 +29,11 @@ def summarize(samples):
     for (model, server, point, metric), by_arm in sorted(groups.items()):
         arms = {arm: {"median": statistics.median(values), "min": min(values), "max": max(values),
                       "n": len(values)} for arm, values in sorted(by_arm.items())}
-        rows.append({"model": model, "server": server, "point": point, "metric": metric, "arms": arms,
-                     "candidate_vs_baseline": change(arms.get("candidate"), arms.get("baseline"))})
+        by_settings = settings[(model, server, point)]
+        candidate, baseline = (by_settings.get(arm, set()) for arm in ("candidate", "baseline"))
+        matched = len(candidate) == len(baseline) == 1 and candidate == baseline
+        rows.append({"settings_match": matched, "model": model, "server": server, "point": point, "metric": metric, "arms": arms,
+                     "candidate_vs_baseline": change(arms.get("candidate"), arms.get("baseline")) if matched else None})
     return rows
 
 
@@ -46,6 +52,8 @@ def cell(stats):
 
 
 def verdict(row):
+    if not row.get("settings_match", True):
+        return "Different settings — no matched-settings verdict"
     delta = row["candidate_vs_baseline"]
     if delta is None:
         return "New series"
@@ -60,7 +68,8 @@ def report_view(host, rows, record):
     candidate = next(arm for arm in record["arms"] if arm["label"] == "candidate")
     configurations = {}
     for row in rows:
-        if row["metric"] not in HEADLINE or "candidate" not in row["arms"]:
+        if (row["metric"] not in HEADLINE or "candidate" not in row["arms"]
+                or not row.get("settings_match", True)):
             continue
         key = row["model"], row["server"], row["point"]
         configuration = configurations.setdefault(key, {
@@ -88,6 +97,9 @@ def markdown(title, host, rows, record):
              *health_sections(view, health_charts(view), chart_format="mermaid"), "",
              "## Round ranges", "", "Median (min–max, n). Reference is the optional llama.cpp arm. "
              "Its measurements are shown separately from the candidate/baseline verdict.", ""]
+    if any(not row.get("settings_match", True) for row in rows):
+        lines.extend(["Candidate and baseline applied different settings in some cells. "
+                      "Both measurements are retained below; those cells are excluded from matched-settings verdict counts.", ""])
     detail = []
     for row in rows:
         if row["metric"] in HEADLINE:

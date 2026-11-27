@@ -23,6 +23,19 @@ def cache_key(inputs):
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
+def native_inputs():
+    # Bind Cargo's bundled archives and compiler outputs to the same source recipe.
+    # Git tree entries include paths and blob identities, including removed patches.
+    paths = ["llama_cpp", "Justfile", "crates/skippy-ffi", "scripts/build-llama.sh",
+             "scripts/prepare-llama.sh", "scripts/prepare-whisper.sh", "scripts/lib/cuda-toolkit.sh",
+             "scripts/inference-build.py"]
+    return hashlib.sha256(capture(["git", "ls-tree", "-r", "HEAD", "--", *paths]).encode()).hexdigest()
+
+
+def dependency_key(inputs):
+    return cache_key({name: value for name, value in inputs.items() if name != "source"})
+
+
 def source_inputs(sha, backend):
     environment = {
         name: value for name, value in os.environ.items()
@@ -31,7 +44,10 @@ def source_inputs(sha, backend):
         }
     }
     inputs = {
-        "schema": 1, "source": sha, "os": platform.system().lower(), "arch": platform.machine(),
+        "schema": 2, "native_inputs_sha256": native_inputs(), "source": sha,
+        "os": platform.system().lower(), "arch": platform.machine(),
+        "compiler_extra_files": {path: digest(Path(path)) for path in
+                                 filter(None, os.environ.get("SCCACHE_EXTRAFILES", "").split(os.pathsep))},
         "cargo_lock_sha256": digest(Path("Cargo.lock")), "rust": capture(["rustc", "-vV"]),
         "cxx": capture(["c++", "--version"]), "cmake": capture(["cmake", "--version"]),
         "backend": backend,
@@ -51,15 +67,21 @@ def install_binaries(directory):
 
 
 def build(sha, root, inputs, key, cached):
-    dependency_key = cache_key({name: value for name, value in inputs.items() if name != "source"})
-    cargo_root = root.parent / "cargo-v1"
+    dependencies = dependency_key(inputs)
+    cargo_root = root.parent / "cargo-v2"
     cargo_root.mkdir(parents=True, exist_ok=True)
-    with lock(cargo_root / f"{dependency_key}.lock"):
-        cargo_target = cargo_root / dependency_key
+    with lock(cargo_root / f"{dependencies}.lock"):
+        cargo_target = cargo_root / dependencies
+        native_identity = Path("target/inference-native-inputs.json").resolve()
+        native_identity.parent.mkdir(parents=True, exist_ok=True)
+        write_json(native_identity, {"schema": 2, "native_inputs_sha256": inputs["native_inputs_sha256"]})
+        extra_files = [*filter(None, os.environ.get("SCCACHE_EXTRAFILES", "").split(os.pathsep)),
+                       str(native_identity)]
         environment = {
             "CARGO_TARGET_DIR": str(cargo_target), "SCCACHE_DIR": str(root.parent / "compiler"),
             "SCCACHE_BASEDIRS": str(Path.cwd()), "CARGO_INCREMENTAL": "0", "SCCACHE_SERVER_PORT": "4227",
             "SCCACHE_CACHE_SIZE": "20G", "CARGO_PROFILE_DEV_DEBUG": "0",
+            "SCCACHE_EXTRAFILES": os.pathsep.join(extra_files),
         }
         sccache = shutil.which("sccache")
         if sccache:
@@ -73,7 +95,7 @@ def build(sha, root, inputs, key, cached):
         command(["just", "inference-build-uncached", backend], overrides=environment, timeout=7200)
         install_binaries(cargo_target / "debug")
         build_id = identity(sha, backend)
-        build_id.update(cache_key=key, build_inputs=inputs, cache_hit=False)
+        build_id.update(cache_key=key, dependency_cache_key=dependencies, build_inputs=inputs, cache_hit=False)
         write_json(BUILD_IDENTITY, build_id)
         with tempfile.TemporaryDirectory(dir=root, prefix="publish-") as tmp:
             stage = Path(tmp) / "entry"
@@ -96,7 +118,7 @@ def main():
     command(["git", "diff", "--exit-code", "HEAD"], timeout=30)
     inputs = source_inputs(sha, args.backend)
     key = cache_key(inputs)
-    root = Path(os.environ["HOME"]) / ".cache/skippy/inference-build-v1"
+    root = Path(os.environ["HOME"]) / ".cache/skippy/inference-build-v2"
     root.mkdir(parents=True, exist_ok=True)
     cached = root / key
     with lock(root / f"{key}.lock"):

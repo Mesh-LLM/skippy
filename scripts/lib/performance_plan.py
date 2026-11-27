@@ -15,6 +15,7 @@ SKIPPY = "https://github.com/Mesh-LLM/skippy.git"
 LLAMA = "https://github.com/ggml-org/llama.cpp.git"
 SHA = re.compile(r"[0-9a-f]{40}")
 PULL_REQUEST = re.compile(r"pr:([1-9][0-9]{0,6})")
+COMPONENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
 NODE = re.compile(r"[A-Za-z0-9._-]{1,64}")
 RESERVE_GIB = 16
 MAX_ROUNDS = 9
@@ -38,6 +39,8 @@ def scenario():
     for server in value["servers"]:
         if set(server) != {"id", "lanes", "pool_tokens", "points"} or not server["points"]:
             raise ValueError("invalid performance server")
+        if not isinstance(server["id"], str) or not COMPONENT.fullmatch(server["id"]):
+            raise ValueError("server id must be one safe path component")
         if server["id"] in servers:
             raise ValueError(f'duplicate performance server: {server["id"]}')
         servers.add(server["id"])
@@ -45,7 +48,8 @@ def scenario():
         if server["pool_tokens"] is not None and count(server["pool_tokens"], "pool_tokens") < context:
             raise ValueError(f'{server["id"]}: a KV pool must hold at least one lane\'s context')
         for point in server["points"]:
-            if set(point) != POINT_FIELDS or point["id"] in points:
+            if (set(point) != POINT_FIELDS or not isinstance(point["id"], str)
+                    or not COMPONENT.fullmatch(point["id"]) or point["id"] in points):
                 raise ValueError("invalid or duplicate performance point")
             points.add(point["id"])
             for field in ("concurrency", "input_tokens", "output_tokens", "requests"):
