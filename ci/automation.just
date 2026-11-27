@@ -9,6 +9,7 @@ inference-publication-test:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_publication.py
 
 automation-contracts: inference-contracts
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_process_contracts.py
     @"{{ automation_python }}" scripts/tests/ci_cuda_license.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/automation_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_contracts.py

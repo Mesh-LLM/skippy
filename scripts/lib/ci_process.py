@@ -60,8 +60,10 @@ def group_alive(child):
     except ProcessLookupError:
         return False
     except PermissionError:
-        if not exited:
+        # Recheck a child that may have exited between poll() and killpg().
+        if child.poll() is None:
             raise
+        exited = True
     if not exited:
         return True
     # A group containing only unreaped descendants can still be visible to
