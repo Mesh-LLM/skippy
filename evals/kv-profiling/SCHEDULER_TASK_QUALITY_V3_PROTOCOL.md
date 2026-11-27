@@ -71,6 +71,31 @@ and comparison rule are unchanged. The first baseline's 281/512 task score is
 unchanged. The thermal-invalid attempt remains ineligible regardless of its
 diagnostic comparison, which is **UNPROVEN** at 2/281 after correction.
 
+### Prospective thermal-control cohort
+
+The initial 512-request c1 cells exposed a host capacity problem under
+continuous serial prompting: Qwen3.5 current Skippy ended with native thermal
+pressure 2 after 512 responses, while Qwen3.5 vanilla unified and Coder
+vanilla separate reached pressure 1 after 256. They are invalid measurements.
+The queued Flash cell was cancelled before a run to avoid another known
+invalid attempt. These outcomes and exact source/spec/artifact hashes remain
+in the fix ledger. No completed response is promoted from an invalid cell.
+
+Before any new quality retry, register a **matched cooled c1 cohort** for each
+model: all 512 original tasks in the same sealed order and request shape,
+one fresh process per arm, with a 120-second idle interval after each block
+of 64 responses. Require native thermal pressure zero immediately before and
+after every block, as well as at process start and end; otherwise the cell
+fails and no score is promoted. The same intervals and checks apply to both
+vanilla layouts and current Skippy, including rerunning an originally valid
+comparator such as Qwen3.5 separate slots. Compare only cells from this
+matched cohort. Keep the original attempts and their diagnostics separate.
+This is one thermal-control attempt per invalid cell, with zero automatic
+retries. If the cooled schedule still violates the nominal gate, report a
+capacity blocker rather than weakening the thermal gate. The separate
+fixed-output performance workload retains its original timing schedule and
+cannot use the paced quality responses as speed evidence.
+
 ## Quality request and score
 
 For each model, use the pinned vanilla model's live `/apply-template` and

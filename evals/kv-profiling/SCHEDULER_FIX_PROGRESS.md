@@ -1827,5 +1827,17 @@ The original binomial CDF underflowed near probability one. The
 [version 3 protocol](SCHEDULER_TASK_QUALITY_V3_PROTOCOL.md) records the
 source-hash amendment and direct-sum verification. The registered tasks,
 parser, exact confidence rule and 2% margin are unchanged; no invalid cell is
-rescued by this correction. The vanilla unified and other-model c1 jobs remain
-separately queued or running.
+rescued by this correction. The vanilla unified Qwen3.5 job
+`job_kh1ens6tgx5j7yk` then failed its nominal thermal gate after 256/512
+responses (pressure 0→1; archive SHA256
+`45204e5861fcac1072f27fab3806a600b94e214f00127dca5b6ff03b275b038b`).
+The Coder vanilla separate-slot job `job_hs6v7f0w2s6tj9q` independently
+failed at the same 256-response boundary and pressure level (archive SHA256
+`c9f16cf8b7e9a3c20c632dd8c7f3f25af7db365f9184eda45f436f65417d1fbb`).
+The still-queued Flash job `job_y8m7vfvj2wv05xt` was cancelled before any
+run; its sealed spec remains in the ledger. Qwen3.6 was already running.
+These are capacity/thermal invalidations, not scored model failures. A
+prospective matched c1 cohort with 120-second idle intervals every 64
+responses is now registered in the version 3 protocol. All three arms will
+use that same cadence and be compared only within that cohort; a further
+thermal failure remains a capacity blocker.
