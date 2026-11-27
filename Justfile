@@ -256,6 +256,7 @@ inference-contracts:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_contracts.py
 
 automation-contracts: inference-contracts
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_process_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/automation_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/release_contracts.py
 
