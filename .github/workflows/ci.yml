@@ -974,14 +974,157 @@ jobs:
           windows-rocm: '7.2.0'
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
+  package_linux_x86_64_vulkan:
+    name: Build and verify archive · Linux x64 Vulkan
+    needs: [plan, quality, package_linux_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    # The shared CLI must also run in the Ubuntu 24.04 CUDA toolchain images.
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: linux-x86_64-vulkan
+          host-id: linux-x86_64
+          smoke: artifact
+          vulkan-version: '1.4.328.1'
+          setup-host: 'true'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_windows_x86_64_vulkan:
+    name: Build and verify archive · Windows x64 Vulkan
+    needs: [plan, quality, package_windows_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-2022
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-vulkan
+          host-id: windows-x86_64
+          setup-host: 'true'
+          smoke: artifact
+          vulkan-version: '1.4.328.1'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  smoke_linux_x86_64_vulkan_nvidia:
+    name: Vulkan GPU smoke · Linux x64 · nvidia
+    needs: [plan, package_linux_x86_64_vulkan]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on:
+      group: jy-rnr_p0zx3thw895vrka
+      labels: [self-hosted, skippy-ephemeral, Linux, X64, runtime-image, cuda13]
+    permissions:
+      contents: read
+      packages: read
+    # This pool already runs inside its pinned GPU image, without a Docker socket.
+    timeout-minutes: 40
+    env:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
+      SKIPPY_CI_VULKAN_VENDOR: nvidia
+      TAR_OPTIONS: --no-same-owner
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - uses: ./.github/actions/source
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
+      - name: Provision Vulkan loader and device inspection
+        run: bash scripts/ci-vulkan-runtime.sh
+      - uses: ./.github/actions/ci-smoke
+        with:
+          runtime_id: linux-x86_64-vulkan
+          download-package: 'true'
+          evidence-suffix: -nvidia
+      - name: Upload Vulkan setup failure evidence
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-vulkan-setup-nvidia
+          path: target/ci-evidence/vulkan-runtime.log
+          if-no-files-found: warn
+          retention-days: 14
+  smoke_linux_x86_64_vulkan_amd:
+    name: Vulkan GPU smoke · Linux x64 · amd
+    needs: [plan, package_linux_x86_64_vulkan]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on:
+      group: jy-rnr_gsxt2m73mgpcbbh
+      labels: [self-hosted, skippy-ephemeral, Linux, X64, rocm]
+    permissions:
+      contents: read
+      packages: read
+    container:
+      # Use the established Ubuntu 24.04 image so the shared CLI keeps its ABI baseline.
+      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-cuda13@${{ needs.plan.outputs.cuda13_digest }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --user 0 --device=/dev/dri --env NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics --cpus=8 --memory=16g --pids-limit=4096
+    timeout-minutes: 40
+    env:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
+      SKIPPY_CI_VULKAN_VENDOR: amd
+      TAR_OPTIONS: --no-same-owner
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/rocm-workspace
+      - name: Trust the host-owned checkout inside the job container
+        shell: bash
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: ./.github/actions/source
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
+      - name: Provision Vulkan loader and device inspection
+        run: bash scripts/ci-vulkan-runtime.sh
+      - uses: ./.github/actions/ci-smoke
+        with:
+          runtime_id: linux-x86_64-vulkan
+          download-package: 'true'
+          evidence-suffix: -amd
+      - name: Upload Vulkan setup failure evidence
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-vulkan-setup-amd
+          path: target/ci-evidence/vulkan-runtime.log
+          if-no-files-found: warn
+          retention-days: 14
   gate:
     name: ${{ needs.plan.outputs.profile == 'full' && 'Full CI gate' || (github.event_name == 'pull_request_target' && 'Same-repository CI' || 'CI') }}
     needs: [
       changes, automation, plan, quality, native_contracts,
       package_darwin_aarch64_cpu, package_darwin_aarch64_metal,
-      package_linux_x86_64_cpu, package_linux_x86_64_cuda12, package_linux_x86_64_cuda13, package_linux_x86_64_rocm,
+      package_linux_x86_64_cpu, package_linux_x86_64_cuda12, package_linux_x86_64_cuda13, package_linux_x86_64_rocm, package_linux_x86_64_vulkan,
       package_linux_aarch64_cpu, package_linux_aarch64_cuda12, package_linux_aarch64_cuda13,
-      package_windows_x86_64_cpu, package_windows_x86_64_cuda12, package_windows_x86_64_cuda13, package_windows_x86_64_rocm,
+      package_windows_x86_64_cpu, package_windows_x86_64_cuda12, package_windows_x86_64_cuda13, package_windows_x86_64_rocm, package_windows_x86_64_vulkan,
+      smoke_linux_x86_64_vulkan_nvidia, smoke_linux_x86_64_vulkan_amd,
       release_smoke_linux_x86_64_cuda12, release_smoke_linux_aarch64_cuda12, release_smoke_linux_x86_64_cuda13
     ]
     if: always() && needs.changes.result != 'skipped'
@@ -1037,6 +1180,8 @@ jobs:
             requireResult('plan', selected);
             requireResult('quality', code);
             requireResult('native_contracts', full || paths.native === 'true');
+            requireResult('smoke_linux_x86_64_vulkan_nvidia', full);
+            requireResult('smoke_linux_x86_64_vulkan_amd', full);
             for (const job of prPackages) if (!packageJobs.includes(job)) throw new Error(`Missing package job ${job}`);
             for (const job of packageJobs) requireResult(job, full || (packages && prPackages.includes(job)));
             for (const job of releaseSmokes) requireResult(job, release);
