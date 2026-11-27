@@ -1,5 +1,44 @@
 # Scheduler fix and retest progress
 
+## 2026-11-27: Flash first paired c1 quality comparison passes; repeats pending
+
+The current-source Flash Skippy cell `job_23h7r82dzzyxa0z` completed 512/512
+requests and passed the exact CI shard, source, 49/49 Metal, F16 KV,
+16×8192 context, batch/microbatch 512, cache-off, prompt and cooled nominal
+thermal audits. It scored **386/512**. Both vanilla layouts scored **387/512**
+and reproduced identical raw answers on all 512 tasks. The registered scorer,
+replayed byte-for-byte from saved raw responses, finds **one adverse** task
+(`ordering-114`) among 387 vanilla-correct tasks. Its exact one-sided 95%
+upper bound is **1.21989%**, below the strict 2% limit: this **first paired
+comparison passes** against both layouts. The three raw cross-engine text
+differences (`assignment-004`, `assignment-088`, `ordering-114`) remain visible.
+
+The [compact first-cell archive](pr-evidence/task-quality-v3-flash-c1-first-cells.tar.xz)
+(SHA256 `b398c55c711040a80c3f7d6c2868079af37b1c52df0e322f74ba58fcf09a74ec`)
+contains all three raw score inputs, scores, independent audits, comparisons
+and source/job/spec/artifact hashes. Its
+[summary](pr-evidence/task-quality-v3-flash-c1-first-cells-summary.json)
+has SHA256 `f4114fab756850ce3813ab421af1ee580563c3b97eddf3f4ada9524d30d501a0`.
+The ignored local builder reproduced both hashes twice and verified all 12
+archive members are regular relative files. The three presealed reverse-order
+fresh-process A/A and candidate repeats are pending, so this is **not yet a
+Flash c1 gate pass**. The archived Flash serial and mixed-history numerical
+differences, loaded quality, current-source fixed-output timing, and the
+four-model claim remain **UNPROVEN**.
+
+## 2026-11-27: exact-head CI passed after preserved CUDA startup failure
+
+At PR head `f19eb460b0513b14331c6040603f3715fab3b855`, the first
+[inference qualification run](https://github.com/Mesh-LLM/skippy/actions/runs/46051059338)
+failed Qwen3.6 standalone on `spark-000907`: CUDA reported out of memory at
+`cudaSetDevice`, before loading the model or scoring a request. The failed JY
+job was `job_tj1pynrspqs79qv`, and its fetched `server.log` has SHA256
+`8c273dd234c5365726f63660b219ee4941cf3d63b0ca909dfcd79cd540229f15`.
+The unchanged-head failed-job rerun passed, including the inference summary.
+After the PR body re-evaluation, all 69 exact-head checks completed with 20
+successes, 49 intentional skips and zero failures. This is CI qualification,
+not an Apple M1 Ultra four-model quality or performance result.
+
 ## 2026-11-27: Qwen3.6 first paired c1 quality remains unproven
 
 The current-source Qwen3.6 Skippy cell `job_h7m1kpd0xhw8s2s` completed
