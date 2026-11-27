@@ -1,8 +1,8 @@
-From cb4788c49b0880370b68cba50abeb477b72b3367 Mon Sep 17 00:00:00 2001
+From 9788e714b6cf40f1cd8704bf26f332d3591d7bc0 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Thu, 12 Nov 2026 08:42:32 +1100
-Subject: [PATCH 33/33] llama: place each request's share of a batch together
- in the KV pool
+Subject: [PATCH] llama: place each request's share of a batch together in the
+ KV pool
 
 The unified pool placed one token at a time: a sequence continued after its
 highest cell while that stayed inside a 64-cell chunk, and otherwise opened
@@ -31,10 +31,10 @@ Claude-Session: https://claude.ai/code/session_01QA3dWey3RBtBgDz1Tery9Y
  create mode 100644 tests/test-skippy-kv-place-together.cpp
 
 diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
-index 7d099082c..9d9be0f94 100644
+index 778c4de61..7625ddf87 100644
 --- a/src/llama-kv-cache.cpp
 +++ b/src/llama-kv-cache.cpp
-@@ -1261,79 +1261,18 @@ bool llama_kv_cache::update(llama_context * lctx, bool do_shift, const stream_co
+@@ -1251,79 +1251,18 @@ bool llama_kv_cache::update(llama_context * lctx, bool do_shift, const stream_co
      return updated;
  }
  
@@ -125,7 +125,7 @@ index 7d099082c..9d9be0f94 100644
  
  llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch, bool cont) const {
 diff --git a/src/llama-kv-cells.h b/src/llama-kv-cells.h
-index 1743c8fae..ac6ae063e 100644
+index 94caf7c83..d30090efd 100644
 --- a/src/llama-kv-cells.h
 +++ b/src/llama-kv-cells.h
 @@ -4,12 +4,14 @@
@@ -143,7 +143,7 @@ index 1743c8fae..ac6ae063e 100644
  #include <set>
  #include <vector>
  
-@@ -627,17 +629,112 @@ public:
+@@ -656,17 +658,112 @@ public:
                 positions.size() == static_cast<size_t>(pos_max) + 1;
      }
  
@@ -266,7 +266,7 @@ index 1743c8fae..ac6ae063e 100644
  
      // note: call only if the cell is not empty
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index cc27837c5..595a84a26 100644
+index bf1e23046..8ceab864c 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
 @@ -194,6 +194,7 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
@@ -484,5 +484,5 @@ index 000000000..b7c50f142
 +    return failures == 0 ? 0 : 1;
 +}
 -- 
-2.43.0
+2.56.1
 

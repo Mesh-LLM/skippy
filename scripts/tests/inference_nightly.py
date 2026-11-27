@@ -195,7 +195,7 @@ class NightlyTests(unittest.TestCase):
             smoke_receipt(root, SOURCE, "23", configuration="qwen3-coder-30b-a3b-split")
             report = nightly_run(root, SOURCE, "23", "1", "2026-11-21T00:00:00Z", True)
             split = next(config for config in report["configurations"]
-                         if config["id"] == "qwen3-coder-30b-a3b-split" and config["workload"] == "DGX Spark smoke v1")
+                         if config["id"] == "qwen3-coder-30b-a3b-split" and config["workload"] == "DGX Spark warm probe v2")
             self.assertEqual(split["outcome"], "passed")
             self.assertEqual(report["outcome"], "failed")
             self.assertEqual(len(report["configurations"]), 19)

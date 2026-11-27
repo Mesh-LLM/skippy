@@ -1,8 +1,8 @@
-From 3960653d9909ba978fb9735923d1563392968b38 Mon Sep 17 00:00:00 2001
+From f8a7244e9ef78f1fa0c9f8e203e0fe2d40fdc901 Mon Sep 17 00:00:00 2001
 From: Mesh-LLM CI <ci@mesh-llm.local>
 Date: Thu, 29 Oct 2026 19:55:52 -0400
-Subject: [PATCH 13/32] fix(skippy): take the argmax path for temperature-0
- chains that can only pick the top logit
+Subject: [PATCH] fix(skippy): take the argmax path for temperature-0 chains
+ that can only pick the top logit
 
 ---
  src/CMakeLists.txt                    |   3 +-
@@ -485,3 +485,6 @@ index b191ecf34..5ae8e15b4 100644
      } else {
          for (const bool full : {false, true}) {
              if (grammar) {
+-- 
+2.56.1
+

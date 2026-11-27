@@ -37,12 +37,14 @@ test('scheduled and manual nightly success requires successful publication', asy
   }
 });
 
-test('PR qualification and intentional opt-out retain their existing status contract', async () => {
+test('PR qualification requires admission and skipped plans cannot satisfy it', async () => {
   assert.deepEqual(await status('pull_request_target', 'skipped', { PUBLICATION_REQUIRED: 'false' }),
     { state: 'success', failures: [] });
-  assert.deepEqual(await status('pull_request_target', 'skipped', {
+  const skipped = await status('pull_request_target', 'skipped', {
     PUBLICATION_REQUIRED: '', PLAN: 'skipped', RESULT: 'skipped',
-  }), { state: 'success', failures: [] });
+  });
+  assert.equal(skipped.state, 'failure');
+  assert.equal(skipped.failures.length, 1);
 });
 
 test('publisher runs after qualification failures when publication was admitted', () => {

@@ -8,14 +8,14 @@ use std::{
     time::Duration,
 };
 
-use process_supervision::{
+use serde::{Deserialize, Serialize};
+use skippy_subprocess::{
     Completion, Limits, Outcome, ProcessSpec, RawCaptureOptions, Readiness, Value, supervise_raw,
 };
-use serde::{Deserialize, Serialize};
 
 use crate::{BenchmarkBackend, BenchmarkOutput};
 
-pub use process_supervision::Cancellation;
+pub use skippy_subprocess::Cancellation;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DeviceTarget {

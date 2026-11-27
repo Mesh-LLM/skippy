@@ -87,9 +87,11 @@ jobs:
     secrets:
       JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
   verify:
+    outputs:
+      artifact_only: ${{ steps.inventory.outputs.artifact_only }}
     needs: [admission, validation, inference, documentation_validation]
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -105,9 +107,23 @@ jobs:
           pattern: release-device-evidence-*
           path: release-artifacts
       - name: Verify the complete candidate release matrix
+        id: inventory
         env:
           RELEASE_TAG: ${{ needs.admission.outputs.tag }}
         run: just release-prepare-candidate "$RELEASE_TAG" release-artifacts
+      - name: Verify crates.io packages
+        if: needs.admission.outputs.prerelease != 'true'
+        run: just release-crates package release-artifacts/release-product-linux-x86_64-cpu
+      - name: Transfer the prepared release assets
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: ${{ !inputs.canary }}
+        with:
+          name: prepared-release-${{ needs.admission.outputs.source }}
+          path: dist/release
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 7
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: ${{ !inputs.canary }}
         with:
@@ -133,21 +149,15 @@ jobs:
       - uses: ./.github/actions/setup
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: release-product-*
-          path: release-artifacts
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: release-device-evidence-*
-          path: release-artifacts
+          name: prepared-release-${{ needs.admission.outputs.source }}
+          path: dist/release
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: validated-release-${{ needs.admission.outputs.source }}
           path: release-receipt
       - name: Verify the artifacts match the candidate receipt
-        env:
-          RELEASE_TAG: ${{ needs.admission.outputs.tag }}
         run: |
-          just release-prepare-candidate "$RELEASE_TAG" release-artifacts
+          just release-verify dist/release
           cmp release-receipt/release.json dist/release/release.json
       - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
         id: release-app
@@ -225,8 +235,50 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.admission.outputs.tag }}
+          SOURCE_SHA: ${{ needs.admission.outputs.source }}
+          ARTIFACT_ONLY: ${{ needs.verify.outputs.artifact_only }}
           PRERELEASE: ${{ needs.admission.outputs.prerelease }}
-        run: gh release edit "$RELEASE_TAG" --draft=false --prerelease="$PRERELEASE"
+        run: |
+          notes="Skippy source: $SOURCE_SHA"
+          if [[ -n "$ARTIFACT_ONLY" ]]; then
+            notes+=$'\n\n'"Build and archive checks only. Inference qualification is pending for $ARTIFACT_ONLY."
+          fi
+          gh release edit "$RELEASE_TAG" --draft=false --prerelease="$PRERELEASE" --notes "$notes"
+  publish_crates:
+    needs: [admission, publish]
+    if: ${{ !inputs.canary && needs.admission.outputs.prerelease != 'true' && vars.SKIPPY_PUBLISH_CRATES == 'true' }}
+    environment: release
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 190
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: refs/tags/${{ needs.admission.outputs.tag }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - name: Select crates.io authentication
+        id: registry-auth
+        env:
+          BOOTSTRAP_TOKEN: ${{ secrets.SKIPPY_CRATES_BOOTSTRAP_TOKEN }}
+        run: |
+          if [[ -n "$BOOTSTRAP_TOKEN" ]]; then
+            echo 'bootstrap=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+        id: crates-io
+        if: steps.registry-auth.outputs.bootstrap != 'true'
+      - name: Publish verified crates
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.SKIPPY_CRATES_BOOTSTRAP_TOKEN || steps.crates-io.outputs.token }}
+          SKIPPY_CRATES_BOOTSTRAP: ${{ steps.registry-auth.outputs.bootstrap }}
+          RELEASE_TAG: ${{ needs.admission.outputs.tag }}
+          SOURCE_SHA: ${{ needs.admission.outputs.source }}
+        run: just release-crates publish "$RELEASE_TAG" "$SOURCE_SHA"
   documentation:
     needs: [admission, publish]
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}

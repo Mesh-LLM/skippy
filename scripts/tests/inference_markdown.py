@@ -105,6 +105,37 @@ class InferenceMarkdownTests(unittest.TestCase):
         self.assertNotIn("Measurement unavailable", text)
         self.assertNotIn("Smoke test", text)
 
+    def test_measured_smoke_regressions_remain_visible_alongside_agentx(self):
+        report = history()
+        for run, value in zip(report["runs"], (100, 90)):
+            run["configurations"].append({"id": "smoke-case", "outcome": "passed", "metrics": [
+                {"metric": "decode_tok_s", "workload": "DGX Spark smoke v1", "measured": value,
+                 "contract_sha256": "c" * 64},
+            ]})
+        view = health_view(report)
+        self.assertEqual(view["counts"]["regressed"], 2)
+        figure = next(chart for chart in health_charts(view) if chart.metric == "decode_tok_s")
+        self.assertEqual(figure.panels[0].current, 90)
+        self.assertIn("90.00 tok/s | 100.00 tok/s | -10.00%", dataset_card(report))
+
+    def test_missing_current_sample_keeps_history_without_latest_result(self):
+        report = history()
+        missing = report["runs"][-1]["configurations"][0]
+        for row in missing["metrics"]:
+            row["measured"] = None
+        for absent in (False, True):
+            with self.subTest(absent=absent):
+                if absent:
+                    report["runs"][-1]["configurations"].remove(missing)
+                view = health_view(report)
+                self.assertEqual(len(view["configurations"]), 1)
+                panel = health_charts(view)[0].panels[0]
+                self.assertIsNone(panel.current)
+                self.assertEqual([value for _, value in panel.points], [100, None])
+                latest = dataset_card(report).split("## Latest numbers")[1]
+                self.assertNotIn("Qwen3.5-4B", latest)
+                self.assertEqual(sum(view["counts"].values()), 3)
+
     def test_real_execution_failures_and_request_errors_remain_visible(self):
         report = history()
         report["runs"][-1]["configurations"].append({"id": "qwen35-9b-standalone", "outcome": "failed", "metrics": []})

@@ -1,4 +1,4 @@
-From 3c9a23da3262ff04ef4ee0be5dd8b158c8b458f3 Mon Sep 17 00:00:00 2001
+From cf08bad7625351870efe26d416f8e194eea94539 Mon Sep 17 00:00:00 2001
 From: Skippy <build@skippy.local>
 Date: Fri, 20 Nov 2026 16:34:51 +1100
 Subject: [PATCH] skippy: remove callback-backed checkpoint serving
@@ -9,11 +9,11 @@ Subject: [PATCH] skippy: remove callback-backed checkpoint serving
  include/skippy/model_source.h |  84 ------
  src/CMakeLists.txt            |   1 -
  src/llama-model-loader.h      |   7 -
- src/llama.cpp                 |  14 -
+ src/llama.cpp                 |  15 --
  src/skippy/abi.cpp            |   1 -
  src/skippy/model_loading.cpp  |  32 ++-
  src/skippy/model_source.cpp   | 465 ----------------------------------
- 9 files changed, 32 insertions(+), 577 deletions(-)
+ 9 files changed, 32 insertions(+), 578 deletions(-)
  delete mode 100644 include/skippy/model_source.h
  delete mode 100644 src/skippy/model_source.cpp
 
@@ -142,7 +142,7 @@ index 5d77f4804..000000000
 -
 -#endif // SKIPPY_MODEL_SOURCE_H
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 3a58c962d..707182b75 100644
+index 316c866f6..3d11e2444 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -56,7 +56,6 @@ add_library(llama
@@ -172,10 +172,10 @@ index b8dc0cfa7..7cd451d85 100644
          const char * path_model,
          struct llama_model_params params,
 diff --git a/src/llama.cpp b/src/llama.cpp
-index 654b50dda..2179ac2e6 100644
+index bad9730ba..8fee4d61b 100644
 --- a/src/llama.cpp
 +++ b/src/llama.cpp
-@@ -470,20 +470,6 @@ struct llama_model * llama_model_init_from_user(
+@@ -470,21 +470,6 @@ struct llama_model * llama_model_init_from_user(
      return llama_model_load_from_file_impl(metadata, set_tensor_data, set_tensor_data_ud, path_model, splits, /*ordered_parts*/ false, /*file*/ nullptr, params);
  }
  
@@ -193,9 +193,10 @@ index 654b50dda..2179ac2e6 100644
 -    return llama_model_load_from_file_impl(metadata, set_tensor_data, set_tensor_data_ud,
 -            path_model, splits, false, nullptr, params, selection);
 -}
- // deprecated
- struct llama_model * llama_load_model_from_file(
+-
+ struct llama_model * llama_model_load_from_file(
          const char * path_model,
+         struct llama_model_params params) {
 diff --git a/src/skippy/abi.cpp b/src/skippy/abi.cpp
 index c772a3766..8ac906c9e 100644
 --- a/src/skippy/abi.cpp
@@ -757,3 +758,6 @@ index 2b91f2b71..000000000
 -        return SKIPPY_STATUS_RUNTIME_ERROR;
 -    }
 -}
+-- 
+2.56.1
+

@@ -97,10 +97,11 @@ test('recent PR snapshots distinguish reporting from real package inputs', () =>
 
 test('CI selects package jobs independently of qualification and preserves full validation', () => {
   const outputs = workflow.split('    outputs:\n')[1].split('    steps:\n')[0];
-  const decide = (name, eventName, paths, verified = false) => {
+  const decide = (name, eventName, paths, verified = false, fork = false) => {
     const expression = outputs.match(new RegExp(`^      ${name}: \\$\\{\\{ (.+) \\}\\}$`, 'm'))[1];
     return new Function('github', 'steps', `return (${expression})`)(
-      { event_name: eventName, event: { pull_request: eventName.startsWith('pull_request') ? {} : null } },
+      { event_name: eventName, event: { repository: { id: 42 },
+        pull_request: eventName.startsWith('pull_request') ? { head: { repo: { id: fork ? 43 : 42 } } } : null } },
       { release: { outputs: { verified: String(verified) } },
         paths: { outputs: Object.fromEntries(Object.entries(paths).map(([key, value]) => [key, String(value)])) } });
   };
@@ -111,16 +112,23 @@ test('CI selects package jobs independently of qualification and preserves full 
     assert.equal(decide('automation', 'pull_request_target', paths), true);
     assert.equal(decide('code', 'pull_request_target', paths), false);
     assert.equal(decide('packages', 'pull_request_target', paths), false);
-    assert.equal(decide('hosted_requires_native', 'pull_request', paths), false);
   }
   assert.equal(decide('packages', 'pull_request_target', runtime), true);
-  assert.equal(decide('hosted_requires_native', 'pull_request', runtime), true);
+  assert.equal(decide('packages', 'pull_request', runtime), false);
+  // A same-repository pull_request run (base other than main) keeps its hosted checks.
+  assert.equal(decide('automation', 'pull_request', runtime), true);
+  assert.equal(decide('code', 'pull_request', runtime), true);
+  // A fork's own run is only the approval gate; the approved-fork controller
+  // runs the canary once on protected runners (#203 ran it twice, 19.5 min cold).
+  for (const name of ['automation', 'code', 'packages', 'native']) {
+    assert.equal(decide(name, 'pull_request', runtime, false, true), false, name);
+  }
   for (const event of ['push', 'schedule', 'workflow_dispatch', 'workflow_call']) {
     assert.equal(decide('automation', event, {}), true, event);
     assert.equal(decide('code', event, {}), true, event);
     assert.equal(decide('packages', event, {}), false, event);
   }
-  for (const name of ['automation', 'code', 'packages', 'native', 'hosted_requires_native']) {
+  for (const name of ['automation', 'code', 'packages', 'native']) {
     assert.equal(decide(name, 'push', {}, true), false, name);
   }
 });
