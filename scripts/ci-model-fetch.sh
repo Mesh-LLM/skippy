@@ -5,8 +5,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 entry="$(jq -cer '
   .models[] | select(.family == "qwen3-dense")
   | .artifact as $artifact | $artifact.files[0] as $file
-  | {repo: $artifact.repo, revision: $artifact.revision, file: $file,
-     size: $artifact.file_integrity[$file].size_bytes,
+  | {size: $artifact.file_integrity[$file].size_bytes,
      sha256: $artifact.file_integrity[$file].blob_id}
 ' "$root/ci/llama-canary/model-fixtures.json")"
 expected_size="$(jq -er '.size' <<<"$entry")"
@@ -30,14 +29,17 @@ verify_model() {
 if [[ ${SKIPPY_CI_MODEL+x} ]]; then
   destination="$SKIPPY_CI_MODEL"
 else
-  repo="$(jq -er '.repo' <<<"$entry")"
-  revision="$(jq -er '.revision | select(test("^[a-f0-9]{40}$"))' <<<"$entry")"
-  file="$(jq -er '.file' <<<"$entry")"
-  model_path="$(NO_COLOR=1 HF_HUB_DISABLE_XET=1 hf download "$repo" "$file" --revision "$revision" --quiet)"
-  destination="$(awk '{sub(/^[[:space:]]+/, ""); sub(/^path[:=][[:space:]]*/, "")} /^\// {path=$0} END {print path}' <<<"$model_path")"
-  if [[ "$destination" != /* || ! -f "$destination" ]]; then
-    echo 'hf download returned no existing absolute Qwen3 fixture path' >&2
-    exit 1
+  model_dir="$root/target/ci-models"
+  mkdir -p "$model_dir"
+  destination="$model_dir/Qwen3-0.6B-Q8_0.gguf"
+  if [[ ! -e "$destination" ]]; then
+    temporary="$(mktemp "$model_dir/.qwen3.XXXXXXXX")"
+    trap 'rm -f "$temporary"' EXIT
+    curl --fail --location --proto '=https' --max-time 900 --output "$temporary" \
+      'https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/23749fefcc72300e3a2ad315e1317431b06b590a/Qwen3-0.6B-Q8_0.gguf'
+    verify_model "$temporary"
+    mv "$temporary" "$destination"
+    trap - EXIT
   fi
 fi
 
