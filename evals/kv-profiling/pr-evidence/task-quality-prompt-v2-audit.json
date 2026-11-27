@@ -1,0 +1,30 @@
+{
+  "schema": "scheduler-task-materialization-audit-v1",
+  "models": {
+    "qwen35-4b": {
+      "status": "passed",
+      "prompts": 256,
+      "prompts_sha256": "0f563a0064ab521cd264e583ea316438a493f1ea9fa259977a4b17f59aab42b8",
+      "effective_add_special": false
+    },
+    "qwen3-coder-30b-a3b": {
+      "status": "failed",
+      "reported_error": "ValueError: cannot materialize exact token shape: extraction-029; nearest=(1, 455, 511, 0)"
+    },
+    "qwen36-35b-a3b": {
+      "status": "passed",
+      "prompts": 256,
+      "prompts_sha256": "0f563a0064ab521cd264e583ea316438a493f1ea9fa259977a4b17f59aab42b8",
+      "effective_add_special": false
+    },
+    "qwen38-flash-next": {
+      "status": "passed",
+      "prompts": 256,
+      "prompts_sha256": "0f563a0064ab521cd264e583ea316438a493f1ea9fa259977a4b17f59aab42b8",
+      "effective_add_special": false
+    }
+  },
+  "status": "failed",
+  "archive_sha256": "8d54864502694bb31e6d3829523235d20a88a937f7d2149a31455a1b26e1f944",
+  "archive_files": 19
+}

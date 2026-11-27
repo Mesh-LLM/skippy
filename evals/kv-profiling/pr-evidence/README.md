@@ -9,6 +9,15 @@ The task-quality scorer and prompt materializer remain in this PR because
 the prospective quality gate still uses them. The audited results below
 were produced before the one-off scripts were removed.
 
+The [prospective prompt manifest](task-quality-prompt-manifest.json) binds
+the four live-tokenizer 512-token prompt fixtures to their exact CI model
+pins, source task set, materializer and two $0 JY jobs. Its two evidence
+archives and independent audits are included here. The first archive records
+the failed Coder attempt alongside three successful model fixtures; the
+second records the successful Coder-only neutral-padding follow-up. These
+are prompt-construction results, with no scored model outputs or new timing
+measurements.
+
 This directory contains compact audited results for
 the four exact CI qualification models. [The manifest](manifest.json) gives
 the SHA256 of every snapshot and its source, the SHA256 of each full local suite, and the JY
