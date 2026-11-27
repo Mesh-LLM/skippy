@@ -253,6 +253,7 @@ process-supervision-test:
     @cargo test --locked -p process-supervision
 
 inference-contracts:
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_build.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_contracts.py
 
 automation-contracts: inference-contracts

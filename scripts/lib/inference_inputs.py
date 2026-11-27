@@ -1,6 +1,8 @@
 """Admit native inference executables and immutable model inputs."""
 
+import fcntl
 import re
+from contextlib import contextmanager
 from pathlib import Path
 
 from .ci_artifacts import digest, read_json, write_json
@@ -14,6 +16,13 @@ INPUT_MANIFESTS = {
 }
 DEBUG_DIR = Path("target/debug")
 BUILD_IDENTITY = Path("target/inference-build.json")
+
+
+@contextmanager
+def lock(path):
+    with path.open("a+b") as stream:
+        fcntl.flock(stream, fcntl.LOCK_EX)
+        yield
 
 
 def input_hashes():
