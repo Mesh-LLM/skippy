@@ -1,5 +1,8 @@
 # Offline automation and reporting recipes; no native build inputs.
 
+ci-windows-vm-contracts:
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/tests/ci_windows_vm_variants.ps1
+
 # Explicit hardware rehearsal; never a dependency of offline checks.
 ci-rocm-preflight:
     @bash scripts/ci-rocm-preflight.sh

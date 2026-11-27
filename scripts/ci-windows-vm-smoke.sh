@@ -68,7 +68,9 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 acquired=true
-"$manager" acquire --lease "$lease" --gpu "$gpu" --work "$work" --journal "$evidence/host-lifecycle.json"
+host_sha256=$(sha256sum "$recipe/host.py" | cut -d ' ' -f 1)
+"$manager" acquire --lease "$lease" --gpu "$gpu" --work "$work" --journal "$evidence/host-lifecycle.json" \
+  --expected-host-sha256 "$host_sha256"
 just --justfile "$recipe/justfile" run --image "$image" --base "$base" \
   --backend "$WINDOWS_BACKEND" --gpu "$gpu" --lease "$lease" \
-  --input "$input" --work "$work" --timeout 3600 "${firmware[@]}"
+  --input "$input" --work "$work" --lifecycle-manager "$manager" --timeout 3600 "${firmware[@]}"

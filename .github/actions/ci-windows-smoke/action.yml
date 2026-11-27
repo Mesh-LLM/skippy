@@ -24,7 +24,7 @@ runs:
       uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       with:
         repository: Mesh-LLM/mesh-llm-runner-images
-        ref: 3e065f2cedb13228678c287f0ad55c26bafe6e6e
+        ref: 88bdedf89caf19f44c0b8623cc71a82f4ac52a00
         path: target/windows-recipe
         persist-credentials: false
     - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -50,7 +50,7 @@ runs:
       shell: bash
       env:
         WINDOWS_BACKEND: ${{ inputs.backend }}
-        WINDOWS_RECIPE_SHA: 3e065f2cedb13228678c287f0ad55c26bafe6e6e
+        WINDOWS_RECIPE_SHA: 88bdedf89caf19f44c0b8623cc71a82f4ac52a00
     - name: Upload CUDA 12 inference evidence
       if: inputs.backend == 'cuda'
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
