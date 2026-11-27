@@ -1,7 +1,7 @@
-From e14b70ecf6e68fa79fcdd63a2ed743dd13e23320 Mon Sep 17 00:00:00 2001
+From 6dabea28c98c2f994e3d44d874aebb7b59afda04 Mon Sep 17 00:00:00 2001
 From: Daniel Winter <danielwinterw@gmail.com>
 Date: Sat, 10 Oct 2026 18:34:14 +0100
-Subject: [PATCH 08/32] fix(skippy): stop re-attaching backend samplers between
+Subject: [PATCH] fix(skippy): stop re-attaching backend samplers between
  verify windows
 
 A sampled verify window needs every row's prediction, so it detaches a
@@ -108,3 +108,6 @@ index bb3c0e621..2e9b20c48 100644
  
      const bool activation_input = skippy_is_filtered(session) && session->stage_model->config.layer_start > 0;
      status = skippy_checkpoint_verify_window(
+-- 
+2.56.1
+

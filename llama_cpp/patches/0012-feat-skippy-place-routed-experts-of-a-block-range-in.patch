@@ -1,8 +1,8 @@
-From f7d35c8133ab138379b158ae964e31f2da32afc3 Mon Sep 17 00:00:00 2001
+From b329cfd815ae851ede9ab5de59dbf68cb081736c Mon Sep 17 00:00:00 2001
 From: Daniel Winter <danielwinterw@gmail.com>
 Date: Fri, 16 Oct 2026 19:21:00 +0300
-Subject: [PATCH 12/32] feat(skippy): place routed experts of a block range in
- host memory
+Subject: [PATCH] feat(skippy): place routed experts of a block range in host
+ memory
 
 Add host_expert_layer_start/end to skippy_runtime_config. When the range
 is non-empty, every model load installs one tensor buffer-type override
@@ -251,3 +251,6 @@ index cfc17776b..417c07dbb 100644
 +
      return passed ? 0 : 1;
  }
+-- 
+2.56.1
+

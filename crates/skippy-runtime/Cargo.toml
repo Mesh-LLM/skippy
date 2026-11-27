@@ -2,7 +2,7 @@
 name = "skippy-runtime"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Rust runtime layer for Skippy staged model execution"
 repository = "https://github.com/Mesh-LLM/skippy"

@@ -1,8 +1,8 @@
-From cdbfb54e00727c01cbf03067036a3c9348dec0b2 Mon Sep 17 00:00:00 2001
+From b1efd6ece1e8741fb0af28ec894cb49d1f40402f Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Sun, 8 Nov 2026 19:48:49 +1100
-Subject: [PATCH 29/32] ggml, skippy: report every backend buffer's life as a
- trace span
+Subject: [PATCH] ggml, skippy: report every backend buffer's life as a trace
+ span
 
 ggml_backend_set_buffer_event_callback hears each buffer a backend creates,
 its usage once llama sets it, and its release; buffers alive at install are
@@ -59,7 +59,7 @@ index f326769a3..4383bd3ff 100644
      // Backend registry
      //
 diff --git a/ggml/src/ggml-backend.cpp b/ggml/src/ggml-backend.cpp
-index 9c8980505..7cf2c6580 100644
+index 1b65dceaf..7b4ef7aba 100644
 --- a/ggml/src/ggml-backend.cpp
 +++ b/ggml/src/ggml-backend.cpp
 @@ -20,6 +20,7 @@
@@ -226,5 +226,5 @@ index 29e9047b1..48d827d34 100644
      // Skippy and llama report their own spans with or without a backend.
      return SKIPPY_STATUS_OK;
 -- 
-2.43.0
+2.56.1
 

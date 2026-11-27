@@ -21,6 +21,7 @@ from lib.inference_checks import ENDPOINT, numerical, offload, performance, scor
 from lib.inference_inputs import admit, fixture, input_hashes, record
 from lib.inference_ladder import plan
 from lib.inference_admission import split_admissions_digest
+from lib.inference_probe import measure
 
 
 def authority():
@@ -160,6 +161,7 @@ def execute(profile, key, mode):
             score(coordinate, output, profile)
             if profile == "pr":
                 streaming(coordinate, output)
+                measure(coordinate, output)
                 scope = "GPU startup, deterministic endpoint repeats and bounded streaming smoke"
             else:
                 performance(profile, coordinate, context, output, inputs)

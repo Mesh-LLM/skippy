@@ -1,0 +1,167 @@
+From 3a5e73a101fcc8d8df7f2bda2287e34ad2caa5b2 Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Thu, 26 Nov 2026 14:39:36 +1100
+Subject: [PATCH] graph: preserve registered expert scales in explicit overload
+
+---
+ src/CMakeLists.txt                 |  7 +++
+ src/llama-graph.cpp                |  4 ++
+ src/llama-graph.h                  |  1 +
+ src/skippy/tests/expert_scales.cpp | 94 ++++++++++++++++++++++++++++++
+ 4 files changed, 106 insertions(+)
+ create mode 100644 src/skippy/tests/expert_scales.cpp
+
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 735f3081d..cccbf74c1 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -463,12 +463,19 @@ if (LLAMA_STAGE_BUILD_TESTS)
+         NAME skippy_stage_slice_plan
+         COMMAND skippy-stage-slice-plan)
+ 
++    add_executable(skippy-expert-scales skippy/tests/expert_scales.cpp)
++    target_include_directories(skippy-expert-scales PRIVATE .)
++    target_compile_features(skippy-expert-scales PRIVATE cxx_std_17)
++    target_link_libraries(skippy-expert-scales PRIVATE llama)
++    add_test(NAME skippy_expert_scales COMMAND skippy-expert-scales)
++
+     add_executable(skippy-graph-build-inputs
+         skippy/tests/graph_build_inputs.cpp)
+     target_include_directories(skippy-graph-build-inputs PRIVATE .)
+     target_compile_definitions(skippy-graph-build-inputs PRIVATE LLAMA_STAGE_BUILD_TESTS)
+     target_compile_features(skippy-graph-build-inputs PRIVATE cxx_std_17)
+     target_link_libraries(skippy-graph-build-inputs PRIVATE llama)
++    add_dependencies(skippy-graph-build-inputs skippy-expert-scales)
+     add_dependencies(skippy-stage-slice-plan skippy-graph-build-inputs skippy-profile-residency)
+     add_test(NAME skippy_decode_input_width COMMAND skippy-graph-build-inputs --input-width)
+ 
+diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
+index de693bf4b..46d304c0e 100644
+--- a/src/llama-graph.cpp
++++ b/src/llama-graph.cpp
+@@ -2434,6 +2434,10 @@ ggml_tensor * llm_graph_context::build_lora_mm_id(
+           ggml_tensor * w_s,
+           ggml_tensor * slots,
+                  bool   cached) const {
++    if (!w_s) {
++        w_s = model.get_w_scale(w);
++    }
++
+     // as in build_lora_mm: the folded weight reads the transformed input, the LoRA delta reads `cur`
+     ggml_tensor * cur_mm = build_hadamard_input(w, cur);
+     // the experts in the MoE cache are selected by their slots
+diff --git a/src/llama-graph.h b/src/llama-graph.h
+index dc816099e..b8fe5d263 100644
+--- a/src/llama-graph.h
++++ b/src/llama-graph.h
+@@ -1387,6 +1387,7 @@ struct llm_graph_context {
+               ggml_tensor * ids,
+               ggml_tensor * slots  = nullptr,
+                      bool   cached = true) const;
++    // A null explicit scale falls back to the model's registered per-expert scale.
+     ggml_tensor * build_lora_mm_id(
+               ggml_tensor * w,   // ggml_tensor * as
+               ggml_tensor * cur, // ggml_tensor * b
+diff --git a/src/skippy/tests/expert_scales.cpp b/src/skippy/tests/expert_scales.cpp
+new file mode 100644
+index 000000000..ac9a7824e
+--- /dev/null
++++ b/src/skippy/tests/expert_scales.cpp
+@@ -0,0 +1,94 @@
++#include "llama-adapter.h"
++#include "llama-graph.h"
++#include "llama-model.h"
++#include "ggml-alloc.h"
++#include "ggml-backend.h"
++#include "ggml-cpu.h"
++
++#include <array>
++#include <cmath>
++#include <cstdio>
++#include <memory>
++
++static bool check_expert_scales(bool use_slots) {
++    std::unique_ptr<llama_model> model(llama_model_create(LLM_ARCH_LLAMA, llama_model_default_params()));
++    model->hparams.n_layer_all = 1;
++    model->hparams.n_embd = 2;
++    model->hparams.n_head_arr[0] = 1;
++    model->hparams.n_head_kv_arr[0] = 1;
++    model->hparams.n_expert = 3;
++    model->hparams.n_expert_used_arr[0] = 1;
++
++    llm_graph_result result(256);
++    llama_adapter_loras loras;
++    llm_graph_params params{};
++    params.model = model.get();
++    params.res = &result;
++    params.loras = &loras;
++    params.ubatch.n_tokens = 2;
++    llm_graph_context graph(params);
++    ggml_context * ctx = result.get_ctx();
++
++    auto * weight = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, 2, 1, 3);
++    auto * input = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, 2, 1, 2);
++    auto * ids = ggml_new_tensor_2d(ctx, GGML_TYPE_I32, 1, 2);
++    auto * slots = use_slots ? ggml_new_tensor_2d(ctx, GGML_TYPE_I32, 1, 2) : nullptr;
++    auto * registered = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 3);
++    auto * explicit_scale = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 3);
++    model->w_scales.emplace(weight, registered);
++
++    // The null explicit scale must agree with the ordinary helper's registered scale.
++    auto * ordinary = graph.build_lora_mm_id(weight, input, ids, slots, false);
++    auto * fallback = graph.build_lora_mm_id(weight, input, ids, nullptr, slots, false);
++    auto * override = graph.build_lora_mm_id(weight, input, ids, explicit_scale, slots, false);
++    model->w_scales.clear();
++    auto * unscaled = graph.build_lora_mm_id(weight, input, ids, nullptr, slots, false);
++    for (auto * output : {ordinary, fallback, override, unscaled}) {
++        ggml_build_forward_expand(result.get_gf(), output);
++    }
++
++    std::unique_ptr<ggml_backend, decltype(&ggml_backend_free)> backend(
++            ggml_backend_cpu_init(), ggml_backend_free);
++    if (!backend) return false;
++    ggml_backend_cpu_set_n_threads(backend.get(), 1);
++    std::unique_ptr<ggml_backend_buffer, decltype(&ggml_backend_buffer_free)> buffer(
++            ggml_backend_alloc_ctx_tensors(ctx, backend.get()), ggml_backend_buffer_free);
++    if (!buffer) return false;
++    const std::array<float, 6> weights = {1, 2, 3, 4, 5, 6};
++    const std::array<float, 4> inputs = {1, 2, 3, 4};
++    const std::array<int32_t, 2> selected = {2, 0};
++    const std::array<int32_t, 2> slot_indices = {0, 2};
++    const std::array<float, 3> registered_scales = {2, 3, 5};
++    const std::array<float, 3> explicit_scales = {7, 11, 13};
++    ggml_backend_tensor_set(weight, weights.data(), 0, sizeof(weights));
++    ggml_backend_tensor_set(input, inputs.data(), 0, sizeof(inputs));
++    ggml_backend_tensor_set(ids, selected.data(), 0, sizeof(selected));
++    if (slots) ggml_backend_tensor_set(slots, slot_indices.data(), 0, sizeof(slot_indices));
++    ggml_backend_tensor_set(registered, registered_scales.data(), 0, sizeof(registered_scales));
++    ggml_backend_tensor_set(explicit_scale, explicit_scales.data(), 0, sizeof(explicit_scales));
++    if (ggml_backend_graph_compute(backend.get(), result.get_gf()) != GGML_STATUS_SUCCESS) return false;
++
++    const std::array<float, 2> raw = use_slots ? std::array<float, 2>{5, 39} : std::array<float, 2>{17, 11};
++    const std::array<ggml_tensor *, 4> outputs = {ordinary, fallback, override, unscaled};
++    const std::array<const char *, 4> names = {"ordinary", "fallback", "explicit", "unscaled"};
++    for (size_t mode = 0; mode < outputs.size(); ++mode) {
++        std::array<float, 2> actual{};
++        ggml_backend_tensor_get(outputs[mode], actual.data(), 0, sizeof(actual));
++        for (size_t token = 0; token < actual.size(); ++token) {
++            const size_t expert = selected[token]; // scale follows expert identity, not its cache slot
++            const float scale = mode < 2 ? registered_scales[expert] :
++                                mode == 2 ? explicit_scales[expert] : 1.0f;
++            const float expected = raw[token] * scale;
++            if (!std::isfinite(actual[token]) || std::fabs(actual[token] - expected) > 1e-5f) {
++                std::fprintf(stderr, "%s slots=%d token=%zu: got %g, expected %g\n",
++                        names[mode], use_slots, token, actual[token], expected);
++                return false;
++            }
++        }
++    }
++    return true;
++}
++
++int main() {
++    return check_expert_scales(false) && check_expert_scales(true) ? 0 : 1;
++}
+-- 
+2.56.0
+
