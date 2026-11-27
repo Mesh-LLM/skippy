@@ -60,8 +60,8 @@ $description.
 
 $baseline_note
 
-| Configuration · workload | Outcome | Prefill tok/s | Prefill vs main [95% CI] | Decode tok/s | Decode vs main [95% CI] | A/A noise prefill / decode | Actions | Lab record |
-| --- | --- | ---: | --- | ---: | --- | --- | --- | --- |
+| Configuration · workload | Outcome | Prefill tok/s | Prefill vs main [95% CI] | Decode tok/s | Decode vs main [95% CI] | A/A noise prefill / decode | Actions logs |
+| --- | --- | ---: | --- | ---: | --- | --- | --- |
 EOF
 
 rate() {
@@ -92,14 +92,6 @@ while IFS= read -r row; do
     action="[Logs]($url/job/$action_id)"
   fi
   receipt="$directory/$row-job.json"
-  lab=Unavailable
-  if [[ -f $receipt ]]; then
-    lab_id=$(jq -er --arg sha "$SOURCE_SHA" '
-      if .repo_rev == $sha and (.id | type == "string" and test("^job_[A-Za-z0-9_]+$"))
-      then .id else error("Comment evidence source or job ID mismatch") end
-    ' "$receipt")
-    lab="[$lab_id](https://pilot.jianyang.cloud/jobs/$lab_id)"
-  fi
   prefill=Unavailable
   decode=Unavailable
   prefill_delta=Unavailable
@@ -107,7 +99,7 @@ while IFS= read -r row; do
   rates="$directory/$row-throughput.json"
   pairs="$directory/$row-paired.json"
   if [[ $state == Passed && -f $pairs ]]; then
-    paired_rows "$pairs" "$receipt" "$row" "$state" "$action" "$lab" >> "$temporary/body.md"
+    paired_rows "$pairs" "$receipt" "$row" "$state" "$action" >> "$temporary/body.md"
     continue
   fi
   if [[ $state == Passed && -f $rates ]]; then
@@ -119,7 +111,7 @@ while IFS= read -r row; do
       decode=$(rate "$rates" decode)
     fi
   fi
-  printf "| \`%s\` | %s | %s | %s | %s | %s | Unavailable | %s | %s |\n" "$row" "$state" "$prefill" "$prefill_delta" "$decode" "$decode_delta" "$action" "$lab" >> "$temporary/body.md"
+  printf "| \`%s\` | %s | %s | %s | %s | %s | Unavailable | %s |\n" "$row" "$state" "$prefill" "$prefill_delta" "$decode" "$decode_delta" "$action" >> "$temporary/body.md"
 done < "$temporary/rows.txt"
 
 cat >> "$temporary/body.md" <<'EOF'
@@ -128,7 +120,7 @@ Paired measurements run six main/main pairs, then six main/PR pairs, alternating
 
 Rates are diagnostic server phase timings, not end-to-end client throughput. Each round rate is total tokens / total phase time; the table shows geometric mean rates and paired geometric ratios. Pointwise 95% Student-t intervals use six server-pair log ratios (df=5); nested requests are not independent trials. Raw responses, client times, build provenance, and placements are retained in lab evidence. A/A noise is the largest absolute log-interval bound, converted to a percentage. Improvement/regression requires the PR interval to clear that noise envelope. An A/A interval excluding equality or an envelope above 5% makes the comparison inconclusive. Intervals are per shape/phase, without a matrix-wide multiple-comparison correction. Missing paired evidence gives no delta; saved historical main runs are never substituted.
 
-Smoke checks cover GPU startup, deterministic endpoint repeats and bounded streaming. They do not establish an AgentX performance score. [Nightly history and saved performance baselines](https://huggingface.co/datasets/meshllm/skippy-inference-qualification) are published separately; a saved baseline can be older than the latest successful main run used here. The lab retains native results and logs. GitHub evidence copies expire after 30 days.
+Smoke checks cover GPU startup, deterministic endpoint repeats and bounded streaming. They do not establish an AgentX performance score. [Nightly history and saved performance baselines](https://huggingface.co/datasets/meshllm/skippy-inference-qualification) are published separately from these paired comparisons. Native build and qualification output streams into each configuration’s Actions log, with per-attempt copies in Saved evidence. Any capture gaps are reported in the log and saved diagnostics. GitHub evidence copies expire after 30 days.
 EOF
 if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then cat "$temporary/body.md" >> "$GITHUB_STEP_SUMMARY"; fi
 

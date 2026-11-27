@@ -13,6 +13,7 @@ from pathlib import Path
 from lib.ci_artifacts import read_json, write_json
 from lib.ci_process import cancel_on_signal
 from lib.inference_ladder import plan
+from lib.inference_logs import NativeLogs
 from lib.inference_nightly_metrics import collect_nightly
 from lib.inference_throughput import collect
 from lib.jy_qualification import Pilot, placement
@@ -83,6 +84,7 @@ def launch(pilot, path, body, deadline, split):
 
 
 def wait(pilot, handle, row, sha, output, deadline):
+    logs = NativeLogs(pilot, row, output)
     if handle.startswith("frm_"):
         formation = pilot.api("GET", f"/v1/formations/{handle}", status_deadline=deadline)
         leader = next((member for member in formation["members"] if member.get("role") == "leader"), {})
@@ -91,15 +93,19 @@ def wait(pilot, handle, row, sha, output, deadline):
         job = pilot.api("GET", f"/v1/jobs/{handle}", status_deadline=deadline)
         write_json(output / f"{row}-job.json", job)
         status = job["status"]
+        formation = None
+        if job.get("formation_id"):
+            formation_id = resource_id(job["formation_id"])
+            formation = pilot.api("GET", f"/v1/formations/{formation_id}", status_deadline=deadline)
+            write_json(output / f"{row}-formation.json", formation)
+        finished = status in TERMINAL and (not formation or formation.get("status") in TERMINAL)
+        logs.capture(job, formation, deadline, final=finished or status in FAILURE)
         if status in FAILURE:
             raise RuntimeError(f"{row} failed: {status}")
         if status == "succeeded":
             if job["repo_rev"] != sha:
                 raise ValueError("JY result source SHA mismatch")
-            if job.get("formation_id"):
-                formation_id = resource_id(job["formation_id"])
-                formation = pilot.api("GET", f"/v1/formations/{formation_id}", status_deadline=deadline)
-                write_json(output / f"{row}-formation.json", formation)
+            if formation:
                 if formation.get("status") in FAILURE:
                     raise RuntimeError("split formation failed")
                 if formation.get("status") != "succeeded":

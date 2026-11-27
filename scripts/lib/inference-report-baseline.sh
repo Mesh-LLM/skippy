@@ -19,7 +19,7 @@ prepare_baseline() {
 }
 
 paired_rows() {
-  local pairs=$1 receipt=$2 row=$3 state=$4 action=$5 lab=$6
+  local pairs=$1 receipt=$2 row=$3 state=$4 action=$5
   jq -e --arg sha "$SOURCE_SHA" --arg main "$BASELINE_SHA" --arg row "$row" --slurpfile job "$receipt" '
     def positive: type == "number" and isfinite and . > 0;
     def phase:
@@ -39,12 +39,12 @@ paired_rows() {
     (.summary | map(.shape)) == [0,1,2] and
     all(.summary[]; (.prefill | phase) and (.decode | phase))
   ' "$pairs" > /dev/null || fail 'Paired comparison evidence mismatch'
-  jq -r --arg row "$row" --arg state "$state" --arg action "$action" --arg lab "$lab" '
+  jq -r --arg row "$row" --arg state "$state" --arg action "$action" '
     def rounded: (. * 10 | round) / 10 | tostring;
     def pct: ((. - 1) * 100) as $p | (if $p >= 0 then "+" else "" end) + ($p | rounded) + "%";
     def comparison:
       "\(.ratio | pct) [\(.ci95[0] | pct), \(.ci95[1] | pct)] · \(.verdict) (main \(.main_tok_s | rounded))";
     .summary[] |
-    "| `\($row)` · \(.prefill.tokens_per_request) input | \($state) | \(.prefill.candidate_tok_s | rounded) | \(.prefill | comparison) | \(.decode.candidate_tok_s | rounded) | \(.decode | comparison) | \(.prefill.noise_pct | rounded)% / \(.decode.noise_pct | rounded)% | \($action) | \($lab) |"
+    "| `\($row)` · \(.prefill.tokens_per_request) input | \($state) | \(.prefill.candidate_tok_s | rounded) | \(.prefill | comparison) | \(.decode.candidate_tok_s | rounded) | \(.decode | comparison) | \(.prefill.noise_pct | rounded)% / \(.decode.noise_pct | rounded)% | \($action) |"
   ' "$pairs"
 }

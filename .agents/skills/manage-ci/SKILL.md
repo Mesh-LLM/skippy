@@ -141,8 +141,14 @@ contract; no downstream product's workflow topology applies here.
   exact handwritten FFI adapters static_bindings.rs, dynamic.rs and
   llama_draft.rs for upstream signature/linkage changes; other Rust sources
   and qualification policy stay outside the update allowlist.
-  Only the publisher receives scoped publication credentials. It can publish only the
-  exact candidate selected by successful full CI. The four established inference
+  Resolve the immutable upstream revision in a read-only hosted job. Before
+  changed-pin candidate preparation, a separate hosted preflight checks publisher
+  settings and authenticates the repository-scoped App with Contents and Pull
+  requests write permissions. Revoke that preflight token without passing it to
+  builds; the final publisher requests a fresh token after full CI. Only these
+  two jobs receive the App key. No-op and explicit unchanged-pin checks do not
+  require publication credentials. The publisher can publish only the exact
+  candidate selected by successful full CI. The four established inference
   models retain their separate PR/manual/nightly/release workflow.
 - `ci/targets.json` owns four host definitions and fifteen runtime definitions.
   `enabled_hosts` selects the active CI and release roster. Require the evidence
@@ -203,6 +209,11 @@ contract; no downstream product's workflow topology applies here.
   Only release controller jobs may write the candidate refs. Release promotion
   and upgrade publication each use a scoped App credential. Do not expose
   publisher secrets to builds.
+- Native inference logs must stream into the Actions qualification step for every
+  standalone/split attempt and be retained with its evidence, including failures.
+  Treat candidate log text as data, never Actions commands. Report capture gaps
+  without replacing the qualification verdict. User-facing reports link to
+  Actions logs and saved artifacts, not an external lab console.
 - The protected inference results-comment job alone receives pull-requests write
   permission for PR comments, plus read-only contents/actions. It receives no
   native dispatch credential and never executes candidate code.

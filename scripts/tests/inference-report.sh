@@ -67,7 +67,7 @@ reject() {
 }
 
 report
-jq -e '.body | contains("Lab Qualification: Passed") and contains("| 500.0 | Unavailable | 100.0 | Unavailable |") and contains("/jobs/job_test") and contains("/attempts/2")' "$fixture/posted.json" > /dev/null
+jq -e '.body | contains("Lab Qualification: Passed") and contains("| 500.0 | Unavailable | 100.0 | Unavailable |") and contains("/job/1") and (contains("pilot.jianyang.cloud") | not) and (contains("Lab record") | not) and contains("/attempts/2")' "$fixture/posted.json" > /dev/null
 grep -q 'POST$' "$fixture/mutation"
 cmp "$GITHUB_STEP_SUMMARY" <(jq -rj .body "$fixture/posted.json")
 
@@ -154,7 +154,8 @@ data['summary'] = summarize(data, source, baseline, sys.argv[2])
 with open(sys.argv[1], 'w') as stream: json.dump(data, stream)
 PYDATA
 report
-jq -e '.body | contains("+10% [+10%, +10%] · improved") and contains("pinned at admission") and contains("200 input")' "$fixture/posted.json" > /dev/null
+jq -e '.body | contains("+10% [+10%, +10%] · improved") and contains("pinned at admission") and contains("200 input") and contains("Actions logs") and (contains("pilot.jianyang.cloud") | not) and (contains("Lab record") | not)' "$fixture/posted.json" > /dev/null
+jq -e '[.body | split("\n")[] | select(startswith("| `")) | split("|") | length] | all(. == 10)' "$fixture/posted.json" > /dev/null
 cp "$fixture/evidence/$row-paired.json" "$fixture/good-paired.json"
 for changed in '.baseline_sha="wrong"' '.source_sha="wrong"' '.run_id="wrong"' '.rounds=5' '.runs=[]' '.summary=[]' '.summary[0].decode.ci95=[0,2]' '.summary[0].decode.calibrated=false'; do
   jq "$changed" "$fixture/good-paired.json" > "$fixture/evidence/$row-paired.json"

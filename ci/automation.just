@@ -5,6 +5,8 @@ ci-rocm-preflight:
     @bash scripts/ci-rocm-preflight.sh
 
 inference-contracts:
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_logs.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_streaming.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_build.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_probe.py
@@ -31,6 +33,7 @@ automation-contracts: inference-contracts ci-vulkan-contracts
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_process_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_product_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_contracts.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_publisher_config.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_diagnostics.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_verification.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_lifecycle.py
