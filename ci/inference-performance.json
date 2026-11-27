@@ -116,6 +116,42 @@
       "points": [
         {"id": "rate-depth4096-pool32k-prompt-order2", "concurrency": 4, "depth": 4096, "input_tokens": 512, "output_tokens": 128, "requests": 24, "request_rate": {"metal": 0.22, "cuda": 0.34, "cuda-x86": 0.9}}
       ]
+    },
+    {
+      "id": "lanes4-pool32k-prompt-order-active-rate",
+      "lanes": 4,
+      "pool_tokens": 32768,
+      "skippy_flags": {"batch-policy": "prompt_order", "batch-prefill-wait": "active"},
+      "points": [
+        {"id": "rate-depth4096-pool32k-prompt-order-active", "concurrency": 4, "depth": 4096, "input_tokens": 512, "output_tokens": 128, "requests": 24, "request_rate": {"metal": 0.22, "cuda": 0.34, "cuda-x86": 0.9}}
+      ]
+    },
+    {
+      "id": "lanes4-pool32k-prompt-order-adaptive-rate",
+      "lanes": 4,
+      "pool_tokens": 32768,
+      "skippy_flags": {"batch-policy": "prompt_order", "batch-prefill-chunk": "adaptive"},
+      "points": [
+        {"id": "rate-depth4096-pool32k-prompt-order-adaptive", "concurrency": 4, "depth": 4096, "input_tokens": 512, "output_tokens": 128, "requests": 24, "request_rate": {"metal": 0.22, "cuda": 0.34, "cuda-x86": 0.9}}
+      ]
+    },
+    {
+      "id": "lanes4-pool32k-load-chunks-rate",
+      "lanes": 4,
+      "pool_tokens": 32768,
+      "skippy_flags": {"batch-policy": "prompt_order", "batch-prefill-wait": "active", "batch-wait-sessions": "direct", "batch-prefill-chunk": "adaptive", "batch-checkpoint-align": "microbatch"},
+      "points": [
+        {"id": "rate-depth4096-pool32k-load-chunks", "concurrency": 4, "depth": 4096, "input_tokens": 512, "output_tokens": 128, "requests": 24, "request_rate": {"metal": 0.22, "cuda": 0.34, "cuda-x86": 0.9}}
+      ]
+    },
+    {
+      "id": "lanes4-pool32k-load-chunks2048-rate",
+      "lanes": 4,
+      "pool_tokens": 32768,
+      "skippy_flags": {"batch-policy": "prompt_order", "batch-prefill-wait": "active", "batch-wait-sessions": "direct", "batch-prefill-chunk": "adaptive", "batch-checkpoint-align": "microbatch", "batch-prefill-shared-tokens": 2048},
+      "points": [
+        {"id": "rate-depth4096-pool32k-load-chunks2048", "concurrency": 4, "depth": 4096, "input_tokens": 512, "output_tokens": 128, "requests": 24, "request_rate": {"metal": 0.22, "cuda": 0.34, "cuda-x86": 0.9}}
+      ]
     }
   ]
 }
