@@ -26,7 +26,7 @@ from lib.inference_inputs import fixture
 from lib.jy_qualification import ORIGIN, Pilot
 from lib.performance_arms import build, capabilities, may_reject, server_args, server_flags, supports
 from lib.performance_backends import BACKENDS
-from lib.performance_load import run_point, tokenizer
+from lib.performance_load import request_rate, run_point, tokenizer
 from lib.performance_plan import (SCENARIO, arms, branch_name, job_spec, models, nodes, pull_request_head,
                                   pull_request_number, scenario)
 from lib.performance_report import markdown, rows, summarize
@@ -299,7 +299,7 @@ def traced(built, help_text, args, applied, missing, trace):
 
 
 def measure(built, help_text, model, inputs, key, index, server, shape, output, trace=None,
-            prefixes=("MTL",)):
+            prefixes=("MTL",), backend=None):
     """`index` is the round, or None for a diagnostic pass that writes `trace`."""
     coordinate = f'{inputs["repo"]}@{inputs["revision"]}'
     args, applied, missing = server_args(built, help_text, model, coordinate,
@@ -317,7 +317,8 @@ def measure(built, help_text, model, inputs, key, index, server, shape, output, 
             for point in server["points"]:
                 metrics, rejected = run_point(ENDPOINT, point, coordinate, inputs["tokenizer_path"],
                                               shape["warmup_requests"], WORK / "aiperf" / name / point["id"],
-                                              may_reject=may_reject(built, server, point))
+                                              may_reject=may_reject(built, server, point),
+                                              rate=request_rate(point, backend))
                 # A rejection is the answer of a server that is still serving; one that died is a fault.
                 if rejected is not None and process.poll() is not None:
                     raise RuntimeError("server exited while it was rejecting requests; inspect its log")
@@ -398,7 +399,7 @@ def measure_step(key, label, server_id, round_number=None):
     samples = measure(read_json(BUILT / f"{label}.json"), read_json(HELPS)[label], Path(prepared["model"]),
                       prepared["inputs"], key, None if diagnostic else round_number - 1, server, shape,
                       output, trace=TRACES / f"{key}-{server_id}" if diagnostic else None,
-                      prefixes=BACKENDS[plan["backend"]]["device_prefixes"])
+                      prefixes=BACKENDS[plan["backend"]]["device_prefixes"], backend=plan["backend"])
     (record["diagnostic"] if diagnostic else record)["samples"] += samples
     write_json(output / RECORD, record)
 

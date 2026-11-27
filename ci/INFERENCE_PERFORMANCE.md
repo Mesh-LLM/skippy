@@ -133,6 +133,16 @@ itself (context, lanes, pool, speculation, telemetry). An arm whose build lacks
 one of them fails before any round, since without it the variant would measure
 the server it varies.
 
+A point drives its server one of two ways. By default AIPerf keeps `concurrency`
+requests in flight, sending the next as one finishes. Requests that finish together
+are then replaced together, so a policy that lets them finish together keeps every
+wave as synchronized as the first. A point with `request_rate` instead sends requests
+at that many a second, in a Poisson schedule seeded the same for every arm, with
+`concurrency` only as a ceiling. The rate is set per backend, at about 60% of what the
+slowest arm served with four in flight on the lab's host for it, as each backend's
+hardware serves a different rate; a plan for a backend a rate point has no rate for
+is refused.
+
 An arm that lacks a setting, such as `--kv-pool-tokens` on a commit from before
 the pool existed, runs without it. Each sample records what was applied and
 what the arm did not support. All arms are probed before model measurements begin.

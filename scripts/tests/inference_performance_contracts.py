@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 from lib import performance_arms, performance_backends, performance_plan
 from lib.performance_arms import REQUIRED, capabilities, may_reject, server_args
-from lib.performance_load import measurements, rejection, run_point
+from lib.performance_load import measurements, profile_args, rejection, request_rate, run_point
 from lib import performance_report
 from lib.performance_report import markdown, summarize
 
@@ -48,6 +48,22 @@ class ScenarioTests(unittest.TestCase):
         self.assertNotIn(variant, [server["id"] for server in performance_plan.scenario()["servers"]])
         named = performance_plan.scenario(["lanes4-pool32k", variant])["servers"]
         self.assertEqual([server["id"] for server in named], ["lanes4-pool32k", variant])
+
+    def test_a_rate_point_names_a_positive_rate_per_backend_and_runs_on_its_own_schedule(self):
+        rated = "lanes4-pool32k-rate"
+        point = performance_plan.scenario([rated])["servers"][0]["points"][0]
+        args = profile_args("http://e", point, "m@r", "/t", 2, Path("/a"), request_rate(point, "metal"))
+        self.assertEqual(args[args.index("--request-rate") + 1], str(point["request_rate"]["metal"]))
+        self.assertEqual(args[args.index("--arrival-pattern") + 1], "poisson")
+        self.assertNotIn("--request-rate", profile_args("http://e", point, "m@r", "/t", 2, Path("/a")))
+        shape = performance_plan.read_json(performance_plan.SCENARIO)
+        index = next(index for index, server in enumerate(shape["servers"]) if server["id"] == rated)
+        for rate in ({}, {"metal": 0}, {"metal": "fast"}, {"space-heater": 1}, 0.2):
+            broken = json.loads(json.dumps(shape))
+            broken["servers"][index]["points"][0]["request_rate"] = rate
+            with patch.object(performance_plan, "read_json", return_value=broken):
+                with self.assertRaises(ValueError):
+                    performance_plan.scenario([rated])
 
     def test_a_variant_cannot_set_what_the_harness_sets_or_nothing(self):
         shape = performance_plan.read_json(performance_plan.SCENARIO)
@@ -180,6 +196,12 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(spec["target"]["nodes"], ["spark-000137"])
         self.assertIn("Same-host CUDA comparison", spec["description"])
         self.assertEqual(json.loads(spec["runtime"]["env"]["SKIPPY_PERFORMANCE_PLAN"])["backend"], "cuda")
+
+    def test_a_rate_point_is_refused_on_a_backend_it_has_no_rate_for(self):
+        arm_list = performance_plan.arms(self.candidate, self.baseline, self.pin)
+        with self.assertRaisesRegex(ValueError, "no request rate for the rocm backend"):
+            performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 3, "rocm-1", "r", backend="rocm",
+                                      servers=["lanes4-pool32k-rate"])
 
     def test_an_unknown_backend_is_refused_at_plan_time(self):
         arm_list = performance_plan.arms(self.candidate, self.baseline, self.pin)

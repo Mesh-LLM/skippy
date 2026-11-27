@@ -8,6 +8,7 @@ from .inference_health import health_view
 from .inference_charts import health_charts
 from .inference_markdown import HEALTH_LABELS, health_sections, plain, table
 from .inference_nightly_metrics import metric_value
+from .performance_load import request_rate
 
 # Higher is better for rates; lower is better for latencies.
 HEADLINE = {"output_tok_s": "higher", "ttft_ms_p50": "lower", "itl_ms_p50": "lower"}
@@ -165,7 +166,8 @@ def rows(record, shape, committed_at, job, pull_requests, branches=None):
             "server": sample["server"], "lanes": server["lanes"], "pool_tokens": server["pool_tokens"],
             "point": sample["point"], "concurrency": point["concurrency"], "depth": point["depth"],
             "input_tokens": point["input_tokens"], "output_tokens": point["output_tokens"],
-            "requests": point["requests"], "round": sample["round"],
+            "requests": point["requests"], "request_rate": request_rate(point, host.get("backend")),
+            "round": sample["round"],
             "applied": json.dumps(sample["applied"], sort_keys=True),
             "unsupported": json.dumps(sample["unsupported"]),
             "rejected": None if sample["rejected"] is None else json.dumps(sample["rejected"], sort_keys=True),

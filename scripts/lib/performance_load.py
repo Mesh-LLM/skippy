@@ -37,7 +37,19 @@ def tokenizer(fixture):
     return path
 
 
-def profile_args(endpoint, point, coordinate, tokenizer_path, warmup, directory):
+def request_rate(point, backend):
+    """A rate point's arrivals per second on `backend`, or None for a point that keeps its
+    concurrency in flight. A rate is set per backend, as each runs a different share of what
+    its hardware can serve."""
+    rates = point.get("request_rate")
+    if rates is None:
+        return None
+    if backend not in rates:
+        raise ValueError(f'{point["id"]} has no request rate for the {backend} backend')
+    return rates[backend]
+
+
+def profile_args(endpoint, point, coordinate, tokenizer_path, warmup, directory, rate=None):
     args = [
         *AIPERF, "--ui", "simple", "--url", endpoint, "--endpoint-type", "chat", "--streaming",
         # Nothing here reads AIPerf's server metrics or GPU telemetry, and under load their
@@ -51,6 +63,11 @@ def profile_args(endpoint, point, coordinate, tokenizer_path, warmup, directory)
         "--output-tokens-stddev", "0", "--extra-inputs", "ignore_eos:true",
         "--artifact-dir", str(directory),
     ]
+    if rate is not None:
+        # Requests arrive on their own schedule, seeded so every arm sees the same one, and the
+        # concurrency is only a ceiling. Kept in flight instead, requests that finish together
+        # are replaced together, and every later wave queues the way the first one did.
+        args += ["--request-rate", str(rate), "--arrival-pattern", "poisson"]
     if point["depth"]:
         # One shared prefix per concurrent request: each conversation re-reads its own
         # prefix, so the KV pool has to hold concurrency x depth to keep them resident.
@@ -97,7 +114,8 @@ def rejection(directory, requests):
                        for error, count in sorted(failed.items())]}
 
 
-def run_point(endpoint, point, coordinate, tokenizer_path, warmup, directory: Path, *, may_reject):
+def run_point(endpoint, point, coordinate, tokenizer_path, warmup, directory: Path, *, may_reject,
+              rate=None):
     """One point's metrics, or null metrics and what the server rejected where it may reject."""
     failure = None
     # AIPerf stages its ZeroMQ event bus under TMPDIR, and the job's own TMPDIR
@@ -106,7 +124,7 @@ def run_point(endpoint, point, coordinate, tokenizer_path, warmup, directory: Pa
     # nesting. Anchor a short, space-free TMPDIR at /tmp instead.
     short_tmp = Path(tempfile.mkdtemp(prefix="aiperf-tmp-", dir="/tmp"))
     try:
-        command(profile_args(endpoint, point, coordinate, tokenizer_path, warmup, directory),
+        command(profile_args(endpoint, point, coordinate, tokenizer_path, warmup, directory, rate),
                 timeout=5400, overrides={"TMPDIR": str(short_tmp)})
     except subprocess.CalledProcessError as error:
         # AIPerf exits non-zero, with no summary export, when every measured request failed.

@@ -10,6 +10,7 @@ from .ci_artifacts import digest, read_json
 from .inference_inputs import fixture
 from .inference_ladder import ladder_models
 from .performance_backends import BACKENDS
+from .performance_load import request_rate
 
 ROOT = Path(__file__).resolve().parents[2]
 SCENARIO = ROOT / "ci/inference-performance.json"
@@ -53,6 +54,15 @@ def skippy_flags(server):
     return flags
 
 
+def rates(point):
+    """A point's per-backend arrivals per second, each a positive number for a backend in the table."""
+    value = point["request_rate"]
+    if (type(value) is not dict or not value or not set(value) <= set(BACKENDS)
+            or not all(type(rate) in {int, float} and 0 < rate <= 100 for rate in value.values())):
+        raise ValueError(f'{point["id"]}: request_rate maps backends to positive arrivals per second')
+    return value
+
+
 def scenario(named=None):
     """The checked scenario; with `named`, only those servers and their points, to rerun one
     workload without the rest. A server with its own `skippy_flags` is a variant of another,
@@ -77,8 +87,10 @@ def scenario(named=None):
         if server["pool_tokens"] is not None and count(server["pool_tokens"], "pool_tokens") < context:
             raise ValueError(f'{server["id"]}: a KV pool must hold at least one lane\'s context')
         for point in server["points"]:
-            if set(point) != POINT_FIELDS or point["id"] in points:
+            if set(point) - {"request_rate"} != POINT_FIELDS or point["id"] in points:
                 raise ValueError("invalid or duplicate performance point")
+            if "request_rate" in point:
+                rates(point)
             points.add(point["id"])
             for field in ("concurrency", "input_tokens", "output_tokens", "requests"):
                 count(point[field], f'{point["id"]} {field}')
@@ -142,12 +154,16 @@ def round_order(arm_list, index):
     return arm_list[shift:] + arm_list[:shift]
 
 
-def measure_minutes(server):
-    """A server's start and its points' requests, about two seconds each at the scenario's loads."""
-    return 0.5 + sum(point["requests"] for point in server["points"]) * 2 / 60
+def measure_minutes(server, backend):
+    """A server's start and its points' requests: about two seconds each when kept in flight,
+    and as long as their arrivals take at a point's own rate."""
+    def seconds(point):
+        rate = request_rate(point, backend)
+        return point["requests"] * 2 if rate is None else point["requests"] / rate + 10
+    return 0.5 + sum(seconds(point) for point in server["points"]) / 60
 
 
-def job_steps(arm_list, keys, rounds, servers, trace):
+def job_steps(arm_list, keys, rounds, servers, trace, backend):
     """The job's commands in the order they run: each a `just` recipe and its arguments, what it
     finishes, and the minutes it is expected to take."""
     steps = [(["inference-performance-toolcheck"], "tools checked", 0.2)]
@@ -160,10 +176,10 @@ def job_steps(arm_list, keys, rounds, servers, trace):
             for arm in round_order(arm_list, index):
                 steps += [(["inference-performance-step", "measure", key, str(index + 1), arm["label"],
                             server["id"]], f'r{index + 1} {arm["label"]} {server["id"]}',
-                           measure_minutes(server)) for server in servers]
+                           measure_minutes(server, backend)) for server in servers]
         if trace:
             steps += [(["inference-performance-step", "trace", key, server["id"]], f'trace {server["id"]}',
-                       measure_minutes(server) * 1.5) for server in servers]
+                       measure_minutes(server, backend) * 1.5) for server in servers]
     steps.append((["inference-performance-step", "finish"], "evidence archived", 0.5))
     return steps
 
@@ -214,6 +230,9 @@ def job_spec(harness, arm_list, keys, rounds, node, label, *, trace=False, backe
         raise ValueError(f"unknown backend {backend!r}; the table holds {', '.join(sorted(BACKENDS))}")
     shape = scenario(servers)
     entry = BACKENDS[backend]
+    for server in shape["servers"]:
+        for point in server["points"]:
+            request_rate(point, backend)
     if entry["pin_required"] and node is None:
         raise ValueError(f"a {backend} plan must name exactly one node: its GPUs differ between hosts")
     largest = max(sum(file["size"] for file in fixture(key)["files"]) for key in keys)
@@ -250,7 +269,7 @@ def job_spec(harness, arm_list, keys, rounds, node, label, *, trace=False, backe
             "workspace": {"repos": repos, "retain": "on_failure"},
             "env": {"SKIPPY_PERFORMANCE_PLAN": json.dumps(plan, separators=(",", ":")),
                     **entry["env"]},
-            "command": job_command(job_steps(arm_list, keys, rounds, shape["servers"], trace)),
+            "command": job_command(job_steps(arm_list, keys, rounds, shape["servers"], trace, backend)),
         },
         "harness": {
             "name": "custom", "version": "aiperf-0.13.0",
