@@ -8,7 +8,6 @@ import sys
 import tarfile
 import tempfile
 from pathlib import Path
-from urllib.request import urlopen
 
 from lib.ci_artifacts import digest
 from lib.ci_process import command
@@ -32,8 +31,7 @@ def install(version):
         archive = Path(temporary) / filename
         url = f"https://sdk.lunarg.com/sdk/download/{VERSION}/{operating_system}/{filename}"
         print(f"Downloading {url}", flush=True)
-        with urlopen(url, timeout=120) as response, archive.open("wb") as output:
-            shutil.copyfileobj(response, output)
+        command(["curl", "--fail", "--location", "--retry", "3", "--output", str(archive), url], timeout=600)
         if digest(archive) != expected:
             raise ValueError("Vulkan SDK download SHA-256 mismatch")
         root = Path(os.environ["RUNNER_TEMP"]) / "skippy-vulkan-sdk"
