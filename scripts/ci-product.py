@@ -14,6 +14,7 @@ from lib import ci_artifacts as artifacts
 from lib.ci_process import cancel_on_signal, capture, command
 from lib.ci_targets import require_host, targets, validate_native_identity
 from lib.ci_smoke import artifact_smoke, smoke
+from lib.ci_vulkan import toolchain as vulkan_toolchain
 
 
 def build_host(host):
@@ -82,7 +83,10 @@ def build_runtime(host, runtime):
         "SKIPPY_NATIVE_RUNTIME_ARCHIVE": "0",
     }
     arches = None
-    if backend == "cuda":
+    toolchain = None
+    if backend == "vulkan":
+        toolchain = vulkan_toolchain(runtime["toolkit"])
+    elif backend == "cuda":
         arches = cuda_architectures(runtime)
         toolkit = runtime["toolkit"]
         if f'release {toolkit.rsplit(".", 1)[0]}' not in capture(["nvcc", "--version"]):
@@ -118,6 +122,8 @@ def build_runtime(host, runtime):
     if len(runtimes) != 1:
         raise ValueError("native producer must emit exactly one runtime")
     directory = runtimes[0]
+    if toolchain is not None:
+        artifacts.write_json(directory / "vulkan-toolchain.json", toolchain)
     validate_native_identity(directory, host, runtime, arches)
     command([sys.executable, "scripts/native-inspect.py", "verify-runtime-package", str(directory)])
     artifacts.receipt(directory, "runtime", host["target"], runtime["id"])

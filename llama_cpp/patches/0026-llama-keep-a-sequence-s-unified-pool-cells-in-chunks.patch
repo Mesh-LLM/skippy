@@ -1,7 +1,7 @@
-From 3c84df55abd0cd603cb6591a13904ba5b2d0f2c3 Mon Sep 17 00:00:00 2001
+From 3a049c732e2c7f39bd8bf9011d64eedad8adf7d6 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Sat, 7 Nov 2026 21:27:50 +1100
-Subject: [PATCH 23/32] llama: keep a sequence's unified-pool cells in chunks
+Subject: [PATCH] llama: keep a sequence's unified-pool cells in chunks
 
 The unified pool placed a ubatch's tokens in consecutive cells, so at four
 concurrent requests each sequence's decode cells sat at stride four and its
@@ -20,7 +20,7 @@ Claude-Session: https://claude.ai/code/session_01QA3dWey3RBtBgDz1Tery9Y
  3 files changed, 115 insertions(+)
 
 diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
-index d00c1fe4a..a2d3418e9 100644
+index e5580ce9a..243abe424 100644
 --- a/src/llama-kv-cache.cpp
 +++ b/src/llama-kv-cache.cpp
 @@ -9,6 +9,7 @@
@@ -31,7 +31,7 @@ index d00c1fe4a..a2d3418e9 100644
  #include <cassert>
  #include <cmath>
  #include <cstring>
-@@ -1045,6 +1046,81 @@ bool llama_kv_cache::update(llama_context * lctx, bool do_shift, const stream_co
+@@ -1035,6 +1036,81 @@ bool llama_kv_cache::update(llama_context * lctx, bool do_shift, const stream_co
      return updated;
  }
  
@@ -113,7 +113,7 @@ index d00c1fe4a..a2d3418e9 100644
  llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch, bool cont) const {
  
      if (debug > 0) {
-@@ -1194,6 +1270,14 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
+@@ -1184,6 +1260,14 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
              head_cur = 0;
          }
  
@@ -129,10 +129,10 @@ index d00c1fe4a..a2d3418e9 100644
  
          // for continuous slots, we test that all tokens in the ubatch fit, starting from the current head
 diff --git a/src/llama-kv-cache.h b/src/llama-kv-cache.h
-index 874c3739d..fd3054514 100644
+index 12405f01b..da7d6e961 100644
 --- a/src/llama-kv-cache.h
 +++ b/src/llama-kv-cache.h
-@@ -272,6 +272,13 @@ public:
+@@ -275,6 +275,13 @@ public:
      // return empty slot_info on failure
      slot_info find_slot(const llama_ubatch & ubatch, bool cont) const;
  
@@ -147,10 +147,10 @@ index 874c3739d..fd3054514 100644
      void apply_ubatch(const slot_info & sinfo, const llama_ubatch & ubatch);
  
 diff --git a/src/llama-kv-cells.h b/src/llama-kv-cells.h
-index 4b50afe71..9190ad55f 100644
+index 4fcb33d16..6b15791a4 100644
 --- a/src/llama-kv-cells.h
 +++ b/src/llama-kv-cells.h
-@@ -34,6 +34,17 @@ static inline int ctz64(uint64_t x) {
+@@ -42,6 +42,17 @@ static inline int ctz64(uint64_t x) {
  #endif
  }
  
@@ -168,7 +168,7 @@ index 4b50afe71..9190ad55f 100644
  struct llama_kv_cell_ext {
      // 2D spatial positions, typically used for M-RoPE
      llama_pos x = 0;
-@@ -514,6 +525,19 @@ public:
+@@ -543,6 +554,19 @@ public:
                 positions.size() == static_cast<size_t>(pos_max) + 1;
      }
  
@@ -189,5 +189,5 @@ index 4b50afe71..9190ad55f 100644
      llama_pos pos_get(uint32_t i) const {
          assert(i < pos.size());
 -- 
-2.43.0
+2.56.1
 

@@ -1,4 +1,4 @@
-From 00e703893fb718537f9ee6e06f388b89c830d047 Mon Sep 17 00:00:00 2001
+From bb8d5bdf7578b5d0ef6edaa18d4b5195884e575e Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Tue, 17 Nov 2026 22:14:38 +1100
 Subject: [PATCH] test: bound MiMo2 KV geometry and derive fused MTP shape from
@@ -27,11 +27,11 @@ index c45915888..3a520bdda 100644
              gguf_add_tensor(output.get(), qkv);
          }
 diff --git a/tests/test-llama-archs.cpp b/tests/test-llama-archs.cpp
-index 779763267..7083fed91 100644
+index 79a5fe5a5..d6f539da2 100644
 --- a/tests/test-llama-archs.cpp
 +++ b/tests/test-llama-archs.cpp
-@@ -387,6 +387,13 @@ static gguf_context_ptr get_gguf_ctx(
-             arch == LLM_ARCH_KOLIBRI1 || arch == LLM_ARCH_LIMITE || arch == LLM_ARCH_GEMMA4 || arch == LLM_ARCH_RICURSIVE) {
+@@ -393,6 +393,13 @@ static gguf_context_ptr get_gguf_ctx(
+             arch == LLM_ARCH_ZAYA1) {
          n_head_kv = 2; // GQA coverage
      }
 +    // Preserve the MiMo2 contract's full residual width, trunk and MTP depth
@@ -45,5 +45,5 @@ index 779763267..7083fed91 100644
          n_head    = 4;
          n_head_kv = 2;
 -- 
-2.54.0 (Apple Git-157)
+2.56.1
 
