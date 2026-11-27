@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 
 from lib.ci_artifacts import read_json
 from lib.inference_pairs import PROTOCOL, REPETITIONS, ROUNDS, schedule, summarize
-from lib.inference_paired_collect import collect_pairs
+from lib.inference_paired_collect import arm_archives, collect_pairs
 from lib.inference_rendezvous import Coordinator, exchange
 
 CANDIDATE, BASELINE = "a" * 40, "b" * 40
@@ -39,6 +39,12 @@ def evidence(ratio=1.1, aa_ratios=None, ab_ratios=None):
 
 def summary(data):
     return summarize(data, CANDIDATE, BASELINE, CONFIGURATION)
+
+
+def archives(data):
+    return {"artifacts": [
+        {"key": f'project/job_test/run_test/raw/{r["experiment"]}-{r["round"]}-{r["arm"]}-evidence.tar.gz',
+         "kind": "raw", "size_bytes": 123, "sha256": "d" * 64} for r in data["runs"]]}
 
 
 class PairedTests(unittest.TestCase):
@@ -98,7 +104,7 @@ class PairedTests(unittest.TestCase):
                "runs": [{"id": "run_test", "status": "succeeded"}],
                "machine": {"host": {"hostname": "host-a"}}}
         pilot = Mock()
-        pilot.api.return_value = data
+        pilot.api.side_effect = [data, archives(data), data]
         with TemporaryDirectory() as temporary:
             output = Path(temporary)
             collect_pairs(pilot, job, {"id": CONFIGURATION, "mode": "standalone"},
@@ -122,20 +128,36 @@ class PairedTests(unittest.TestCase):
         job = {"id": "job_test", "repo_rev": CANDIDATE, "status": "succeeded", "formation_id": "frm_test",
                "runs": [{"id": "run_test", "status": "succeeded"}],
                "machine": {"host": {"hostname": "host-a"}}}
-        formation = {"status": "succeeded", "members": [
-            {"role": "leader", "node": "node-a", "status": "succeeded"},
-            {"role": "worker", "node": "node-b", "status": "succeeded"}]}
+        formation = {"id": "frm_test", "status": "succeeded", "members": [
+            {"role": "leader", "node": "node-a", "job_id": "job_test", "status": "succeeded"},
+            {"role": "worker", "node": "node-b", "job_id": "job_worker", "status": "succeeded"}]}
+        worker_job = {"repo_rev": CANDIDATE, "status": "succeeded",
+                      "runs": [{"id": "run_worker", "status": "succeeded"}],
+                      "machine": {"host": {"hostname": "host-b"}}}
         pilot = Mock()
         with TemporaryDirectory() as temporary:
             for valid in (True, False):
                 formation["members"][1]["node"] = "node-b" if valid else "replacement-node"
-                pilot.api.side_effect = [data, formation]
+                pilot.api.side_effect = [data, formation, worker_job, archives(data), archives(data)]
                 args = (pilot, job, {"id": configuration, "mode": "split"}, CANDIDATE, BASELINE, Path(temporary))
                 if valid:
                     collect_pairs(*args)
                 else:
                     with self.assertRaisesRegex(ValueError, "formation"):
                         collect_pairs(*args)
+
+    def test_missing_uploaded_arm_is_not_a_successful_comparison(self):
+        data = evidence()
+        complete = archives(data)
+        incomplete = {"artifacts": complete["artifacts"][:-1]}
+        pilot = Mock()
+        with patch("lib.inference_paired_collect.time.sleep"):
+            pilot.api.side_effect = [incomplete, complete]
+            self.assertEqual(len(arm_archives(pilot, "run_test", data["runs"])), 24)
+            pilot.api.side_effect = None
+            pilot.api.return_value = incomplete
+            with self.assertRaisesRegex(ValueError, "incomplete uploaded"):
+                arm_archives(pilot, "run_test", data["runs"])
 
     def test_rendezvous_requires_worker_completion_and_propagates_failure(self):
         with Coordinator("127.0.0.1", port=0) as coordinator:

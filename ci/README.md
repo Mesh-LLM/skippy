@@ -179,6 +179,9 @@ run inside the same exclusive job or atomic two-Spark formation. The two roles
 keep their placement and wait at a barrier after each restarted server arm.
 Build hashes, source commits, host/kernel/driver identities, raw responses and
 client timings remain in the lab evidence. All builds finish before measurement.
+Each arm has a top-level evidence archive because JY does not upload nested
+directories. Collection requires every arm archive in the uploaded manifest,
+including the worker's archives for split runs, and retains their hashes.
 
 The fixed design runs six main/main pairs for noise calibration, followed by six
 main/candidate pairs, alternating A/B and B/A order. Every arm repeats each of
