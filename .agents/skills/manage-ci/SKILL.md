@@ -180,6 +180,9 @@ contract; no downstream product's workflow topology applies here.
   The protected controller checks producer path, repository, event, attempt,
   source and live PR identity, and repeats selected CI rather than trusting fork
   artifacts or test claims. Unapproved code remains on the isolated route.
+  The fork's own `pull_request` run selects no automation, source or package
+  checks: it is only the approval gate, and the controller runs each selected
+  check once. A fork lint or test failure therefore appears after approval.
   Checkouts of the candidate in `ci.yml` set `allow-unsafe-pr-checkout` only
   when that controller supplied the PR; `actions/checkout` refuses fork code in
   a `workflow_run` workflow without it.
