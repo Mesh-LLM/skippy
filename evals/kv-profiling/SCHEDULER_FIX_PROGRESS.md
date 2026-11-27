@@ -1,5 +1,36 @@
 # Scheduler fix and retest progress
 
+## 2026-11-27 20:34 UTC: Coder c1 task-quality gate passes; loaded gates remain open
+
+The three presealed reverse-order fresh-process Coder repeats completed on the
+exact CI shard and source: current Skippy `job_m3t9vf60rc0tb8a`, vanilla
+unified `job_5e5kj3en7w0sh04`, and vanilla separate slots
+`job_4fh8zycgw4kwdad`. Independent audits verified 512/512 responses in
+each, seven registered cooldowns, nominal thermal boundaries, full 49-layer
+Metal offload, F16 KV, 16×8192 context, batch/microbatch 512 and caches off.
+Each arm's raw answers, parsed answers and token usage matched its own first
+cell on all 512 tasks. Both vanilla A/A controls have zero adverse items among
+314 correct first-cell answers, with one-sided 95% upper bound **0.94952%**;
+the candidate repeat is stable.
+
+The first paired comparison remains **two adverse of 314 vanilla-correct**
+items against each layout, with one-sided 95% upper bound **1.99136%**. With
+the repeats audited, the registered **Coder c1 task-quality gate passes**
+against both vanilla layouts. The bound narrowly clears 2%; 29 cross-engine
+raw-text differences remain exact-output failures. This result does not clear
+Coder c64/c128/c256 quality, fixed-output timing, the c256 TTFT SLO, or the
+four-model non-regression claim. The
+[repeat evidence archive](pr-evidence/task-quality-v3-coder-c1-repeats.tar.xz)
+has SHA256 `05ec95de1b5125807c480f57a5fd429eb7dc787b2e9b614155a74ef8eaa3ce84`;
+its [summary](pr-evidence/task-quality-v3-coder-c1-repeats-summary.json) has
+SHA256 `b393750501ac55024d42671a90132623e38394a2a7e81783001d61a91704ba4a`.
+The ignored local builder reproduced both hashes twice and verified twelve
+regular, relative archive members. The first-cell archive remains separate.
+
+At PR head `694c6065e5cb5510ceb8d609b263be8e065cf298`, all 68 exact-head
+CI checks completed: 19 successes, 49 intentional skips and zero failures.
+This does not establish Apple Metal four-model quality or timing parity.
+
 ## 2026-11-27: Flash first paired c1 quality comparison passes; repeats pending
 
 The current-source Flash Skippy cell `job_23h7r82dzzyxa0z` completed 512/512
@@ -89,10 +120,11 @@ comparisons and a manifest of job/spec/source/artifact hashes. Its
 has SHA256 `ce19fe2727017d99dc9ef1bf67e4c0850e9b190948a202f3d8a5ab327c86a27f`.
 The ignored local builder reproduced both hashes twice.
 
-This is **not yet a Coder c1 gate pass**: the three presealed, reverse-order
-fresh-process A/A and candidate repeats have not completed. Loaded quality,
-current-source fixed-output timing, and four-model non-regression remain
-**UNPROVEN**. The original exact-output and latency failures are preserved.
+At this first-cell snapshot, the Coder c1 gate remained pending its three
+presealed reverse-order repeats. They subsequently passed, as recorded above.
+Loaded quality, current-source fixed-output timing, and four-model
+non-regression remain **UNPROVEN**. The original exact-output and latency
+failures are preserved.
 
 ## 2026-11-27: three more c1 reference baselines audited
 
