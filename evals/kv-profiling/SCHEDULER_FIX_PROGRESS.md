@@ -1901,3 +1901,39 @@ compressed source fixture SHA256
 evidence archive SHA256
 `08cc87462e385d567af5e84ea8053feae530c380bd8988aa1ae0cd2beaa862ac`.
 No extension task answer has been generated or scored.
+
+## 2026-11-27: Qwen3.5 c1 confirmatory quality gate passed
+
+The independently registered 512-task extension and all six fresh, reversed-order
+vanilla A/A and current-Skippy repeats have now completed. Each of the 12
+Qwen3.5 c1 cells returned 512/512 responses with seven recorded cooldowns,
+nominal thermal boundaries, the exact CI model and source-pinned binaries,
+full 33/33 Metal offload, F16 KV, 16×8192 context, batch/microbatch 512 and
+both caches off. Every repeat reproduced its first cell's **raw text** on all
+512 tasks. The extension vanilla separate, vanilla unified and current-Skippy
+arms each scored 273/512; the two vanilla layouts matched raw text exactly.
+
+The original 512-task comparison remains **UNPROVEN**: two adverse items among
+281 baseline-correct tasks have a one-sided 95% upper bound of 2.2234%, above
+the registered strict 2% limit. The extension has zero adverse items among 273
+baseline-correct tasks. The pre-registered single pooled look has two adverse
+items among 554 baseline-correct tasks, `assignment-096` and
+`assignment-097`, with a one-sided exact **97.5% upper bound of 1.29796%**.
+The pooled **c1 task-quality gate passes** against each vanilla layout. Raw
+cross-engine text differs on 15 original and seven extension tasks per layout;
+these exact-output discrepancies remain visible and are not exact-text passes.
+
+The [compact evidence archive](pr-evidence/task-quality-v3-qwen35-c1-evidence.tar.xz)
+contains all 12 response/score/audit triplets, both comparison records and a
+manifest (39 regular files, SHA256
+`95780a6148d5633d59929159c30febd757640c48891ae1fe238e6827eeac448d`).
+The [summary](pr-evidence/task-quality-v3-qwen35-c1-summary.json) binds every
+job, spec, source, runner, archive and audit hash (SHA256
+`db23971c8a167a5a4fdcb36983bcdc9765b85eedf22583ff3cc24698a4b128a1`).
+The ignored local builder was run twice and produced the same archive hash;
+the tracked archive lets reviewers rerun the registered scorer against every
+raw output. The original v2 failure and thermal-invalid attempts remain
+separate failures. This result covers **Qwen3.5 single-user task quality only**:
+loaded quality, current-source fixed-output timing, absolute SLOs and the
+other three CI models remain unqualified by this gate. No four-model
+non-regression claim follows.
