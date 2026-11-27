@@ -1,7 +1,10 @@
 use libloading::Library;
+#[cfg(target_os = "linux")]
+use std::{ffi::CString, os::unix::ffi::OsStrExt};
 use std::{
     ffi::{c_char, c_int, c_void},
-    sync::OnceLock,
+    path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
 };
 
 use crate::llama_draft::LlamaDraftApi;
@@ -24,6 +27,7 @@ use crate::{
 };
 
 static SYMBOLS: OnceLock<Symbols> = OnceLock::new();
+static LOAD_LOCK: Mutex<()> = Mutex::new(());
 
 pub fn native_runtime_loaded() -> bool {
     SYMBOLS.get().is_some()
@@ -40,10 +44,7 @@ pub fn native_runtime_loaded() -> bool {
 pub unsafe fn load_native_runtime_library(
     path: impl AsRef<std::path::Path>,
 ) -> Result<(), NativeRuntimeLoadError> {
-    let symbols = unsafe { Symbols::load_paths(&[path.as_ref()]) }?;
-    SYMBOLS
-        .set(symbols)
-        .map_err(|_| NativeRuntimeLoadError::AlreadyLoaded)
+    unsafe { load_native_runtime_libraries_with_cpu_backend_modules([path], &[]) }
 }
 
 /// Load native runtime libraries and resolve Skippy ABI symbols from them.
@@ -63,14 +64,120 @@ where
     I: IntoIterator<Item = P>,
     P: AsRef<std::path::Path>,
 {
-    let collected = paths
+    unsafe { load_native_runtime_libraries_with_cpu_backend_modules(paths, &[]) }
+}
+
+/// Load runtime libraries and only the CPU backend modules listed in the
+/// verified runtime manifest.
+///
+/// # Safety
+///
+/// The caller must ensure every library and backend module belongs to the same
+/// verified Skippy native runtime artifact for the running Skippy version
+/// and Skippy ABI.
+pub unsafe fn load_native_runtime_libraries_with_cpu_backend_modules<I, P>(
+    paths: I,
+    cpu_backend_modules: &[std::path::PathBuf],
+) -> Result<(), NativeRuntimeLoadError>
+where
+    I: IntoIterator<Item = P>,
+    P: AsRef<std::path::Path>,
+{
+    let _load_guard = LOAD_LOCK.lock().map_err(|_| {
+        NativeRuntimeLoadError::Load("native runtime load lock is poisoned".to_string())
+    })?;
+    if SYMBOLS.get().is_some() {
+        return Err(NativeRuntimeLoadError::AlreadyLoaded);
+    }
+    let (mut modules, libraries): (Vec<_>, Vec<_>) = paths
         .into_iter()
         .map(|path| path.as_ref().to_path_buf())
-        .collect::<Vec<_>>();
-    let symbols = unsafe { Symbols::load_paths(&collected) }?;
+        .partition(|path| is_cpu_backend_module(path));
+    modules.extend_from_slice(cpu_backend_modules);
+    modules.sort_unstable();
+    modules.dedup();
+    let symbols = unsafe { Symbols::load_paths(&libraries) }?;
+    load_cpu_backend(&symbols._libraries, &modules)?;
     SYMBOLS
         .set(symbols)
         .map_err(|_| NativeRuntimeLoadError::AlreadyLoaded)
+}
+
+fn is_cpu_backend_module(path: &Path) -> bool {
+    cfg!(target_os = "linux")
+        && path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("libggml-cpu-") && name.ends_with(".so"))
+}
+
+#[cfg(target_os = "linux")]
+fn load_cpu_backend(
+    libraries: &[Library],
+    modules: &[PathBuf],
+) -> Result<(), NativeRuntimeLoadError> {
+    if modules.is_empty() {
+        return Ok(());
+    }
+    let load = libraries
+        .iter()
+        .rev()
+        .find_map(|library| unsafe {
+            library
+                .get::<unsafe extern "C" fn(*const c_char) -> *mut c_void>(b"ggml_backend_load\0")
+                .ok()
+        })
+        .ok_or_else(|| {
+            NativeRuntimeLoadError::Load("native runtime does not export ggml_backend_load".into())
+        })?;
+    let mut best = None;
+    let mut best_score = 0;
+    for path in modules {
+        // GGML builds each variant's score function with baseline compiler
+        // flags so this feature check can run on every supported CPU.
+        let library = unsafe { Library::new(path) }.map_err(|error| {
+            NativeRuntimeLoadError::Load(format!("open CPU backend {}: {error}", path.display()))
+        })?;
+        let score = unsafe {
+            let score = library
+                .get::<unsafe extern "C" fn() -> c_int>(b"ggml_backend_score\0")
+                .map_err(|error| {
+                    NativeRuntimeLoadError::Load(format!(
+                        "read CPU feature score from {}: {error}",
+                        path.display()
+                    ))
+                })?;
+            score()
+        };
+        if score > best_score {
+            best = Some(path);
+            best_score = score;
+        }
+    }
+    let best = best.ok_or_else(|| {
+        NativeRuntimeLoadError::Load("no packaged CPU backend supports this processor".into())
+    })?;
+    let path = CString::new(best.as_os_str().as_bytes()).map_err(|_| {
+        NativeRuntimeLoadError::Load(format!(
+            "CPU backend path contains a NUL byte: {}",
+            best.display()
+        ))
+    })?;
+    if unsafe { load(path.as_ptr()) }.is_null() {
+        return Err(NativeRuntimeLoadError::Load(format!(
+            "register CPU backend {}",
+            best.display()
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn load_cpu_backend(
+    _libraries: &[Library],
+    _modules: &[PathBuf],
+) -> Result<(), NativeRuntimeLoadError> {
+    Ok(())
 }
 
 fn symbols() -> &'static Symbols {

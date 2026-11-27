@@ -297,6 +297,11 @@ for library in plan.libraries {
 # }
 ```
 
+On Linux x86-64, the plan also lists the CPU backend modules declared in the
+bundle. The dynamic loader uses GGML's CPU scores to register the best
+compatible module from that list. Accelerator bundles retain their linked
+backends and use the portable CPU baseline.
+
 ## Packaging
 
 Package and verify a runtime:

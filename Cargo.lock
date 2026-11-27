@@ -5644,6 +5644,7 @@ dependencies = [
  "skippy-ffi",
  "skippy-model",
  "skippy-model-ref",
+ "skippy-native-runtime",
  "skippy-package-format",
  "tempfile",
  "tokio",

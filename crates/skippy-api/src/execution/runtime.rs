@@ -193,8 +193,13 @@ impl RuntimeBundle {
         })?;
         // The supplied bundle is trusted by the host. Its pinned manifest,
         // runtime compatibility and declared payloads were all verified above.
-        unsafe { skippy_runtime::load_native_runtime_libraries(&plan.libraries) }
-            .with_context(|| format!("load native runtime {}", plan.native_runtime_id))?;
+        unsafe {
+            skippy_runtime::load_native_runtime_libraries_with_cpu_backend_modules(
+                &plan.libraries,
+                &plan.cpu_backend_modules,
+            )
+        }
+        .with_context(|| format!("load native runtime {}", plan.native_runtime_id))?;
         let identity = RuntimeIdentity {
             release: plan.release_version,
             artifact: plan.native_runtime_id,

@@ -803,6 +803,53 @@ mod tests {
                     .join("lib/libmeshllm_ffi.so")
             ]
         );
+        assert!(plan.cpu_backend_modules.is_empty());
+    }
+
+    #[test]
+    fn installed_runtime_load_plan_uses_only_declared_cpu_variant_modules() {
+        use sha2::Digest;
+
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        write_runtime(&source, "0.68.0", "meshllm-native-linux-x86_64-vulkan");
+        let variant_paths = [
+            "lib/libggml-cpu-haswell.so",
+            "lib/libggml-cpu-sandybridge.so",
+        ];
+        let mut manifest = NativeRuntimeManifest::read_from_dir(&source).unwrap();
+        for relative_path in variant_paths {
+            let path = source.join(relative_path);
+            fs::write(&path, b"CPU backend variant").unwrap();
+            let digest = sha2::Sha256::digest(fs::read(path).unwrap());
+            let checksum = digest
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>();
+            manifest
+                .runtime
+                .files
+                .insert(relative_path.to_string(), checksum);
+        }
+        fs::write(
+            source.join("lib/libggml-cpu-unlisted.so"),
+            b"unlisted variant",
+        )
+        .unwrap();
+        manifest.write_to_dir(&source).unwrap();
+
+        let cache = NativeRuntimeCache::new(temp.path().join("cache"));
+        let installed = cache.install_from_dir(&source).unwrap();
+        let plan = installed.load_plan().unwrap();
+
+        let runtime_dir = cache.runtime_dir("0.68.0", "meshllm-native-linux-x86_64-vulkan");
+        assert_eq!(
+            plan.cpu_backend_modules,
+            vec![
+                runtime_dir.join(variant_paths[0]),
+                runtime_dir.join(variant_paths[1])
+            ]
+        );
     }
 
     #[cfg(unix)]
