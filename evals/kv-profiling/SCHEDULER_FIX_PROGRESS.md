@@ -1693,3 +1693,26 @@ audit are retained locally under
 `target/scheduler-fixes/artifacts/task-quality-q35-vanilla-a/`. No A/A,
 candidate quality, or version 2 timing results are promoted after this failed
 gate. The four-model non-regression claim remains **UNPROVEN**.
+
+## 2026-11-27: unscored chat-boundary diagnostics
+
+Two separate $0 Qwen3.5 vanilla chat probes used four selected tasks from
+each of the four source strata, the exact model and server pins, full Metal,
+F16 KV, 16×8192 context, batch/microbatch 512, cache off, and nominal
+thermal guards. These 16-item probes are exploratory and are **not** version
+2 scores. The first (`job_nh0gwp3ey5y957t`, spec SHA256
+`57ed8a4ebb82d989972013145a1f508407f7c2a6769d8feddf265ba0a2fe9a66`)
+used ordinary chat formatting: all 16 requests completed, but the chat
+template made each prompt 521 tokens and all 32 output tokens went to
+`reasoning_content`, leaving final `content` empty. The second
+(`job_zjyzva1a6azgft1`, spec SHA256
+`237cbe6e8674a846c0d7699a76ac3320d26356610756249186321d78f3e6aeab`)
+set the pinned server's documented `chat_template_kwargs.enable_thinking=false`.
+All 16 requests completed at 523 input tokens; eight final answers matched
+their registered integers, four arithmetic and four extraction, while none
+of the four ordering or four assignment tasks matched. The
+[compact diagnostic record](pr-evidence/task-quality-chat-pilots.json) binds
+both raw archives and response hashes. All raw outputs remain in the ignored
+local artifacts. Neither changed request shape can retroactively repair the
+registered 512-token v2 baseline failure, and these small results cannot
+justify a quality or speed claim. No version 3 scored run has been registered.
