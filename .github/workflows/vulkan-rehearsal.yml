@@ -210,58 +210,44 @@ jobs:
         if-no-files-found: error
         retention-days: 30
   smoke_linux_x86_64_vulkan_nvidia:
-    name: "Vulkan GPU smoke \xB7 Linux x64 \xB7 nvidia"
-    needs:
-    - plan
-    - package_linux_x86_64_vulkan
+    name: Vulkan GPU smoke · Linux x64 · nvidia
+    needs: [plan, package_linux_x86_64_vulkan]
     if: needs.plan.outputs.profile == 'full'
     runs-on:
       group: jy-rnr_p0zx3thw895vrka
-      labels:
-      - self-hosted
-      - skippy-ephemeral
-      - Linux
-      - X64
-      - runtime-image
-      - cuda13
+      labels: [self-hosted, skippy-ephemeral, Linux, X64, runtime-image, cuda13]
     permissions:
       contents: read
       packages: read
-    container:
-      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-cuda13@${{ needs.plan.outputs.cuda13_digest }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-      options: --user 0 --gpus all --env NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics --cpus=8 --memory=16g --pids-limit=4096
+    # This pool already runs inside its pinned GPU image, without a Docker socket.
     timeout-minutes: 40
     env:
       NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
       SKIPPY_CI_VULKAN_VENDOR: nvidia
       TAR_OPTIONS: --no-same-owner
     steps:
-    - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-      with:
-        ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
-        persist-credentials: false
-    - uses: ./.github/actions/rocm-workspace
-    - name: Trust the host-owned checkout inside the job container
-      shell: bash
-      run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-    - name: Provision Vulkan loader and device inspection
-      run: bash scripts/ci-vulkan-runtime.sh
-    - uses: ./.github/actions/ci-smoke
-      with:
-        runtime_id: linux-x86_64-vulkan
-        download-package: 'true'
-        evidence-suffix: -nvidia
-    - name: Upload Vulkan setup failure evidence
-      if: failure()
-      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-      with:
-        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-vulkan-setup-nvidia
-        path: target/ci-evidence/vulkan-runtime.log
-        if-no-files-found: warn
-        retention-days: 14
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - name: Provision Vulkan loader and device inspection
+        run: bash scripts/ci-vulkan-runtime.sh
+      - uses: ./.github/actions/ci-smoke
+        with:
+          runtime_id: linux-x86_64-vulkan
+          download-package: 'true'
+          evidence-suffix: -nvidia
+      - name: Upload Vulkan setup failure evidence
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-vulkan-setup-nvidia
+          path: target/ci-evidence/vulkan-runtime.log
+          if-no-files-found: warn
+          retention-days: 14
   smoke_linux_x86_64_vulkan_amd:
     name: "Vulkan GPU smoke \xB7 Linux x64 \xB7 amd"
     needs:
