@@ -78,27 +78,40 @@ def health_view(report, run_id=None):
     timeline = [(run, rows) for run, rows in timeline if run["id"] != target["id"]]
     timeline.append((target, indexed(target)))
     current = indexed(target)
-    agentx = any(key[2] in AGENTX and row["measured"] is not None for key, row in current.items())
-    metrics = CONTROLLED if target.get("measurement_kind") == "controlled" else AGENTX if agentx else SMOKE
-    groups, counts = {}, Counter()
-    for (configuration, workload, metric), row in current.items():
-        if metric not in metrics or row["measured"] is None:
+    metrics = CONTROLLED if target.get("measurement_kind") == "controlled" else (*AGENTX, *SMOKE)
+    groups, chart_groups, counts = {}, {}, Counter()
+    retained = {key: row for _, rows in timeline for key, row in rows.items()}
+    for (configuration, workload, metric), retained_row in retained.items():
+        if metric not in metrics:
             continue
         key = configuration, workload, metric
+        row = current.get(key, {**retained_row, "measured": None})
         points = history_for(key, row, timeline)
+        if not any(value is not None for _, value in points):
+            continue
         previous = next((value for _, value in reversed(points[:-1]) if value is not None), None)
         reference = (metric_value(row["reference"]["value"], positive=True)
                      if row.get("reference") is not None else previous)
-        verdict = None if reference is None else classify(metric, row["measured"], reference)
-        change = None if reference is None else (row["measured"] / reference - 1) * 100
+        measured = row["measured"]
+        verdict = (None if reference is None or measured is None
+                   else classify(metric, measured, reference))
+        change = None if reference is None or measured is None else (measured / reference - 1) * 100
         analyzed = {**row, "reference_value": reference, "change_pct": change,
                     "health_verdict": verdict, "points": points}
-        groups.setdefault((configuration, workload), {})[metric] = analyzed
-        counts[verdict or "new"] += 1
+        chart_groups.setdefault((configuration, workload), {})[metric] = analyzed
+        if measured is not None:
+            groups.setdefault((configuration, workload), {})[metric] = analyzed
+            counts[verdict or "new"] += 1
     metadata = {config["id"]: config for config in target["configurations"]}
     configurations = [{"id": config, "workload": workload, "metrics": rows,
                        **{field: metadata[config][field] for field in ("label", "group") if field in metadata[config]}}
                       for (config, workload), rows in groups.items()]
+    chart_configurations = [{"id": config, "workload": workload, "metrics": rows,
+                             **{field: metadata.get(config, {})[field] for field in ("label", "group")
+                                if field in metadata.get(config, {})}}
+                            for (config, workload), rows in chart_groups.items()]
+    metrics = tuple(metric for metric in metrics
+                    if any(metric in rows for rows in chart_groups.values()))
     configurations.sort(key=lambda config: config["id"].endswith("-split"))
     issues = [{"id": config["id"], "outcome": config["outcome"]}
               for config in target["configurations"] if config["outcome"] in {"failed", "cancelled"}]
@@ -110,5 +123,5 @@ def health_view(report, run_id=None):
     error_samples = sum(key[2] == "request_error_pct" and row["measured"] is not None
                         for key, row in current.items())
     return {"run": target, "configurations": configurations, "metrics": metrics,
-            "counts": dict(counts), "issues": issues, "errors": errors, "requests": requests,
+            "chart_configurations": chart_configurations, "counts": dict(counts), "issues": issues, "errors": errors, "requests": requests,
             "error_samples": error_samples, "preview": report.get("preview") is True}

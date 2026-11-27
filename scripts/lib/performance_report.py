@@ -31,7 +31,7 @@ def summarize(samples):
                       "n": len(values)} for arm, values in sorted(by_arm.items())}
         by_settings = settings[(model, server, point)]
         candidate, baseline = (by_settings.get(arm, set()) for arm in ("candidate", "baseline"))
-        matched = len(candidate) == len(baseline) == 1 and candidate == baseline
+        matched = not candidate or not baseline or (len(candidate) == len(baseline) == 1 and candidate == baseline)
         rows.append({"settings_match": matched, "model": model, "server": server, "point": point, "metric": metric, "arms": arms,
                      "candidate_vs_baseline": change(arms.get("candidate"), arms.get("baseline")) if matched else None})
     return rows

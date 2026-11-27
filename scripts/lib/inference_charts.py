@@ -24,7 +24,7 @@ class HealthPanel:
     configuration: str
     workload: str
     label: str
-    current: float
+    current: float | None
     reference: float | None
     change: float | None
     verdict: str | None
@@ -47,7 +47,7 @@ def health_charts(view):
     figures = []
     for metric in view["metrics"]:
         panels = []
-        for config in view["configurations"]:
+        for config in view.get("chart_configurations", view["configurations"]):
             row = config["metrics"].get(metric)
             if row is None:
                 continue
