@@ -1,0 +1,224 @@
+From e991749069f06d21861979effe64fecfa71c75c2 Mon Sep 17 00:00:00 2001
+From: Skippy contributors <ci@skippy.local>
+Date: Fri, 27 Nov 2026 10:58:31 +1100
+Subject: [PATCH] skippy: keep resident recurrent checkpoints in pinned, reused
+ memory
+
+A resident prefix save copied the lane's recurrent state, about 44 MiB
+for qwen35-4b, into a fresh std::vector. On CUDA each save then:
+- zeroed and page-faulted the new vector
+- pinned it with cudaHostRegister so the batched read could reach it
+- copied it
+- unpinned it
+
+It measured about 22 ms a save, where the copy alone should take about
+2 ms at PCIe speed. It ran on the scheduler thread under the runtime
+lock, so every lane waited. On a discrete GPU that added about 200 ms to
+a deep prompt's time to first token at four concurrent requests. HIP
+has no batched read, so it copied into pageable memory, which the driver
+stages.
+
+Checkpoint bytes now come from the recurrent state's own host buffer
+type, which is pinned memory on CUDA and HIP. A per-model pool keeps
+freed blocks, since every checkpoint of a model is the same size, so a
+steady state allocates and pins nothing. Growing the buffer no longer
+zeroes it: the export overwrites every byte. The batched CUDA read
+leaves memory that is already pinned to the per-tensor DMA path,
+instead of registering it again. A backend without a host buffer type
+uses heap memory as before.
+---
+ ggml/src/ggml-cuda/batch-get.cu |  6 ++++
+ src/skippy/resident_prefix.cpp  | 47 ++++++++++++++++++++++++--
+ src/skippy/runtime_types.h      | 58 ++++++++++++++++++++++++++++++++-
+ 3 files changed, 108 insertions(+), 3 deletions(-)
+
+diff --git a/ggml/src/ggml-cuda/batch-get.cu b/ggml/src/ggml-cuda/batch-get.cu
+index b92a5ee6d..b4d213fe2 100644
+--- a/ggml/src/ggml-cuda/batch-get.cu
++++ b/ggml/src/ggml-cuda/batch-get.cu
+@@ -141,6 +141,12 @@ bool ggml_cuda_get_tensor_n(int device,
+     // Find the CPU span to register, including gaps between destinations.
+     const uintptr_t begin = ranges.front().first;
+     const uintptr_t end = ranges.back().second;
++    // Memory its owner pinned, such as a host buffer, already copies at full speed by DMA; registering it again would fail.
++    cudaPointerAttributes attributes;
++    if (cudaPointerGetAttributes(&attributes, (const void *) begin) == cudaSuccess && attributes.type == cudaMemoryTypeHost) {
++        return false;
++    }
++    (void) cudaGetLastError();
+     if (end - begin - payload_bytes > payload_bytes) {
+         return false;
+     }
+diff --git a/src/skippy/resident_prefix.cpp b/src/skippy/resident_prefix.cpp
+index bbd592fe8..f614bdb94 100644
+--- a/src/skippy/resident_prefix.cpp
++++ b/src/skippy/resident_prefix.cpp
+@@ -51,6 +51,15 @@ skippy_status validate_session(skippy_session * session, int32_t cache_seq_id,
+     return SKIPPY_STATUS_OK;
+ }
+ 
++// The recurrent state's device, if it has a host buffer type the GPU copies to directly.
++ggml_backend_buffer_type_t checkpoint_host_type(const llama_memory_recurrent & recurrent) {
++    const auto state = std::find_if(recurrent.s_l.begin(), recurrent.s_l.end(),
++            [](const ggml_tensor * tensor) { return tensor && tensor->buffer; });
++    if (state == recurrent.s_l.end()) { return nullptr; }
++    auto * device = ggml_backend_buft_get_device(ggml_backend_buffer_get_type((*state)->buffer));
++    return device ? ggml_backend_dev_host_buffer_type(device) : nullptr;
++}
++
+ // A size query never touches tensor bytes. Export writes directly to the
+ // caller's allocation, avoiding an extra full recurrent payload temporary.
+ class recurrent_buffer_writer final : public llama_io_write_i {
+@@ -150,7 +159,7 @@ skippy_status restore_checkpoint(skippy_session * session, int32_t cache_seq_id,
+     const auto & checkpoint = session->stage_model->resident_prefixes.at(cache_seq_id);
+     try {
+         if (auto * recurrent = skippy_memory_recurrent_adapter(memory)) {
+-            checkpoint_reader reader(checkpoint.recurrent);
++            checkpoint_reader reader(checkpoint.recurrent.data(), checkpoint.recurrent.size());
+             recurrent->state_read(reader, session->seq_id, LLAMA_STATE_SEQ_FLAGS_NONE);
+             if (reader.n_bytes() != checkpoint.recurrent.size()) {
+                 throw std::runtime_error("resident recurrent checkpoint has trailing data");
+@@ -194,6 +203,38 @@ bool used_attention_cells(llama_memory_t memory, uint64_t * cells) {
+ 
+ } // namespace
+ 
++void skippy_checkpoint_host_pool::use_type(ggml_backend_buffer_type_t type) {
++    std::lock_guard<std::mutex> lock(mutex);
++    if (!this->type) { this->type = type; }
++}
++
++void * skippy_checkpoint_host_pool::take(size_t bytes) {
++    std::lock_guard<std::mutex> lock(mutex);
++    if (const auto found = idle.find(bytes); found != idle.end()) {
++        void * block = found->second;
++        idle.erase(found);
++        return block;
++    }
++    if (type && bytes) {
++        ggml_backend_buffer_ptr buffer(ggml_backend_buft_alloc_buffer(type, bytes));
++        if (buffer && ggml_backend_buffer_get_size(buffer.get()) >= bytes) {
++            void * block = ggml_backend_buffer_get_base(buffer.get());
++            owned.emplace(block, std::move(buffer));
++            return block;
++        }
++    }
++    return ::operator new(bytes);
++}
++
++void skippy_checkpoint_host_pool::give(void * block, size_t bytes) noexcept {
++    std::lock_guard<std::mutex> lock(mutex);
++    if (owned.count(block)) {
++        idle.emplace(bytes, block);
++        return;
++    }
++    ::operator delete(block);
++}
++
+ extern "C" {
+ 
+ enum skippy_status skippy_session_save_prefix(skippy_session * session, int32_t cache_seq_id,
+@@ -219,11 +260,13 @@ enum skippy_status skippy_session_save_prefix(skippy_session * session, int32_t
+             skippy_set_error(error, SKIPPY_STATUS_INVALID_ARGUMENT, "resident cache sequence already owns a different prefix");
+             return SKIPPY_STATUS_INVALID_ARGUMENT;
+         }
+-        skippy_resident_checkpoint checkpoint;
++        auto & pool = session->stage_model->resident_host_pool;
++        skippy_resident_checkpoint checkpoint{{}, skippy_checkpoint_bytes(skippy_checkpoint_allocator<uint8_t>(&pool))};
+         checkpoint.tokens.assign(session->token_history.begin(), session->token_history.begin() + token_count);
+         skippy_synchronize_context_if_pending(session->stage_model);
+         auto * memory = session->ctx->get_memory();
+         if (auto * recurrent = skippy_memory_recurrent_adapter(memory)) {
++            pool.use_type(checkpoint_host_type(*recurrent));
+             recurrent_buffer_writer measure;
+             recurrent->state_write(measure, session->seq_id, LLAMA_STATE_SEQ_FLAGS_NONE);
+             checkpoint.recurrent.resize(measure.n_bytes());
+diff --git a/src/skippy/runtime_types.h b/src/skippy/runtime_types.h
+index e610e8205..8088c9e96 100644
+--- a/src/skippy/runtime_types.h
++++ b/src/skippy/runtime_types.h
+@@ -12,6 +12,8 @@
+ #include <mutex>
+ #include <map>
+ #include <string>
++#include <type_traits>
++#include <utility>
+ #include <vector>
+ 
+ enum skippy_glm_dsa_op_kind {
+@@ -85,11 +87,63 @@ struct skippy_glm_dsa_op_timing {
+     skippy_glm_dsa_hot_tensor hot_tensors[SKIPPY_GLM_DSA_HOT_TENSOR_LIMIT] = {};
+ };
+ 
++// Host memory for recurrent checkpoints in the state's own host buffer type
++// where its device has one (pinned on CUDA and HIP). A copy into fresh
++// pageable memory pins and unpins it around every transfer, which costs more
++// than the transfer. Every checkpoint of a model is the same size, so blocks
++// are kept for the next one.
++class skippy_checkpoint_host_pool {
++public:
++    void use_type(ggml_backend_buffer_type_t type);
++    void * take(size_t bytes);
++    void give(void * block, size_t bytes) noexcept;
++
++private:
++    std::mutex mutex;
++    ggml_backend_buffer_type_t type = nullptr;
++    std::map<void *, ggml_backend_buffer_ptr> owned;
++    std::multimap<size_t, void *> idle;
++};
++
++// Without a pool, plain heap memory.
++template <typename T>
++struct skippy_checkpoint_allocator {
++    using value_type = T;
++    using propagate_on_container_move_assignment = std::true_type;
++    using propagate_on_container_swap = std::true_type;
++
++    skippy_checkpoint_host_pool * pool = nullptr;
++
++    skippy_checkpoint_allocator() = default;
++    explicit skippy_checkpoint_allocator(skippy_checkpoint_host_pool * pool) : pool(pool) {}
++    template <typename U>
++    skippy_checkpoint_allocator(const skippy_checkpoint_allocator<U> & other) : pool(other.pool) {}
++
++    T * allocate(size_t n) {
++        return static_cast<T *>(pool ? pool->take(n * sizeof(T)) : ::operator new(n * sizeof(T)));
++    }
++    void deallocate(T * block, size_t n) noexcept {
++        if (pool) { pool->give(block, n * sizeof(T)); } else { ::operator delete(block); }
++    }
++    // the export overwrites every byte, so growing skips zeroing
++    template <typename U>
++    void construct(U * at) noexcept { ::new (static_cast<void *>(at)) U; }
++    template <typename U, typename... Args>
++    void construct(U * at, Args &&... args) { ::new (static_cast<void *>(at)) U(std::forward<Args>(args)...); }
++
++    template <typename U>
++    bool operator==(const skippy_checkpoint_allocator<U> & other) const { return pool == other.pool; }
++    template <typename U>
++    bool operator!=(const skippy_checkpoint_allocator<U> & other) const { return pool != other.pool; }
++};
++
++using skippy_checkpoint_bytes = std::vector<uint8_t, skippy_checkpoint_allocator<uint8_t>>;
++
+ // Cache-owned checkpoints outlive execution lanes. Attention remains in the
+ // native shared cell pool; only the fixed-size recurrent component is copied.
+ struct skippy_resident_checkpoint {
+     std::vector<llama_token> tokens;
+-    std::vector<uint8_t> recurrent;
++    skippy_checkpoint_bytes recurrent;
+ };
+ 
+ struct skippy_model {
+@@ -120,6 +174,8 @@ struct skippy_model {
+     std::mutex lane_mutex;
+     std::vector<bool> lane_in_use;
+     std::mutex resident_prefix_mutex;
++    // declared first so it outlives the checkpoints it holds
++    skippy_checkpoint_host_pool resident_host_pool;
+     std::map<int32_t, skippy_resident_checkpoint> resident_prefixes;
+     std::mutex chat_templates_mutex;
+     void * chat_templates = nullptr;
+-- 
+2.43.0
+
