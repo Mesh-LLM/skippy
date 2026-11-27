@@ -24,7 +24,9 @@ jobs:
           command -v vulkaninfo
           printf 'Capabilities: %s\nLibrary path: %s\n' "${NVIDIA_DRIVER_CAPABILITIES:-unset}" "${LD_LIBRARY_PATH:-unset}"
           printf 'ICD override: %s %s\n' "${VK_DRIVER_FILES:-unset}" "${VK_ICD_FILENAMES:-unset}"
-          ldconfig -p | rg 'vulkan|GLX_nvidia|glvkspirv|gpucomp' || true
+          ldconfig -p | grep -E 'vulkan|GLX_nvidia|glvkspirv|gpucomp|libEGL' || true
+          sudo -n apt-get update
+          sudo -n apt-get install -y --no-install-recommends libegl1
           for path in /etc/vulkan/icd.d/*.json /usr/share/vulkan/icd.d/*.json; do
             test -f "$path" || continue
             printf '%s\n' "$path"
