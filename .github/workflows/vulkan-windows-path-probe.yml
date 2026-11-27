@@ -1,0 +1,64 @@
+name: Vulkan Windows path investigation
+on:
+  push:
+    branches: [rehearsal/vulkan-windows-path]
+permissions:
+  contents: read
+jobs:
+  probe:
+    name: Collect Windows Vulkan path result · ${{ matrix.case }}
+    runs-on: windows-2022
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [short, long, long-short-build]
+    env:
+      SKIPPY_PYTHON: python
+    steps:
+      - name: Admit repository writer
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          script: |
+            if (context.repo.owner !== 'Mesh-LLM' || context.repo.repo !== 'skippy' || context.eventName !== 'push' || context.ref !== 'refs/heads/rehearsal/vulkan-windows-path') throw new Error('Unexpected probe caller');
+            const {data: permission} = await github.rest.repos.getCollaboratorPermissionLevel({...context.repo, username: context.actor});
+            if (!['admin', 'maintain', 'write'].includes(permission.permission)) throw new Error('Repository writer required');
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate probe syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $env:GITHUB_WORKSPACE 'scripts/ci-vulkan-windows-path-probe.ps1'), [ref]$tokens, [ref]$parseErrors)
+          if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - name: Prefer Git Bash
+        shell: pwsh
+        run: |
+          $gitRoot = Split-Path (Split-Path (Get-Command git.exe).Source)
+          Join-Path $gitRoot 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Enable MSVC environment
+        shell: pwsh
+        run: ./scripts/enable-msvc-dev-env.ps1
+      - name: Install the production pinned Vulkan SDK
+        shell: bash
+        run: just ci-vulkan-sdk 1.4.328.1
+      - name: Collect the real build outcome
+        shell: pwsh
+        env:
+          PROBE_CASE: ${{ matrix.case }}
+        run: ./scripts/ci-vulkan-windows-path-probe.ps1 -Case $env:PROBE_CASE
+      - name: Retain build and configure evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: vulkan-windows-path-${{ matrix.case }}
+          path: path-probe-evidence/${{ matrix.case }}
+          if-no-files-found: error
+          retention-days: 7
