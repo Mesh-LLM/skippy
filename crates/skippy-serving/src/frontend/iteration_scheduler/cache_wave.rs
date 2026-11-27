@@ -96,6 +96,7 @@ mod tests {
             max_commands_per_turn: 8,
             iteration_interval: Duration::ZERO,
             active_runtime_sessions: 4,
+            direct_sessions: Arc::default(),
             cache_wave_sessions: executable,
             direct_wave_full: true,
             telemetry: None,

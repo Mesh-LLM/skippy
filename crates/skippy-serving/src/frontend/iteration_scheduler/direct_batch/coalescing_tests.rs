@@ -20,6 +20,7 @@ fn worker(commands: std_mpsc::Receiver<SchedulerCommand>) -> SchedulerWorker {
         max_commands_per_turn: 0,
         iteration_interval: Duration::ZERO,
         active_runtime_sessions: 4,
+        direct_sessions: Arc::default(),
         cache_wave_sessions: 0,
         direct_wave_full: false,
         telemetry: None,
@@ -49,6 +50,23 @@ fn nonempty_coalescing_still_tracks_sessions_queue_and_group_limit() {
     ] {
         assert_eq!(direct_coalesce_target(active, queued, limit), expected);
     }
+}
+
+#[test]
+fn direct_waits_count_only_the_sessions_handing_in_steps() {
+    let (_commands, receiver) = std_mpsc::channel();
+    let mut worker = worker(receiver);
+    assert_eq!(worker.awaited_sessions(), 4);
+    let config = skippy_protocol::BatchConfig {
+        wait_sessions: Some(skippy_protocol::WaitSessions::Direct),
+        ..Default::default()
+    };
+    worker.batch_policy = batch_policy(
+        skippy_protocol::BatchPolicyKind::default(),
+        BatchTuning::resolve(BatchPlatform::Other, &config, None),
+    );
+    let _generating = DirectSession::enter(&worker.direct_sessions, DirectRole::Generating);
+    assert_eq!(worker.awaited_sessions(), 1);
 }
 
 #[test]

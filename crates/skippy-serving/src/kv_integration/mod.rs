@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
+    num::NonZeroU64,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, AtomicUsize},
@@ -179,6 +180,9 @@ pub struct KvStageIntegration {
     pub(crate) correctness_mode: bool,
     pub(crate) trust_local_writes: bool,
     pub(crate) checkpoint_policy: SparseCheckpointPolicy,
+    /// The grid the shared-prefix checkpoint moves down to; one token leaves it
+    /// on the stride grid.
+    pub(crate) shared_checkpoint_align: NonZeroU64,
     pub(crate) prefill_admission: scheduling::CacheSchedulingPolicy,
     pub(crate) inflight_records: Arc<Mutex<BTreeSet<String>>>,
     pub(crate) resident_config: ResidentCacheConfig,

@@ -196,8 +196,12 @@ impl StageOpenAiBackend {
             max_tokens,
         );
         if deferred_suffix_prefill && capacity.admitted {
-            let prompt =
-                PromptPrefill::begin(session_id, cache_operation_deadline, request.cancellation);
+            let prompt = PromptPrefill::begin(
+                session_id,
+                cache_operation_deadline,
+                request.cancellation,
+                self.iteration_scheduler.prefilling(),
+            );
             let exact_state = self
                 .kv
                 .as_ref()

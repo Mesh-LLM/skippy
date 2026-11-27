@@ -15,7 +15,9 @@ use super::direct_batch::{
 };
 use super::iteration_work::IterationWork;
 use super::{DIRECT_ITERATION_COALESCE_WINDOW, DirectIteration};
-use skippy_protocol::{BatchConfig, BatchMixing, BatchPolicyKind, PrefillPrompts, PrefillWait};
+use skippy_protocol::{
+    BatchConfig, BatchMixing, BatchPolicyKind, PrefillPrompts, PrefillWait, WaitSessions,
+};
 use skippy_runtime::{BackendDeviceType, IterationBatchPhase};
 use std::collections::{BTreeSet, VecDeque};
 use std::time::Duration;
@@ -89,6 +91,8 @@ pub(super) struct BatchTuning {
     pub(super) prefill_wait: PrefillWait,
     /// Whether prompt chunks and generated tokens share a batch.
     pub(super) mixing: BatchMixing,
+    /// The sessions a batch waits for.
+    pub(super) wait_sessions: WaitSessions,
 }
 
 impl BatchTuning {
@@ -114,6 +118,7 @@ impl BatchTuning {
                 },
                 prefill_wait: PrefillWait::Wave,
                 mixing: BatchMixing::Mixed,
+                wait_sessions: WaitSessions::Runtime,
             },
         };
         Self {
@@ -131,6 +136,7 @@ impl BatchTuning {
             prefill_prompts: config.prefill_prompts.unwrap_or(base.prefill_prompts),
             prefill_wait: config.prefill_wait.unwrap_or(base.prefill_wait),
             mixing: config.mixing.unwrap_or(base.mixing),
+            wait_sessions: config.wait_sessions.unwrap_or(base.wait_sessions),
         }
     }
 
@@ -170,7 +176,8 @@ pub(super) struct BatchLimits {
 #[derive(Clone, Debug)]
 pub(super) struct BatchView<'a> {
     pub(super) queued: Vec<QueuedRequest<'a>>,
-    /// Sessions the runtime is serving, queued or not.
+    /// Sessions a batch waits for, queued or not, as
+    /// [`BatchTuning::wait_sessions`] counts them.
     pub(super) active_sessions: usize,
     pub(super) limits: BatchLimits,
 }

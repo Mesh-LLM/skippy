@@ -196,7 +196,8 @@ on their stage listener; stage zero exposes the public OpenAI and Anthropic APIs
 Serving tuning flags use names such as `--bind-addr` and
 `--generation-concurrency` for both local and binary stage serving.
 `--prefill-chunk-size` sizes the chunks stage 0 of a split prefills and sends
-downstream; local serving prefills in `--microbatch-size` chunks. Compatibility
+downstream; local serving prefills in `--microbatch-size` chunks, or by load
+with `--batch-prefill-chunk adaptive`. Compatibility
 guardrails use `--guardrails`.
 
 `plan-split` admits every native stage before writing configs. Its output

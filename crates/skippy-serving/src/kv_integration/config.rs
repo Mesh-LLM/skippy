@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
+    num::NonZeroU64,
     sync::{Arc, Mutex},
 };
 
@@ -9,7 +10,9 @@ use skippy_cache::{
     ResidentActivationCache, ResidentCacheConfig, SparseCheckpointPolicy, StoreLimits,
     UnifiedRadixCache, exact_state_identity_for_stage, numerical_model_identity_for_stage,
 };
-use skippy_protocol::{StageConfig, StageKvCacheCodec, StageKvCacheConfig, StageKvCacheMode};
+use skippy_protocol::{
+    CheckpointAlign, StageConfig, StageKvCacheCodec, StageKvCacheConfig, StageKvCacheMode,
+};
 use skippy_runtime::{ModelStateKind, RuntimeKvPageDesc};
 
 use super::{
@@ -369,6 +372,7 @@ impl KvStageIntegration {
             correctness_mode: false,
             trust_local_writes: true,
             checkpoint_policy,
+            shared_checkpoint_align: shared_checkpoint_align(config),
             prefill_admission,
             inflight_records,
             resident_config,
@@ -950,6 +954,24 @@ fn cache_disabled_by_env(kv_cache: Option<&str>, prefix_cache: Option<&str>) -> 
         .into_iter()
         .flatten()
         .any(|value| parse_cache_mode(value) == Some(StageKvCacheMode::Disabled))
+}
+
+/// The grid a prompt's shared-prefix checkpoint moves down to. Microbatch
+/// alignment uses the native microbatch, which is what a prefill crosses whole.
+fn shared_checkpoint_align(config: &StageConfig) -> NonZeroU64 {
+    match config
+        .batch
+        .checkpoint_align
+        .unwrap_or(CheckpointAlign::Stride)
+    {
+        CheckpointAlign::Stride => NonZeroU64::MIN,
+        CheckpointAlign::Microbatch => NonZeroU64::new(u64::from(
+            config
+                .n_ubatch
+                .unwrap_or(skippy_runtime::LLAMA_SERVER_DEFAULT_N_UBATCH),
+        ))
+        .unwrap_or(NonZeroU64::MIN),
+    }
 }
 
 pub(super) fn effective_cache_config(config: &StageConfig) -> Option<StageKvCacheConfig> {

@@ -100,6 +100,7 @@ fn configured_tuning_replaces_the_platform_values() {
         prefill_prompts: Some(at_most(2)),
         prefill_wait: Some(PrefillWait::Active),
         mixing: Some(BatchMixing::Separate),
+        ..BatchConfig::default()
     };
     let tuning = BatchTuning::resolve(BatchPlatform::Metal, &config, Some(20));
     assert_eq!(tuning.decode_window, Duration::from_micros(500));

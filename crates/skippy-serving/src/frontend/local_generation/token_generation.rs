@@ -946,6 +946,10 @@ impl StageOpenAiBackend {
         emit_token: &mut impl FnMut(i32) -> InferenceResult<TokenControl>,
     ) -> InferenceResult<Duration> {
         let decode_timer = PhaseTimer::start();
+        // Counted while it hands in one token a step; native MTP decodes
+        // through runtime operations instead.
+        let _generating =
+            (!request.native_mtp_enabled).then(|| self.iteration_scheduler.generating());
         let decoding = self.enter_openai_summary(&decode_timer);
         let mut state =
             self.prepare_decode_state(request, session_id, prompt_prefill_sample, emit_token)?;

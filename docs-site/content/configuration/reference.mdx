@@ -107,12 +107,16 @@ The environment overrides are `SKIPPY_SERVE_ON_DEMAND`,
 | `batch_prefill_prompts` | Cap the prompts one batch prefills: `all`, or a count. Unset, `arrival_order` takes all and `prompt_order` takes 1 |
 | `batch_prefill_wait` | Select `wave` (default), where a batch holding a prompt waits for a full set of lanes, or `active`, where it waits only for the sessions already running |
 | `batch_mixing` | Select `mixed` (default), where generated tokens join batches that hold prompt chunks, or `separate`, where each batch holds one kind |
+| `batch_wait_sessions` | Select `runtime` (default), where a batch waits for every session the runtime holds, or `direct`, where it waits only for prompts in their chunked prefill and requests generating tokens, so a queued or finished session never holds it up |
+| `batch_prefill_chunk` | Select `microbatch` (default), where each step takes one `microbatch_size` chunk of a prompt, or `adaptive`, where a prompt takes up to `batch_size` tokens a step while no other request is generating tokens, and `batch_prefill_shared_tokens` less one token for each request that is |
+| `batch_prefill_shared_tokens` | Set the tokens of an adaptive step shared with requests generating tokens, theirs included. Defaults to `microbatch_size` |
+| `batch_checkpoint_align` | Select `stride` (default), where a prompt's shared-prefix checkpoint sits one cache stride before its tail, or `microbatch`, where it moves down to a `microbatch_size` boundary so the prefill reaches it without a short extra step |
 | `batch_decode_window_us`, `batch_prefill_window_per_token_us` | Tune batch gathering latency |
 | `prefill_coalesce_max_ms` | Cap the total batching wait for a prefill wave. Use `0` to skip the wait. |
 | `sample_threads` | Select pooled sampling (0), inline sampling (1), or a thread cap |
 | `generation_queue_capacity` | Bound queued requests |
 | `generation_admission_timeout_secs` | Bound queue wait time. Defaults to `0`, which waits until cancellation. |
-| `prefill_chunk_size`, `prefill_chunk_policy` | Configure the chunks stage 0 of a split prefills and sends downstream. Local serving prefills in `microbatch_size` chunks. |
+| `prefill_chunk_size`, `prefill_chunk_policy` | Configure the chunks stage 0 of a split prefills and sends downstream. Local serving prefills in `microbatch_size` chunks, or as `batch_prefill_chunk` says. |
 
 ## `[sampling]`
 

@@ -1030,6 +1030,14 @@ fn batch_settings_reach_the_stage_config() {
         "active",
         "--batch-mixing",
         "separate",
+        "--batch-wait-sessions",
+        "direct",
+        "--batch-prefill-chunk",
+        "adaptive",
+        "--batch-prefill-shared-tokens",
+        "1024",
+        "--batch-checkpoint-align",
+        "microbatch",
         "--batch-decode-window-us",
         "500",
         "--batch-prefill-window-per-token-us",
@@ -1060,6 +1068,22 @@ fn batch_settings_reach_the_stage_config() {
     assert_eq!(
         stage.batch.mixing,
         Some(skippy_protocol::BatchMixing::Separate)
+    );
+    assert_eq!(
+        stage.batch.wait_sessions,
+        Some(skippy_protocol::WaitSessions::Direct)
+    );
+    assert_eq!(
+        stage.batch.prefill_chunk,
+        Some(skippy_protocol::PrefillChunk::Adaptive)
+    );
+    assert_eq!(
+        stage.batch.prefill_shared_tokens,
+        std::num::NonZeroU32::new(1024)
+    );
+    assert_eq!(
+        stage.batch.checkpoint_align,
+        Some(skippy_protocol::CheckpointAlign::Microbatch)
     );
     assert_eq!(stage.batch.decode_window_us, Some(500));
     assert_eq!(stage.batch.prefill_window_per_token_us, Some(40));

@@ -1,20 +1,62 @@
 use crate::frontend::generation::StageOpenAiBackend;
+use crate::frontend::iteration_scheduler::DirectSession;
 use crate::frontend::iteration_scheduler::iteration_work::{IterationWork, PromptStart};
 use skippy_inference_api::{CancellationToken, InferenceError, InferenceResult};
+use skippy_protocol::{BatchConfig, PrefillChunk};
 use skippy_runtime::SamplingConfig;
+use std::num::NonZeroUsize;
 use std::time::Instant;
 
 const MAX_NATIVE_ITERATION_TOKENS: usize = 2_048;
 
-fn suffix_chunk_sample_flags(
-    suffix_len: usize,
-    chunk_tokens: usize,
-    sample_last: bool,
-) -> Vec<bool> {
-    let chunk_count = suffix_len.div_ceil(chunk_tokens);
-    (0..chunk_count)
-        .map(|index| sample_last && index == chunk_count.saturating_sub(1))
-        .collect()
+/// How many of a prompt's tokens each step of its prefill takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PrefillChunking {
+    /// The same count every step.
+    Fixed(NonZeroUsize),
+    /// A whole step while no other request is generating tokens. While some
+    /// are, `shared` tokens less one for each of them, whose next tokens join
+    /// the step: the prompt then holds them up by one shared step at a time.
+    Adaptive {
+        alone: NonZeroUsize,
+        shared: NonZeroUsize,
+    },
+}
+
+impl PrefillChunking {
+    /// `step_tokens` is the most one direct iteration may carry.
+    fn resolve(batch: &BatchConfig, n_ubatch: Option<u32>, step_tokens: usize) -> Self {
+        let microbatch = usize::try_from(n_ubatch.unwrap_or(256))
+            .unwrap_or(MAX_NATIVE_ITERATION_TOKENS)
+            .clamp(1, MAX_NATIVE_ITERATION_TOKENS);
+        let step = step_tokens.clamp(1, MAX_NATIVE_ITERATION_TOKENS);
+        let tokens = |count: usize| NonZeroUsize::new(count).unwrap_or(NonZeroUsize::MIN);
+        match batch.prefill_chunk.unwrap_or(PrefillChunk::Microbatch) {
+            PrefillChunk::Microbatch => Self::Fixed(tokens(microbatch)),
+            PrefillChunk::Adaptive => Self::Adaptive {
+                alone: tokens(step),
+                shared: tokens(
+                    batch
+                        .prefill_shared_tokens
+                        .and_then(|shared| usize::try_from(shared.get()).ok())
+                        .unwrap_or(microbatch)
+                        .min(step),
+                ),
+            },
+        }
+    }
+
+    /// The tokens the next step takes of the `remaining` ones while
+    /// `generating` other sessions generate tokens. At least one while any
+    /// remain.
+    fn next(self, remaining: usize, generating: usize) -> usize {
+        let tokens = match self {
+            Self::Fixed(tokens) => tokens.get(),
+            Self::Adaptive { alone, .. } if generating == 0 => alone.get(),
+            Self::Adaptive { shared, .. } => shared.get().saturating_sub(generating).max(1),
+        };
+        tokens.min(remaining)
+    }
 }
 
 /// One prompt's cooperative prefill: what all of its segments and chunks
@@ -25,6 +67,9 @@ pub(super) struct PromptPrefill<'a> {
     start: PromptStart,
     deadline: Instant,
     cancellation: Option<&'a CancellationToken>,
+    /// Counts the prompt among the sessions the scheduler waits for, across
+    /// its checkpoint boundaries too.
+    _prefilling: DirectSession,
 }
 
 impl<'a> PromptPrefill<'a> {
@@ -32,12 +77,14 @@ impl<'a> PromptPrefill<'a> {
         session_id: &'a str,
         deadline: Instant,
         cancellation: Option<&'a CancellationToken>,
+        prefilling: DirectSession,
     ) -> Self {
         Self {
             session_id,
             start: PromptStart::next(),
             deadline,
             cancellation,
+            _prefilling: prefilling,
         }
     }
 
@@ -73,7 +120,8 @@ impl StageOpenAiBackend {
     /// cache-aware restore closure monopolizing the runtime through its whole
     /// suffix. Sampling is deliberately restricted to the final chunk. Every
     /// chunk carries the prompt's start, so the batch policy keeps the
-    /// prompt's place between chunks.
+    /// prompt's place between chunks. Each chunk is sized when it is sent, from
+    /// the sessions generating tokens then.
     pub(super) fn prefill_suffix(
         &self,
         prompt: &PromptPrefill<'_>,
@@ -86,18 +134,23 @@ impl StageOpenAiBackend {
                 "deferred suffix prefill requires at least one token",
             ));
         }
-        let chunk_tokens = usize::try_from(self.config.n_ubatch.unwrap_or(256))
-            .unwrap_or(MAX_NATIVE_ITERATION_TOKENS)
-            .clamp(1, MAX_NATIVE_ITERATION_TOKENS);
-        let sample_flags = suffix_chunk_sample_flags(suffix.len(), chunk_tokens, sample_last);
+        let chunking = PrefillChunking::resolve(
+            &self.config.batch,
+            self.config.n_ubatch,
+            self.iteration_scheduler.max_iteration_tokens(),
+        );
         let channel = self.iteration_scheduler.direct_iteration_channel();
         let mut predicted = None;
         let mut chunk_count = 0usize;
         let mut max_batch_size = 0usize;
         let mut runtime_lock_wait_ms = 0.0;
         let mut runtime_lock_hold_ms = 0.0;
-        for (chunk, should_sample) in suffix.chunks(chunk_tokens).zip(sample_flags) {
+        let mut rest = suffix;
+        while !rest.is_empty() {
             prompt.ensure_active()?;
+            let generating = self.iteration_scheduler.generating_sessions();
+            let (chunk, tail) = rest.split_at(chunking.next(rest.len(), generating));
+            let should_sample = sample_last && tail.is_empty();
             let outcome = self.iteration_scheduler.execute_iteration_on(
                 &channel,
                 prompt.session_id,
@@ -116,6 +169,7 @@ impl StageOpenAiBackend {
             if should_sample {
                 predicted = Some(outcome.predicted);
             }
+            rest = tail;
         }
         Ok(SuffixPrefillOutcome {
             predicted,
@@ -129,23 +183,42 @@ impl StageOpenAiBackend {
 
 #[cfg(test)]
 mod tests {
-    use super::suffix_chunk_sample_flags;
+    use super::PrefillChunking;
+    use skippy_protocol::{BatchConfig, PrefillChunk};
+    use std::num::NonZeroU32;
 
-    #[test]
-    fn deferred_suffix_samples_only_the_final_chunk() {
-        assert_eq!(
-            suffix_chunk_sample_flags(7, 3, true),
-            vec![false, false, true]
-        );
-        assert_eq!(
-            suffix_chunk_sample_flags(7, 3, false),
-            vec![false, false, false]
-        );
+    fn adaptive(shared: Option<u32>) -> BatchConfig {
+        BatchConfig {
+            prefill_chunk: Some(PrefillChunk::Adaptive),
+            prefill_shared_tokens: shared.and_then(NonZeroU32::new),
+            ..BatchConfig::default()
+        }
     }
 
     #[test]
-    fn resident_suffix_keeps_final_chunk_sampling() {
-        assert_eq!(suffix_chunk_sample_flags(3, 3, true), vec![true]);
-        assert_eq!(suffix_chunk_sample_flags(4, 3, true), vec![false, true]);
+    fn microbatch_chunks_do_not_follow_load() {
+        let chunking = PrefillChunking::resolve(&BatchConfig::default(), Some(512), 2048);
+        assert_eq!(chunking.next(4620, 0), 512);
+        assert_eq!(chunking.next(4620, 3), 512);
+        assert_eq!(chunking.next(7, 0), 7);
+    }
+
+    #[test]
+    fn an_adaptive_prompt_takes_a_whole_step_alone_and_leaves_room_for_generated_tokens() {
+        let chunking = PrefillChunking::resolve(&adaptive(None), Some(512), 2048);
+        assert_eq!(chunking.next(4620, 0), 2048);
+        assert_eq!(chunking.next(4620, 3), 509);
+        assert_eq!(chunking.next(100, 3), 100);
+        assert_eq!(chunking.next(4620, 600), 1);
+    }
+
+    #[test]
+    fn the_shared_budget_never_exceeds_one_step() {
+        let chunking = PrefillChunking::resolve(&adaptive(Some(4096)), Some(512), 2048);
+        assert_eq!(chunking.next(4620, 1), 2047);
+        // A stage that exports activations steps one microbatch at a time.
+        let chunking = PrefillChunking::resolve(&adaptive(Some(4096)), Some(512), 512);
+        assert_eq!(chunking.next(4620, 0), 512);
+        assert_eq!(chunking.next(4620, 1), 511);
     }
 }

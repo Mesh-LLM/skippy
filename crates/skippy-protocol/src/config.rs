@@ -430,6 +430,43 @@ pub enum BatchMixing {
     Separate,
 }
 
+/// The sessions a batch waits for before it runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WaitSessions {
+    /// Every session the runtime holds.
+    Runtime,
+    /// The sessions handing in work one step at a time: prompts in their
+    /// chunked prefill and requests generating tokens. A session that will
+    /// not hand in a step, such as a prompt queued behind another or one
+    /// that has finished, never holds a batch up.
+    Direct,
+}
+
+/// How many of a prompt's tokens one scheduler step takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrefillChunk {
+    /// One microbatch (`n_ubatch`), whatever else is running.
+    Microbatch,
+    /// By load. While no other request is generating tokens, a prompt takes
+    /// a whole step, up to `n_batch`; while some are, a step holds
+    /// `prefill_shared_tokens`, one token for each of them and the rest from
+    /// the prompt.
+    Adaptive,
+}
+
+/// Where a prompt's shared-prefix checkpoint lands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckpointAlign {
+    /// On the cache's stride grid, one stride before the prompt's tail.
+    Stride,
+    /// At the microbatch boundary at or below that point, so the prefill
+    /// reaches it in whole microbatches rather than a short extra step.
+    Microbatch,
+}
+
 /// Batch-forming settings. A value left unset is the one the policy chooses
 /// for the backend the stage runs on.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -454,6 +491,19 @@ pub struct BatchConfig {
     /// Whether prompt chunks and generated tokens share a batch.
     #[serde(default)]
     pub mixing: Option<BatchMixing>,
+    /// The sessions a batch waits for.
+    #[serde(default)]
+    pub wait_sessions: Option<WaitSessions>,
+    /// How many of a prompt's tokens one step takes.
+    #[serde(default)]
+    pub prefill_chunk: Option<PrefillChunk>,
+    /// The tokens of an adaptive step shared with requests generating tokens;
+    /// unset, one microbatch.
+    #[serde(default)]
+    pub prefill_shared_tokens: Option<NonZeroU32>,
+    /// Where the shared-prefix checkpoint lands.
+    #[serde(default)]
+    pub checkpoint_align: Option<CheckpointAlign>,
 }
 
 impl BatchConfig {

@@ -4,6 +4,7 @@
 //! so time the runtime sits unused between native calls has a name.
 
 use super::*;
+use skippy_protocol::WaitSessions;
 
 impl SchedulerWorker {
     /// Block for the next command while no work is queued; false once the
@@ -61,7 +62,7 @@ impl SchedulerWorker {
     pub(super) fn coalesce_direct_iterations(&mut self) -> bool {
         let Gather { target, window } = self.batch_policy.gather(&BatchView::of(
             &self.direct_iterations,
-            self.active_runtime_sessions,
+            self.awaited_sessions(),
             self.batch_limits(),
         ));
         let queued_before = self.direct_iterations.len();
@@ -122,6 +123,15 @@ impl SchedulerWorker {
         ]);
         span.end();
         running
+    }
+
+    /// The sessions a batch waits for, as the policy's tuning says to count
+    /// them.
+    pub(super) fn awaited_sessions(&self) -> usize {
+        match self.batch_policy.tuning().wait_sessions {
+            WaitSessions::Runtime => self.active_runtime_sessions,
+            WaitSessions::Direct => self.direct_sessions.expected(),
+        }
     }
 
     /// Run the cache operations that admit sessions into the wave being

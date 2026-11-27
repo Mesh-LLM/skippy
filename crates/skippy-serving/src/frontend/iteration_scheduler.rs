@@ -6,6 +6,7 @@ mod detached_runtime;
 mod direct_batch;
 mod direct_execution;
 mod direct_reply;
+mod direct_sessions;
 pub(crate) mod iteration_work;
 pub(crate) mod readout;
 mod step_telemetry;
@@ -27,6 +28,8 @@ use self::direct_batch::{
 #[cfg(test)]
 use self::direct_batch::{direct_coalesce_target, take_direct_iteration_batch};
 use self::direct_reply::DirectReply;
+pub(crate) use self::direct_sessions::DirectSession;
+use self::direct_sessions::{DirectRole, DirectSessions};
 use self::iteration_work::IterationWork;
 use self::step_telemetry::{StepTiming, sample_kv_used_cells};
 use crate::frontend::admission::DECODE_BATCH_HEADROOM_TOKENS;
@@ -133,6 +136,7 @@ pub(crate) struct DirectIterationChannel {
 struct IterationSchedulerShared {
     commands: std_mpsc::SyncSender<SchedulerCommand>,
     max_direct_iteration_tokens: usize,
+    direct_sessions: Arc<DirectSessions>,
     owner_count: AtomicUsize,
     worker: Mutex<Option<JoinHandle<()>>>,
 }
@@ -414,6 +418,8 @@ struct SchedulerWorker {
     max_commands_per_turn: usize,
     iteration_interval: Duration,
     active_runtime_sessions: usize,
+    /// The sessions handing in direct iterations, counted by their threads.
+    direct_sessions: Arc<DirectSessions>,
     cache_wave_sessions: usize,
     direct_wave_full: bool,
     telemetry: Option<Telemetry>,
@@ -426,6 +432,28 @@ impl IterationScheduler {
     pub(crate) fn direct_iteration_channel(&self) -> DirectIterationChannel {
         let (reply, result) = std_mpsc::sync_channel(1);
         DirectIterationChannel { reply, result }
+    }
+
+    /// Count a session among the prompts in a chunked prefill until the guard
+    /// drops.
+    pub(crate) fn prefilling(&self) -> DirectSession {
+        DirectSession::enter(&self.shared.direct_sessions, DirectRole::Prefilling)
+    }
+
+    /// Count a session among those generating tokens through direct
+    /// iterations until the guard drops.
+    pub(crate) fn generating(&self) -> DirectSession {
+        DirectSession::enter(&self.shared.direct_sessions, DirectRole::Generating)
+    }
+
+    /// Sessions generating tokens through direct iterations now.
+    pub(crate) fn generating_sessions(&self) -> usize {
+        self.shared.direct_sessions.generating()
+    }
+
+    /// The most tokens one direct iteration may carry.
+    pub(crate) fn max_iteration_tokens(&self) -> usize {
+        self.shared.max_direct_iteration_tokens
     }
 
     pub(crate) fn new(
@@ -542,12 +570,30 @@ impl IterationScheduler {
                     json!(batch_tuning.mixing),
                 ),
                 (
+                    "skippy.scheduler.batch_wait_sessions".to_string(),
+                    json!(batch_tuning.wait_sessions),
+                ),
+                (
+                    "skippy.scheduler.batch_prefill_chunk".to_string(),
+                    json!(config.batch.prefill_chunk),
+                ),
+                (
+                    "skippy.scheduler.batch_prefill_shared_tokens".to_string(),
+                    json!(config.batch.prefill_shared_tokens),
+                ),
+                (
+                    "skippy.scheduler.batch_checkpoint_align".to_string(),
+                    json!(config.batch.checkpoint_align),
+                ),
+                (
                     "skippy.scheduler.cache_policy".to_string(),
                     json!("weighted_lpm_aging_dfs_waiting_prefix"),
                 ),
             ]),
         );
         let (commands, receiver) = std_mpsc::sync_channel(command_queue_capacity);
+        let direct_sessions = Arc::new(DirectSessions::default());
+        let worker_direct_sessions = Arc::clone(&direct_sessions);
         // The worker outlives whatever constructs it, so its span hangs off
         // the process root rather than the setup section that starts it.
         let scheduler_span = ActiveSpan::start_under_process(
@@ -579,6 +625,7 @@ impl IterationScheduler {
                     max_commands_per_turn: command_queue_capacity.min(MAX_COMMANDS_PER_TURN),
                     iteration_interval,
                     active_runtime_sessions: 0,
+                    direct_sessions: worker_direct_sessions,
                     cache_wave_sessions: 0,
                     direct_wave_full: false,
                     telemetry: Some(telemetry),
@@ -596,6 +643,7 @@ impl IterationScheduler {
             shared: Arc::new(IterationSchedulerShared {
                 commands,
                 max_direct_iteration_tokens,
+                direct_sessions,
                 owner_count: AtomicUsize::new(1),
                 worker: Mutex::new(Some(worker)),
             }),

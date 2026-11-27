@@ -29,9 +29,13 @@ For an admitted resident representation:
   where the first user's text begins, which every conversation with those
   system messages shares, however long its first message; and the stride-grid
   boundary one to two strides below the prompt's end, for prompts that share
-  an earlier part without a system message. A boundary shorter than the
-  cache's minimum prefix is neither split at nor recorded. Identical system
-  messages map to one cached checkpoint.
+  an earlier part without a system message. With
+  `--batch-checkpoint-align microbatch` that stride-grid boundary moves down to
+  the microbatch boundary at or below it, so the prefill reaches it in whole
+  microbatches rather than an extra short step, at the cost of up to one
+  microbatch less to share. A boundary shorter than the cache's minimum prefix
+  is neither split at nor recorded. Identical system messages map to one cached
+  checkpoint.
 
 This follows SGLang's radix ownership model: token paths identify shared KV
 blocks, while recurrent state has separate checkpoint ownership. It is an
