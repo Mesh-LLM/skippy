@@ -95,6 +95,18 @@ def require_capabilities(built, help_text):
         raise ValueError(f'{built["label"]} unsupported: required server options missing: {", ".join(missing)}')
 
 
+def server_flags(built, help_text, server):
+    """A variant server's own Skippy flags as arguments. They are what the variant measures, so an
+    arm whose build lacks one stops instead of running as the server it varies."""
+    if built["kind"] != "skippy" or "skippy_flags" not in server:
+        return []
+    missing = [name for name in server["skippy_flags"] if not supports(help_text, f"--{name}")]
+    if missing:
+        raise ValueError(f'{built["label"]} unsupported: {server["id"]} needs '
+                         f'{", ".join("--" + name for name in missing)}')
+    return [(f"--{name}", value) for name, value in server["skippy_flags"].items()]
+
+
 def server_args(built, help_text, model, coordinate, context, server):
     require_capabilities(built, help_text)
     lanes, pool = server["lanes"], server["pool_tokens"]
@@ -120,6 +132,9 @@ def server_args(built, help_text, model, coordinate, context, server):
             continue
         args += [flag] if value is None else [flag, str(value)]
         applied[flag.removeprefix("--").replace("-", "_")] = True if value is None else value
+    for flag, value in server_flags(built, help_text, server):
+        args += [flag, str(value)]
+        applied[flag.removeprefix("--").replace("-", "_")] = value
     return args, applied, missing
 
 

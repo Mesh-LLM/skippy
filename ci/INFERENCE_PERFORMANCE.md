@@ -116,6 +116,14 @@ output, sixteen lanes with and without a 4,096-token shared prefix in a 32K
 pool, and four lanes at that depth with 16K and 32K pools: the cells where KV
 pressure and batching show.
 
+A server with `skippy_flags` is a variant of another: the same lanes and pool,
+with Skippy flags of its own, such as a larger prefill step. It runs only when a
+plan names it in `SERVERS`, so a campaign keeps the same cells. Its flags reach
+Skippy arms only, never `llama-server`, and may not set what the harness sets
+itself (context, lanes, pool, speculation, telemetry). An arm whose build lacks
+one of them fails before any round, since without it the variant would measure
+the server it varies.
+
 An arm that lacks a setting, such as `--kv-pool-tokens` on a commit from before
 the pool existed, runs without it. Each sample records what was applied and
 what the arm did not support. All arms are probed before model measurements begin.

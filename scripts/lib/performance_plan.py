@@ -20,6 +20,12 @@ BRANCH = re.compile(r"branch:([A-Za-z0-9._/-]{1,200})")
 NODE = re.compile(r"[A-Za-z0-9._-]{1,64}")
 MAX_ROUNDS = 9
 POINT_FIELDS = {"id", "concurrency", "depth", "input_tokens", "output_tokens", "requests"}
+SERVER_FIELDS = {"id", "lanes", "pool_tokens", "points"}
+SKIPPY_FLAG = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
+FLAG_VALUE = re.compile(r"[A-Za-z0-9._,:-]{1,64}")
+# server_args sets these on every Skippy arm, so a variant's own flags cannot change them
+HARNESS_FLAGS = {"startup-timeout-secs", "ctx-size", "n-gpu-layers", "bind-addr", "model-path", "model-id",
+                 "generation-concurrency", "speculative-strategy", "kv-pool-tokens", "debug", "telemetry-level"}
 
 
 def count(value, name, minimum=1):
@@ -28,19 +34,36 @@ def count(value, name, minimum=1):
     return value
 
 
+def skippy_flags(server):
+    """A variant server's own Skippy flags: names without the dashes, positive counts or short words."""
+    flags = server["skippy_flags"]
+    if type(flags) is not dict or not flags:
+        raise ValueError(f'{server["id"]}: skippy_flags must name at least one flag')
+    for name, value in flags.items():
+        if not SKIPPY_FLAG.fullmatch(name) or name in HARNESS_FLAGS:
+            raise ValueError(f'{server["id"]}: --{name} is not a flag a variant may set')
+        if not (type(value) is int and value >= 1 or type(value) is str and FLAG_VALUE.fullmatch(value)):
+            raise ValueError(f'{server["id"]}: --{name} needs a positive integer or a short word')
+    return flags
+
+
 def scenario(named=None):
     """The checked scenario; with `named`, only those servers and their points, to rerun one
-    workload without the rest."""
+    workload without the rest. A server with its own `skippy_flags` is a variant of another,
+    run only when named, so a campaign keeps the same cells."""
     value = read_json(SCENARIO)
     if (set(value) != {"schema_version", "context_per_lane", "warmup_requests", "servers"}
             or value["schema_version"] != 1 or not value["servers"]):
         raise ValueError("invalid performance scenario")
     context = count(value["context_per_lane"], "context_per_lane")
     count(value["warmup_requests"], "warmup_requests", 0)
-    servers, points = set(), set()
+    servers, points, variants = set(), set(), set()
     for server in value["servers"]:
-        if set(server) != {"id", "lanes", "pool_tokens", "points"} or not server["points"]:
+        if set(server) - {"skippy_flags"} != SERVER_FIELDS or not server["points"]:
             raise ValueError("invalid performance server")
+        if "skippy_flags" in server:
+            skippy_flags(server)
+            variants.add(server["id"])
         if server["id"] in servers:
             raise ValueError(f'duplicate performance server: {server["id"]}')
         servers.add(server["id"])
@@ -58,12 +81,12 @@ def scenario(named=None):
                 raise ValueError(f'{point["id"]}: concurrency exceeds the server\'s lanes')
             if point["depth"] + point["input_tokens"] + point["output_tokens"] > context:
                 raise ValueError(f'{point["id"]}: one request exceeds a lane\'s context')
-    if named is not None:
-        unknown = set(named) - servers
-        if not named or unknown:
-            raise ValueError(f"unknown performance servers: {', '.join(sorted(unknown)) or 'none named'}")
-        value = {**value, "servers": [server for server in value["servers"] if server["id"] in named]}
-    return value
+    if named is None:
+        return {**value, "servers": [server for server in value["servers"] if server["id"] not in variants]}
+    unknown = set(named) - servers
+    if not named or unknown:
+        raise ValueError(f"unknown performance servers: {', '.join(sorted(unknown)) or 'none named'}")
+    return {**value, "servers": [server for server in value["servers"] if server["id"] in named]}
 
 
 def pull_request_number(ref):

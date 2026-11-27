@@ -43,6 +43,22 @@ class ScenarioTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 performance_plan.scenario(names)
 
+    def test_a_variant_server_runs_only_when_named(self):
+        variant = "lanes4-pool32k-prefill2048"
+        self.assertNotIn(variant, [server["id"] for server in performance_plan.scenario()["servers"]])
+        named = performance_plan.scenario(["lanes4-pool32k", variant])["servers"]
+        self.assertEqual([server["id"] for server in named], ["lanes4-pool32k", variant])
+
+    def test_a_variant_cannot_set_what_the_harness_sets_or_nothing(self):
+        shape = performance_plan.read_json(performance_plan.SCENARIO)
+        for flags in ({}, {"debug": 1}, {"kv-pool-tokens": 4096}, {"Prefill Chunk": 1},
+                      {"prefill-chunk-size": 0}, {"prefill-chunk-size": "two words"}, []):
+            broken = json.loads(json.dumps(shape))
+            broken["servers"][0]["skippy_flags"] = flags
+            with patch.object(performance_plan, "read_json", return_value=broken):
+                with self.assertRaises(ValueError):
+                    performance_plan.scenario()
+
 
 class PlanTests(unittest.TestCase):
     candidate, baseline, pin = "a" * 40, "b" * 40, "c" * 40
@@ -237,6 +253,20 @@ class ServerTests(unittest.TestCase):
                     capabilities(self.skippy)
             with self.assertRaisesRegex(ValueError, "unsupported"):
                 server_args(self.skippy, help_text, "/m.gguf", "org/m@rev", 8192, self.server)
+
+    def test_a_variant_passes_its_flags_to_skippy_only_and_needs_them(self):
+        variant = dict(self.server, id="v", skippy_flags={"prefill-chunk-size": 2048, "microbatch-size": 2048})
+        help_text = " ".join(REQUIRED) + " --prefill-chunk-size <N> --microbatch-size <VALUE>\n"
+        args, applied, _ = server_args(self.skippy, help_text, "/m.gguf", "org/m@rev", 8192, variant)
+        self.assertEqual(args[args.index("--prefill-chunk-size") + 1], "2048")
+        self.assertEqual(args[args.index("--microbatch-size") + 1], "2048")
+        self.assertEqual(applied["microbatch_size"], 2048)
+        reference = {"label": "reference", "kind": "llama-server", "binary": "/b/llama-server"}
+        args, _, _ = server_args(reference, "", "/m.gguf", "org/m@rev", 8192, variant)
+        self.assertNotIn("--prefill-chunk-size", args)
+        with self.assertRaisesRegex(ValueError, "unsupported.*--microbatch-size"):
+            server_args(self.skippy, " ".join(REQUIRED) + " --prefill-chunk-size <N>", "/m.gguf",
+                        "org/m@rev", 8192, variant)
 
     def test_llama_server_gets_the_same_cells(self):
         built = {"label": "reference", "kind": "llama-server", "binary": "/b/llama-server"}

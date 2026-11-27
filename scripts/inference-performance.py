@@ -24,7 +24,7 @@ from lib.inference_checks import ENDPOINT, offload
 from lib.inference_inputs import admit as admit_model
 from lib.inference_inputs import fixture
 from lib.jy_qualification import ORIGIN, Pilot
-from lib.performance_arms import build, capabilities, may_reject, server_args, supports
+from lib.performance_arms import build, capabilities, may_reject, server_args, server_flags, supports
 from lib.performance_backends import BACKENDS
 from lib.performance_load import run_point, tokenizer
 from lib.performance_plan import (SCENARIO, arms, branch_name, job_spec, models, nodes, pull_request_head,
@@ -340,6 +340,10 @@ def execute():
     for log in WORK.glob("build-*.log"):
         (output / log.name).write_bytes(log.read_bytes())
     shape, helps = scenario(plan.get("servers")), {entry["label"]: capabilities(entry) for entry in built}
+    # before any round, so a variant whose flag an arm lacks fails before it measures anything
+    for arm in built:
+        for server in shape["servers"]:
+            server_flags(arm, helps[arm["label"]], server)
     record = {"schema_version": 1, "harness": plan["harness"], "scenario_sha256": digest(SCENARIO),
               "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
               "host": {"node": os.environ.get("JIANYANG_NODE"), "backend": plan["backend"],
