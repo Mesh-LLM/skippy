@@ -21,7 +21,7 @@ function results({ automation = true, code = true, packages = false, native = fa
   if (automation) required.push('automation');
   if (selected) required.push('plan');
   if (code) required.push('quality');
-  if (full) required.push('native_contracts', ...packageJobs);
+  if (full) required.push('native_contracts', 'smoke_linux_x86_64_vulkan', ...packageJobs);
   else if (packages) required.push(...prPackages);
   if (native) required.push('native_contracts');
   if (release) required.push(...releaseSmokes);
@@ -45,8 +45,8 @@ test('protected pull_request_target skips CI when trusted admission skips change
   assert.equal(shouldRun({ changes: { result: 'success' } }), true);
 });
 
-test('all thirteen runtime packages match the planned matrix and depend on the canary', () => {
-  assert.equal(packageJobs.length, 13);
+test('all fifteen runtime packages match the planned matrix and depend on the canary', () => {
+  assert.equal(packageJobs.length, 15);
   assert.deepEqual(declared.filter(job => job.startsWith('package_')).sort(), packageJobs.sort());
   for (const row of rows) {
     const job = `package_${row.id.replaceAll('-', '_')}`;
@@ -57,7 +57,7 @@ test('all thirteen runtime packages match the planned matrix and depend on the c
     if (row.backend !== 'cpu') assert.ok(body.includes(`package_${row.host.replaceAll('-', '_')}_cpu`));
     assert.equal(body.includes("needs.changes.outputs.packages == 'true'"), prPackages.includes(job));
     const needsSeparateSmoke = releaseSmokes.includes(job.replace('package_', 'release_smoke_'));
-    assert.equal(body.includes('smoke: artifact'), row.validation === 'artifact' || needsSeparateSmoke);
+    assert.equal(body.includes('smoke: artifact'), row.validation === 'artifact' || needsSeparateSmoke || row.id === 'linux-x86_64-vulkan');
     if (row.validation === 'artifact') assert.ok(body.includes(row.runner[0]));
     if (row.host === 'windows-x86_64' && row.backend === 'cuda') {
       assert.ok(body.includes(`windows-cuda: '${row.toolkit}'\n`));
@@ -83,6 +83,24 @@ test('separate device smoke consumes prebuilt artifacts without restoring build 
   assert.ok(action.indexOf('Check release device scratch storage') < action.indexOf('actions/download-artifact'));
   assert.match(action, /export TMPDIR="\$RUNNER_TEMP"/);
   assert.match(action, /device-evidence-\$\{\{ inputs\.runtime_id \}\}/);
+});
+
+test('full Vulkan smoke reuses NVIDIA and AMD pools and requires both vendor archives', () => {
+  const smoke = workflow.split('\n  smoke_linux_x86_64_vulkan:\n')[1].split('\n  gate:\n')[0];
+  assert.match(smoke, /needs: \[plan, package_linux_x86_64_vulkan\]/);
+  for (const vendor of ['nvidia', 'amd']) assert.match(smoke, new RegExp(`vendor: ${vendor}`));
+  assert.match(smoke, /jy-rnr_p0zx3thw895vrka/);
+  assert.match(smoke, /jy-rnr_gsxt2m73mgpcbbh/);
+  assert.match(smoke, /--gpus all/);
+  assert.match(smoke, /--device=\/dev\/dri/);
+  assert.match(smoke, /NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics/);
+  assert.match(smoke, /download-package: 'true'/);
+  assert.match(smoke, /evidence-suffix: -\$\{\{ matrix.vendor \}\}/);
+  const needs = results({ full: true });
+  for (const result of ['skipped', 'failure', 'cancelled']) {
+    needs.smoke_linux_x86_64_vulkan.result = result;
+    assert.throws(() => gate(needs), /smoke_linux_x86_64_vulkan must be success/);
+  }
 });
 
 test('release publication consumes prepared assets and independently verifies their receipt', () => {
@@ -122,18 +140,18 @@ test('PR plans exclude full-only targets independently of their smoke evidence',
   const pr = plan('pr').runtimes.include;
   const full = plan('full').runtimes.include;
   assert.equal(pr.length, 8);
-  assert.equal(full.length, 13);
+  assert.equal(full.length, 15);
   assert.ok(pr.every(row => row.validation === 'inference'));
   assert.deepEqual(full.filter(row => !row.full_only), pr);
   const rocm = full.find(row => row.id === 'linux-x86_64-rocm');
   assert.equal(rocm.validation, 'inference');
   assert.equal(rocm.full_only, true);
-  assert.equal(full.filter(row => row.validation === 'artifact').length, 4);
+  assert.equal(full.filter(row => row.validation === 'artifact').length, 5);
   assert.ok(!pr.some(row => row.id === rocm.id));
   const release = results({ full: true, release: true });
   release.plan.outputs.runtimes = JSON.stringify({ include: full });
   assert.doesNotThrow(() => gate(release, true));
-  // An eight-package controller must reject a thirteen-package candidate.
+  // An eight-package controller must reject a fifteen-package candidate.
   for (const row of full.filter(row => row.full_only)) {
     delete release['package_' + row.id.replaceAll('-', '_')];
   }
@@ -325,7 +343,7 @@ test('host CPU and Windows backend packages install Just on their own runners', 
   for (const row of rows) {
     const job = `package_${row.id.replaceAll('-', '_')}`;
     const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
-    assert.equal(body.includes("setup-host: 'true'"), row.backend === 'cpu' || row.host === 'windows-x86_64', job);
+    assert.equal(body.includes("setup-host: 'true'"), row.backend === 'cpu' || row.backend === 'vulkan' || row.host === 'windows-x86_64', job);
   }
   const action = readFileSync(join(__dirname, '../actions/ci-package/action.yml'), 'utf8');
   assert.match(action, /uses: \.\/\.github\/actions\/setup\n      if: inputs.setup-host == 'true'/);
@@ -498,7 +516,7 @@ test('main can reuse only a receipt for the exact release dispatch and candidate
 
 test('every candidate checkout opts in to fork code only for the approved-fork controller (real #222 context)', () => {
   const refs = workflow.match(/^ +ref: \$\{\{ env\.SKIPPY_CI_SOURCE_REF \}\}\n.*$/gm);
-  assert.equal(refs.length, 20);
+  assert.equal(refs.length, 23);
   for (const ref of refs) assert.match(ref, /\n +allow-unsafe-pr-checkout: \$\{\{ inputs\.approved_fork_pr != '' \}\}$/);
   assert.equal(workflow.match(/allow-unsafe-pr-checkout:/g).length, refs.length);
 });

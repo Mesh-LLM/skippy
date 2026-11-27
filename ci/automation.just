@@ -15,7 +15,10 @@ inference-contracts:
 inference-publication-test:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_publication.py
 
-automation-contracts: inference-contracts
+ci-vulkan-contracts:
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_vulkan.py
+
+automation-contracts: inference-contracts ci-vulkan-contracts
     @"{{ automation_python }}" scripts/tests/ci_cuda_license.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_windows_cuda.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_process_environment.py
