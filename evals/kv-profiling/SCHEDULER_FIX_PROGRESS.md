@@ -1776,11 +1776,18 @@ a scored quality result.
 
 The first prospective scored-cell spec was rejected **before job creation**:
 embedding the complete prompt corpus made `runtime.command` 96 KB, above JY's
-16 KB schema limit. Its spec and rejection remain in the fix ledger. The three
-independently audited Qwen3.5, Coder and Qwen3.6 prompt archives are now
+16 KB schema limit. Its spec hash and rejection remain in the fix ledger. The
+independently audited Qwen3.5, Coder and Qwen3.6 prompt archives were
 committed as compressed, hash-checked synthetic fixtures under
 `pr-evidence/`; the scored runner reads the exact archive from its source-
 pinned checkout. Qwen3.5 and Qwen3.6 materializations yielded identical
-prompt bytes under their respective pinned native tokenizers. Flash remains
-pending its new split-shard launch. This packaging change does not alter task
-values, scoring, requests, or any native runtime.
+prompt bytes under their respective pinned native tokenizers. The corrected
+Flash job then passed an independent 512-prompt, 49/49 Metal audit (local audit
+SHA256 `592a08749bbff0a19659ebb9d717ad9277c3814e4397b0fbcfa44d66c95cfab6`).
+All four model-specific compressed fixtures are bound by the
+[archive manifest](pr-evidence/task-quality-v3-prompt-archives.json); this is
+still prompt-only evidence. The first prospective Qwen3.5 vanilla separate-
+slot c1 baseline is running as `job_spna4q4ssr7f5r0` at spec SHA256
+`f3a3ca2ba1115bc8053f66a26b250c8a015404cab00c0d4d4fc7f8c6ab4e3eae`.
+This packaging change does not alter task values, scoring, requests, or any
+native runtime.
