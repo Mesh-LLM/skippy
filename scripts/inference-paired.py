@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
@@ -97,8 +98,14 @@ def run_arm(design, main, baseline, key, mode, output):
     directory = output / f'{design["experiment"]}-{design["round"]}-{design["arm"]}'
     directory.mkdir()
     source = main if design["source_sha"] == baseline else ROOT
-    with revision(source, design["source_sha"], directory):
-        EXECUTE("pr", key, mode, REPETITIONS)
+    try:
+        with revision(source, design["source_sha"], directory):
+            EXECUTE("pr", key, mode, REPETITIONS)
+    finally:
+        # JY uploads top-level files only. Archive each arm, including partial
+        # failures, so raw responses and logs survive native workspace cleanup.
+        with tarfile.open(output / f"{directory.name}-evidence.tar.gz", "w:gz") as archive:
+            archive.add(directory, arcname=directory.name)
     return directory
 
 

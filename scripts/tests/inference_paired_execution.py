@@ -1,6 +1,7 @@
 """Offline native orchestration checks; these do not qualify any GPU."""
 
 import os
+import tarfile
 from pathlib import Path
 from runpy import run_path
 from tempfile import TemporaryDirectory
@@ -30,6 +31,9 @@ class ExecutionTests(unittest.TestCase):
             calls = []
             def execute(profile, key, mode, repeats):
                 calls.append((Path.cwd(), os.environ["JIANYANG_COMMIT"], profile, key, mode, repeats))
+                artifacts = Path(os.environ["JIANYANG_ARTIFACT_DIR"])
+                (artifacts / "probe-1").mkdir()
+                (artifacts / "probe-1/throughput-probe.json").write_text('{"raw_body":"retained"}')
                 if len(calls) == 2:
                     raise RuntimeError("injected failed arm")
             with patch.dict(run.__globals__, ROOT=candidate, EXECUTE=execute):
@@ -42,6 +46,10 @@ class ExecutionTests(unittest.TestCase):
                             run(design, main, BASELINE, "qwen35-4b", "standalone", output)
                     self.assertEqual(Path.cwd(), previous)
                     self.assertEqual(os.environ, environment)
+                    archive_path = output / f"ab-{index}-a-evidence.tar.gz"
+                    with tarfile.open(archive_path) as archive:
+                        response = archive.extractfile(f"ab-{index}-a/probe-1/throughput-probe.json").read()
+                    self.assertEqual(response, b'{"raw_body":"retained"}')
             self.assertEqual(calls, [(main, BASELINE, "pr", "qwen35-4b", "standalone", 3),
                                      (candidate, CANDIDATE, "pr", "qwen35-4b", "standalone", 3)])
 
