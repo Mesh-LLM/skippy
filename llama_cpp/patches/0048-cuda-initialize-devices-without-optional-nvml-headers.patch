@@ -1,0 +1,74 @@
+From 8f04f057c6906cd640b105d6a7ebc46fbb738e5f Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Wed, 25 Nov 2026 07:18:03 +1100
+Subject: [PATCH] cuda: retain device initialization without optional NVML
+ headers
+
+---
+ ggml/src/ggml-cuda/ggml-cuda.cu | 16 +++++++++++++++-
+ 1 file changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
+index caf78523d..d0be6ef4b 100644
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -101,8 +101,11 @@
+ #include <vector>
+ 
+ #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
++#if __has_include(<nvml.h>)
++#define GGML_CUDA_HAS_NVML
+ #include "ggml-backend-dl.h"
+ #include <nvml.h>
++#endif
+ #endif // !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+ 
+ static_assert(sizeof(half) == sizeof(ggml_fp16_t), "wrong fp16 size");
+@@ -322,6 +325,7 @@ static ggml_cuda_device_info ggml_cuda_init() {
+     total_vram = 0;
+ 
+ #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
++#if defined(GGML_CUDA_HAS_NVML)
+ #if defined(_WIN32)
+     // NVML is installed by the driver; its NVSMI directory is not added to PATH on Windows.
+     dl_handle_ptr library(LoadLibraryExW(L"nvml.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32));
+@@ -355,10 +359,13 @@ static ggml_cuda_device_info ggml_cuda_init() {
+     const auto get_brand = reinterpret_cast<decltype(&nvmlDeviceGetBrand)>(get_symbol("nvmlDeviceGetBrand"));
+     const bool nvml_initialized = init && shutdown && get_device && get_brand && init() == NVML_SUCCESS;
+ 
++#endif // defined(GGML_CUDA_HAS_NVML)
++
+     const auto should_use_fp32_acc = [&](const cudaDeviceProp & prop, const int cc) {
+         if (cc == GGML_CUDA_CC_GB10) {
+             return true;
+         }
++#if defined(GGML_CUDA_HAS_NVML)
+         if (!fast_bf16_hardware_available(cc) || !nvml_initialized) {
+             return false;
+         }
+@@ -376,6 +383,13 @@ static ggml_cuda_device_info ggml_cuda_init() {
+                               brand == NVML_BRAND_NVIDIA_RTX;
+         }
+         return prefer_fp32_acc;
++#else
++        // Some CUDA toolkit distributions (notably SBSA) omit nvml.h. Match
++        // the runtime fallback when the optional NVML driver library is absent;
++        // GB10 still selects FP32 accumulation above without a brand query.
++        GGML_UNUSED(prop);
++        return false;
++#endif // defined(GGML_CUDA_HAS_NVML)
+     };
+ #endif // !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+ 
+@@ -478,7 +492,7 @@ static ggml_cuda_device_info ggml_cuda_init() {
+ #endif  // defined(GGML_USE_HIP)
+     }
+ 
+-#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
++#if defined(GGML_CUDA_HAS_NVML)
+     if (nvml_initialized) {
+         (void) shutdown();
+     }
+-- 
+2.56.0
+

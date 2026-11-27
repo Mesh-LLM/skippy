@@ -1,9 +1,13 @@
 """Offline checks for release versioning and Git ref promotion."""
 
+import hashlib
 import importlib.util
+import io
+import json
 import os
 import subprocess
 import sys
+import tarfile
 import tempfile
 import tomllib
 import unittest
@@ -17,14 +21,92 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 TAG = "v0.81.0-rc.1"
 
 
-def release_script():
-    spec = importlib.util.spec_from_file_location("ci_release", SCRIPTS / "ci-release.py")
+def release_script(name="ci-release"):
+    spec = importlib.util.spec_from_file_location(name, SCRIPTS / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
+class CrateReleaseContract(unittest.TestCase):
+    def setUp(self):
+        self.release = release_script("ci-crates")
+
+    def test_publication_order_requires_versioned_registry_dependencies(self):
+        dependency = {"name": "skippy-subprocess", "path": "/subprocess", "req": "^0.81.0", "kind": None}
+        api = {"id": "api", "name": "skippy-api", "version": "0.81.0", "publish": ["crates-io"],
+               "manifest_path": "/api/Cargo.toml", "dependencies": [dependency]}
+        subprocess_crate = {"id": "subprocess", "name": "skippy-subprocess", "version": "0.81.0",
+                            "publish": ["crates-io"], "manifest_path": "/subprocess/Cargo.toml", "dependencies": []}
+        meta = {"packages": [api, subprocess_crate], "workspace_members": ["api", "subprocess"]}
+        self.assertEqual(self.release.publish_order(meta, "0.81.0"), ["skippy-subprocess", "skippy-api"])
+        for package, key, value in ((subprocess_crate, "publish", []), (dependency, "req", "^0.80.0")):
+            with patch.dict(package, {key: value}), self.assertRaisesRegex(ValueError, "release-versioned"):
+                self.release.publish_order(meta, "0.81.0")
+
+    def test_resuming_skips_only_an_unyanked_package_from_the_release_commit(self):
+        name, version, commit = "skippy-subprocess", "0.81.0", "a" * 40
+        raw = io.BytesIO()
+        vcs = json.dumps({"git": {"sha1": commit}}).encode()
+        with tarfile.open(fileobj=raw, mode="w:gz") as crate:
+            member = tarfile.TarInfo(f"{name}-{version}/.cargo_vcs_info.json")
+            member.size = len(vcs)
+            crate.addfile(member, io.BytesIO(vcs))
+        archive = raw.getvalue()
+        entry = {"vers": version, "cksum": hashlib.sha256(archive).hexdigest(), "yanked": False}
+
+        def responses(**overrides):
+            row = json.dumps({**entry, **overrides}).encode()
+            return patch.object(self.release, "registry_request", side_effect=[io.BytesIO(row), io.BytesIO(archive)])
+
+        with responses():
+            self.assertTrue(self.release.published(name, version, commit))
+        with responses(vers="0.80.0"):
+            self.assertFalse(self.release.published(name, version, commit))
+        with responses(), self.assertRaisesRegex(ValueError, "different source"):
+            self.release.published(name, version, "b" * 40)
+        with responses(yanked=True), self.assertRaisesRegex(ValueError, "yanked"):
+            self.release.published(name, version, commit)
+        with responses(cksum="bad"), self.assertRaisesRegex(ValueError, "does not match"):
+            self.release.published(name, version, commit)
+
+    def test_bootstrap_honors_the_registry_retry_time(self):
+        log = ("received a 429 response. Please try again after Wed, 25 Nov 2026 12:00:00 GMT "
+               "and see https://crates.io/docs/rate-limits for more details.")
+        with patch.object(self.release.time, "time", return_value=1795607991):
+            self.assertEqual(self.release.retry_delay(log), 10)
+        self.assertIsNone(self.release.retry_delay("401 Unauthorized"))
+
+
 class SmokeEvidenceContract(unittest.TestCase):
+    def test_linux_rocm_release_policy_rejects_archive_only_evidence(self):
+        release = release_script()
+        with patch.dict(os.environ, SKIPPY_CI_PROFILE="full", GITHUB_OUTPUT=""):
+            _, runtimes = release.targets()
+        runtime = runtimes["linux-x86_64-rocm"]
+        self.assertTrue(runtime["full_only"])
+        self.assertEqual(runtime["validation"], "inference")
+        artifact_only = [row["id"] for row in runtimes.values() if row["validation"] == "artifact"]
+        self.assertEqual(len(artifact_only), 5)
+        self.assertTrue(all(variant.startswith("windows-") for variant in artifact_only))
+        source, digest = "a" * 40, "b" * 64
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            evidence = root / "release-product-linux-x86_64-rocm/evidence"
+            evidence.mkdir(parents=True)
+            report = {"source": source, "variant": runtime["id"], "backend": runtime["backend"],
+                      "archive_sha256": digest}
+            archive_check = evidence / "artifact-smoke.json"
+            release.artifacts.write_json(archive_check, report)
+            policy = {"artifact_only": runtime["validation"] == "artifact"}
+            with self.assertRaises(FileNotFoundError):
+                release.verify_smoke(root, runtime["id"], source, "rocm", digest, **policy)
+            archive_check.unlink()
+            release.artifacts.write_json(evidence / "smoke.json", report)
+            release.verify_smoke(root, runtime["id"], source, "rocm", digest, **policy)
+            with self.assertRaisesRegex(ValueError, "archive"):
+                release.verify_smoke(root, runtime["id"], source, "rocm", "c" * 64, **policy)
+
     def test_remote_smoke_binds_to_the_original_archive(self):
         release = release_script()
         variant = "linux-x86_64-cuda12"

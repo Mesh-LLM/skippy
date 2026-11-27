@@ -1,8 +1,8 @@
-From caee87540aeafa8cbb374efd57847e0e425dec01 Mon Sep 17 00:00:00 2001
+From 4fccabddb4a3c9c2330b1af650ca89c26151b76f Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Sun, 8 Nov 2026 12:17:27 +1100
-Subject: [PATCH 27/32] llama, ggml-metal: start every row-list run on an
- attention block
+Subject: [PATCH] llama, ggml-metal: start every row-list run on an attention
+ block
 
 A slice's cell list now pads with -1 before a run that does not continue
 the previous cell, so each run starts on a multiple of the kernels' 32-row
@@ -33,7 +33,7 @@ Claude-Session: https://claude.ai/code/session_01QA3dWey3RBtBgDz1Tery9Y
  create mode 100644 tests/test-skippy-kv-rows-aligned.cpp
 
 diff --git a/ggml/src/ggml-metal/ggml-metal-ops.cpp b/ggml/src/ggml-metal/ggml-metal-ops.cpp
-index 4173d7b1b..a18d41ad8 100644
+index 1e09a7e32..52c76d7c2 100644
 --- a/ggml/src/ggml-metal/ggml-metal-ops.cpp
 +++ b/ggml/src/ggml-metal/ggml-metal-ops.cpp
 @@ -3605,19 +3605,29 @@ int ggml_metal_op_flash_attn_ext(ggml_metal_op_t ctx, int idx) {
@@ -73,10 +73,10 @@ index 4173d7b1b..a18d41ad8 100644
                  }
              }
 diff --git a/ggml/src/ggml-metal/kernels/fa_vec_common.metal b/ggml/src/ggml-metal/kernels/fa_vec_common.metal
-index 2dd6e4bef..3876e9334 100644
+index 37ee468ec..dfc35bae4 100644
 --- a/ggml/src/ggml-metal/kernels/fa_vec_common.metal
 +++ b/ggml/src/ggml-metal/kernels/fa_vec_common.metal
-@@ -239,8 +239,12 @@ kernel void kernel_flash_attn_ext_vec(
+@@ -241,8 +241,12 @@ kernel void kernel_flash_attn_ext_vec(
              int rows_base = -1;
              if (FC_flash_attn_ext_vec_has_rows) {
                  if (FC_flash_attn_ext_vec_rows_dense) {
@@ -91,7 +91,7 @@ index 2dd6e4bef..3876e9334 100644
                      const int first = rows_list[ic];
                      const int last  = rows_list[ic + C - 1];
 diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
-index a2d3418e9..1ab98ee59 100644
+index 243abe424..ee7840800 100644
 --- a/src/llama-kv-cache.cpp
 +++ b/src/llama-kv-cache.cpp
 @@ -2696,6 +2696,22 @@ uint32_t llama_kv_cache::get_n_kv_rows(const llama_ubatch & ubatch) const {
@@ -117,7 +117,7 @@ index a2d3418e9..1ab98ee59 100644
      for (uint32_t s = 0; s < n_slices; ++s) {
          // a cell shared by several sequences of the slice is counted once per sequence, an upper bound is enough
          uint32_t n = 0;
-@@ -3275,7 +3291,12 @@ void llama_kv_cache::set_input_attn_mask(const llm_attn_mask & attn_mask, const
+@@ -3307,7 +3323,12 @@ void llama_kv_cache::set_input_attn_mask(const llm_attn_mask & attn_mask, const
          const auto & cells = v_cells[0];
          int32_t * data = (int32_t *) attn_mask.rows->data;
  
@@ -132,10 +132,10 @@ index a2d3418e9..1ab98ee59 100644
      }
  
 diff --git a/src/llama-kv-cache.h b/src/llama-kv-cache.h
-index fd3054514..2be616364 100644
+index da7d6e961..4bd818c34 100644
 --- a/src/llama-kv-cache.h
 +++ b/src/llama-kv-cache.h
-@@ -275,6 +275,9 @@ public:
+@@ -278,6 +278,9 @@ public:
      // cells a sequence claims at a time in the unified pool; a multiple of the
      // row-attention kernels' 32-row block
      static constexpr uint32_t kv_chunk_cells = 64;
@@ -146,10 +146,10 @@ index fd3054514..2be616364 100644
      std::vector<uint32_t> find_chunked_cells(
              const llama_ubatch & ubatch, const llama_kv_cells & cells, uint32_t head_cur) const;
 diff --git a/src/llama-kv-cells.h b/src/llama-kv-cells.h
-index 9190ad55f..0e42a587a 100644
+index 6b15791a4..8775a4e6b 100644
 --- a/src/llama-kv-cells.h
 +++ b/src/llama-kv-cells.h
-@@ -482,6 +482,101 @@ public:
+@@ -511,6 +511,101 @@ public:
          }
      }
  
@@ -252,7 +252,7 @@ index 9190ad55f..0e42a587a 100644
      // return -1 if the sequence is not present
      llama_pos seq_pos_min(llama_seq_id seq_id) const {
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index bcb407ae8..cc27837c5 100644
+index c3032fb78..bf1e23046 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
 @@ -193,6 +193,7 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
@@ -429,5 +429,5 @@ index 000000000..5cc440ab3
 +    return failures != 0;
 +}
 -- 
-2.43.0
+2.56.1
 

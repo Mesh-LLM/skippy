@@ -1,0 +1,44 @@
+From d021a36af020115a304595133b70d60c435725eb Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Wed, 25 Nov 2026 07:49:52 +1100
+Subject: [PATCH] inkling: preserve media-aware template routing
+
+---
+ common/chat.cpp            | 6 ++++--
+ common/parsers/inkling.cpp | 1 +
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/common/chat.cpp b/common/chat.cpp
+index ddc7f4ff9..9a98c9492 100644
+--- a/common/chat.cpp
++++ b/common/chat.cpp
+@@ -1424,10 +1424,12 @@ static common_chat_params_init_fn common_chat_template_detect_params_init(const
+         return common_chat_params_init_cohere2moe;
+     }
+ 
+-    // Inkling / TML: this marker combination is unique to the template
++    // Inkling / TML shares block markers with Inkling 1/2. Its image token
++    // distinguishes this variant from the legacy media-placeholder templates.
+     if (src.find("<|content_thinking|>") != std::string::npos &&
+         src.find("<|content_text|>") != std::string::npos &&
+-        src.find("<|message_model|>") != std::string::npos) {
++        src.find("<|message_model|>") != std::string::npos &&
++        (!is_inkling_template(src) || src.find("<|image|>") != std::string::npos)) {
+         LOG_DBG("Using specialized template: Inkling\n");
+         return common_chat_params_init_inkling;
+     }
+diff --git a/common/parsers/inkling.cpp b/common/parsers/inkling.cpp
+index 2df36c466..388321454 100644
+--- a/common/parsers/inkling.cpp
++++ b/common/parsers/inkling.cpp
+@@ -183,6 +183,7 @@ common_chat_params common_chat_params_init_inkling(const common_chat_template &
+ 
+     data.prompt             = common_chat_template_direct_apply_impl(tmpl, inputs);
+     data.generation_prompt  = common_chat_template_generation_prompt_impl(tmpl, inputs);
++    inkling_split_media(data.prompt);
+     data.format             = COMMON_CHAT_FORMAT_PEG_NATIVE;
+     data.supports_thinking  = true;
+     data.thinking_start_tag = THINK;
+-- 
+2.56.0
+

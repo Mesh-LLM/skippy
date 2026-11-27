@@ -2,7 +2,7 @@
 name = "skippy-package-format"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Shared, validated Skippy model package format contracts"
 repository = "https://github.com/Mesh-LLM/skippy"
