@@ -16,7 +16,7 @@ env:
   SCCACHE_GHA_ENABLED: 'true'
   SKIPPY_REQUIRE_SCCACHE: '1'
   SKIPPY_CUDA_ARCHITECTURE_MODE: release
-  SKIPPY_CI_575ff0fffd1a18432c642ce7ebdc2bc4fe26d7d2_REF: 575ff0fffd1a18432c642ce7ebdc2bc4fe26d7d2
+  SKIPPY_CI_SOURCE_REF: 575ff0fffd1a18432c642ce7ebdc2bc4fe26d7d2
   SKIPPY_ARTIFACT_SCOPE: ci
 jobs:
   admission:
@@ -65,6 +65,12 @@ jobs:
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
           persist-credentials: false
+      - name: Verify the exact PR checkout before compiling
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SKIPPY_CI_SOURCE_REF"
+          test "$SKIPPY_CI_SOURCE_REF" = "575ff0fffd1a18432c642ce7ebdc2bc4fe26d7d2"
       - uses: ./.github/actions/ci-package
         with:
           runtime-id: windows-x86_64-cuda13
