@@ -6,7 +6,9 @@ use skippy_coordinator::resource_planning::{
     RuntimeResourcePlan, RuntimeResourcePlanInput, RuntimeResourcePlanningProfile,
     plan_runtime_resources,
 };
-use skippy_model_artifact::gguf::{GgufKvCacheQuant, scan_gguf_compact_meta};
+use skippy_model_artifact::gguf::{
+    GgufKvCacheQuant, scan_gguf_compact_meta, scan_gguf_tied_output_embedding_bytes,
+};
 use skippy_runtime::{BackendDevice, BackendDeviceType, backend_devices};
 
 pub(crate) struct LocalResourcePlanningInput<'a> {
@@ -26,13 +28,33 @@ pub(crate) fn plan_local_resources(input: LocalResourcePlanningInput<'_>) -> Run
     let metadata = scan_gguf_compact_meta(input.model_path);
     let kv_cache_quant = GgufKvCacheQuant::from_llama_args(input.cache_type_k, input.cache_type_v)
         .unwrap_or(GgufKvCacheQuant::F16);
+    let devices = backend_devices().unwrap_or_default();
     let vram_bytes = metadata
         .as_ref()
         .and_then(|meta| kv_cache_quant.kv_cache_bytes_per_token(meta))
         .map(|_| {
-            available_device_memory(input.n_gpu_layers, input.kv_offload, input.selected_device)
+            available_memory_from_devices(
+                &devices,
+                input.n_gpu_layers,
+                input.kv_offload,
+                input.selected_device,
+            )
         })
         .unwrap_or(0);
+    // An integrated GPU's memory is the system RAM, where the host copy of
+    // tied token embeddings comes on top of the weights. Metal maps that copy
+    // from the file instead, so macOS is left as it was.
+    let host_embedding_bytes = if !cfg!(target_os = "macos")
+        && budget_is_integrated_gpu(
+            &devices,
+            input.n_gpu_layers,
+            input.kv_offload,
+            input.selected_device,
+        ) {
+        scan_gguf_tied_output_embedding_bytes(input.model_path).unwrap_or(0)
+    } else {
+        0
+    };
     let projector_bytes = input
         .projector_path
         .and_then(|path| path.metadata().ok())
@@ -42,7 +64,7 @@ pub(crate) fn plan_local_resources(input: LocalResourcePlanningInput<'_>) -> Run
     plan_runtime_resources(RuntimeResourcePlanInput {
         ctx_size_override: input.ctx_size_override,
         parallel_override: input.parallel_override,
-        model_bytes: input.model_bytes,
+        model_bytes: input.model_bytes.saturating_add(host_embedding_bytes),
         projector_bytes,
         vram_bytes,
         metadata: metadata.as_ref(),
@@ -51,17 +73,6 @@ pub(crate) fn plan_local_resources(input: LocalResourcePlanningInput<'_>) -> Run
         planning_profile: RuntimeResourcePlanningProfile::DedicatedLocal,
         measured_buffers: None,
     })
-}
-
-fn available_device_memory(
-    n_gpu_layers: i32,
-    kv_offload: Option<bool>,
-    selected_device: Option<&str>,
-) -> u64 {
-    let Ok(devices) = backend_devices() else {
-        return 0;
-    };
-    available_memory_from_devices(&devices, n_gpu_layers, kv_offload, selected_device)
 }
 
 fn available_memory_from_devices(
@@ -93,6 +104,29 @@ fn available_memory_from_devices(
     } else {
         gpu_bytes
     }
+}
+
+/// Whether [`available_memory_from_devices`] budgets on an integrated GPU:
+/// the GPU it picks, the one with the most free memory, is integrated.
+fn budget_is_integrated_gpu(
+    devices: &[BackendDevice],
+    n_gpu_layers: i32,
+    kv_offload: Option<bool>,
+    selected_device: Option<&str>,
+) -> bool {
+    if n_gpu_layers == 0 || kv_offload == Some(false) {
+        return false;
+    }
+    devices
+        .iter()
+        .filter(|device| {
+            matches!(
+                device.device_type,
+                BackendDeviceType::Gpu | BackendDeviceType::IntegratedGpu
+            ) && selected_device.is_none_or(|name| name == device.name)
+        })
+        .max_by_key(|device| device.memory_free)
+        .is_some_and(|device| device.device_type == BackendDeviceType::IntegratedGpu)
 }
 
 #[cfg(test)]
@@ -130,6 +164,30 @@ mod tests {
             available_memory_from_devices(&devices, 0, None, None),
             64_000_000_000
         );
+    }
+
+    #[test]
+    fn an_integrated_gpu_budget_is_recognised_and_a_discrete_one_is_not() {
+        let mut integrated = device(BackendDeviceType::IntegratedGpu, 7_000_000_000);
+        integrated.name = "Vulkan0".into();
+        let mut discrete = device(BackendDeviceType::Gpu, 12_000_000_000);
+        discrete.name = "CUDA0".into();
+        let cpu = device(BackendDeviceType::Cpu, 64_000_000_000);
+        // A laptop with only its integrated GPU.
+        let laptop = [cpu.clone(), integrated.clone()];
+        assert!(budget_is_integrated_gpu(&laptop, -1, None, None));
+        // The CPU path and host KV don't use the GPU's budget.
+        assert!(!budget_is_integrated_gpu(&laptop, 0, None, None));
+        assert!(!budget_is_integrated_gpu(&laptop, -1, Some(false), None));
+        // Beside a discrete GPU the larger one is budgeted, unless selected.
+        let desktop = [cpu, integrated, discrete];
+        assert!(!budget_is_integrated_gpu(&desktop, -1, None, None));
+        assert!(budget_is_integrated_gpu(
+            &desktop,
+            -1,
+            None,
+            Some("Vulkan0")
+        ));
     }
 
     #[test]
