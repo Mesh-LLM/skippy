@@ -14,8 +14,7 @@
       "bytes": 1819,
       "source": "target/scheduler-fixes/artifacts/q35-c128-fixed/statistics.md",
       "source_sha256": "7c8c6753d9a9064889c56f7f446e59b55c25d5498dd0d08743e16971b2199929",
-      "projection": true,
-      "projection_note": "Only trailing whitespace was removed; source SHA256 retains the original artifact identity."
+      "projection": true
     },
     "coder-c256-audit.json": {
       "sha256": "649650b0e9866fd6adcabae76b0d8c25b26d05e1985e6de673aa2fe1f67f1d3d",
@@ -36,6 +35,13 @@
       "bytes": 2436,
       "source": "target/scheduler-fixes/artifacts/coder-current-correctness-v3/audit.json",
       "source_sha256": "e9878d75846cea421eee21288053c0bae93a8caefa8b6a23e79a972ec431820a",
+      "projection": false
+    },
+    "coder-current-balanced-audit.json": {
+      "sha256": "89887766ba7354de92a460da3c3996b2b9404778e89d8e0d2daa9888122714ae",
+      "bytes": 15814,
+      "source": "target/scheduler-fixes/artifacts/coder-current-screen-v1/audit.json",
+      "source_sha256": "89887766ba7354de92a460da3c3996b2b9404778e89d8e0d2daa9888122714ae",
       "projection": false
     },
     "coder-single-historical.json": {
@@ -384,5 +390,5 @@
   "cell_metrics_sha256": "5d2a90f48a9c7086b291782b4a230308092a1e5df875855bbb3c01aaf5e1f9c1",
   "request_timings_sha256": "337d766e8516bb44c1328e2d610adfbe2a3a3fe7286fa4b44c17f619c3adb5cb",
   "source_attestation_sha256": "5d935344c764d88045ea4f1e1e2cc0baef5693a5980436dace726a5a2918cb53",
-  "table_audit_sha256": "f0d47dce5848933bd7c1eb80c599d8e10e8f02c66a696681fdc9117a80786793"
+  "table_audit_sha256": "9b218e2b9635d720ec82c518c21e26221f36672a83fac1f184a15bf79dd02c1d"
 }

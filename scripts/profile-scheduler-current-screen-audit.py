@@ -180,7 +180,10 @@ def main():
     for arm, preflight in report["preflight"].items():
         native = preflight["resolved"]
         argv = preflight["argv"]
-        require(native["gpu_layers"] == 49 and native["n_ctx"] == ["131072"]
+        # Vanilla logs both the aggregate context and its per-slot context.
+        expected_contexts = ({"131072"} if arm.startswith("skippy")
+                             else {"131072", "8192"})
+        require(native["gpu_layers"] == 49 and set(native["n_ctx"]) == expected_contexts
                 and native["n_batch"] == ["512"] and native["n_ubatch"] == ["512"]
                 and any("f16" in line for line in native["kv_buffers"]),
                 f"native full-Metal/F16 settings: {arm}")

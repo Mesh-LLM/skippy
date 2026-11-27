@@ -16,6 +16,7 @@ SOURCES = {
     "coder-c256-audit.json": Path("target/scheduler-fixes/artifacts/coder-c256-queue256/audit.json"),
     "coder-c256-report.md": Path("target/scheduler-fixes/artifacts/coder-c256-queue256/REPORT.md"),
     "coder-current-candidate-audit.json": Path("target/scheduler-fixes/artifacts/coder-current-correctness-v3/audit.json"),
+    "coder-current-balanced-audit.json": Path("target/scheduler-fixes/artifacts/coder-current-screen-v1/audit.json"),
     "coder-single-historical.json": Path("target/scheduler-four-models/statistics.json"),
     "qwen36-original-r0-audit.json": Path("target/scheduler-four-models/artifacts/qwen36-r0/audit.json"),
     "flash-original-r0-audit.json": Path("target/scheduler-four-models/artifacts/flash-screen-r0/audit.json"),
@@ -62,7 +63,13 @@ def main():
     for name, source in SOURCES.items():
         original = source.read_bytes()
         data = original
-        if name == "qwen36-combined-fix-audit.json":
+        if name == "qwen35-c128-statistics.md":
+            # The checked-in review copy removes one trailing space; retain
+            # the full source digest in the manifest.
+            data = original.replace(b"all four rounds. \n", b"all four rounds.\n")
+            if len(original) - len(data) != 1:
+                raise ValueError("unexpected Qwen3.5 statistics projection")
+        elif name == "qwen36-combined-fix-audit.json":
             report = json.loads(original)
             data = (json.dumps({field: report[field] for field in
                                 ("responses_verified", "fixed_responses_verified",

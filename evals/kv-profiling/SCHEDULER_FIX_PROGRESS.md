@@ -1,5 +1,45 @@
 # Scheduler fix and retest progress
 
+## 2026-11-27 00:10 UTC: Coder balanced screen audited; tooling archived
+
+The sealed $0 Coder screen `job_trqshv7hbbqdmzv` completed on
+`macstudio-2l0352`. Its [independent audit](pr-evidence/coder-current-balanced-audit.json)
+verified the exact CI GGUF and original fixture, sealed source/binary/native
+bundle identities, full 49-layer Metal offload, 16×8192 F16 KV, batch and
+microbatch 512, cache-off launches, nominal thermal boundaries, all 16 cells
+and 192/192 requests. Exact text matches both vanilla layouts across the four
+balanced rounds, with no cross-round output drift. The source was the sealed
+pre-port candidate, so this does not qualify the upgraded `main` source.
+
+At the registered single-user workload, patched Skippy measured TTFT p95
+410.67 ms, E2E p95 759.69 ms, TPOT p95 11.44 ms and 42.61 output tok/s.
+Vanilla separate slots measured 403.93 ms, 762.08 ms, 11.80 ms and
+42.77 tok/s; vanilla unified measured 403.84 ms, 800.51 ms, 12.99 ms and
+40.41 tok/s. Patched Skippy passed the 2% paired non-inferiority checks
+against unified. Against separate slots the E2E p95 paired interval was
+0.9668–1.0237, crossing the 1.02 adverse bound; that comparison is
+**UNPROVEN**. All four patched rounds passed the separate absolute TTFT/TPOT
+SLO at this single-user load. This result does not repair the Coder c256
+capacity SLO failure or establish a four-model non-regression claim.
+
+Spec SHA256 `5ed0241dd4743447ccaad72c12df3f2a07237391c599a7c437ef588c8d15a204`;
+fetched suite `bea3ccedb0069f15f1da962ea6079f1706a84f410f4f1447b96c17763d557678`;
+archive `9ce772bf8edd2b72db6f5bc075ec0d16aba53424b3a63febb888bbffe6d258ab`;
+audit `89887766ba7354de92a460da3c3996b2b9404778e89d8e0d2daa9888122714ae`.
+The auditor initially rejected vanilla preflight logs because they reported
+both aggregate and per-slot contexts; its exact expected context set now
+checks both values. The failed audit invocation is retained in this record,
+and the corrected audit passed without changing run data or settings.
+
+The profiling-tool inventory found 119 `profile-scheduler-*` files. Sixty-six
+completed one-off sources with no scanned active/spec/document references were
+moved byte-for-byte to [the historical archive](../../scripts/scheduler-archive/README.md),
+with individual SHA256 values in its manifest. The active qualification and
+PR audit entry points remain at their original paths. Historical sealed job
+payloads preserve the original executable layout for exact replay. Python
+compile, the current Coder audit, and the four-table timing recomputation
+passed after the move. The archive is source evidence, not a current test gate.
+
 ## 2026-11-26: Coder balanced screen staged, model submission pending
 
 The selected current-candidate Coder serial screen passed 64/64 responses and
