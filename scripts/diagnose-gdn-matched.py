@@ -18,7 +18,13 @@ def call(args,cwd,env,log,timeout):
     if time.monotonic()-begin>timeout:raise TimeoutError(log.name)
     time.sleep(1)
    if child.returncode:raise RuntimeError(f'{log.name} exited {child.returncode}')
-  finally:stop(child)
+  finally:
+   try:stop(child)
+   finally:
+    captured=log.read_text(errors='replace')
+    log.with_suffix('.json').write_text(json.dumps({'command':args,'cwd':str(cwd),'returncode':child.returncode,'log':captured},indent=2))
+    if child.returncode:
+     print(captured[-18000:],flush=True)
  return log.read_text(errors='replace')
 
 def main():
@@ -41,6 +47,7 @@ def main():
   builds[tag]=(path,binary,env)
   text=call([str(binary),'test','-b','CUDA0','-o','GATED_DELTA_NET','-p',PARAMS],path,env,out/('correctness-'+tag+'.log'),300)
   records[tag]['correctness_log']=text
+  (out/'gdn-preflight.json').write_text(json.dumps(records,indent=2))
  rows=[]
  for serial,(phase,tag) in enumerate([('warm-only','main'),('warm-only','upgrade')]+[('measured',tag) for tag in ORDER]):
   path,binary,env=builds[tag];name=f'{serial:02d}-{phase}-{tag}'
