@@ -14,6 +14,7 @@ from lib.ci_process import cancel_on_signal, stop
 from lib.inference_inputs import fixture
 from lib.inference_prefill_diagnostic import require_cached
 from lib.inference_probe import validate_evidence
+from lib.inference_prefill_rendezvous import barrier
 
 PINS = {'main':'ed894d67104925b759dbf54fb203e40cc5d89eb8',
         'upgrade':'73b6f910260b681e082f5ebc929777e4ab3d04f8'}
@@ -38,7 +39,8 @@ def run(argv, cwd, env, log, timeout):
             stop(child)
 
 
-def execute(key):
+def execute(key, mode):
+    worker = mode == "split" and os.environ.get("JIANYANG_ROLE") == "worker"
     root = Path.cwd()
     out = Path(os.environ['JIANYANG_ARTIFACT_DIR']).resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -67,12 +69,21 @@ def execute(key):
         target=out/name;target.mkdir()
         env=dict(os.environ,JIANYANG_COMMIT=PINS[tag],JIANYANG_ARTIFACT_DIR=str(target))
         print(json.dumps({'phase':phase,'index':index,'pin':tag,'source':PINS[tag]}),flush=True)
-        run(['just','inference-execute','pr',key,'standalone'],checkouts[tag],env,out/(name+'.log'),600)
+        if mode == 'split':
+            barrier(key, serial)
+        run(['just','inference-execute','pr',key,mode],checkouts[tag],env,out/(name+'.log'),900)
         values={}
-        for kind in ['qualification','provenance','prefill-diagnostics','throughput-probe']:
+        kinds = ['provenance','prefill-diagnostics'] if worker else ['qualification','provenance','prefill-diagnostics','throughput-probe']
+        for kind in kinds:
             source=target/(kind+'.json')
             values[kind]=json.loads(source.read_text())
             shutil.copyfile(source,out/(name+'-'+kind+'.json'))
+        if worker:
+            assert values['provenance']['stack_commit'] == PINS[tag]
+            assert values['provenance']['native_tree'] == TREES[tag]
+            rows.append({'phase':phase,'index':index,'pin':tag,'source':PINS[tag],'prefix':name,'role':'worker'})
+            print(json.dumps({'event':'worker-completed',**rows[-1]}),flush=True)
+            continue
         assert values['qualification']['status']=='passed'
         assert values['qualification']['source_sha']==values['provenance']['stack_commit']==PINS[tag]
         assert values['provenance']['native_tree']==TREES[tag]
@@ -92,7 +103,10 @@ def execute(key):
         print(json.dumps({'event':'result',**row}),flush=True)
     measured=[r for r in rows if r['phase']=='measured']
     assert len(measured)==8
-    assert len({tuple(r['prompt_tokens']) for r in measured})==1
+    if not worker:
+        assert len({tuple(r['prompt_tokens']) for r in measured})==1
+    if mode == 'split':
+        barrier(key, len(schedule))
     (out/'matched-prefill.json').write_text(json.dumps({'status':'passed','case':key,
              'pins':PINS,'native_trees':TREES,'rows':rows},indent=2))
 
@@ -100,6 +114,7 @@ def execute(key):
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('model',choices=['qwen35-4b','qwen36-35b-a3b','qwen3-coder-30b-a3b'])
+    parser.add_argument('--mode',choices=['standalone','split'],default='standalone')
     args=parser.parse_args()
     with cancel_on_signal():
-        execute(args.model)
+        execute(args.model, args.mode)
