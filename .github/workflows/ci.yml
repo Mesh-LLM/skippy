@@ -1021,25 +1021,13 @@ jobs:
           vulkan-version: '1.4.328.1'
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
-  smoke_linux_x86_64_vulkan:
-    name: Vulkan GPU smoke · Linux x64 · ${{ matrix.vendor }}
+  smoke_linux_x86_64_vulkan_nvidia:
+    name: Vulkan GPU smoke · Linux x64 · nvidia
     needs: [plan, package_linux_x86_64_vulkan]
     if: needs.plan.outputs.profile == 'full'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - vendor: nvidia
-            runner_group: jy-rnr_p0zx3thw895vrka
-            labels: [self-hosted, skippy-ephemeral, Linux, X64, runtime-image, cuda13]
-            devices: --gpus all
-          - vendor: amd
-            runner_group: jy-rnr_gsxt2m73mgpcbbh
-            labels: [self-hosted, skippy-ephemeral, Linux, X64, rocm]
-            devices: --device=/dev/dri
     runs-on:
-      group: ${{ matrix.runner_group }}
-      labels: ${{ matrix.labels }}
+      group: jy-rnr_p0zx3thw895vrka
+      labels: [self-hosted, skippy-ephemeral, Linux, X64, runtime-image, cuda13]
     permissions:
       contents: read
       packages: read
@@ -1049,11 +1037,11 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-      options: --user 0 ${{ matrix.devices }} --env NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics --cpus=8 --memory=16g --pids-limit=4096
+      options: --user 0 --gpus all --env NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics --cpus=8 --memory=16g --pids-limit=4096
     timeout-minutes: 40
     env:
       NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
-      SKIPPY_CI_VULKAN_VENDOR: ${{ matrix.vendor }}
+      SKIPPY_CI_VULKAN_VENDOR: nvidia
       TAR_OPTIONS: --no-same-owner
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -1075,12 +1063,63 @@ jobs:
         with:
           runtime_id: linux-x86_64-vulkan
           download-package: 'true'
-          evidence-suffix: -${{ matrix.vendor }}
+          evidence-suffix: -nvidia
       - name: Upload Vulkan setup failure evidence
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-vulkan-setup-${{ matrix.vendor }}
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-vulkan-setup-nvidia
+          path: target/ci-evidence/vulkan-runtime.log
+          if-no-files-found: warn
+          retention-days: 14
+  smoke_linux_x86_64_vulkan_amd:
+    name: Vulkan GPU smoke · Linux x64 · amd
+    needs: [plan, package_linux_x86_64_vulkan]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on:
+      group: jy-rnr_gsxt2m73mgpcbbh
+      labels: [self-hosted, skippy-ephemeral, Linux, X64, rocm]
+    permissions:
+      contents: read
+      packages: read
+    container:
+      # Use the established Ubuntu 24.04 image so the shared CLI keeps its ABI baseline.
+      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-cuda13@${{ needs.plan.outputs.cuda13_digest }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --user 0 --device=/dev/dri --env NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics --cpus=8 --memory=16g --pids-limit=4096
+    timeout-minutes: 40
+    env:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
+      SKIPPY_CI_VULKAN_VENDOR: amd
+      TAR_OPTIONS: --no-same-owner
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/rocm-workspace
+      - name: Trust the host-owned checkout inside the job container
+        shell: bash
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: ./.github/actions/source
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
+      - name: Provision Vulkan loader and device inspection
+        run: bash scripts/ci-vulkan-runtime.sh
+      - uses: ./.github/actions/ci-smoke
+        with:
+          runtime_id: linux-x86_64-vulkan
+          download-package: 'true'
+          evidence-suffix: -amd
+      - name: Upload Vulkan setup failure evidence
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-vulkan-setup-amd
           path: target/ci-evidence/vulkan-runtime.log
           if-no-files-found: warn
           retention-days: 14
@@ -1092,7 +1131,7 @@ jobs:
       package_linux_x86_64_cpu, package_linux_x86_64_cuda12, package_linux_x86_64_cuda13, package_linux_x86_64_rocm, package_linux_x86_64_vulkan,
       package_linux_aarch64_cpu, package_linux_aarch64_cuda12, package_linux_aarch64_cuda13,
       package_windows_x86_64_cpu, package_windows_x86_64_cuda12, package_windows_x86_64_cuda13, package_windows_x86_64_rocm, package_windows_x86_64_vulkan,
-      smoke_linux_x86_64_vulkan,
+      smoke_linux_x86_64_vulkan_nvidia, smoke_linux_x86_64_vulkan_amd,
       release_smoke_linux_x86_64_cuda12, release_smoke_linux_aarch64_cuda12, release_smoke_linux_x86_64_cuda13
     ]
     if: always() && needs.changes.result != 'skipped'
@@ -1148,7 +1187,8 @@ jobs:
             requireResult('plan', selected);
             requireResult('quality', code);
             requireResult('native_contracts', full || paths.native === 'true');
-            requireResult('smoke_linux_x86_64_vulkan', full);
+            requireResult('smoke_linux_x86_64_vulkan_nvidia', full);
+            requireResult('smoke_linux_x86_64_vulkan_amd', full);
             for (const job of prPackages) if (!packageJobs.includes(job)) throw new Error(`Missing package job ${job}`);
             for (const job of packageJobs) requireResult(job, full || (packages && prPackages.includes(job)));
             for (const job of releaseSmokes) requireResult(job, release);

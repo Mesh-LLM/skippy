@@ -262,8 +262,8 @@ shader compiler identity travel inside the source-bound runtime receipt. The sho
 at eight runtimes; the full roster has fifteen.
 
 The Linux archive is built on hosted Ubuntu 24.04, then the same bytes run
-on the existing x64 CUDA 13 NVIDIA pool and the x64 ROCm AMD pool. Both matrix
-rows must succeed in the full CI gate. They use the existing digest-pinned
+on the existing x64 CUDA 13 NVIDIA pool and the x64 ROCm AMD pool. Both literal-pool device
+jobs must succeed in the full CI gate. They use the existing digest-pinned
 Ubuntu 24.04 CUDA compiler container for its runtime environment, with NVIDIA
 GPU access plus the graphics capability, or AMD `/dev/dri` access. Neither smoke
 job rebuilds the product or replaces host drivers. The container installs the
