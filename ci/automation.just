@@ -18,6 +18,9 @@ inference-publication-test:
 ci-vulkan-contracts:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_vulkan.py
 
+ci-vulkan-sdk version:
+    @"{{ automation_python }}" scripts/ci-vulkan-sdk.py "{{ version }}"
+
 automation-contracts: inference-contracts ci-vulkan-contracts
     @"{{ automation_python }}" scripts/tests/ci_cuda_license.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_windows_cuda.py
