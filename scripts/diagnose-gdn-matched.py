@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Compare the existing single-token GDN CUDA benchmark on both pinned backends."""
-import hashlib,json,os,subprocess,sys,time
+import hashlib,json,os,re,subprocess,sys,time
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parent))
 from lib.ci_process import cancel_on_signal,stop
-PINS={'main':'ed894d67104925b759dbf54fb203e40cc5d89eb8','upgrade':'73b6f910260b681e082f5ebc929777e4ab3d04f8'}
-TREES={'main':'8ec4d1baddaa7f9639094379023a76dbaf47594b','upgrade':'abde3e9936ef3eb8e9c3146b5ea11d2cc202b07d'}
+PINS={'main':'ed894d67104925b759dbf54fb203e40cc5d89eb8','upgrade':'f21f603451725524c5d210412bdbdeca0b5cff65'}
+TREES={'main':'8ec4d1baddaa7f9639094379023a76dbaf47594b','upgrade':'f4fde1e15f29eee553457b355b7f352f7446ccc7'}
 ORDER=['main','upgrade','upgrade','main','upgrade','main','main','upgrade']*2
 PARAMS='head_count=32,head_size=128,n_seq_tokens=1,n_seqs=1,v_repeat=1,permuted=0,kda=0'
 
@@ -45,14 +45,17 @@ def main():
   binary=caches[0].parent/'bin/test-backend-ops';assert binary.is_file()
   records[tag]={'source':sha,'native_tree':tree,'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'cmake_cache':caches[0].read_text()}
   builds[tag]=(path,binary,env)
-  text=call([str(binary),'test','-b','CUDA0','-o','GATED_DELTA_NET','-p',PARAMS],path,env,out/('correctness-'+tag+'.log'),300)
+  text=call([str(binary),'test','-b','CUDA0','-o','^GATED_DELTA_NET$','-p',PARAMS],path,env,out/('correctness-'+tag+'.log'),300)
   records[tag]['correctness_log']=text
+  records[tag]['recurrent_roundtrip_log']=call([str(binary.parent/'test-skippy-recurrent-state-roundtrip')],path,env,out/('recurrent-roundtrip-'+tag+'.log'),60)
   (out/'gdn-preflight.json').write_text(json.dumps(records,indent=2))
  rows=[]
  for serial,(phase,tag) in enumerate([('warm-only','main'),('warm-only','upgrade')]+[('measured',tag) for tag in ORDER]):
   path,binary,env=builds[tag];name=f'{serial:02d}-{phase}-{tag}'
-  text=call([str(binary),'perf','-b','CUDA0','-o','GATED_DELTA_NET','-p',PARAMS,'--output','csv'],path,env,out/(name+'.log'),180)
-  row={'phase':phase,'pin':tag,'source':PINS[tag],'stdout':text};rows.append(row)
+  text=call([str(binary),'perf','-b','CUDA0','-o','^GATED_DELTA_NET$','-p',PARAMS,'--output','console'],path,env,out/(name+'.log'),180)
+  matches=re.findall(r'(\d+) runs -\s+([0-9.]+) us/run',text)
+  assert len(matches)==1 and int(matches[0][0])>0 and float(matches[0][1])>0, 'Missing isolated GDN timing'
+  row={'phase':phase,'pin':tag,'source':PINS[tag],'stdout':text,'runs':int(matches[0][0]),'time_us':float(matches[0][1])};rows.append(row)
   (out/'gdn-matched.json').write_text(json.dumps({'status':'running','records':records,'rows':rows,'filter':PARAMS},indent=2))
   print(json.dumps({'event':'gdn-result',**row}),flush=True)
  (out/'gdn-matched.json').write_text(json.dumps({'status':'passed','records':records,'rows':rows,'filter':PARAMS},indent=2))
