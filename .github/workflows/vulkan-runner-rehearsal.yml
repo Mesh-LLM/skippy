@@ -19,3 +19,7 @@ jobs:
           set -euo pipefail
           test "$(uname -s)/$(uname -m)" = Linux/x86_64
           nvidia-smi --query-gpu=name,driver_version --format=csv,noheader
+          id -u
+          command -v just
+          command -v vulkaninfo
+          vulkaninfo --summary
