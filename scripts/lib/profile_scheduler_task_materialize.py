@@ -32,25 +32,34 @@ def materialize(manifest, content_tokenize, effective_tokenize, detokenize):
         if estimate < 0:
             raise ValueError(f"task alone exceeds token target: {item['id']}")
         offsets = [0]
-        for delta in range(1, 49):
+        for delta in range(1, 513):
             offsets.extend((delta, -delta))
         found = None
-        for offset in offsets:
-            count = estimate + offset
-            if count < 0 or count > len(padding_ids):
-                continue
-            if count not in prefix_cache:
-                prefix_cache[count] = detokenize(padding_ids[:count])
-            prompt = prefix_cache[count] + tail
-            effective_ids = effective_tokenize(prompt)
-            if len(effective_ids) == TARGET_TOKENS:
-                found = {"id": item["id"], "stratum": item["stratum"],
-                         "prompt": prompt, "effective_tokens": TARGET_TOKENS,
-                         "effective_token_ids_sha256": token_digest(effective_ids),
-                         "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest()}
+        nearest = None
+        for suffix in ("", " ", "\n", "\n "):
+            for offset in offsets:
+                count = estimate + offset
+                if count < 0 or count > len(padding_ids):
+                    continue
+                if count not in prefix_cache:
+                    prefix_cache[count] = detokenize(padding_ids[:count])
+                prompt = prefix_cache[count] + suffix + tail
+                effective_ids = effective_tokenize(prompt)
+                distance = abs(len(effective_ids) - TARGET_TOKENS)
+                if nearest is None or distance < nearest[0]:
+                    nearest = (distance, count, len(effective_ids), offset, repr(suffix))
+                if len(effective_ids) == TARGET_TOKENS:
+                    found = {"id": item["id"], "stratum": item["stratum"],
+                             "prompt": prompt, "effective_tokens": TARGET_TOKENS,
+                             "prefix_tokens": count, "search_offset": offset,
+                             "prefix_suffix": suffix,
+                             "effective_token_ids_sha256": token_digest(effective_ids),
+                             "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest()}
+                    break
+            if found is not None:
                 break
         if found is None:
-            raise ValueError(f"cannot materialize exact token shape: {item['id']}")
+            raise ValueError(f"cannot materialize exact token shape: {item['id']}; nearest={nearest}")
         prompts.append(found)
     return {"schema": "scheduler-task-quality-prompts-v1", "source_items": 256,
             "prompts": prompts}

@@ -55,10 +55,14 @@ native settings, and complete output provenance. No quality result has yet
 been measured with this fixture.
 
 The [prompt materializer](../../scripts/lib/profile_scheduler_task_materialize.py),
-SHA256 `4a5aa78ee90e5f52e28b28c213d9e994a876dc00b42d244622f5b71286450670`,
+SHA256 `57cab8a1d1b0fc5a000ad5022ae771e984f60c8f576fc9e79b70eced5fb0d6ae`,
 selects a detokenized prefix of neutral text and places the unchanged task at
-the end. It searches for exactly 512 effective tokens using the pinned
-model's live tokenizer, then records prompt and effective-token digests.
+the end. It searches prefix lengths and, where necessary, a neutral whitespace
+suffix immediately before that task for exactly 512 effective tokens using the
+pinned model's live tokenizer, then records prompt and effective-token digests.
+This materializer revision followed a failed Coder token-shape attempt and
+preceded all scored quality and version 2 timing runs; the failed attempt and
+the successful Coder-only fixture audit are retained separately.
 Its offline contract check covers all 256 tasks; that check uses a synthetic
 tokenizer and is **not** model-specific tokenization evidence. The live
 materialized prompts and their hashes must be sealed before new model runs.

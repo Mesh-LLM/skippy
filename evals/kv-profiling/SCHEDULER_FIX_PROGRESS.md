@@ -1640,3 +1640,30 @@ compiled and passed, as did `test-skippy-q4-scale-metal` and
 `20aaaa993df6df855f13825647683f05690e90192ae547c79e0a9416beda1e72`.
 This clears the local current-source native replay gate. It does not establish
 M1 Ultra full-model output, task quality, or performance on the ported source.
+
+## 2026-11-27: live task prompt materialization
+
+The first live tokenizer harness failed before fixture qualification; its
+verbose/native evidence was incomplete and Coder could not reach exactly 512
+tokens for `extraction-029`. The corrected four-model job
+`job_1dsm6yt99fm11wm` (spec SHA256
+`652c851fa2bce0699f5311d484385e230df36c06e7758a2a967b35ebfe07cb1f`)
+also failed overall because Coder's nearest prompt length was 511. Its
+independent artifact audit passed the other three exact CI models: 256/256
+prompts each at 512 effective tokens, with pinned shards, full Metal, F16 KV,
+16×8192 context, batch/microbatch 512, caches off, and nominal thermals. The
+four-model audit SHA256 is
+`b706402f66dde39efda33545fe75358f5425c319a34118134472342e3644b4d9`;
+the failing Coder result remains in it.
+
+The separate Coder-only neutral-padding job `job_17r5xdjt2cz8ys4` (spec
+SHA256 `b84b5e68e8a12dcf95ec32db6d169d261b4b0d2063f442139b5e15cc7e6cd2a7`)
+passed its independent audit for 256/256 exact-512 prompts under the same
+native, pin, cache and thermal gates. Fourteen prompts required one neutral
+space before the unchanged task; the other 242 needed no suffix. Its audit
+SHA256 is `eb6d74c3d81bf4e8ecfb5c49af29d1beaaaf0e900eabd74c6346acf3101ca528`.
+The durable materializer now matches the Coder-tested source at SHA256
+`57cab8a1d1b0fc5a000ad5022ae771e984f60c8f576fc9e79b70eced5fb0d6ae`.
+This is fixture construction only. No model outputs have been scored, no
+current-source timing cells have run, and four-model non-regression remains
+**UNPROVEN**.
