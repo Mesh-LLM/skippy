@@ -1,0 +1,21 @@
+name: Vulkan runner rehearsal
+on:
+  push:
+    branches: [rehearsal/vulkan-sdk]
+permissions:
+  contents: read
+jobs:
+  nvidia:
+    name: Vulkan NVIDIA runner probe
+    if: github.repository == 'Mesh-LLM/skippy' && github.ref == 'refs/heads/rehearsal/vulkan-sdk'
+    runs-on:
+      group: jy-rnr_p0zx3thw895vrka
+      labels: [self-hosted, skippy-ephemeral, Linux, X64, runtime-image, cuda13]
+    timeout-minutes: 10
+    steps:
+      - name: Verify native NVIDIA runner visibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)/$(uname -m)" = Linux/x86_64
+          nvidia-smi --query-gpu=name,driver_version --format=csv,noheader
