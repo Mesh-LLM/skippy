@@ -6,7 +6,7 @@ $evidence = Join-Path $controlRoot "path-probe-evidence/$Case"
 New-Item -ItemType Directory -Path $evidence -Force | Out-Null
 $probeRoot = if ($Case -eq 'short') { 'C:\svk' } else { 'C:\Users\SkippyLab\dev\skippy-vulkan' }
 $buildRoot = if ($Case -eq 'long-short-build') { 'C:\vkb' } else { Join-Path $probeRoot '.deps/llama-build' }
-if ($Case -eq 'ci-deep') { $buildRoot = Join-Path $controlRoot '.deps/windows/vulkan/long-path-regression/llama-build' }
+if ($Case -eq 'ci-deep') { $buildRoot = "$controlRoot/.deps/windows/vulkan/long-path-regression/llama-build" }
 if (Test-Path $probeRoot) { throw "Probe source directory already exists: $probeRoot" }
 if ($Case -in @('long-short-build', 'ci-deep') -and (Test-Path $buildRoot)) { throw 'Probe build directory already exists' }
 & git worktree add --detach $probeRoot $source
@@ -15,7 +15,8 @@ Push-Location $probeRoot
 try {
     $actual = (& git rev-parse HEAD | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or $actual -ne $source) { throw 'Probe source identity mismatch' }
-    if ($Case -in @('long-short-build', 'ci-deep')) { $env:SKIPPY_LLAMA_BUILD_ROOT = $buildRoot.Replace('\', '/') }
+    if ($Case -eq 'ci-deep') { $env:SKIPPY_LLAMA_BUILD_ROOT = $buildRoot }
+    elseif ($Case -eq 'long-short-build') { $env:SKIPPY_LLAMA_BUILD_ROOT = $buildRoot.Replace('\', '/') }
     else { Remove-Item Env:SKIPPY_LLAMA_BUILD_ROOT -ErrorAction SilentlyContinue }
     $env:SKIPPY_PYTHON = 'python'
     $env:LLAMA_STAGE_BUILD_TESTS = 'OFF'
