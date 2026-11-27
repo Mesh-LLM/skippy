@@ -888,9 +888,22 @@ argv and run `just upgrade-goose-rehearsal`. This checks two real agent turns,
 session resumption, failure feedback and checkpoint capture; it does not qualify
 a native upgrade or model.
 
-Only the publisher uses `SKIPPY_UPGRADE_APP_ID` and
-`SKIPPY_UPGRADE_APP_PRIVATE_KEY`. Its Contents and Pull requests write permissions
-are scoped to this repository. It verifies the immutable bundle's source and
+The protected-main resolver selects the immutable upstream revision before any
+native preparation. For a changed pin requiring validation, a separate hosted
+publisher preflight checks the `SKIPPY_UPGRADE_APP_ID` Actions variable and
+`SKIPPY_UPGRADE_APP_PRIVATE_KEY` Actions secret, then requests a repository-scoped
+App token with Contents and Pull requests write permissions. Missing settings,
+an invalid key, a missing repository installation or insufficient App permissions
+stop the run before Goose or native builds start. The preflight token is revoked
+on job completion and is never passed to a build job. No-op runs and explicit
+unchanged-pin force checks do not require publication credentials.
+
+Configure those settings with an App installed on this repository before running
+a changed-pin upgrade. Repository source cannot provision or recover its private
+key. These settings are separate from JY's installed Goose/provider configuration.
+The final publisher requests a fresh scoped App token after full CI. Only the
+preflight and publisher receive the private key; preparation, repair and CI do not.
+The publisher verifies the immutable bundle's source and
 requires its candidate SHA to match the one selected by the successful initial
 or repaired full CI job before pushing and opening the PR. No staging refs,
 upgrade-specific JY profiles or live-model receipts are needed.
