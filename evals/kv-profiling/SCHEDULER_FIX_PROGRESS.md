@@ -1,5 +1,33 @@
 # Scheduler fix and retest progress
 
+## 2026-11-27: Qwen3.6 first paired c1 quality remains unproven
+
+The current-source Qwen3.6 Skippy cell `job_h7m1kpd0xhw8s2s` completed
+512/512 and passed independent exact-pin, source, full 41-layer Metal,
+F16 KV, 16×8192 context, batch/microbatch 512, cache-off and cooled nominal
+thermal audits. It scored **356/512** correct. Both vanilla layouts scored
+**353/512** and reproduced identical raw text on every task.
+The registered scorer, replayed exactly from saved raw responses, finds
+**three adverse** Skippy answers among 353 vanilla-correct tasks:
+`assignment-004`, `assignment-026`, and `assignment-103`. Each is a concrete
+wrong integer rather than a parser or incomplete-output artifact. The exact
+one-sided 95% upper bound is **2.18175%**, crossing the strict 2% limit:
+**UNPROVEN** against both vanilla layouts. Skippy correctly answered six
+tasks vanilla missed, but those wins do not cancel adverse items under the
+registered rule. Raw text differs on 16 tasks.
+
+The [compact first-cell archive](pr-evidence/task-quality-v3-qwen36-c1-first-cells.tar.xz)
+(SHA256 `3e3d695e08ca19adc19a0c23a819168ecd5239a5269cd452de173e873eb3f573`)
+contains all three raw score inputs, scores, independent audits, both
+comparisons and source/job/spec/artifact identities; its
+[summary](pr-evidence/task-quality-v3-qwen36-c1-first-cells-summary.json)
+has SHA256 `11877a2cabcf3a7a1a6ff0a502496c6f090e5d2f118c21d6917c0eb8dea1540e`.
+The ignored local builder reproduced both hashes twice. The presealed
+reverse-order A/A and candidate repeats are pending. The archived confident
+Qwen3.6 numerical divergence also remains unresolved; this task score alone
+cannot clear it. Loaded quality, current-source fixed-output timing and the
+four-model no-regression claim remain **UNPROVEN**.
+
 ## 2026-11-27: Coder first paired c1 quality comparison audited
 
 The current-source Coder Skippy cell `job_z2jb5x6k3tgc7vf` completed 512/512
