@@ -1,5 +1,27 @@
 # Scheduler fix and retest progress
 
+## 2026-11-27: three more c1 reference baselines audited
+
+The cooled, source-pinned vanilla separate-slot c1 cells for the other three
+CI models completed 512/512 requests each. Independent audits verified the
+exact pinned model and server, 512 effective input tokens, 16×8192 context,
+F16 KV, batch/microbatch 512, full Metal offload, caches off, seven ≥120-second
+pauses and nominal thermal boundaries. Coder scored **314/512**, Qwen3.6
+**353/512**, and Flash **387/512** correct, each above the registered
+200-correct comparator prerequisite. The [compact evidence archive](pr-evidence/task-quality-v3-other-model-c1-baselines.tar.xz)
+(SHA256 `6eaaaeba89f24e339aee6b931a8e8d2367ce4a28ff8fb31f48b10f5ed0f24bcf`)
+contains the raw score inputs, scores, independent audits, and job/spec/source
+hashes; its [summary](pr-evidence/task-quality-v3-other-model-c1-baselines-summary.json)
+has SHA256 `ca775ff6f4e0852c9b2742642c8c83319a7db07226fa2ef2bce8ee342e8a328c`.
+The ignored local builder produced the same archive and summary hashes twice.
+
+The other two first-arm cells per model and all nine presealed reverse-order
+fresh-process repeats are queued or running on the authorized $0 Mac Studio.
+These three reference baselines alone provide **no candidate quality verdict**.
+Loaded quality, current-source fixed-output performance, and the confident
+Qwen3.6 numerical discrepancy remain open. The four-model no-regression claim
+is **UNPROVEN**.
+
 ## 2026-11-27: one-off scheduler tooling removed from the PR
 
 The owner asked to remove profiling scripts that are not durable tools and to
