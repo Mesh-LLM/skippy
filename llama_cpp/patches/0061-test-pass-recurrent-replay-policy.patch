@@ -1,0 +1,24 @@
+From 34118338cc81a0e7aed4d141e726f553f06ddf19 Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Sat, 28 Nov 2026 09:10:53 +1100
+Subject: [PATCH] test: pass recurrent replay policy in state round trip
+
+---
+ tests/test-skippy-recurrent-state-roundtrip.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/tests/test-skippy-recurrent-state-roundtrip.cpp b/tests/test-skippy-recurrent-state-roundtrip.cpp
+index 0fae7bbd4..a8a52c17b 100644
+--- a/tests/test-skippy-recurrent-state-roundtrip.cpp
++++ b/tests/test-skippy-recurrent-state-roundtrip.cpp
+@@ -72,6 +72,7 @@ static llama_memory_recurrent make_memory(const llama_model & model) {
+             4,
+             2,
+             0,
++            /*rs_replay=*/ false,
+             {});
+ }
+ 
+-- 
+2.56.0
+
