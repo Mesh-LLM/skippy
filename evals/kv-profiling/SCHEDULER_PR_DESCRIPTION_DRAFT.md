@@ -51,8 +51,8 @@ attestation, and `git diff --check` pass. The C++ facade suite remains unrun:
 GoogleTest v1.18.0 was not supplied and no replacement was downloaded.
 Sixty-six completed one-off diagnostic scripts were moved byte-for-byte
 to the [historical source archive](https://github.com/Mesh-LLM/skippy/blob/abad1885/scripts/scheduler-archive/README.md),
-with per-file hashes; 53 active profiling scripts remain at their original
-paths. The sealed historical job payloads retain their original layout.
+with per-file hashes; 53 profiling scripts remain at their original
+paths, including all active qualification and PR audit entry points. The sealed historical job payloads retain their original layout.
 The sealed pre-port Coder balanced screen, $0 JY job `job_trqshv7hbbqdmzv` (spec SHA256 `5ed0241dd4743447ccaad72c12df3f2a07237391c599a7c437ef588c8d15a204`), completed and passed its 192-request exact-output audit; its separate-slot E2E non-inferiority bound remains unproven. Qwen3.6 and Flash
 current-candidate balanced load checks have not run because correctness
 diagnostics remain unresolved.
