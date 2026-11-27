@@ -1009,6 +1009,8 @@ jobs:
     timeout-minutes: 240
     env:
       SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+      # Exercise shader-generator compiler checks beyond the old MAX_PATH failure.
+      SKIPPY_LLAMA_BUILD_ROOT: ${{ github.workspace }}/.deps/windows/vulkan/long-path-regression/llama-build
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
