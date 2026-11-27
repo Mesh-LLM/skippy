@@ -114,12 +114,17 @@ def binomial_cdf(k, n, probability):
         return 1.0 if k == n else 0.0
     if probability == 0:
         return 1.0
-    term = (1 - probability) ** n
-    total = term
+    log_probability = math.log(probability)
+    log_complement = math.log1p(-probability)
+    log_term = n * log_complement
+    terms = [log_term]
     for i in range(1, k + 1):
-        term *= (n - i + 1) * probability / (i * (1 - probability))
-        total += term
-    return total
+        log_term += (math.log(n - i + 1) - math.log(i)
+                     + log_probability - log_complement)
+        terms.append(log_term)
+    largest = max(terms)
+    return min(1.0, math.exp(largest) * math.fsum(math.exp(term - largest)
+                                                  for term in terms))
 
 
 def one_sided_upper(k, n):
@@ -137,6 +142,21 @@ def one_sided_upper(k, n):
     return (low + high) / 2
 
 
+def one_sided_lower(k, n):
+    if not 0 <= k <= n or n == 0:
+        raise ValueError("invalid binomial count")
+    if k == 0:
+        return 0.0
+    low, high = 0.0, 1.0
+    for _ in range(72):
+        mid = (low + high) / 2
+        if binomial_cdf(k - 1, n, mid) > 0.95:
+            low = mid
+        else:
+            high = mid
+    return (low + high) / 2
+
+
 def compare(baseline, candidate):
     base = {row["id"]: row for row in baseline["outcomes"]}
     cand = {row["id"]: row for row in candidate["outcomes"]}
@@ -148,7 +168,7 @@ def compare(baseline, candidate):
     eligible_by_stratum = {s: sum(base[item_id]["stratum"] == s for item_id in eligible) for s in strata}
     adverse_by_stratum = {s: sum(base[item_id]["stratum"] == s for item_id in adverse) for s in strata}
     upper = one_sided_upper(len(adverse), len(eligible)) if eligible else None
-    lower = 1 - one_sided_upper(len(eligible) - len(adverse), len(eligible)) if eligible else None
+    lower = one_sided_lower(len(adverse), len(eligible)) if eligible else None
     verdict = "UNPROVEN"
     if len(eligible) >= 200:
         if upper < 0.02:
@@ -203,6 +223,20 @@ def selftest():
     assert parse_answer("42\nI cannot answer") is None
     assert math.isclose(one_sided_upper(0, 200), 1 - 0.05 ** (1 / 200), abs_tol=1e-12)
     assert one_sided_upper(1, 200) > 0.02
+    assert one_sided_lower(0, 281) == 0
+    assert one_sided_lower(2, 281) < 2 / 281 < one_sided_upper(2, 281)
+    assert one_sided_lower(2, 281) < 0.002
+    assert one_sided_upper(2, 281) > 0.02
+    assert one_sided_lower(281, 281) > 0.98
+    for k, n in ((2, 281), (20, 512)):
+        lower, upper = one_sided_lower(k, n), one_sided_upper(k, n)
+        direct_lower = math.fsum(math.comb(n, i) * lower ** i * (1 - lower) ** (n - i)
+                                 for i in range(k))
+        direct_upper = math.fsum(math.comb(n, i) * upper ** i * (1 - upper) ** (n - i)
+                                 for i in range(k + 1))
+        assert math.isclose(direct_lower, 0.95, abs_tol=1e-12)
+        assert math.isclose(direct_upper, 0.05, abs_tol=1e-12)
+    assert one_sided_lower(10, 512) < 0.02 < one_sided_lower(20, 512)
     rows = [{"id": item["id"], "status": "complete", "text": str(item["answer"]),
              "input_tokens": 512, "output_tokens": 2} for item in manifest["items"]]
     perfect = score(manifest, rows)
@@ -212,7 +246,7 @@ def selftest():
     degraded = score(manifest, rows)
     assert compare(perfect, degraded)["adverse"] == 1
     assert repeat_agreement(perfect, degraded)["parsed_difference_ids"] == [manifest["items"][0]["id"]]
-    for row in rows[:10]:
+    for row in rows[:20]:
         row["text"] = "incorrect"
     assert compare(perfect, score(manifest, rows))["verdict"] == "FAIL"
     empty = score(manifest, [{**row, "text": "incorrect"} for row in rows])

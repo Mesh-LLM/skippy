@@ -1787,7 +1787,45 @@ SHA256 `592a08749bbff0a19659ebb9d717ad9277c3814e4397b0fbcfa44d66c95cfab6`).
 All four model-specific compressed fixtures are bound by the
 [archive manifest](pr-evidence/task-quality-v3-prompt-archives.json); this is
 still prompt-only evidence. The first prospective Qwen3.5 vanilla separate-
-slot c1 baseline is running as `job_spna4q4ssr7f5r0` at spec SHA256
-`f3a3ca2ba1115bc8053f66a26b250c8a015404cab00c0d4d4fc7f8c6ab4e3eae`.
-This packaging change does not alter task values, scoring, requests, or any
-native runtime.
+slot c1 baseline, `job_spna4q4ssr7f5r0` (spec SHA256
+`f3a3ca2ba1115bc8053f66a26b250c8a015404cab00c0d4d4fc7f8c6ab4e3eae`),
+completed 512/512 scored requests on the pinned native Metal server. The
+independent audit verified 512 input tokens per request, zero cache use,
+33/33 Metal layers, F16 KV, 16×8192 context, batch/microbatch 512 and
+nominal thermals. The registered scorer found **281/512** correct: 127
+arithmetic, 128 extraction, 20 ordering and 6 assignment. This clears the
+200-correct comparator prerequisite for this one c1 arm. Its raw response
+archive SHA256 is
+`d5b8db13e8ad4dd7dfe35e38a0041bc4199145d508fc22d98099d67e267fff1e`;
+the independent audit SHA256 is
+`1a02a71de13a8d67f9363b4f43a2c895b8070dc0899950c867b3bd810efe1528`.
+The current Skippy Qwen3.5 c1, vanilla unified Qwen3.5 c1, and separate-slot
+Coder/Qwen3.6/Flash c1 jobs have been submitted as distinct sealed $0 jobs.
+No candidate comparison, A/A repeat, loaded quality or current-source timing
+gate has passed yet. This packaging change does not alter task values,
+scoring, requests or any native runtime.
+
+## 2026-11-27: first current-Skippy v3 c1 attempt thermally invalid
+
+The source-pinned Qwen3.5 current-Skippy job `job_1w80qfakyw6spb3` (spec
+SHA256 `a17bdeded66d4b9691dc83f7ca63d26b56810dfd1af6ed249e3a74d20f3db339`)
+produced all 512 responses but failed its end-of-run thermal gate: native
+pressure rose from 0 to 2. The job is **failed**, and none of its outputs is
+promoted as a valid quality cell. Its failure archive SHA256 is
+`cd11fe31029e0e4b4f26ab550bdce3f1f3e159bb6a59eea94bc5a8cac9566586`.
+An exploratory score of the complete, token-shaped responses found 279/512
+correct and two adverse tasks among the 281 correct vanilla separate-slot
+items. The registered exact one-sided 95% upper bound is 2.2234%, so that
+diagnostic is **UNPROVEN** even apart from thermal invalidation. The two
+adverse IDs are `assignment-096` and `assignment-097`; the diagnostic score
+SHA256 is
+`7c5702d2ee259650eaf92e10ce256909425aef50bb5afe51b852eb8929dd4ee7`.
+
+That exploratory comparison exposed a scorer implementation bug: its old
+lower bound printed 7.053% for 2/281, above the correct 2.2234% upper bound.
+The original binomial CDF underflowed near probability one. The
+[version 3 protocol](SCHEDULER_TASK_QUALITY_V3_PROTOCOL.md) records the
+source-hash amendment and direct-sum verification. The registered tasks,
+parser, exact confidence rule and 2% margin are unchanged; no invalid cell is
+rescued by this correction. The vanilla unified and other-model c1 jobs remain
+separately queued or running.

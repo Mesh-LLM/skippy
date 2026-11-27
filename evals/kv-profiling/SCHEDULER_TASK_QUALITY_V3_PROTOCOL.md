@@ -47,6 +47,30 @@ materializer's synthetic 512-item shape test is a contract check, not native
 model evidence. All three source hashes and the manifest were sealed before
 version 3 model-specific prompt materialization or scoring.
 
+### Scorer implementation correction after registration
+
+The original scorer SHA256 above remains the registration identity. After the
+first Qwen3.5 vanilla baseline completed, a **thermal-invalid** current-Skippy
+attempt exposed an arithmetic error in the diagnostic comparison: for 2
+adverse tasks among 281 eligible items, its printed lower 95% confidence bound
+was 0.07053, larger than its upper bound 0.02223. The direct binomial sum
+shows that the correct lower bound is 0.001266. The original implementation
+started its binomial CDF at `(1-p)^n`; this underflowed when computing a
+complementary near-one upper bound. A selftest also incorrectly expected 10
+adverse tasks among 512 to be a definite failure, although the correct lower
+bound remains below 2%.
+
+The corrected scorer SHA256 is
+`51139e2a46dfe99cc956b8be67ecf3c93e244f7d45aa9a8d9a412c4cf220e341`.
+It evaluates the same exact one-sided Clopper–Pearson rule with log-domain
+binomial summation and a direct lower-bound inversion. Independent direct
+binomial sums verify CDF 0.95 at the lower bound and 0.05 at the upper bound
+for 2/281 and 20/512; scorer selftests cover those cases. The 512 held-out
+tasks, answer parser, model prompts, 200-item prerequisite, strict 2% margin,
+and comparison rule are unchanged. The first baseline's 281/512 task score is
+unchanged. The thermal-invalid attempt remains ineligible regardless of its
+diagnostic comparison, which is **UNPROVEN** at 2/281 after correction.
+
 ## Quality request and score
 
 For each model, use the pinned vanilla model's live `/apply-template` and
