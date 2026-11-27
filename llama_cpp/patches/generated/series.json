@@ -1,5 +1,5 @@
 {
-  "full_patch_sha256": "6496654e8f850f8874b23513b45aed737c4a1e76fbe279217c455b6d29e43c32",
+  "full_patch_sha256": "d93a59070d950a44bc1b14b0d65073782460de821a890cdd751022d85e67d33e",
   "generator_version": "0.5.0",
   "schema_version": 1,
   "shards": [
@@ -711,7 +711,7 @@
         "qwen35"
       ],
       "file": "0070-family-qwen35.patch",
-      "sha256": "c735bcd982763fe3a331022a4baeb14bb306b557d2b97ac5c6c6cdadc9bd3714",
+      "sha256": "baef80b06f83c74f29b59bb5e07e415f3741a595a25460abea5291cc01260be5",
       "sources": [
         "src/models/qwen35.cpp"
       ]
@@ -721,7 +721,7 @@
         "qwen35moe"
       ],
       "file": "0071-family-qwen35moe.patch",
-      "sha256": "6aad03baa130f344a261e6e8f290f485cc7157ffc1e392d0a985fb954316346b",
+      "sha256": "d6f1a62f8740d02c1191488afa159e420e425bf4f3481b4b90886591fe7a9d23",
       "sources": [
         "src/models/qwen35moe.cpp"
       ]

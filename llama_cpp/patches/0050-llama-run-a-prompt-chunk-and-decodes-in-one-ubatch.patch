@@ -1,0 +1,1488 @@
+From 5dcfc0eca76c9df98ec1da7ef95b6b48523206ba Mon Sep 17 00:00:00 2001
+From: Skippy contributors <ci@skippy.local>
+Date: Fri, 27 Nov 2026 22:57:08 +1100
+Subject: [PATCH] llama: run a prompt chunk and the decodes of other sequences
+ in one ubatch
+
+A hybrid model's memory splits a batch with split_equal, which takes the
+same number of tokens from every sequence. A batch with a prompt chunk
+for one sequence and one decode token for each of the others became two
+ubatches: one token of every sequence, then the rest of the prompt. Each
+ubatch is a full pass over the weights, so a mixed step cost about two
+steps, and the decodes waited for the prompt.
+
+split_equal_grouped takes from every sequence set up to one level, the
+most that fits n_ubatch, so short sets fit whole and the long one takes
+the rest. The sets form up to four groups of equal length. A grouped
+ubatch lists the tokens and the unique seq ids group by group, and gives
+each group a view that shares its arrays at the group's offset.
+
+The models that opt in (qwen35, qwen35moe) run the projections and the
+attention output once over all the tokens. Per group, they run the conv
+and gated delta net on views of the projections and of the states, which
+build_rs reads once, and write the states of the group's cells. With
+kv_rows, attention runs per group too, over the cell lists of the group's
+view, so a decode does not read the cells of the prompt's sequence.
+
+An equal ubatch is one group, and builds the same graph as before.
+Grouped graphs are not reused. LLAMA_GROUPED_UBATCH_DISABLE keeps the
+equal splits, to measure against them.
+---
+ src/llama-batch.cpp            | 226 ++++++++++++++++++++++++++++++++-
+ src/llama-batch.h              |  48 ++++++-
+ src/llama-graph.cpp            |  75 ++++++++++-
+ src/llama-graph.h              |  17 +++
+ src/llama-kv-cache.cpp         |   8 +-
+ src/llama-kv-cache.h           |   3 +
+ src/llama-memory-hybrid.cpp    |  17 ++-
+ src/llama-memory-hybrid.h      |   6 +
+ src/llama-memory-recurrent.cpp |  16 +--
+ src/llama-model.h              |   3 +
+ src/models/delta-net-base.cpp  |  41 +++++-
+ src/models/models.h            |  47 ++++++-
+ src/models/qwen35.cpp          | 107 ++++++++++------
+ src/models/qwen35moe.cpp       | 107 ++++++++++------
+ tests/test-batch-alloc.cpp     | 172 +++++++++++++++++++++++++
+ 15 files changed, 787 insertions(+), 106 deletions(-)
+
+diff --git a/src/llama-batch.cpp b/src/llama-batch.cpp
+index 65085961b..2d04c6498 100644
+--- a/src/llama-batch.cpp
++++ b/src/llama-batch.cpp
+@@ -12,6 +12,69 @@
+ #include <algorithm>
+ #include <sstream>
+ 
++llama_ubatch_group llama_ubatch::group(uint32_t ig) const {
++    if (!is_grouped()) {
++        GGML_ASSERT(ig == 0);
++
++        return { n_seq_tokens, n_seqs, 0, 0 };
++    }
++
++    return data->groups.at(ig);
++}
++
++static llama_ubatch_group llama_ubatch_group_of(const llama_ubatch & ubatch, uint32_t s) {
++    for (uint32_t ig = 0; ig < ubatch.n_groups(); ++ig) {
++        const auto g = ubatch.group(ig);
++
++        if (s < g.i_seq + g.n_seqs) {
++            return g;
++        }
++    }
++
++    GGML_ABORT("%s: sequence set %u is not in the ubatch", __func__, s);
++}
++
++uint32_t llama_ubatch::seq_token_begin(uint32_t s) const {
++    const auto g = llama_ubatch_group_of(*this, s);
++
++    return g.i_token + (s - g.i_seq)*g.n_seq_tokens;
++}
++
++uint32_t llama_ubatch::seq_n_tokens(uint32_t s) const {
++    return llama_ubatch_group_of(*this, s).n_seq_tokens;
++}
++
++llama_ubatch llama_ubatch::group_view(uint32_t ig) const {
++    GGML_ASSERT(is_grouped());
++
++    const auto & g = data->groups.at(ig);
++
++    llama_ubatch res {
++        /*.b_equal_seqs =*/ true,
++        /*.n_tokens     =*/ g.n_seq_tokens*g.n_seqs,
++        /*.n_seq_tokens =*/ g.n_seq_tokens,
++        /*.n_seqs       =*/ g.n_seqs,
++        /*.n_seqs_unq   =*/ g.n_seqs,
++        /*.n_pos        =*/ n_pos,
++        /*.token        =*/ nullptr,
++        /*.embd         =*/ nullptr,
++        /*.embd_state   =*/ nullptr,
++        /*.embd_row     =*/ nullptr,
++        /*.pos          =*/ pos + g.i_token,
++        /*.n_seq_id     =*/ n_seq_id + g.i_token,
++        /*.seq_id       =*/ seq_id + g.i_token,
++        /*.seq_id_unq   =*/ seq_id_unq + g.i_seq,
++        /*.seq_idx      =*/ nullptr,
++        /*.output       =*/ output + g.i_token,
++        /*.type         =*/ nullptr,
++        /*.decision_order =*/ nullptr,
++        /*.data         =*/ nullptr,
++        /*.n_pos_stride =*/ pos_stride(),
++    };
++
++    return res;
++}
++
+ llama_batch_allocr::llama_batch_allocr(uint32_t n_pos_per_embd, bool allow_mixed) : n_pos_per_embd(n_pos_per_embd), allow_mixed(allow_mixed) {
+     const char * LLAMA_BATCH_DEBUG = getenv("LLAMA_BATCH_DEBUG");
+     debug = LLAMA_BATCH_DEBUG ? atoi(LLAMA_BATCH_DEBUG) : 0;
+@@ -355,6 +418,7 @@ bool llama_batch_allocr::init(
+             /*.type         =*/ is_embd_vec.empty() ? nullptr : is_embd_vec.data(),
+             /*.decision_order =*/ decision_order.empty() ? nullptr : decision_order.data(),
+             /*.data         =*/ {},
++            /*.n_pos_stride =*/ (uint32_t) batch.n_tokens,
+         };
+ 
+         ubatch_print(ubatch, debug);
+@@ -581,6 +645,7 @@ llama_ubatch llama_batch_allocr::ubatch_reserve(uint32_t n_seq_tokens, uint32_t
+         /*.type         =*/ nullptr,
+         /*.decision_order =*/ nullptr,
+         /*.data         =*/ std::move(udata),
++        /*.n_pos_stride =*/ n_tokens,
+     };
+ 
+     return res;
+@@ -828,6 +893,128 @@ llama_ubatch llama_batch_allocr::split_equal(uint32_t n_ubatch, bool sequential,
+     return ubatch_add(idxs, n_seqs, true);
+ }
+ 
++llama_ubatch llama_batch_allocr::split_equal_grouped(uint32_t n_ubatch, uint32_t n_keep_tail, uint32_t n_groups_max) {
++    if (has_cpl || n_groups_max < 2) {
++        return split_equal(n_ubatch, false, n_keep_tail);
++    }
++
++    // without coupled sequences, two sequence sets are either equal or disjoint
++    std::vector<seq_set_t> cur_seq_set;
++
++    for (int32_t i = 0; i < batch.n_tokens && cur_seq_set.size() < n_ubatch; ++i) {
++        if (used[i] || std::find(cur_seq_set.begin(), cur_seq_set.end(), seq_set[i]) != cur_seq_set.end()) {
++            continue;
++        }
++
++        cur_seq_set.push_back(seq_set[i]);
++    }
++
++    const uint32_t n_seqs = cur_seq_set.size();
++
++    if (n_seqs == 0) {
++        return {};
++    }
++
++    std::vector<int32_t>  cur_idx(n_seqs, 0);
++    std::vector<uint32_t> n_left (n_seqs);
++
++    for (uint32_t s = 0; s < n_seqs; ++s) {
++        const auto & seq_idxs = seq_set_map[cur_seq_set[s]];
++
++        while (used[seq_idxs[cur_idx[s]]]) {
++            ++cur_idx[s];
++        }
++
++        n_left[s] = (uint32_t) (seq_idxs.size() - cur_idx[s]);
++    }
++
++    // the largest level such that taking min(n_left, level) tokens of every set fits n_ubatch
++    std::vector<uint32_t> n_sorted = n_left;
++    std::sort(n_sorted.begin(), n_sorted.end());
++
++    uint32_t n_level = 0;
++    uint32_t n_whole = 0; // tokens of the sets that fit whole
++
++    for (uint32_t k = 0; k < n_seqs; ++k) {
++        const uint32_t n_max = (n_ubatch - n_whole)/(n_seqs - k);
++
++        if (n_max < n_sorted[k]) {
++            n_level = n_max;
++            break;
++        }
++
++        n_level  = n_sorted[k];
++        n_whole += n_sorted[k];
++    }
++
++    std::vector<uint32_t> n_take(n_seqs);
++
++    for (uint32_t s = 0; s < n_seqs; ++s) {
++        n_take[s] = std::min(n_left[s], n_level);
++
++        // a set that does not finish here leaves at least n_keep_tail tokens, see split_equal
++        if (n_take[s] < n_left[s] && n_left[s] - n_take[s] < n_keep_tail) {
++            n_take[s] = n_left[s] > n_keep_tail ? n_left[s] - n_keep_tail : 0;
++        }
++    }
++
++    // a group per distinct length, in the order of the sets; the sets of the groups past n_groups_max wait
++    std::vector<uint32_t> group_len;
++
++    for (uint32_t s = 0; s < n_seqs; ++s) {
++        if (n_take[s] > 0 && std::find(group_len.begin(), group_len.end(), n_take[s]) == group_len.end()) {
++            group_len.push_back(n_take[s]);
++        }
++    }
++
++    if (group_len.empty()) {
++        // every set has fewer than n_keep_tail tokens left and does not fit whole
++        return split_equal(n_ubatch, false, n_keep_tail);
++    }
++
++    if (group_len.size() > n_groups_max) {
++        group_len.resize(n_groups_max);
++    }
++
++    std::vector<int32_t> idxs;
++    std::vector<llama_ubatch_group> groups;
++
++    uint32_t n_seqs_cur = 0;
++
++    for (const uint32_t len : group_len) {
++        llama_ubatch_group g = { len, 0, (uint32_t) idxs.size(), n_seqs_cur };
++
++        for (uint32_t s = 0; s < n_seqs; ++s) {
++            if (n_take[s] != len) {
++                continue;
++            }
++
++            const auto & seq_idxs = seq_set_map[cur_seq_set[s]];
++
++            for (uint32_t k = 0; k < len; ++k) {
++                const int32_t idx = seq_idxs[cur_idx[s] + k];
++
++                idxs.push_back(idx);
++
++                used[idx] = true;
++                ++n_used;
++            }
++
++            ++g.n_seqs;
++        }
++
++        n_seqs_cur += g.n_seqs;
++
++        groups.push_back(g);
++    }
++
++    if (groups.size() == 1) {
++        return ubatch_add(idxs, n_seqs_cur, true);
++    }
++
++    return ubatch_add(idxs, n_seqs_cur, false, std::move(groups));
++}
++
+ llama_ubatch llama_batch_allocr::split_seq(uint32_t n_ubatch) {
+     // find the first unused token
+     uint32_t cur_idx = 0;
+@@ -904,10 +1091,13 @@ void llama_batch_allocr::clear() {
+     std::fill(seq_idx.begin(), seq_idx.end(), -1);
+ }
+ 
+-llama_ubatch llama_batch_allocr::ubatch_add(const std::vector<int32_t> & idxs, uint32_t n_seqs, bool equal_seqs) {
++llama_ubatch llama_batch_allocr::ubatch_add(const std::vector<int32_t> & idxs, uint32_t n_seqs, bool equal_seqs, std::vector<llama_ubatch_group> groups) {
+     const uint32_t n_tokens = idxs.size();
+ 
+-    assert(n_tokens%n_seqs == 0);
++    const bool grouped = !groups.empty();
++
++    assert(grouped || n_tokens%n_seqs == 0);
++    assert(!grouped || !equal_seqs);
+ 
+     auto udata = std::make_shared<llama_ubatch::data_t>();
+ 
+@@ -1004,17 +1194,31 @@ llama_ubatch llama_batch_allocr::ubatch_add(const std::vector<int32_t> & idxs, u
+         seq_id_ptr += udata->n_seq_id[i];
+     }
+ 
+-    for (uint32_t s = 0; s < n_seq_max; ++s) {
+-        if (seq_set_unq.test(s)) {
+-            udata->seq_idx[s] = udata->seq_id_unq.size();
+-            udata->seq_id_unq.push_back(s);
++    if (!grouped) {
++        for (uint32_t s = 0; s < n_seq_max; ++s) {
++            if (seq_set_unq.test(s)) {
++                udata->seq_idx[s] = udata->seq_id_unq.size();
++                udata->seq_id_unq.push_back(s);
++            }
+         }
++    } else {
++        // the sequence sets of a grouped ubatch are single sequences, listed in their order
++        for (const auto & g : groups) {
++            for (uint32_t k = 0; k < g.n_seqs; ++k) {
++                const llama_seq_id seq_id = udata->seq_id[g.i_token + k*g.n_seq_tokens][0];
++
++                udata->seq_idx[seq_id] = udata->seq_id_unq.size();
++                udata->seq_id_unq.push_back(seq_id);
++            }
++        }
++
++        udata->groups = std::move(groups);
+     }
+ 
+     llama_ubatch res {
+         /*.b_equal_seqs =*/ equal_seqs,
+         /*.n_tokens     =*/ n_tokens,
+-        /*.n_seq_tokens =*/ n_tokens/n_seqs,
++        /*.n_seq_tokens =*/ grouped ? 0 : n_tokens/n_seqs,
+         /*.n_seqs       =*/ n_seqs,
+         /*.n_seqs_unq   =*/ (uint32_t) udata->seq_id_unq.size(),
+         /*.n_pos        =*/ n_pos_per_embd,
+@@ -1032,6 +1236,7 @@ llama_ubatch llama_batch_allocr::ubatch_add(const std::vector<int32_t> & idxs, u
+         /*.type         =*/ mixed ? udata->type.data() : nullptr,
+         /*.decision_order =*/ udata->decision_order.empty() ? nullptr : udata->decision_order.data(),
+         /*.data         =*/ std::move(udata),
++        /*.n_pos_stride =*/ n_tokens,
+     };
+ 
+     if (debug > 0) {
+@@ -1051,6 +1256,13 @@ void llama_batch_allocr::ubatch_print(const llama_ubatch & ubatch, int debug) {
+         LLAMA_LOG_DEBUG("%s:   n_seqs       = %d\n", __func__, ubatch.n_seqs);
+         LLAMA_LOG_DEBUG("%s:   n_seqs_unq   = %d\n", __func__, ubatch.n_seqs_unq);
+ 
++        if (ubatch.is_grouped()) {
++            for (uint32_t ig = 0; ig < ubatch.n_groups(); ++ig) {
++                const auto g = ubatch.group(ig);
++                LLAMA_LOG_DEBUG("%s:   group %u      = %u seqs x %u tokens from token %u\n", __func__, ig, g.n_seqs, g.n_seq_tokens, g.i_token);
++            }
++        }
++
+         std::stringstream ss_seq_id_unq;
+         std::stringstream ss_seq_idx;
+ 
+diff --git a/src/llama-batch.h b/src/llama-batch.h
+index 295cdcf4a..9994a6eb5 100644
+--- a/src/llama-batch.h
++++ b/src/llama-batch.h
+@@ -13,12 +13,41 @@
+ #include <unordered_map>
+ #include <unordered_set>
+ 
++// a run of sequence sets of equal length in a grouped ubatch
++struct llama_ubatch_group {
++    uint32_t n_seq_tokens; // tokens per sequence set
++    uint32_t n_seqs;       // sequence sets in the group
++    uint32_t i_token;      // first token of the group in the ubatch
++    uint32_t i_seq;        // first sequence set of the group in the ubatch
++};
++
+ // keep this struct lightweight
+ struct llama_ubatch {
+     bool equal_seqs() const {
+         return b_equal_seqs != 0;
+     }
+ 
++    // grouped: the sequence sets form runs of different lengths and n_seq_tokens is 0, see split_equal_grouped()
++    // seq_id_unq lists the seq ids in the order of the sequence sets, so that each group has a slice of it
++    bool is_grouped() const {
++        return data && !data->groups.empty();
++    }
++
++    uint32_t n_groups() const {
++        return is_grouped() ? (uint32_t) data->groups.size() : 1;
++    }
++
++    // an equal ubatch is a single group
++    llama_ubatch_group group(uint32_t ig) const;
++
++    // first token and number of tokens of sequence set s, for an equal or a grouped ubatch
++    uint32_t seq_token_begin(uint32_t s) const;
++    uint32_t seq_n_tokens   (uint32_t s) const;
++
++    // non-owning equal ubatch over the tokens of group ig, valid while this ubatch lives
++    // only the sequence, position and output arrays are set, seq_idx is not
++    llama_ubatch group_view(uint32_t ig) const;
++
+     // typical for M-RoPE cases:
+     //   0 - sequential position of the tokens/embeddings in the sequence
+     //   1 - y position in the image
+@@ -79,10 +108,20 @@ struct llama_ubatch {
+         std::vector<int32_t>        decision_order;
+ 
+         std::vector<llama_seq_id> seq_id_data;
++
++        std::vector<llama_ubatch_group> groups; // grouped ubatch only
+     };
+ 
+     // the llama_ubatch pointers above point to this data if set. otherwise - point to external non-owning data
+     std::shared_ptr<data_t> data;
++
++    // distance between the position sections of pos, 0 - n_tokens
++    // a group view reads the positions of the ubatch it views in place
++    uint32_t n_pos_stride = 0;
++
++    uint32_t pos_stride() const {
++        return n_pos_stride > 0 ? n_pos_stride : n_tokens;
++    }
+ };
+ 
+ // crash if a mixed ubatch reaches code that expects only tokens or only embd
+@@ -193,6 +232,12 @@ public:
+     // n_keep_tail = minimum trailing tokens of a seq that must land in the same ubatch
+     llama_ubatch split_equal(uint32_t n_ubatch, bool sequential, uint32_t n_keep_tail);
+ 
++    // like split_equal, but the sequence sets of a ubatch may form up to n_groups_max runs of different lengths,
++    //   so that short sequence sets (f.ex. one token to decode) share a ubatch with a long one (a prompt)
++    // every sequence set takes up to the same number of tokens, the most that fit n_ubatch
++    // coupled sequences fall back to split_equal
++    llama_ubatch split_equal_grouped(uint32_t n_ubatch, uint32_t n_keep_tail, uint32_t n_groups_max);
++
+     // sequence-set-wise split - each ubatch contains a single sequence-set
+     // TODO: extend to support multiple _full_ sequences in the ubatch
+     llama_ubatch split_seq(uint32_t n_ubatch);
+@@ -206,7 +251,8 @@ private:
+ 
+     // create the next ubatch based on the provided batch indices (idxs) and the number of sequence sets (n_seqs)
+     // return llama_ubatch.n_tokens == 0 if the entire batch was consumed
+-    llama_ubatch ubatch_add(const std::vector<int32_t> & idxs, uint32_t n_seqs, bool equal_seqs);
++    // groups: the runs of a grouped ubatch, empty otherwise
++    llama_ubatch ubatch_add(const std::vector<int32_t> & idxs, uint32_t n_seqs, bool equal_seqs, std::vector<llama_ubatch_group> groups = {});
+ 
+     // for debugging, start with LLAMA_BATCH_DEBUG=2
+     void ubatch_print(const llama_ubatch & ubatch, int debug);
+diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
+index dd066de24..6d4d12c25 100644
+--- a/src/llama-graph.cpp
++++ b/src/llama-graph.cpp
+@@ -139,18 +139,17 @@ static bool can_reuse_attn_mask(
+     return res;
+ }
+ 
+-// KQ mask over the cell lists of kv_rows, or over the whole cache if kv_rows is not used
++// KQ mask over the cell lists of kv_rows, or over the whole cache if n_kv_rows is 0
+ static llm_attn_mask build_attn_inp_attn_mask(
+         ggml_context * ctx,
+         const llama_kv_cache_context * mctx,
+         const llama_ubatch & ubatch,
+-        const llama_cparams & cparams) {
++        const llama_cparams & cparams,
++        uint32_t n_kv_rows) {
+     llm_attn_mask attn_mask;
+ 
+     attn_mask.n_kv = mctx->get_n_kv();
+ 
+-    const uint32_t n_kv_rows = cparams.fused_kv_rows ? mctx->get_n_kv_rows() : 0;
+-
+     if (n_kv_rows == 0) {
+         attn_mask.rows = nullptr;
+         attn_mask.raw = build_attn_inp_kq_mask(ctx, mctx, ubatch, cparams);
+@@ -169,6 +168,14 @@ static llm_attn_mask build_attn_inp_attn_mask(
+     return attn_mask;
+ }
+ 
++static llm_attn_mask build_attn_inp_attn_mask(
++        ggml_context * ctx,
++        const llama_kv_cache_context * mctx,
++        const llama_ubatch & ubatch,
++        const llama_cparams & cparams) {
++    return build_attn_inp_attn_mask(ctx, mctx, ubatch, cparams, cparams.fused_kv_rows ? mctx->get_n_kv_rows() : 0);
++}
++
+ // impl
+ 
+ void llm_graph_input_embd::set_input(const llama_ubatch * ubatch) {
+@@ -708,6 +715,16 @@ void llm_graph_input_attn_kv::set_input(const llama_ubatch * ubatch) {
+     if (self_attn_mask.raw && self_attn_mask.raw->buffer) {
+         mctx->set_input_attn_mask(self_attn_mask, ubatch, cparams.causal_attn);
+     }
++
++    set_input_group_masks(mctx, ubatch);
++}
++
++void llm_graph_input_attn_kv::set_input_group_masks(const llama_kv_cache_context * attn_ctx, const llama_ubatch * ubatch) const {
++    for (uint32_t ig = 0; ig < self_attn_mask_groups.size(); ++ig) {
++        const llama_ubatch view = ubatch->group_view(ig);
++
++        attn_ctx->set_input_attn_mask(self_attn_mask_groups[ig], &view, cparams.causal_attn);
++    }
+ }
+ 
+ bool llm_graph_input_attn_kv::can_reuse(const llm_graph_params & params) {
+@@ -1318,6 +1335,7 @@ void llm_graph_input_mem_hybrid::set_input(const llama_ubatch * ubatch) {
+ 
+     // kv_rows and the mask stay unallocated if all attention layers have their own (e.g. qwen4exp QSA)
+     mctx->get_attn()->set_input_attn_mask(inp_attn->self_attn_mask, ubatch, cparams.causal_attn);
++    inp_attn->set_input_group_masks(mctx->get_attn(), ubatch);
+ 
+     const int64_t n_rs = mctx->get_recr()->get_n_rs();
+ 
+@@ -2002,6 +2020,9 @@ void llm_graph_context::request_inputs(llm_graph_input_attn_kv * input) const {
+     request_input(input->self_k_idxs, "attention.key_indices");
+     request_input(input->self_v_idxs, "attention.value_indices");
+     request_attn_mask(input->self_attn_mask, "attention.mask");
++    for (const auto & mask : input->self_attn_mask_groups) {
++        request_attn_mask(mask, "attention.mask");
++    }
+     // rotation matrices live in cache buffers, so they are persistent reads, not ubatch inputs
+     state_read_rotation(input->self_k_rot);
+     state_read_rotation(input->self_v_rot);
+@@ -3735,6 +3756,31 @@ ggml_tensor * llm_graph_context::build_attn_mha(
+     return cur;
+ }
+ 
++ggml_tensor * llm_graph_context::build_attn_mha_groups(
++        const std::vector<llm_attn_mask> & masks,
++        ggml_tensor * q,
++        ggml_tensor * k,
++        ggml_tensor * v,
++        ggml_tensor * sinks,
++              float   kq_scale,
++                int   il) const {
++    GGML_ASSERT(masks.size() == ubatch.n_groups());
++
++    ggml_tensor * res = nullptr;
++
++    for (uint32_t ig = 0; ig < masks.size(); ++ig) {
++        const auto g = ubatch.group(ig);
++
++        ggml_tensor * q_g = ggml_view_3d(ctx0, q, q->ne[0], q->ne[1], (int64_t) g.n_seq_tokens*g.n_seqs, q->nb[1], q->nb[2], g.i_token*q->nb[2]);
++
++        ggml_tensor * cur = build_attn_mha(q_g, k, v, nullptr, masks[ig].raw, masks[ig].rows, sinks, nullptr, 0, kq_scale, il);
++
++        res = res ? ggml_concat(ctx0, res, cur, 1) : cur;
++    }
++
++    return res;
++}
++
+ llm_graph_input_attn_no_cache * llm_graph_context::build_attn_inp_no_cache() const {
+     auto inp = std::make_unique<llm_graph_input_attn_no_cache>(hparams, cparams);
+ 
+@@ -3838,7 +3884,16 @@ static std::unique_ptr<llm_graph_input_attn_kv> build_attn_inp_kv_impl(
+         inp->self_k_idxs = mctx_cur->build_input_k_idxs(ctx0, ubatch);
+         inp->self_v_idxs = mctx_cur->build_input_v_idxs(ctx0, ubatch);
+ 
+-        inp->self_attn_mask = build_attn_inp_attn_mask(ctx0, mctx_cur, ubatch, cparams);
++        // a single list over the cells of every sequence would cover the contexts of all the groups for each token
++        if (ubatch.is_grouped() && cparams.fused_kv_rows && mctx_cur->get_n_kv_rows() > 0) {
++            for (uint32_t ig = 0; ig < ubatch.n_groups(); ++ig) {
++                const llama_ubatch view = ubatch.group_view(ig);
++
++                inp->self_attn_mask_groups.push_back(build_attn_inp_attn_mask(ctx0, mctx_cur, view, cparams, mctx_cur->get_n_kv_rows(view)));
++            }
++        } else {
++            inp->self_attn_mask = build_attn_inp_attn_mask(ctx0, mctx_cur, ubatch, cparams);
++        }
+     }
+ 
+     inp->self_k_rot = mctx_cur->get_k_rot();
+@@ -3964,7 +4019,15 @@ ggml_tensor * llm_graph_context::build_attn(
+     const auto & kq_mask = inp->self_attn_mask.raw;
+     const auto & kv_rows = inp->self_attn_mask.rows;
+ 
+-    ggml_tensor * cur = build_attn_mha(q, k, v, kq_b, kq_mask, kv_rows, sinks, v_mla, 0, kq_scale, il);
++    ggml_tensor * cur = nullptr;
++
++    if (inp->self_attn_mask_groups.empty()) {
++        cur = build_attn_mha(q, k, v, kq_b, kq_mask, kv_rows, sinks, v_mla, 0, kq_scale, il);
++    } else {
++        GGML_ASSERT(kq_b == nullptr);
++
++        cur = build_attn_mha_groups(inp->self_attn_mask_groups, q, k, v, sinks, kq_scale, il);
++    }
+     cur = build_attn_scale_kv_output(ctx0, mctx_cur, cur, il);
+     cb(cur, "kqv_out", il);
+ 
+diff --git a/src/llama-graph.h b/src/llama-graph.h
+index 56ade9666..20e4cc9b5 100644
+--- a/src/llama-graph.h
++++ b/src/llama-graph.h
+@@ -470,6 +470,11 @@ public:
+ 
+     llm_attn_mask self_attn_mask;
+ 
++    // grouped ubatch with kv_rows: the mask of each group view instead of self_attn_mask
++    std::vector<llm_attn_mask> self_attn_mask_groups;
++
++    void set_input_group_masks(const llama_kv_cache_context * attn_ctx, const llama_ubatch * ubatch) const;
++
+     // note: assumes v_rot^2 == I
+     std::vector<ggml_tensor *> self_k_rot;
+     std::vector<ggml_tensor *> self_v_rot;
+@@ -940,7 +945,9 @@ struct llm_graph_params {
+     //   having the same topology allows us to reuse the graph in some cases
+     bool allow_reuse(const llm_graph_params & other) const {
+         // first check the ubatch
++        // the per-group nodes of a grouped ubatch follow its group sizes
+         bool can_reuse_ubatch =
++            !ubatch.is_grouped() && !other.ubatch.is_grouped() &&
+             ubatch.equal_seqs() == other.ubatch.equal_seqs() &&
+             ubatch.n_tokens     == other.ubatch.n_tokens &&
+             ubatch.n_seq_tokens == other.ubatch.n_seq_tokens &&
+@@ -1499,6 +1506,16 @@ struct llm_graph_context {
+                   float   kq_scale,
+                     int   il) const;
+ 
++    // build_attn_mha for each group of a grouped ubatch, with the mask of its view
++    ggml_tensor * build_attn_mha_groups(
++            const std::vector<llm_attn_mask> & masks,
++            ggml_tensor * q,       // [n_embd_head_q, n_head_q, n_tokens]
++            ggml_tensor * k,
++            ggml_tensor * v,
++            ggml_tensor * sinks,
++                  float   kq_scale,
++                    int   il) const;
++
+     llm_graph_input_attn_no_cache * build_attn_inp_no_cache() const;
+ 
+     ggml_tensor * build_attn(
+diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
+index 3be8143fa..4a8c4db44 100644
+--- a/src/llama-kv-cache.cpp
++++ b/src/llama-kv-cache.cpp
+@@ -3386,8 +3386,8 @@ static void set_input_attn_mask_impl(const args_set_input_attn_mask & args, T *
+             const llama_pos p1 = ubatch->pos[iq];
+ 
+             // for M-RoPE
+-            const llama_pos p1_x = is_2d ? ubatch->pos[iq + ubatch->n_tokens*2] : 0;
+-            const llama_pos p1_y = is_2d ? ubatch->pos[iq + ubatch->n_tokens]   : 0;
++            const llama_pos p1_x = is_2d ? ubatch->pos[iq + ubatch->pos_stride()*2] : 0;
++            const llama_pos p1_y = is_2d ? ubatch->pos[iq + ubatch->pos_stride()]   : 0;
+ 
+             const uint64_t idst = n_kv*i;
+ 
+@@ -4820,6 +4820,10 @@ uint32_t llama_kv_cache_context::get_n_kv_rows() const {
+     return n_kv_rows;
+ }
+ 
++uint32_t llama_kv_cache_context::get_n_kv_rows(const llama_ubatch & view) const {
++    return kv->get_n_kv_rows(view);
++}
++
+ uint32_t llama_kv_cache_context::get_n_kv_pos_contiguous() const {
+     // Full-cache and update contexts do not carry a concrete ubatch/slot pair.
+     if (ubatches.empty() || sinfos.empty() || i_cur >= ubatches.size() || i_cur >= sinfos.size()) {
+diff --git a/src/llama-kv-cache.h b/src/llama-kv-cache.h
+index 36185315b..25ed1b26b 100644
+--- a/src/llama-kv-cache.h
++++ b/src/llama-kv-cache.h
+@@ -532,6 +532,9 @@ public:
+     uint32_t get_n_kv_rows() const;
+     uint32_t get_n_kv_pos_contiguous() const;
+ 
++    // the rows of a group view of the current ubatch, see llama_ubatch::group_view()
++    uint32_t get_n_kv_rows(const llama_ubatch & view) const;
++
+     ggml_type type_k() const;
+     ggml_type type_v() const;
+ 
+diff --git a/src/llama-memory-hybrid.cpp b/src/llama-memory-hybrid.cpp
+index 7d3b27908..e08f8315e 100644
+--- a/src/llama-memory-hybrid.cpp
++++ b/src/llama-memory-hybrid.cpp
+@@ -4,6 +4,8 @@
+ #include "llama-model.h"
+ #include "llama-context.h"
+ 
++#include <cstdlib>
++
+ //
+ // llama_memory_hybrid
+ //
+@@ -63,7 +65,14 @@ llama_memory_hybrid::llama_memory_hybrid(
+         filter_recr == nullptr ?
+             [&](int32_t il) { return hparams.is_recr(il); }
+             : filter_recr
+-    )) {}
++    )) {
++    // the caller may keep the equal splits, to measure grouped ubatches against them
++    grouped_ubatches = model.graph_takes_grouped_ubatches();
++    if (grouped_ubatches && getenv("LLAMA_GROUPED_UBATCH_DISABLE")) {
++        LLAMA_LOG_INFO("%s: LLAMA_GROUPED_UBATCH_DISABLE set, disabling grouped ubatches\n", __func__);
++        grouped_ubatches = false;
++    }
++}
+ 
+ llama_memory_context_ptr llama_memory_hybrid::init_batch(llama_batch_allocr & balloc, uint32_t n_ubatch, bool embd_all) {
+     do {
+@@ -86,8 +95,12 @@ llama_memory_context_ptr llama_memory_hybrid::init_batch(llama_batch_allocr & ba
+                 // the trailing (1 + n_rs_seq) tokens of each seq must stay in the same ubatch
+                 //   so that the rollback snapshots remain valid
+                 const uint32_t n_rs_seq = mem_recr->n_rs_seq;
++                const uint32_t n_keep_tail = n_rs_seq > 0 ? n_rs_seq + 1 : 0;
+ 
+-                ubatch = balloc.split_equal(n_ubatch, !unified, n_rs_seq > 0 ? n_rs_seq + 1 : 0);
++                // a prompt chunk shares the ubatch with the decodes of the other sequences
++                ubatch = unified && grouped_ubatches ?
++                    balloc.split_equal_grouped(n_ubatch, n_keep_tail, n_ubatch_groups_max) :
++                    balloc.split_equal(n_ubatch, !unified, n_keep_tail);
+             }
+ 
+             if (ubatch.n_tokens == 0) {
+diff --git a/src/llama-memory-hybrid.h b/src/llama-memory-hybrid.h
+index 2b4d1269c..14ad23e25 100644
+--- a/src/llama-memory-hybrid.h
++++ b/src/llama-memory-hybrid.h
+@@ -84,10 +84,16 @@ public:
+     llama_memory_recurrent * get_mem_recr() const;
+ 
+ private:
++    // each group adds per-group recurrent and attention nodes to the graph
++    static constexpr uint32_t n_ubatch_groups_max = 4;
++
+     const llama_hparams & hparams;
+ 
+     const std::unique_ptr<llama_kv_cache> mem_attn;
+     const std::unique_ptr<llama_memory_recurrent> mem_recr;
++
++    // split unified batches with split_equal_grouped()
++    bool grouped_ubatches = false;
+ };
+ 
+ class llama_memory_hybrid_context : public llama_memory_context_i {
+diff --git a/src/llama-memory-recurrent.cpp b/src/llama-memory-recurrent.cpp
+index c488e921c..1d50339f2 100644
+--- a/src/llama-memory-recurrent.cpp
++++ b/src/llama-memory-recurrent.cpp
+@@ -550,8 +550,7 @@ bool llama_memory_recurrent::prepare(const std::vector<llama_ubatch> & ubatches)
+ }
+ 
+ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
+-    const uint32_t n_seq_tokens = ubatch.n_seq_tokens;
+-    const uint32_t n_seqs       = ubatch.n_seqs;
++    const uint32_t n_seqs = ubatch.n_seqs;
+ 
+     // if we have enough unused cells before the current head ->
+     //   better to start searching from the beginning of the cache, hoping to fill it
+@@ -563,15 +562,15 @@ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
+     // each cache cell can store the state for a whole sequence.
+     // A slot should be always be contiguous.
+ 
+-    // can only process batches with an equal number of new tokens in each sequence
+-    GGML_ASSERT(ubatch.equal_seqs());
++    // can only process batches with an equal number of new tokens in each sequence, or in each group of sequences
++    GGML_ASSERT(ubatch.equal_seqs() || ubatch.is_grouped());
+ 
+     int32_t min = size - 1;
+     int32_t max = 0;
+ 
+     // everything should fit if all seq_ids are smaller than the max
+     for (uint32_t s = 0; s < n_seqs; ++s) {
+-        const uint32_t i = s*n_seq_tokens; // first token of sequence set s
++        const uint32_t i = ubatch.seq_token_begin(s); // first token of sequence set s
+         const uint32_t n_seq_id = ubatch.n_seq_id[i];
+ 
+         for (uint32_t j = 0; j < n_seq_id; ++j) {
+@@ -634,7 +633,7 @@ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
+ 
+     // find usable cell range
+     for (uint32_t s = 0; s < n_seqs; ++s) {
+-        const uint32_t i = s*n_seq_tokens;
++        const uint32_t i = ubatch.seq_token_begin(s);
+         const llama_seq_id seq_id = ubatch.seq_id[i][0];
+         auto & seq_meta = cells[seq_id];
+         bool has_cell = false;
+@@ -673,7 +672,7 @@ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
+ 
+     // gather and re-order
+     for (uint32_t s = 0; s < n_seqs; ++s) {
+-        const uint32_t i = s*n_seq_tokens;
++        const uint32_t i = ubatch.seq_token_begin(s);
+         const int32_t dst_id = s + min;
+         const int32_t src_id = cells[ubatch.seq_id[i][0]].tail;
+         if (dst_id != src_id) {
+@@ -698,7 +697,8 @@ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
+ 
+     // update the pos of the used seqs
+     for (uint32_t s = 0; s < n_seqs; ++s) {
+-        const uint32_t i = s*n_seq_tokens;
++        const uint32_t i = ubatch.seq_token_begin(s);
++        const uint32_t n_seq_tokens = ubatch.seq_n_tokens(s);
+         const llama_pos last_pos = ubatch.pos[i + n_seq_tokens - 1];
+         const int32_t cell_id = s + min;
+         auto & cell = cells[cell_id];
+diff --git a/src/llama-model.h b/src/llama-model.h
+index 06cd32f62..7c5b4d550 100644
+--- a/src/llama-model.h
++++ b/src/llama-model.h
+@@ -1018,6 +1018,9 @@ struct llama_model {
+             const llama_cparams & cparams,
+             const skippy_graph_selection & stage_selection) const;
+ 
++    // the graph runs the recurrent layers per group of a grouped ubatch, see llama_batch_allocr::split_equal_grouped()
++    virtual bool graph_takes_grouped_ubatches() const { return false; }
++
+     ggml_cgraph * build_graph(const llm_graph_params & params) const;
+ 
+     virtual void load_stats  (llama_model_loader & ml) = 0;
+diff --git a/src/models/delta-net-base.cpp b/src/models/delta-net-base.cpp
+index fabeb6cd4..a2ed0fb82 100644
+--- a/src/models/delta-net-base.cpp
++++ b/src/models/delta-net-base.cpp
+@@ -57,12 +57,22 @@ ggml_tensor * llm_build_delta_net_base::build_conv_state(
+         int64_t              conv_kernel_size,
+         int64_t              conv_channels,
+         int                  il) {
+-    const int64_t n_seqs = ubatch.n_seqs;
+-
+-    ggml_tensor * conv_states = build_rs(inp, conv_states_all, hparams.n_embd_r(), n_seqs, skippy_state_kind::recurrent_conv, il);
++    ggml_tensor * conv_states = build_rs(inp, conv_states_all, hparams.n_embd_r(), ubatch.n_seqs, skippy_state_kind::recurrent_conv, il);
+     cb(conv_states, "conv_states", il);
+ 
+-    conv_states = ggml_reshape_3d(ctx0, conv_states, conv_kernel_size - 1, conv_channels, n_seqs);
++    return build_conv_state(inp, conv_states_all, conv_states, qkv_mixed, conv_kernel_size, conv_channels, ubatch.group(0), il);
++}
++
++ggml_tensor * llm_build_delta_net_base::build_conv_state(
++        llm_graph_input_rs *       inp,
++        ggml_tensor *              conv_states_all,
++        ggml_tensor *              conv_states,
++        ggml_tensor *              qkv_mixed,
++        int64_t                    conv_kernel_size,
++        int64_t                    conv_channels,
++        const llama_ubatch_group & g,
++        int                        il) {
++    conv_states = ggml_reshape_3d(ctx0, build_group_states(conv_states, g), conv_kernel_size - 1, conv_channels, g.n_seqs);
+     cb(conv_states, "conv_states_reshaped", il);
+ 
+     qkv_mixed = ggml_transpose(ctx0, qkv_mixed);
+@@ -71,11 +81,27 @@ ggml_tensor * llm_build_delta_net_base::build_conv_state(
+     ggml_tensor * conv_input = ggml_concat(ctx0, conv_states, qkv_mixed, 0);
+     cb(conv_input, "conv_input", il);
+ 
+-    build_conv_state_store(inp, conv_states_all, conv_input, conv_kernel_size - 1, 0, il);
++    build_conv_state_store(inp, conv_states_all, conv_input, conv_kernel_size - 1, g.i_seq*conv_states_all->nb[1], il);
+ 
+     return conv_input;
+ }
+ 
++ggml_tensor * llm_build_delta_net_base::build_group_tokens(ggml_tensor * t, const llama_ubatch_group & g) const {
++    if (!ubatch.is_grouped()) {
++        return t;
++    }
++
++    return ggml_view_2d(ctx0, t, t->ne[0], (int64_t) g.n_seq_tokens*g.n_seqs, t->nb[1], g.i_token*t->nb[1]);
++}
++
++ggml_tensor * llm_build_delta_net_base::build_group_states(ggml_tensor * states, const llama_ubatch_group & g) const {
++    if (!ubatch.is_grouped()) {
++        return states;
++    }
++
++    return ggml_view_2d(ctx0, states, states->ne[0], g.n_seqs, states->nb[1], g.i_seq*states->nb[1]);
++}
++
+ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
+         llm_graph_input_rs * inp,
+         ggml_tensor *        ssm_states_all,
+@@ -85,9 +111,10 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
+         ggml_tensor *        g,
+         ggml_tensor *        b,
+         ggml_tensor *        s,
+-        int                  il) {
++        int                  il,
++        uint32_t             i_seq) {
+     const auto * mctx_cur   = inp->mctx;
+-    const auto   kv_head    = mctx_cur->get_head();
++    const auto   kv_head    = mctx_cur->get_head() + i_seq;
+     const uint32_t mem_size = mctx_cur->get_size();
+ 
+     const int64_t S_v          = s->ne[0];
+diff --git a/src/models/models.h b/src/models/models.h
+index 39dbd99bc..0a318642d 100644
+--- a/src/models/models.h
++++ b/src/models/models.h
+@@ -55,8 +55,20 @@ struct llm_build_delta_net_base : public llm_graph_context {
+             int64_t              conv_channels,
+             int                  il);
+ 
++    // same, for group g of the ubatch, with the conv states of all its sequence sets read by build_rs
++    ggml_tensor * build_conv_state(
++            llm_graph_input_rs *       inp,
++            ggml_tensor *              conv_states_all,
++            ggml_tensor *              conv_states,
++            ggml_tensor *              qkv_mixed,
++            int64_t                    conv_kernel_size,
++            int64_t                    conv_channels,
++            const llama_ubatch_group & g,
++            int                        il);
++
+     // run delta-net attention and write the new recurrent state(s) back to ssm_states_all
+     // s: (head_v_dim, head_v_dim, num_v_heads, n_seqs); returns output: (head_v_dim, num_v_heads, n_seq_tokens, n_seqs)
++    // i_seq: the first sequence set of s in the ubatch
+     ggml_tensor * build_recurrent_attn(
+             llm_graph_input_rs * inp,
+             ggml_tensor *        ssm_states_all,
+@@ -66,7 +78,14 @@ struct llm_build_delta_net_base : public llm_graph_context {
+             ggml_tensor *        g,
+             ggml_tensor *        b,
+             ggml_tensor *        s,
+-            int                  il);
++            int                  il,
++            uint32_t             i_seq = 0);
++
++    // the tokens of group g in t: (ne0, n_tokens); t itself for an equal ubatch
++    ggml_tensor * build_group_tokens(ggml_tensor * t, const llama_ubatch_group & g) const;
++
++    // the states of the sequence sets of group g in states: (state_size, n_seqs); states itself for an equal ubatch
++    ggml_tensor * build_group_states(ggml_tensor * states, const llama_ubatch_group & g) const;
+ };
+ 
+ struct llm_build_lfm_base : public llm_graph_context {
+@@ -2553,6 +2572,7 @@ struct llama_model_qwen3next : public llama_model_base {
+ 
+ struct llama_model_qwen35 : public llama_model_base {
+     llama_model_qwen35(const struct llama_model_params & params) : llama_model_base(params) {}
++    bool graph_takes_grouped_ubatches() const override { return true; }
+     void load_arch_hparams(llama_model_loader & ml) override;
+     void load_arch_tensors(llama_model_loader & ml) override;
+ 
+@@ -2570,6 +2590,17 @@ struct llama_model_qwen35 : public llama_model_base {
+                     ggml_tensor * cur,
+                             int   il);
+ 
++        // the delta net of group g, from the projections and states of the whole ubatch
++        ggml_tensor * build_layer_attn_linear_group(
++             llm_graph_input_rs * inp,
++                    ggml_tensor * conv_input,
++                    ggml_tensor * ssm_states,
++                    ggml_tensor * z,
++                    ggml_tensor * beta,
++                    ggml_tensor * alpha,
++      const llama_ubatch_group & g,
++                            int   il);
++
+         ggml_tensor * build_layer_ffn(
+                     ggml_tensor * cur,
+                             int   il);
+@@ -2596,6 +2627,8 @@ struct llama_model_qwen35 : public llama_model_base {
+ // Qwen3.5 backbone evaluated without memory, with a joint decision head on top of its hidden states
+ struct llama_model_clef : public llama_model_qwen35 {
+     llama_model_clef(const struct llama_model_params & params) : llama_model_qwen35(params) {}
++    // its own graph runs the recurrent layers per equal ubatch
++    bool graph_takes_grouped_ubatches() const override { return false; }
+     void load_arch_hparams(llama_model_loader & ml) override;
+     void load_arch_tensors(llama_model_loader & ml) override;
+ 
+@@ -2803,6 +2836,7 @@ struct llama_model_qwen4exp : public llama_model_base {
+ 
+ struct llama_model_qwen35moe : public llama_model_base {
+     llama_model_qwen35moe(const struct llama_model_params & params) : llama_model_base(params) {}
++    bool graph_takes_grouped_ubatches() const override { return true; }
+     void load_arch_hparams(llama_model_loader & ml) override;
+     void load_arch_tensors(llama_model_loader & ml) override;
+ 
+@@ -2820,6 +2854,17 @@ struct llama_model_qwen35moe : public llama_model_base {
+                     ggml_tensor * cur,
+                             int   il);
+ 
++        // the delta net of group g, from the projections and states of the whole ubatch
++        ggml_tensor * build_layer_attn_linear_group(
++             llm_graph_input_rs * inp,
++                    ggml_tensor * conv_input,
++                    ggml_tensor * ssm_states,
++                    ggml_tensor * z,
++                    ggml_tensor * beta,
++                    ggml_tensor * alpha,
++      const llama_ubatch_group & g,
++                            int   il);
++
+         ggml_tensor * build_layer_ffn(
+                     ggml_tensor * cur,
+                             int   il);
+diff --git a/src/models/qwen35.cpp b/src/models/qwen35.cpp
+index 5569069b9..8ca8cd21f 100644
+--- a/src/models/qwen35.cpp
++++ b/src/models/qwen35.cpp
+@@ -236,12 +236,8 @@ llama_model_qwen35::graph::graph(const llm_graph_params & params) :
+ std::pair<ggml_tensor *, ggml_tensor *> llama_model_qwen35::graph::build_qkvz(
+                 ggml_tensor * input,
+                         int   il) {
+-    const int64_t n_seqs       = ubatch.n_seqs;
+-    const int64_t n_seq_tokens = ubatch.n_seq_tokens;
+-
++    // qkv: (qkv_dim, n_tokens), each group splits it by sequence set
+     ggml_tensor * qkv_mixed = build_lora_mm(model.layers[il].wqkv, input, model.layers[il].wqkv_s);
+-    qkv_mixed = ggml_reshape_3d(ctx0, qkv_mixed, qkv_mixed->ne[0], n_seq_tokens, n_seqs);
+-    cb(qkv_mixed, "linear_attn_qkv_mixed", il);
+ 
+     ggml_tensor * z = build_lora_mm(model.layers[il].wqkv_gate, input, model.layers[il].wqkv_gate_s);
+     cb(z, "z", il);
+@@ -337,32 +333,81 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn_linear(
+         int                  il) {
+     const auto * mctx_cur = inp->mctx;
+ 
+-    const int64_t d_inner      = hparams.ssm_d_inner;
+-    const int64_t n_seqs       = ubatch.n_seqs;
+-    const int64_t head_k_dim   = hparams.ssm_d_state;
+-    const int64_t num_k_heads  = hparams.ssm_n_group;
+-    const int64_t num_v_heads  = hparams.ssm_dt_rank;
+-    const int64_t head_v_dim   = d_inner / num_v_heads;
+-    const int64_t n_seq_tokens = ubatch.n_seq_tokens;
++    const int64_t d_inner = hparams.ssm_d_inner;
+ 
+-    GGML_ASSERT(n_seqs != 0);
+-    GGML_ASSERT(ubatch.equal_seqs());
+-    GGML_ASSERT(ubatch.n_tokens == n_seq_tokens * n_seqs);
++    GGML_ASSERT(ubatch.n_seqs != 0);
++    GGML_ASSERT(ubatch.equal_seqs() || ubatch.is_grouped());
+ 
+-    // Input projections
++    // Input projections, once for the tokens of all the groups
+     auto qkvz = build_qkvz(cur, il);
+     ggml_tensor * qkv_mixed = qkvz.first;
+     ggml_tensor * z         = qkvz.second;
+ 
+-    ggml_tensor * beta = build_lora_mm(model.layers[il].ssm_beta, cur, model.layers[il].ssm_beta_s);
+-    beta = ggml_reshape_4d(ctx0, beta, 1, num_v_heads, n_seq_tokens, n_seqs);
++    ggml_tensor * beta  = build_lora_mm(model.layers[il].ssm_beta,  cur, model.layers[il].ssm_beta_s);
++    ggml_tensor * alpha = build_lora_mm(model.layers[il].ssm_alpha, cur, model.layers[il].ssm_alpha_s);
++
++    ggml_tensor * conv_states_all = mctx_cur->get_r_l(il);
++    ggml_tensor * ssm_states_all  = mctx_cur->get_s_l(il);
++
++    const int64_t conv_kernel_size = model.layers[il].ssm_conv1d->ne[0];
++    const int64_t conv_channels    = d_inner + 2 * hparams.ssm_n_group * hparams.ssm_d_state;
++
++    // the states of the sequence sets of all the groups are read once
++    ggml_tensor * conv_states = build_rs(inp, conv_states_all, hparams.n_embd_r(), ubatch.n_seqs, skippy_state_kind::recurrent_conv, il);
++    cb(conv_states, "conv_states", il);
++
++    std::vector<ggml_tensor *> conv_inputs;
++
++    for (uint32_t ig = 0; ig < ubatch.n_groups(); ++ig) {
++        const auto g = ubatch.group(ig);
++
++        ggml_tensor * qkv_g = ggml_reshape_3d(ctx0, build_group_tokens(qkv_mixed, g), qkv_mixed->ne[0], g.n_seq_tokens, g.n_seqs);
++        cb(qkv_g, "linear_attn_qkv_mixed", il);
++
++        conv_inputs.push_back(build_conv_state(inp, conv_states_all, conv_states, qkv_g, conv_kernel_size, conv_channels, g, il));
++    }
++
++    ggml_tensor * ssm_states = build_rs(inp, ssm_states_all, hparams.n_embd_s(), ubatch.n_seqs, skippy_state_kind::recurrent_ssm, il);
++
++    ggml_tensor * output = nullptr;
++
++    for (uint32_t ig = 0; ig < ubatch.n_groups(); ++ig) {
++        ggml_tensor * output_g = build_layer_attn_linear_group(inp, conv_inputs[ig], ssm_states, z, beta, alpha, ubatch.group(ig), il);
++
++        output = output ? ggml_concat(ctx0, output, output_g, 1) : output_g;
++    }
++
++    // Output projection
++    cur = build_lora_mm(model.layers[il].ssm_out, output, model.layers[il].ssm_out_s);
++    cb(cur, "linear_attn_out", il);
++
++    return cur;
++}
++
++ggml_tensor * llama_model_qwen35::graph::build_layer_attn_linear_group(
++        llm_graph_input_rs *       inp,
++        ggml_tensor *              conv_input,
++        ggml_tensor *              ssm_states,
++        ggml_tensor *              z,
++        ggml_tensor *              beta,
++        ggml_tensor *              alpha,
++        const llama_ubatch_group & g,
++        int                        il) {
++    const int64_t d_inner      = hparams.ssm_d_inner;
++    const int64_t n_seqs       = g.n_seqs;
++    const int64_t head_k_dim   = hparams.ssm_d_state;
++    const int64_t num_k_heads  = hparams.ssm_n_group;
++    const int64_t num_v_heads  = hparams.ssm_dt_rank;
++    const int64_t head_v_dim   = d_inner / num_v_heads;
++    const int64_t n_seq_tokens = g.n_seq_tokens;
++
++    beta = ggml_reshape_4d(ctx0, build_group_tokens(beta, g), 1, num_v_heads, n_seq_tokens, n_seqs);
+     cb(beta, "beta", il);
+ 
+     beta = ggml_sigmoid(ctx0, beta);
+     cb(beta, "beta_sigmoid", il);
+ 
+-    ggml_tensor * alpha = build_lora_mm(model.layers[il].ssm_alpha, cur, model.layers[il].ssm_alpha_s);
+-    alpha = ggml_reshape_3d(ctx0, alpha, num_v_heads, n_seq_tokens, n_seqs);
++    alpha = ggml_reshape_3d(ctx0, build_group_tokens(alpha, g), num_v_heads, n_seq_tokens, n_seqs);
+     cb(alpha, "alpha", il);
+ 
+     ggml_tensor * alpha_biased   = ggml_add(ctx0, alpha, model.layers[il].ssm_dt);
+@@ -374,17 +419,11 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn_linear(
+ 
+     gate = ggml_reshape_4d(ctx0, gate, 1, num_v_heads, n_seq_tokens, n_seqs);
+ 
+-    ggml_tensor * conv_states_all = mctx_cur->get_r_l(il);
+-    ggml_tensor * ssm_states_all  = mctx_cur->get_s_l(il);
++    ggml_tensor * ssm_states_all = inp->mctx->get_s_l(il);
+ 
+-    ggml_tensor * conv_kernel      = model.layers[il].ssm_conv1d;
+-    const int64_t conv_kernel_size = conv_kernel->ne[0];
+-    const int64_t conv_channels    = d_inner + 2 * hparams.ssm_n_group * hparams.ssm_d_state;
++    ggml_tensor * conv_kernel = model.layers[il].ssm_conv1d;
+ 
+-    ggml_tensor * conv_input = build_conv_state(inp, conv_states_all, qkv_mixed, conv_kernel_size, conv_channels, il);
+-
+-    ggml_tensor * state = build_rs(inp, ssm_states_all, hparams.n_embd_s(), n_seqs, skippy_state_kind::recurrent_ssm, il);
+-    state = ggml_reshape_4d(ctx0, state, head_v_dim, head_v_dim, num_v_heads, n_seqs);
++    ggml_tensor * state = ggml_reshape_4d(ctx0, build_group_states(ssm_states, g), head_v_dim, head_v_dim, num_v_heads, n_seqs);
+     cb(state, "state_predelta", il);
+ 
+     ggml_tensor * conv_output_proper = ggml_ssm_conv(ctx0, conv_input, conv_kernel);
+@@ -437,10 +476,10 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn_linear(
+     cb(k_conv, "k_conv_predelta", il);
+     cb(v_conv, "v_conv_predelta", il);
+ 
+-    ggml_tensor * output = build_recurrent_attn(inp, ssm_states_all, q_conv, k_conv, v_conv, gate, beta, state, il);
++    ggml_tensor * output = build_recurrent_attn(inp, ssm_states_all, q_conv, k_conv, v_conv, gate, beta, state, il, g.i_seq);
+ 
+     // z: [head_dim, n_heads, n_tokens, n_seqs] -> [n_heads * n_tokens * n_seqs, head_dim]
+-    ggml_tensor * z_2d = ggml_reshape_4d(ctx0, z, head_v_dim, num_v_heads, n_seq_tokens, n_seqs);
++    ggml_tensor * z_2d = ggml_reshape_4d(ctx0, build_group_tokens(z, g), head_v_dim, num_v_heads, n_seq_tokens, n_seqs);
+ 
+     // Apply gated normalization: self.norm(core_attn_out, z)
+     ggml_tensor * attn_out_norm = build_norm_gated(output, model.layers[il].ssm_norm, z_2d, il);
+@@ -449,11 +488,7 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn_linear(
+     ggml_tensor * final_output = ggml_reshape_2d(ctx0, attn_out_norm, head_v_dim * num_v_heads, n_seq_tokens * n_seqs);
+     cb(final_output, "final_output", il);
+ 
+-    // Output projection
+-    cur = build_lora_mm(model.layers[il].ssm_out, final_output, model.layers[il].ssm_out_s);
+-    cb(cur, "linear_attn_out", il);
+-
+-    return cur;
++    return final_output;
+ }
+ 
+ ggml_tensor * llama_model_qwen35::graph::build_layer_ffn(ggml_tensor * cur, const int il) {
+diff --git a/src/models/qwen35moe.cpp b/src/models/qwen35moe.cpp
+index 7173875c8..b5f3cd6a7 100644
+--- a/src/models/qwen35moe.cpp
++++ b/src/models/qwen35moe.cpp
+@@ -246,12 +246,8 @@ llama_model_qwen35moe::graph::graph(const llm_graph_params & params) :
+ std::pair<ggml_tensor *, ggml_tensor *> llama_model_qwen35moe::graph::build_qkvz(
+                 ggml_tensor * input,
+                         int   il) {
+-    const int64_t n_seqs       = ubatch.n_seqs;
+-    const int64_t n_seq_tokens = ubatch.n_seq_tokens;
+-
++    // qkv: (qkv_dim, n_tokens), each group splits it by sequence set
+     ggml_tensor * qkv_mixed = build_lora_mm(model.layers[il].wqkv, input, model.layers[il].wqkv_s);
+-    qkv_mixed = ggml_reshape_3d(ctx0, qkv_mixed, qkv_mixed->ne[0], n_seq_tokens, n_seqs);
+-    cb(qkv_mixed, "linear_attn_qkv_mixed", il);
+ 
+     ggml_tensor * z = build_lora_mm(model.layers[il].wqkv_gate, input, model.layers[il].wqkv_gate_s);
+     cb(z, "z", il);
+@@ -347,32 +343,81 @@ ggml_tensor * llama_model_qwen35moe::graph::build_layer_attn_linear(
+         int                  il) {
+     const auto * mctx_cur = inp->mctx;
+ 
+-    const int64_t d_inner      = hparams.ssm_d_inner;
+-    const int64_t n_seqs       = ubatch.n_seqs;
+-    const int64_t head_k_dim   = hparams.ssm_d_state;
+-    const int64_t num_k_heads  = hparams.ssm_n_group;
+-    const int64_t num_v_heads  = hparams.ssm_dt_rank;
+-    const int64_t head_v_dim   = d_inner / num_v_heads;
+-    const int64_t n_seq_tokens = ubatch.n_seq_tokens;
++    const int64_t d_inner = hparams.ssm_d_inner;
+ 
+-    GGML_ASSERT(n_seqs != 0);
+-    GGML_ASSERT(ubatch.equal_seqs());
+-    GGML_ASSERT(ubatch.n_tokens == n_seq_tokens * n_seqs);
++    GGML_ASSERT(ubatch.n_seqs != 0);
++    GGML_ASSERT(ubatch.equal_seqs() || ubatch.is_grouped());
+ 
+-    // Input projections
++    // Input projections, once for the tokens of all the groups
+     auto qkvz = build_qkvz(cur, il);
+     ggml_tensor * qkv_mixed = qkvz.first;
+     ggml_tensor * z         = qkvz.second;
+ 
+-    ggml_tensor * beta = build_lora_mm(model.layers[il].ssm_beta, cur, model.layers[il].ssm_beta_s);
+-    beta = ggml_reshape_4d(ctx0, beta, 1, num_v_heads, n_seq_tokens, n_seqs);
++    ggml_tensor * beta  = build_lora_mm(model.layers[il].ssm_beta,  cur, model.layers[il].ssm_beta_s);
++    ggml_tensor * alpha = build_lora_mm(model.layers[il].ssm_alpha, cur, model.layers[il].ssm_alpha_s);
++
++    ggml_tensor * conv_states_all = mctx_cur->get_r_l(il);
++    ggml_tensor * ssm_states_all  = mctx_cur->get_s_l(il);
++
++    const int64_t conv_kernel_size = model.layers[il].ssm_conv1d->ne[0];
++    const int64_t conv_channels    = d_inner + 2 * hparams.ssm_n_group * hparams.ssm_d_state;
++
++    // the states of the sequence sets of all the groups are read once
++    ggml_tensor * conv_states = build_rs(inp, conv_states_all, hparams.n_embd_r(), ubatch.n_seqs, skippy_state_kind::recurrent_conv, il);
++    cb(conv_states, "conv_states", il);
++
++    std::vector<ggml_tensor *> conv_inputs;
++
++    for (uint32_t ig = 0; ig < ubatch.n_groups(); ++ig) {
++        const auto g = ubatch.group(ig);
++
++        ggml_tensor * qkv_g = ggml_reshape_3d(ctx0, build_group_tokens(qkv_mixed, g), qkv_mixed->ne[0], g.n_seq_tokens, g.n_seqs);
++        cb(qkv_g, "linear_attn_qkv_mixed", il);
++
++        conv_inputs.push_back(build_conv_state(inp, conv_states_all, conv_states, qkv_g, conv_kernel_size, conv_channels, g, il));
++    }
++
++    ggml_tensor * ssm_states = build_rs(inp, ssm_states_all, hparams.n_embd_s(), ubatch.n_seqs, skippy_state_kind::recurrent_ssm, il);
++
++    ggml_tensor * output = nullptr;
++
++    for (uint32_t ig = 0; ig < ubatch.n_groups(); ++ig) {
++        ggml_tensor * output_g = build_layer_attn_linear_group(inp, conv_inputs[ig], ssm_states, z, beta, alpha, ubatch.group(ig), il);
++
++        output = output ? ggml_concat(ctx0, output, output_g, 1) : output_g;
++    }
++
++    // Output projection
++    cur = build_lora_mm(model.layers[il].ssm_out, output, model.layers[il].ssm_out_s);
++    cb(cur, "linear_attn_out", il);
++
++    return cur;
++}
++
++ggml_tensor * llama_model_qwen35moe::graph::build_layer_attn_linear_group(
++        llm_graph_input_rs *       inp,
++        ggml_tensor *              conv_input,
++        ggml_tensor *              ssm_states,
++        ggml_tensor *              z,
++        ggml_tensor *              beta,
++        ggml_tensor *              alpha,
++        const llama_ubatch_group & g,
++        int                        il) {
++    const int64_t d_inner      = hparams.ssm_d_inner;
++    const int64_t n_seqs       = g.n_seqs;
++    const int64_t head_k_dim   = hparams.ssm_d_state;
++    const int64_t num_k_heads  = hparams.ssm_n_group;
++    const int64_t num_v_heads  = hparams.ssm_dt_rank;
++    const int64_t head_v_dim   = d_inner / num_v_heads;
++    const int64_t n_seq_tokens = g.n_seq_tokens;
++
++    beta = ggml_reshape_4d(ctx0, build_group_tokens(beta, g), 1, num_v_heads, n_seq_tokens, n_seqs);
+     cb(beta, "beta", il);
+ 
+     beta = ggml_sigmoid(ctx0, beta);
+     cb(beta, "beta_sigmoid", il);
+ 
+-    ggml_tensor * alpha = build_lora_mm(model.layers[il].ssm_alpha, cur, model.layers[il].ssm_alpha_s);
+-    alpha = ggml_reshape_3d(ctx0, alpha, num_v_heads, n_seq_tokens, n_seqs);
++    alpha = ggml_reshape_3d(ctx0, build_group_tokens(alpha, g), num_v_heads, n_seq_tokens, n_seqs);
+     cb(alpha, "alpha", il);
+ 
+     ggml_tensor * alpha_biased   = ggml_add(ctx0, alpha, model.layers[il].ssm_dt);
+@@ -384,17 +429,11 @@ ggml_tensor * llama_model_qwen35moe::graph::build_layer_attn_linear(
+ 
+     gate = ggml_reshape_4d(ctx0, gate, 1, num_v_heads, n_seq_tokens, n_seqs);
+ 
+-    ggml_tensor * conv_states_all = mctx_cur->get_r_l(il);
+-    ggml_tensor * ssm_states_all  = mctx_cur->get_s_l(il);
++    ggml_tensor * ssm_states_all = inp->mctx->get_s_l(il);
+ 
+-    ggml_tensor * conv_kernel      = model.layers[il].ssm_conv1d;
+-    const int64_t conv_kernel_size = conv_kernel->ne[0];
+-    const int64_t conv_channels    = d_inner + 2 * hparams.ssm_n_group * hparams.ssm_d_state;
++    ggml_tensor * conv_kernel = model.layers[il].ssm_conv1d;
+ 
+-    ggml_tensor * conv_input = build_conv_state(inp, conv_states_all, qkv_mixed, conv_kernel_size, conv_channels, il);
+-
+-    ggml_tensor * state = build_rs(inp, ssm_states_all, hparams.n_embd_s(), n_seqs, skippy_state_kind::recurrent_ssm, il);
+-    state = ggml_reshape_4d(ctx0, state, head_v_dim, head_v_dim, num_v_heads, n_seqs);
++    ggml_tensor * state = ggml_reshape_4d(ctx0, build_group_states(ssm_states, g), head_v_dim, head_v_dim, num_v_heads, n_seqs);
+     cb(state, "state_predelta", il);
+ 
+     ggml_tensor * conv_output_proper = ggml_ssm_conv(ctx0, conv_input, conv_kernel);
+@@ -447,10 +486,10 @@ ggml_tensor * llama_model_qwen35moe::graph::build_layer_attn_linear(
+     cb(k_conv, "k_conv_predelta", il);
+     cb(v_conv, "v_conv_predelta", il);
+ 
+-    ggml_tensor * output = build_recurrent_attn(inp, ssm_states_all, q_conv, k_conv, v_conv, gate, beta, state, il);
++    ggml_tensor * output = build_recurrent_attn(inp, ssm_states_all, q_conv, k_conv, v_conv, gate, beta, state, il, g.i_seq);
+ 
+     // z: [head_dim, n_heads, n_tokens, n_seqs] -> [n_heads * n_tokens * n_seqs, head_dim]
+-    ggml_tensor * z_2d = ggml_reshape_4d(ctx0, z, head_v_dim, num_v_heads, n_seq_tokens, n_seqs);
++    ggml_tensor * z_2d = ggml_reshape_4d(ctx0, build_group_tokens(z, g), head_v_dim, num_v_heads, n_seq_tokens, n_seqs);
+ 
+     // Apply gated normalization: self.norm(core_attn_out, z)
+     ggml_tensor * attn_out_norm = build_norm_gated(output, model.layers[il].ssm_norm, z_2d, il);
+@@ -458,11 +497,7 @@ ggml_tensor * llama_model_qwen35moe::graph::build_layer_attn_linear(
+     // Final reshape: [head_dim, n_heads, n_tokens, n_seqs] -> [n_heads * head_dim , n_tokens * n_seqs ]
+     ggml_tensor * final_output = ggml_reshape_2d(ctx0, attn_out_norm, head_v_dim * num_v_heads, n_seq_tokens * n_seqs);
+ 
+-    // Output projection
+-    cur = build_lora_mm(model.layers[il].ssm_out, final_output, model.layers[il].ssm_out_s);
+-    cb(cur, "linear_attn_out", il);
+-
+-    return cur;
++    return final_output;
+ }
+ 
+ ggml_tensor * llama_model_qwen35moe::graph::build_layer_ffn(ggml_tensor * cur, const int il) {
+diff --git a/tests/test-batch-alloc.cpp b/tests/test-batch-alloc.cpp
+index eee60d81d..1d306c484 100644
+--- a/tests/test-batch-alloc.cpp
++++ b/tests/test-batch-alloc.cpp
+@@ -868,6 +868,177 @@ static void test_keep_tail(testing & t) {
+     });
+ }
+ 
++static void test_grouped(testing & t) {
++    llama_vocab vocab;
++
++    auto make_batch = [](batch_builder & bb, std::initializer_list<int> n_tokens) {
++        llama_seq_id s = 0;
++        for (int n : n_tokens) {
++            for (int i = 0; i < n; ++i) {
++                bb.add(i, {s}, i == n - 1);
++            }
++            ++s;
++        }
++    };
++
++    t.test("prompt_and_decodes_share_a_ubatch", [&](testing & t) {
++        batch_builder bb;
++        make_batch(bb, {1, 6, 1});
++
++        llama_batch_allocr ba(1);
++        t.assert_true(ba.init(bb.b, vocab, false));
++
++        llama_ubatch ub = ba.split_equal_grouped(8, 0, 4);
++        t.assert_equal(8u, ub.n_tokens);
++        t.assert_true(ub.is_grouped());
++        t.assert_true(!ub.equal_seqs());
++        t.assert_equal(0u, ub.n_seq_tokens);
++        t.assert_equal(3u, ub.n_seqs);
++        t.assert_equal(2u, ub.n_groups());
++
++        // the decodes of seqs 0 and 2, then the prompt of seq 1
++        t.assert_equal(1u, ub.group(0).n_seq_tokens);
++        t.assert_equal(2u, ub.group(0).n_seqs);
++        t.assert_equal(6u, ub.group(1).n_seq_tokens);
++        t.assert_equal(1u, ub.group(1).n_seqs);
++        t.assert_equal(2u, ub.group(1).i_token);
++        t.assert_equal(2u, ub.group(1).i_seq);
++
++        t.assert_equal(1u, ub.seq_token_begin(1));
++        t.assert_equal(2u, ub.seq_token_begin(2));
++        t.assert_equal(1u, ub.seq_n_tokens(1));
++        t.assert_equal(6u, ub.seq_n_tokens(2));
++        t.assert_equal(2, ub.seq_id[1][0]);
++        t.assert_equal(1, ub.seq_id[2][0]);
++
++        // in the order of the sequence sets, so that each group has a slice
++        t.assert_equal(0, ub.seq_id_unq[0]);
++        t.assert_equal(2, ub.seq_id_unq[1]);
++        t.assert_equal(1, ub.seq_id_unq[2]);
++        t.assert_equal(1, ub.seq_idx[2]);
++        t.assert_equal(2, ub.seq_idx[1]);
++
++        llama_ubatch view = ub.group_view(0);
++        t.assert_true(view.equal_seqs());
++        t.assert_true(!view.is_grouped());
++        t.assert_equal(2u, view.n_tokens);
++        t.assert_equal(1u, view.n_seq_tokens);
++        t.assert_equal(2u, view.n_seqs_unq);
++        t.assert_equal(0, view.seq_id_unq[0]);
++        t.assert_equal(2, view.seq_id_unq[1]);
++        t.assert_equal(2, view.seq_id[1][0]);
++        t.assert_equal(1, (int) view.output[1]);
++
++        view = ub.group_view(1);
++        t.assert_equal(6u, view.n_tokens);
++        t.assert_equal(6u, view.n_seq_tokens);
++        t.assert_equal(1, view.seq_id_unq[0]);
++        t.assert_equal(5, view.pos[5]);
++        t.assert_equal(1, (int) view.output[5]);
++
++        t.assert_equal(0u, ba.split_equal_grouped(8, 0, 4).n_tokens);
++        t.assert_equal(8u, ba.get_n_used());
++    });
++
++    t.test("the_level_caps_the_long_set", [&](testing & t) {
++        batch_builder bb;
++        make_batch(bb, {10, 1});
++
++        llama_batch_allocr ba(1);
++        t.assert_true(ba.init(bb.b, vocab, false));
++
++        llama_ubatch ub = ba.split_equal_grouped(8, 0, 4);
++        t.assert_equal("the decode fits whole, the prompt takes the rest", 8u, ub.n_tokens);
++        t.assert_equal(7u, ub.group(0).n_seq_tokens);
++        t.assert_equal(1u, ub.group(1).n_seq_tokens);
++
++        ub = ba.split_equal_grouped(8, 0, 4);
++        t.assert_equal("one set left is an equal ubatch", 3u, ub.n_tokens);
++        t.assert_true(!ub.is_grouped());
++        t.assert_true(ub.equal_seqs());
++        t.assert_equal(3u, ub.n_seq_tokens);
++        t.assert_equal(7, ub.pos[0]);
++    });
++
++    t.test("keeps_the_tail_of_an_unfinished_set", [&](testing & t) {
++        batch_builder bb;
++        make_batch(bb, {9, 1});
++
++        llama_batch_allocr ba(1);
++        t.assert_true(ba.init(bb.b, vocab, false));
++
++        llama_ubatch ub = ba.split_equal_grouped(8, 3, 4);
++        t.assert_equal(7u, ub.n_tokens);
++        t.assert_equal(6u, ub.group(0).n_seq_tokens);
++
++        ub = ba.split_equal_grouped(8, 3, 4);
++        t.assert_equal(3u, ub.n_tokens);
++        t.assert_equal(6, ub.pos[0]);
++    });
++
++    t.test("equal_sets_are_not_grouped", [&](testing & t) {
++        batch_builder bb;
++        make_batch(bb, {2, 2});
++
++        llama_batch_allocr ba(1);
++        t.assert_true(ba.init(bb.b, vocab, false));
++
++        llama_ubatch ub = ba.split_equal_grouped(8, 0, 4);
++        t.assert_equal(4u, ub.n_tokens);
++        t.assert_true(!ub.is_grouped());
++        t.assert_equal(2u, ub.n_seq_tokens);
++        t.assert_equal(2u, ub.seq_token_begin(1));
++    });
++
++    t.test("sets_past_the_group_limit_wait", [&](testing & t) {
++        batch_builder bb;
++        make_batch(bb, {4, 2, 1});
++
++        llama_batch_allocr ba(1);
++        t.assert_true(ba.init(bb.b, vocab, false));
++
++        llama_ubatch ub = ba.split_equal_grouped(16, 0, 2);
++        t.assert_equal(6u, ub.n_tokens);
++        t.assert_equal(2u, ub.n_groups());
++
++        ub = ba.split_equal_grouped(16, 0, 2);
++        t.assert_equal(1u, ub.n_tokens);
++        t.assert_equal(2, ub.seq_id[0][0]);
++    });
++
++    t.test("view_keeps_the_position_sections", [&](testing & t) {
++        const uint32_t n_pos = 4;
++
++        batch_builder bb(2, nullptr, 4, n_pos);
++
++        const llama_pos p00[n_pos] = { 10, 1, 2, 0 };
++        const llama_pos p01[n_pos] = { 11, 3, 4, 0 };
++        const llama_pos p10[n_pos] = { 20, 5, 6, 0 };
++        bb.add_embd(p00, {0}, false);
++        bb.add_embd(p01, {0}, true);
++        bb.add_embd(p10, {1}, true);
++
++        llama_batch_allocr ba(n_pos);
++        t.assert_true(ba.init(bb.b, vocab, false));
++
++        llama_ubatch ub = ba.split_equal_grouped(8, 0, 4);
++        t.assert_equal(2u, ub.n_groups());
++
++        // the view reads the sections of the ubatch in place, at the stride of the ubatch
++        llama_ubatch view = ub.group_view(0);
++        t.assert_equal(n_pos, view.n_pos);
++        t.assert_equal(3u, view.pos_stride());
++        t.assert_equal(11, view.pos[1]);
++        t.assert_equal(3,  view.pos[1 + view.pos_stride()]);
++        t.assert_equal(4,  view.pos[1 + view.pos_stride()*2]);
++
++        view = ub.group_view(1);
++        t.assert_equal(20, view.pos[0]);
++        t.assert_equal(5,  view.pos[view.pos_stride()]);
++        t.assert_equal(6,  view.pos[view.pos_stride()*2]);
++    });
++}
++
+ static void test_mrope(testing & t) {
+     llama_vocab vocab;
+ 
+@@ -1218,6 +1389,7 @@ int main(int argc, char ** argv) {
+     t.test("compat",         test_compat);
+     t.test("split",          test_split);
+     t.test("keep_tail",      test_keep_tail);
++    t.test("grouped",        test_grouped);
+     t.test("mrope",          test_mrope);
+     t.test("mtp_embd_width", test_mtp_embd_width);
+ 
+-- 
+2.43.0
+
