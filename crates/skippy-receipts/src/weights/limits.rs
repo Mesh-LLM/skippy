@@ -142,7 +142,7 @@ impl FetchBudget {
         let limit = self.limit();
         let charged = self
             .spent
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |spent| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |spent| {
                 spent.checked_add(bytes).filter(|&total| total <= limit)
             });
         match charged {
