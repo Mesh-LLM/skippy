@@ -96,6 +96,44 @@ capacity blocker rather than weakening the thermal gate. The separate
 fixed-output performance workload retains its original timing schedule and
 cannot use the paced quality responses as speed evidence.
 
+### Confirmatory extension for an inconclusive c1 quality bound
+
+The first matched, cooled Qwen3.5 separate-slot comparison completed before
+this amendment: vanilla was correct on 281/512 tasks, Skippy on 279/512, with
+two adverse tasks and a 95% upper bound of 2.2234%. Its registered verdict is
+**UNPROVEN** and remains visible. The two answer differences are stable across
+the earlier thermally invalid diagnostic and the valid cooled cell. This
+amendment does not reclassify either result or change the 2% margin.
+
+Before any extension model response, seal a **single** additional independent
+512-task manifest with the same four strata, generation rules, exact answers,
+chat request, 32-token output budget, final-line parser, model identities,
+native settings, and matched 64-response/120-second thermal cadence. Select
+the first integer seed starting at `20261128` that produces 512 unique task
+texts disjoint from the original 512; that seed is `20261131`. Prefix its IDs
+with `extension-`. The manifest SHA256 is
+`b7b92d1aac38b7391b88b2b42acaa538be7e6917630db9ec4da52478ab61b23d`.
+The existing scorer adds seed and ID-prefix generation options and a
+`compare-extension` command while preserving its default manifest byte for
+byte; amended source SHA256 is
+`1bfaf5bf3e348dc6cdccbb798b045121afa01156cb3489e4341b0d0b5568e20c`.
+Its selftest verifies task disjointness and original-manifest identity. The
+new item values and all scoring code are fixed before extension prompting.
+
+Score the original and extension halves independently and require at least
+200 correct vanilla items **in each half** for each layout. Only if both
+halves pass their native, cache, completion, thermal, prompt, A/A and repeat
+gates, pool the two disjoint sets of baseline-correct tasks and adverse IDs.
+The single final look uses a one-sided exact Clopper–Pearson **97.5%** upper
+bound (alpha 0.025); it must be strictly below 2%. The lower bound above 2%
+is FAIL; a crossing interval is UNPROVEN. This conservative final threshold
+accounts for deciding to extend after seeing an inconclusive first look. It
+is a new confirmatory result, not a replacement for the original 512-task
+verdict. There is no further extension, task selection, parser change, or
+result-based retry. Apply the same rule separately against both vanilla
+layouts, preserving all raw text and exact-output discrepancies. A quality
+pass still cannot establish fixed-output speed or the 30-second TTFT SLO.
+
 ## Quality request and score
 
 For each model, use the pinned vanilla model's live `/apply-template` and

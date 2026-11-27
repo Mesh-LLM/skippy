@@ -24,14 +24,14 @@ def digest(value):
     return hashlib.sha256(canonical_bytes(value)).hexdigest()
 
 
-def generate():
-    rng = random.Random(SEED)
+def generate(seed=SEED, id_prefix=""):
+    rng = random.Random(seed)
     items = []
     for i in range(TASKS_PER_STRATUM):
         a, b = rng.randrange(11, 98), rng.randrange(11, 98)
         operation = ("+", "-", "*")[i % 3]
         answer = {"+": a + b, "-": a - b, "*": a * b}[operation]
-        items.append({"id": f"arithmetic-{i:03d}", "stratum": "arithmetic",
+        items.append({"id": f"{id_prefix}arithmetic-{i:03d}", "stratum": "arithmetic",
                       "task": f"Compute {a} {operation} {b}.", "answer": answer})
 
     names = ["amber", "birch", "cobalt", "delta", "ember", "finch", "grove", "harbor"]
@@ -43,7 +43,7 @@ def generate():
         target = keys[i % 5]
         answer = dict(records)[target]
         entries = "; ".join(f"{key}={value}" for key, value in records)
-        items.append({"id": f"extraction-{i:03d}", "stratum": "extraction",
+        items.append({"id": f"{id_prefix}extraction-{i:03d}", "stratum": "extraction",
                       "task": f"Records: {entries}. What integer is recorded for {target}?",
                       "answer": answer})
 
@@ -52,7 +52,7 @@ def generate():
         rank = i % 5 + 2
         answer = sorted(values)[rank - 1]
         listed = ", ".join(map(str, values))
-        items.append({"id": f"ordering-{i:03d}", "stratum": "ordering",
+        items.append({"id": f"{id_prefix}ordering-{i:03d}", "stratum": "ordering",
                       "task": f"Sort these distinct integers ascending: {listed}. What is item number {rank} (counting from 1)?",
                       "answer": answer})
 
@@ -65,11 +65,14 @@ def generate():
         else:
             lines = [f"x = {x}", f"y = {y}", f"y = y + {add}", "x, y = y, x", f"x = x - {subtract}"]
             answer = y + add - subtract
-        items.append({"id": f"assignment-{i:03d}", "stratum": "assignment",
+        items.append({"id": f"{id_prefix}assignment-{i:03d}", "stratum": "assignment",
                       "task": "After these Python statements, what integer is x?\n" + "\n".join(lines),
                       "answer": answer})
-    return {"schema": "scheduler-task-quality-v3", "seed": SEED,
-            "design": "Independent held-out replication of the original four-stratum generator; 128 new items per stratum.",
+    design = ("Independent held-out replication of the original four-stratum generator; 128 new items per stratum."
+              if seed == SEED and not id_prefix else
+              "Prospective independent 512-item extension of the same four-stratum generator; 128 new items per stratum.")
+    return {"schema": "scheduler-task-quality-v3", "seed": seed,
+            "design": design,
             "instructions": "Solve the task. Reply with only the final integer on its own line, without an explanation.",
             "items": items}
 
@@ -127,30 +130,30 @@ def binomial_cdf(k, n, probability):
                                                   for term in terms))
 
 
-def one_sided_upper(k, n):
-    if not 0 <= k <= n or n == 0:
+def one_sided_upper(k, n, alpha=0.05):
+    if not 0 <= k <= n or n == 0 or not 0 < alpha < 1:
         raise ValueError("invalid binomial count")
     if k == n:
         return 1.0
     low, high = 0.0, 1.0
     for _ in range(72):
         mid = (low + high) / 2
-        if binomial_cdf(k, n, mid) > 0.05:
+        if binomial_cdf(k, n, mid) > alpha:
             low = mid
         else:
             high = mid
     return (low + high) / 2
 
 
-def one_sided_lower(k, n):
-    if not 0 <= k <= n or n == 0:
+def one_sided_lower(k, n, alpha=0.05):
+    if not 0 <= k <= n or n == 0 or not 0 < alpha < 1:
         raise ValueError("invalid binomial count")
     if k == 0:
         return 0.0
     low, high = 0.0, 1.0
     for _ in range(72):
         mid = (low + high) / 2
-        if binomial_cdf(k - 1, n, mid) > 0.95:
+        if binomial_cdf(k - 1, n, mid) > 1 - alpha:
             low = mid
         else:
             high = mid
@@ -192,8 +195,39 @@ def repeat_agreement(first, second):
             "raw_difference_ids": raw_differences}
 
 
+def compare_extension(first_baseline, first_candidate, new_baseline, new_candidate):
+    """Conservative, fixed 1024-task follow-up; retain the original verdict."""
+    first = compare(first_baseline, first_candidate)
+    new = compare(new_baseline, new_candidate)
+    if first_baseline["manifest_sha256"] == new_baseline["manifest_sha256"]:
+        raise ValueError("extension must use a distinct manifest")
+    first_ids = {row["id"] for row in first_baseline["outcomes"]}
+    new_ids = {row["id"] for row in new_baseline["outcomes"]}
+    if len(first_ids) != TASK_COUNT or len(new_ids) != TASK_COUNT or first_ids & new_ids:
+        raise ValueError("extension items must be complete and disjoint")
+    if first["baseline_correct"] < 200 or new["baseline_correct"] < 200:
+        raise ValueError("each 512-task baseline must clear the registered prerequisite")
+    eligible = first["baseline_correct"] + new["baseline_correct"]
+    adverse_ids = first["adverse_ids"] + new["adverse_ids"]
+    adverse = len(adverse_ids)
+    lower = one_sided_lower(adverse, eligible, alpha=0.025)
+    upper = one_sided_upper(adverse, eligible, alpha=0.025)
+    verdict = "PASS" if upper < 0.02 else "FAIL" if lower > 0.02 else "UNPROVEN"
+    return {"first_512": first, "extension_512": new, "baseline_correct": eligible,
+            "adverse": adverse, "adverse_ids": adverse_ids, "alpha": 0.025,
+            "adverse_lower_97_5": lower, "adverse_upper_97_5": upper,
+            "verdict": verdict}
+
+
 def selftest():
     manifest = generate()
+    extension = generate(20261131, "extension-")
+    assert len(extension["items"]) == TASK_COUNT
+    assert {item["id"] for item in manifest["items"]}.isdisjoint(
+        item["id"] for item in extension["items"])
+    assert len({item["task"] for item in extension["items"]}) == TASK_COUNT
+    assert {item["task"] for item in manifest["items"]}.isdisjoint(
+        item["task"] for item in extension["items"])
     assert len(manifest["items"]) == len({item["id"] for item in manifest["items"]}) == TASK_COUNT
     assert len({item["task"] for item in manifest["items"]}) == TASK_COUNT
     for item in manifest["items"]:
@@ -227,6 +261,7 @@ def selftest():
     assert one_sided_lower(2, 281) < 2 / 281 < one_sided_upper(2, 281)
     assert one_sided_lower(2, 281) < 0.002
     assert one_sided_upper(2, 281) > 0.02
+    assert one_sided_upper(2, 281, alpha=0.025) > one_sided_upper(2, 281)
     assert one_sided_lower(281, 281) > 0.98
     for k, n in ((2, 281), (20, 512)):
         lower, upper = one_sided_lower(k, n), one_sided_upper(k, n)
@@ -242,6 +277,11 @@ def selftest():
     perfect = score(manifest, rows)
     assert perfect["correct"] == TASK_COUNT
     assert compare(perfect, perfect)["verdict"] == "PASS"
+    extension_rows = [{"id": item["id"], "status": "complete", "text": str(item["answer"]),
+                       "input_tokens": 512, "output_tokens": 2} for item in extension["items"]]
+    extension_perfect = score(extension, extension_rows)
+    assert compare_extension(perfect, perfect, extension_perfect,
+                             extension_perfect)["verdict"] == "PASS"
     rows[0]["text"] = "incorrect"
     degraded = score(manifest, rows)
     assert compare(perfect, degraded)["adverse"] == 1
@@ -259,6 +299,8 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     generate_cmd = sub.add_parser("generate")
     generate_cmd.add_argument("--output", type=Path, required=True)
+    generate_cmd.add_argument("--seed", type=int, default=SEED)
+    generate_cmd.add_argument("--id-prefix", default="")
     score_cmd = sub.add_parser("score")
     score_cmd.add_argument("--manifest", type=Path, required=True)
     score_cmd.add_argument("--responses", type=Path, required=True)
@@ -269,12 +311,17 @@ def main():
     repeat_cmd = sub.add_parser("repeat")
     repeat_cmd.add_argument("--first", type=Path, required=True)
     repeat_cmd.add_argument("--second", type=Path, required=True)
+    extension_cmd = sub.add_parser("compare-extension")
+    extension_cmd.add_argument("--first-baseline", type=Path, required=True)
+    extension_cmd.add_argument("--first-candidate", type=Path, required=True)
+    extension_cmd.add_argument("--new-baseline", type=Path, required=True)
+    extension_cmd.add_argument("--new-candidate", type=Path, required=True)
     sub.add_parser("selftest")
     args = parser.parse_args()
     if args.command == "selftest":
         selftest()
     elif args.command == "generate":
-        args.output.write_bytes(canonical_bytes(generate()))
+        args.output.write_bytes(canonical_bytes(generate(args.seed, args.id_prefix)))
         print(hashlib.sha256(args.output.read_bytes()).hexdigest())
     elif args.command == "score":
         manifest = json.loads(args.manifest.read_text())
@@ -285,6 +332,11 @@ def main():
         baseline = json.loads(args.baseline.read_text())
         candidate = json.loads(args.candidate.read_text())
         print(json.dumps(compare(baseline, candidate), sort_keys=True))
+    elif args.command == "compare-extension":
+        scores = [json.loads(path.read_text()) for path in
+                  (args.first_baseline, args.first_candidate,
+                   args.new_baseline, args.new_candidate)]
+        print(json.dumps(compare_extension(*scores), sort_keys=True))
     else:
         first = json.loads(args.first.read_text())
         second = json.loads(args.second.read_text())

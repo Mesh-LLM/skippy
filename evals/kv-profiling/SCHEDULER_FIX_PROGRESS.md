@@ -1841,3 +1841,41 @@ prospective matched c1 cohort with 120-second idle intervals every 64
 responses is now registered in the version 3 protocol. All three arms will
 use that same cadence and be compared only within that cohort; a further
 thermal failure remains a capacity blocker.
+
+The first matched cooled Qwen3.5 vanilla separate-slot cell
+`job_445yb8c70gs6d1a` passed its independent audit: 512/512 complete,
+seven recorded pauses of at least 120 seconds, nominal pressure at every
+block and process boundary, exact model/server/request identities, full
+33/33 Metal layers, F16 KV and caches off. It again scored 281/512; its
+parsed and raw outputs agree with the original valid control on all 512
+tasks. Archive SHA256
+`951ed23ade3a4da53e43de6b0f4dcbdfd61035921c29bcb9a4c5b4f99d0f474b`,
+audit SHA256
+`73d13ad5ed105403185559f4527debea4033a132540d7a45f178debec6910b04`.
+
+The matched cooled current-Skippy Qwen3.5 cell `job_2sqtdmj7xp8akkx`
+also passed all 512 native, cache and thermal checks with the same seven
+pauses. It scored 279/512. Against the cooled vanilla separate-slot
+comparator, `assignment-096` and `assignment-097` are adverse among 281
+baseline-correct tasks. The registered exact one-sided 95% interval is
+0.1266%–2.2234%, crossing the strict 2% margin: **UNPROVEN**. Its archive
+SHA256 is
+`da96af0ad3a5357e30e03ea67ef410fcf3afe555a6454f345225c9b9e42a5a92`
+and audit SHA256 is
+`8ce26d9d69e6e9f92260af7211eb7656f35395197fcaa2fb314bdbbee77c3600`.
+Raw and parsed outputs agree on all 512 tasks with the earlier thermal-invalid
+Skippy diagnostic, establishing repeatability but not changing that attempt's
+invalid status. The matched vanilla unified cell is already running. No
+current-source fixed-output performance cell is promoted while this quality
+gate remains unproven; a measured cause for the two answer differences is
+still needed before any targeted runtime edit.
+
+The [version 3 protocol](SCHEDULER_TASK_QUALITY_V3_PROTOCOL.md) now registers
+one independent 512-task confirmatory extension before any extension model
+response. Its manifest SHA256 is
+`b7b92d1aac38b7391b88b2b42acaa538be7e6917630db9ec4da52478ab61b23d`.
+It preserves the first-half **UNPROVEN** verdict and uses a stricter one-sided
+97.5% bound for a single pooled 1024-task final look, with no further
+extension. The original scorer manifest and baseline score hashes remain
+unchanged under the amended generator. No extension prompt, score, A/A, or
+timing result exists yet.
