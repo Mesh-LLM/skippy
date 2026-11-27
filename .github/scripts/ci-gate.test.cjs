@@ -501,7 +501,7 @@ test('main can reuse only a receipt for the exact release dispatch and candidate
 
 test('every candidate checkout opts in to fork code only for the approved-fork controller (real #222 context)', () => {
   const refs = workflow.match(/^ +ref: \$\{\{ env\.SKIPPY_CI_SOURCE_REF \}\}\n.*$/gm);
-  assert.equal(refs.length, 20);
+  assert.equal(refs.length, 21);
   for (const ref of refs) assert.match(ref, /\n +allow-unsafe-pr-checkout: \$\{\{ inputs\.approved_fork_pr != '' \}\}$/);
   assert.equal(workflow.match(/allow-unsafe-pr-checkout:/g).length, refs.length);
 });
