@@ -1,0 +1,38 @@
+name: Vulkan SDK rehearsal
+on:
+  push:
+    branches: [rehearsal/vulkan-sdk]
+permissions:
+  contents: read
+jobs:
+  sdk:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - name: Prefer Git Bash on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $gitRoot = Split-Path (Split-Path (Get-Command git.exe).Source)
+          Join-Path $gitRoot 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          'SKIPPY_PYTHON=python' | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - run: just ci-vulkan-sdk 1.4.328.1
+      - run: just ci-vulkan-sdk-rehearsal-verify
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: vulkan-sdk-${{ matrix.os }}
+          path: sdk-rehearsal.json
+          if-no-files-found: error

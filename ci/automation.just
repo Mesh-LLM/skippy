@@ -50,3 +50,6 @@ ci-automation-setup directory:
 # Explicit model-backed controller rehearsal; excluded from offline defaults.
 upgrade-goose-rehearsal:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_goose_rehearsal.py
+
+ci-vulkan-sdk-rehearsal-verify:
+    @"{{ automation_python }}" scripts/ci-vulkan-sdk-rehearsal-verify.py
