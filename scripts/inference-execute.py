@@ -125,6 +125,10 @@ def execute(profile, key, mode):
     worker = os.environ.get("JIANYANG_ROLE") == "worker"
     if worker and mode != "split":
         raise ValueError("worker role requires split qualification")
+    # Diagnostic branch only: keep the leader unchanged and disable the
+    # transport worker's otherwise implicit two-token rollback reservation.
+    if worker:
+        os.environ["SKIPPY_RS_SEQ"] = "0"
     output = Path(os.environ["JIANYANG_ARTIFACT_DIR"])
     output.mkdir(parents=True, exist_ok=True)
     record(output, sha)
@@ -179,6 +183,16 @@ def execute(profile, key, mode):
                 acknowledge_worker()
         finally:
             stop(server)
+            text = log.read_text(encoding="utf-8", errors="replace")
+            write_json(output / "diagnostic-server.json", {
+                "source_sha": sha, "worker": worker,
+                "rollback_override": os.environ.get("SKIPPY_RS_SEQ"),
+                "rollback_lines": [line for line in text.splitlines()
+                                   if "n_rs_seq" in line or "rs_replay" in line],
+                "nsys": shutil.which("nsys"),
+                "server_log_tail": text[-8 * 1024 * 1024:],
+                "truncated": len(text) > 8 * 1024 * 1024,
+            })
 
 
 if __name__ == "__main__":
