@@ -102,7 +102,8 @@ def admit(evidence):
     with_reference = os.environ.get("REFERENCE", "true") == "true"
     trace = os.environ.get("TRACE", "false") == "true"
     backend = os.environ.get("BACKEND") or "metal"
-    arm_list = arms(candidate, baseline, reference_pin(candidate) if with_reference else None)
+    arm_list = (arms(candidate, baseline, reference_pin(candidate), reference_pin(baseline)) if with_reference
+                else arms(candidate, baseline, None))
     keys = models([key.strip() for key in os.environ["MODELS"].split(",") if key.strip()])
     pins = nodes([node.strip() for node in os.environ.get("NODES", "").split(",") if node.strip()])
     rounds = int(os.environ.get("ROUNDS") or 3)
@@ -234,7 +235,8 @@ def native_plan():
     if capture(["git", "rev-parse", "HEAD"]).strip() != plan["harness"]:
         raise ValueError("harness checkout differs from the admitted harness commit")
     labels = {arm["label"]: arm["sha"] for arm in plan["arms"]}
-    expected = arms(labels["candidate"], labels["baseline"], labels.get("reference"))
+    expected = arms(labels["candidate"], labels["baseline"], labels.get("reference"),
+                    labels.get("baseline-reference"))
     if plan.get("backend") not in BACKENDS:
         raise ValueError(f'performance plan backend {plan.get("backend")!r} has no entry in the table')
     if (plan["arms"] != expected or plan["models"] != models(plan["models"])

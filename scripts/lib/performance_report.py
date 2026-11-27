@@ -11,6 +11,8 @@ from .inference_nightly_metrics import metric_value
 
 # Higher is better for rates; lower is better for latencies.
 HEADLINE = {"output_tok_s": "higher", "ttft_ms_p50": "lower", "itl_ms_p50": "lower"}
+ARM_TITLES = {"baseline": "Baseline", "candidate": "Candidate", "reference": "Reference",
+              "baseline-reference": "Baseline reference"}
 
 
 def summarize(samples):
@@ -34,7 +36,9 @@ def summarize(samples):
                       "n": len(values)} for arm, values in sorted(by_arm.items())}
         rows.append({"model": model, "server": server, "point": point, "metric": metric, "arms": arms,
                      "rejected": rejected.get((model, server, point), {}),
-                     "candidate_vs_baseline": change(arms.get("candidate"), arms.get("baseline"))})
+                     "candidate_vs_baseline": change(arms.get("candidate"), arms.get("baseline")),
+                     "reference_vs_baseline_reference": change(arms.get("reference"),
+                                                               arms.get("baseline-reference"))})
     return rows
 
 
@@ -54,14 +58,21 @@ def cell(stats, rejected):
     return f"{measured}; rejected n={rejected}" if rejected else measured
 
 
-def verdict(row):
-    delta = row["candidate_vs_baseline"]
-    if delta is None:
-        return "New series"
-    arms = row["arms"]
-    result = classify(row["metric"], arms["candidate"]["median"], arms["baseline"]["median"])
+def described(row, delta, measured, previous):
+    result = classify(row["metric"], row["arms"][measured]["median"], row["arms"][previous]["median"])
     overlap = "; round ranges overlap" if delta["ranges_overlap"] else "; round ranges do not overlap"
     return f'{delta["percent"]:+.2f}% · {HEALTH_LABELS[result]}{overlap}'
+
+
+def verdict(row):
+    delta = row["candidate_vs_baseline"]
+    return "New series" if delta is None else described(row, delta, "candidate", "baseline")
+
+
+def llama_change(row):
+    """llama.cpp at the candidate's pin against the baseline's: moving with Skippy means llama.cpp moved."""
+    delta = row["reference_vs_baseline_reference"]
+    return "—" if delta is None else described(row, delta, "reference", "baseline-reference")
 
 
 def report_view(host, rows, record):
@@ -81,8 +92,8 @@ def report_view(host, rows, record):
         arms = row["arms"]
         metric = {"metric": row["metric"], "workload": configuration["workload"],
                   "measured": arms["candidate"]["median"],
-                  "comparison_arms": [(label.title(), arms[label]["median"])
-                                      for label in ("baseline", "candidate", "reference") if label in arms]}
+                  "comparison_arms": [(title, arms[label]["median"])
+                                      for label, title in ARM_TITLES.items() if label in arms]}
         if "baseline" in arms:
             metric["reference"] = {"value": arms["baseline"]["median"]}
         configuration["metrics"].append(metric)
@@ -100,14 +111,21 @@ def markdown(title, host, rows, record):
              "Its measurements are shown separately from the candidate/baseline verdict. "
              "Rejected is the number of rounds in which its server failed requests at a point "
              "that needs more KV than its pool holds.", ""]
+    pinned = any("baseline-reference" in row["arms"] for row in rows)
+    if pinned:
+        lines += ["The candidate moves the llama.cpp pin, so Baseline reference is llama.cpp at the "
+                  "baseline's pin, and llama.cpp change compares the two references: a change in both "
+                  "columns is llama.cpp's, a change in Change alone is Skippy's.", ""]
+    shown = [label for label in ARM_TITLES if pinned or label != "baseline-reference"]
     detail = []
     for row in rows:
         if row["metric"] in HEADLINE:
             arms = row["arms"]
             detail.append([plain(row[field]) for field in ("model", "server", "point", "metric")] +
-                          [cell(arms.get(arm), row["rejected"].get(arm, 0))
-                           for arm in ("baseline", "candidate", "reference")] + [verdict(row)])
-    lines.extend(table(["Model", "Server", "Point", "Metric", "Baseline", "Candidate", "Reference", "Change"], detail))
+                          [cell(arms.get(arm), row["rejected"].get(arm, 0)) for arm in shown] + [verdict(row)] +
+                          ([llama_change(row)] if pinned else []))
+    lines.extend(table(["Model", "Server", "Point", "Metric", *(ARM_TITLES[arm] for arm in shown), "Change",
+                        *(["llama.cpp change"] if pinned else [])], detail))
     return "\n".join(lines) + "\n"
 
 

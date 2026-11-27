@@ -108,16 +108,25 @@ def pull_request_head(pull, repository):
     return pull["head"]["sha"]
 
 
-def arms(candidate, baseline, reference):
-    """Candidate and baseline are Skippy commits; reference is llama.cpp's own server at its pin."""
+def arms(candidate, baseline, reference, baseline_reference=None):
+    """Candidate and baseline are Skippy commits; reference is llama.cpp's own server at the candidate's
+    pin. A baseline on another pin adds llama.cpp at that pin as baseline-reference, so a change that
+    moves the pin shows whether llama.cpp moved as well as whether Skippy did."""
     if not SHA.fullmatch(candidate) or not SHA.fullmatch(baseline):
         raise ValueError("arms must be immutable 40-digit commit SHAs")
     result = [{"label": "candidate", "kind": "skippy", "sha": candidate, "path": "candidate"},
               {"label": "baseline", "kind": "skippy", "sha": baseline, "path": "baseline"}]
-    if reference is not None:
-        if not SHA.fullmatch(reference):
-            raise ValueError("the reference pin must be a 40-digit llama.cpp commit")
-        result.append({"label": "reference", "kind": "llama-server", "sha": reference, "path": "reference"})
+    pins = [("reference", reference)]
+    if baseline_reference not in (None, reference):
+        if reference is None:
+            raise ValueError("a baseline reference needs the reference arm")
+        pins.append(("baseline-reference", baseline_reference))
+    for label, pin in pins:
+        if pin is None:
+            continue
+        if not SHA.fullmatch(pin):
+            raise ValueError(f"the {label} pin must be a 40-digit llama.cpp commit")
+        result.append({"label": label, "kind": "llama-server", "sha": pin, "path": label})
     return result
 
 

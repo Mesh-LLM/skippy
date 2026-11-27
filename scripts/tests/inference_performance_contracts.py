@@ -66,6 +66,13 @@ class PlanTests(unittest.TestCase):
     def test_arms_are_immutable_commits_and_reference_is_optional(self):
         labels = [arm["label"] for arm in performance_plan.arms(self.candidate, self.baseline, self.pin)]
         self.assertEqual(labels, ["candidate", "baseline", "reference"])
+        same = performance_plan.arms(self.candidate, self.baseline, self.pin, self.pin)
+        self.assertEqual([arm["label"] for arm in same], labels)
+        moved = performance_plan.arms(self.candidate, self.baseline, self.pin, "d" * 40)
+        self.assertEqual([(arm["label"], arm["sha"]) for arm in moved[2:]],
+                         [("reference", self.pin), ("baseline-reference", "d" * 40)])
+        with self.assertRaises(ValueError):
+            performance_plan.arms(self.candidate, self.baseline, None, "d" * 40)
         self.assertEqual(len(performance_plan.arms(self.candidate, self.candidate, None)), 2)
         for bad in ("main", "a" * 39):
             with self.assertRaises(ValueError):
@@ -505,6 +512,22 @@ class ReportTests(unittest.TestCase):
         self.assertIn("+20.00% · Improved", markdown("t", "h", rows, self.record))
         close = summarize([sample("baseline", v) for v in (100, 110)] + [sample("candidate", v) for v in (105, 108)])
         self.assertIn("round ranges overlap", markdown("t", "h", close, self.record))
+        self.assertNotIn("llama.cpp change", markdown("t", "h", rows, self.record))
+
+    def test_a_moved_pin_says_whether_llama_cpp_moved_too(self):
+        def sample(arm, value):
+            return {"model": "m", "server": "s", "point": "p", "arm": arm, "metrics": {"output_tok_s": value},
+                    "rejected": None}
+
+        rows = summarize([sample(arm, v) for arm, values in (("baseline", (100, 101, 99)),
+                                                            ("candidate", (90, 91, 89)),
+                                                            ("baseline-reference", (200, 201, 199)),
+                                                            ("reference", (180, 181, 179)))
+                          for v in values])
+        self.assertAlmostEqual(rows[0]["reference_vs_baseline_reference"]["percent"], -10.0)
+        report = markdown("t", "h", rows, self.record)
+        self.assertIn("| Baseline reference | Change | llama.cpp change |", report)
+        self.assertIn("-10.00% · Regressed", performance_report.llama_change(rows[0]))
 
     def test_one_percent_rule_keeps_range_uncertainty_and_actual_p50_labels(self):
         def row(metric, candidate):
