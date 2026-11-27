@@ -1,4 +1,4 @@
-From c3343f904ce8a80b6a08bfc06f86a48a4d03fa59 Mon Sep 17 00:00:00 2001
+From 2512556717e31772d07cc88e57d619738376dfd1 Mon Sep 17 00:00:00 2001
 From: Skippy contributors <ci@skippy.local>
 Date: Fri, 27 Nov 2026 08:42:56 +1100
 Subject: [PATCH] ggml-cuda: report each graph compute's GPU time as command
@@ -18,22 +18,22 @@ the GPU waited for the host to queue kernels.
 
 With no callback installed nothing is recorded.
 ---
- ggml/src/ggml-cuda/command-timing.cu  | 118 ++++++++++++++++++++++++++
+ ggml/src/ggml-cuda/command-timing.cu  | 122 ++++++++++++++++++++++++++
  ggml/src/ggml-cuda/command-timing.cuh |  15 ++++
  ggml/src/ggml-cuda/common.cuh         |  18 ++++
  ggml/src/ggml-cuda/ggml-cuda.cu       |  22 +++++
  ggml/src/ggml-cuda/vendors/hip.h      |   2 +
  ggml/src/ggml-cuda/vendors/musa.h     |   2 +
- 6 files changed, 177 insertions(+)
+ 6 files changed, 181 insertions(+)
  create mode 100644 ggml/src/ggml-cuda/command-timing.cu
  create mode 100644 ggml/src/ggml-cuda/command-timing.cuh
 
 diff --git a/ggml/src/ggml-cuda/command-timing.cu b/ggml/src/ggml-cuda/command-timing.cu
 new file mode 100644
-index 000000000..06f35dd5b
+index 000000000..6cfaf91d5
 --- /dev/null
 +++ b/ggml/src/ggml-cuda/command-timing.cu
-@@ -0,0 +1,118 @@
+@@ -0,0 +1,122 @@
 +#include "command-timing.cuh"
 +
 +#include <atomic>
@@ -115,6 +115,10 @@ index 000000000..06f35dd5b
 +    }
 +    const auto callback = g_timing_callback.load(std::memory_order_acquire);
 +    void * user_data = g_timing_user_data.load(std::memory_order_relaxed);
++
++    // a scheduler synchronizes each backend in turn without selecting its device, and an event
++    // created on another device cannot be recorded on this context's stream
++    ggml_cuda_set_device(ctx.device);
 +
 +    // the stream is idle, so this event completes at once: it ties event times to the host clock
 +    cudaEvent_t now = ggml_cuda_timing_take_event(ctx);
