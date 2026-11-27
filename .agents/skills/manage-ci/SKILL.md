@@ -220,6 +220,11 @@ contract; no downstream product's workflow topology applies here.
   histories. Recipe changes start new series; audited historical equivalence
   is explicit and configuration/workload-bound. Never fill missing data or
   describe an unmeasured workload as a performance regression.
+- Native inference logs must stream into the Actions qualification step for every
+  standalone/split attempt and be retained with its evidence, including failures.
+  Treat candidate log text as data, never Actions commands. Report capture gaps
+  without replacing the qualification verdict. User-facing reports link to
+  Actions logs and saved artifacts, not an external lab console.
 - The protected inference results-comment job alone receives pull-requests write
   permission for PR comments, plus read-only contents/actions. It receives no
   native dispatch credential and never executes candidate code.
