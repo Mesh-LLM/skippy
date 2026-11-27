@@ -48,6 +48,7 @@ fn canonical_batch_order_keeps_inputs_and_native_outputs_with_their_reply_owners
         lock_wait_ms: 4.0,
         lock_hold_ms: 5.0,
         kv_used_cells: None,
+        max_context_tokens: 0,
     };
     send_outputs(
         batch.into_iter().map(|r| (r, None)).collect(),
