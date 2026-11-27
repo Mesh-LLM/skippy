@@ -3,6 +3,7 @@
 import json
 import math
 import re
+import shlex
 from pathlib import Path
 
 from .ci_artifacts import digest, read_json
@@ -26,6 +27,11 @@ FLAG_VALUE = re.compile(r"[A-Za-z0-9._,:-]{1,64}")
 # server_args sets these on every Skippy arm, so a variant's own flags cannot change them
 HARNESS_FLAGS = {"startup-timeout-secs", "ctx-size", "n-gpu-layers", "bind-addr", "model-path", "model-id",
                  "generation-concurrency", "speculative-strategy", "kv-pool-tokens", "debug", "telemetry-level"}
+# What a step is expected to take, in minutes, so the job's progress follows time rather than step count.
+BUILD_MINUTES = {"skippy": 15, "llama-server": 5}
+NOTE = re.compile(r"[A-Za-z0-9 ._:+-]{1,59}")
+PROGRESS = ("progress() { printf '%s%% %s\\n' \"$1\" \"$2\" > \"$JIANYANG_PROGRESS_PATH\"; "
+            "echo \"PROGRESS ${JIANYANG_NODE:-?} $(date +%T) $1% $2\"; }")
 
 
 def count(value, name, minimum=1):
@@ -136,6 +142,53 @@ def round_order(arm_list, index):
     return arm_list[shift:] + arm_list[:shift]
 
 
+def measure_minutes(server):
+    """A server's start and its points' requests, about two seconds each at the scenario's loads."""
+    return 0.5 + sum(point["requests"] for point in server["points"]) * 2 / 60
+
+
+def job_steps(arm_list, keys, rounds, servers, trace):
+    """The job's commands in the order they run: each a `just` recipe and its arguments, what it
+    finishes, and the minutes it is expected to take."""
+    steps = [(["inference-performance-toolcheck"], "tools checked", 0.2)]
+    steps += [(["inference-performance-build-arm", arm["label"]], f'{arm["label"]} built',
+               BUILD_MINUTES[arm["kind"]]) for arm in arm_list]
+    steps.append((["inference-performance-step", "start"], "measurement ready", 0.3))
+    for key in keys:
+        steps.append((["inference-performance-step", "model", key], f"{key} admitted", 1))
+        for index in range(rounds):
+            for arm in round_order(arm_list, index):
+                steps += [(["inference-performance-step", "measure", key, str(index + 1), arm["label"],
+                            server["id"]], f'r{index + 1} {arm["label"]} {server["id"]}',
+                           measure_minutes(server)) for server in servers]
+        if trace:
+            steps += [(["inference-performance-step", "trace", key, server["id"]], f'trace {server["id"]}',
+                       measure_minutes(server) * 1.5) for server in servers]
+    steps.append((["inference-performance-step", "finish"], "evidence archived", 0.5))
+    return steps
+
+
+def job_command(steps):
+    """A shell script that runs `steps` from the harness checkout and reports progress after each:
+    the percent of the expected time spent, never falling, and 100 only once all have run. A
+    failure names the command that stopped it and still archives what was measured."""
+    total = sum(minutes for _, _, minutes in steps)
+    lines = ["set -euo pipefail", PROGRESS,
+             "trap 'echo \"inference performance stopped at: $BASH_COMMAND\" >&2' ERR",
+             "trap 'status=$?; if [ \"$status\" -ne 0 ]; then just inference-performance-step finish "
+             ">/dev/null 2>&1 || true; fi' EXIT",
+             'progress 0 "starting"', "cd harness"]
+    spent = 0
+    for args, note, minutes in steps:
+        note = note[:59]
+        if not NOTE.fullmatch(note):
+            raise ValueError(f"progress note {note!r} needs letters, digits and . _ : + - only")
+        spent += minutes
+        lines += [shlex.join(["just", *args]), f'progress {min(99, math.floor(spent / total * 100))} "{note}"']
+    lines.append('progress 100 "done"')
+    return "\n".join(lines) + "\n"
+
+
 def models(keys):
     known = {model["id"] for model in ladder_models()}
     if not keys or len(set(keys)) != len(keys) or not set(keys) <= known:
@@ -192,11 +245,12 @@ def job_spec(harness, arm_list, keys, rounds, node, label, *, trace=False, backe
         "runtime": {
             "model_package": {"ref": "skippy://inference-performance/" + "+".join(keys),
                               "sha256": fixture(keys[0])["files"][0]["sha256"], "egress": "lab_only"},
-            "workspace": {"repos": repos, "build": "cd harness && just inference-performance-build",
-                          "retain": "on_failure"},
+            # The arms build in the command rather than the workspace build, so
+            # the job's progress covers its longest steps.
+            "workspace": {"repos": repos, "retain": "on_failure"},
             "env": {"SKIPPY_PERFORMANCE_PLAN": json.dumps(plan, separators=(",", ":")),
                     **entry["env"]},
-            "command": "cd harness && just inference-performance-execute",
+            "command": job_command(job_steps(arm_list, keys, rounds, shape["servers"], trace)),
         },
         "harness": {
             "name": "custom", "version": "aiperf-0.13.0",

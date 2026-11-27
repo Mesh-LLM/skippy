@@ -53,6 +53,42 @@
       "points": [
         {"id": "c4-depth4096-pool32k-prefill2048", "concurrency": 4, "depth": 4096, "input_tokens": 512, "output_tokens": 128, "requests": 16}
       ]
+    },
+    {
+      "id": "lanes4-pool32k-prompt-order",
+      "lanes": 4,
+      "pool_tokens": 32768,
+      "skippy_flags": {"batch-policy": "prompt_order"},
+      "points": [
+        {"id": "c4-depth4096-pool32k-prompt-order", "concurrency": 4, "depth": 4096, "input_tokens": 512, "output_tokens": 128, "requests": 16}
+      ]
+    },
+    {
+      "id": "lanes4-pool32k-prompt-order2",
+      "lanes": 4,
+      "pool_tokens": 32768,
+      "skippy_flags": {"batch-policy": "prompt_order", "batch-prefill-prompts": 2},
+      "points": [
+        {"id": "c4-depth4096-pool32k-prompt-order2", "concurrency": 4, "depth": 4096, "input_tokens": 512, "output_tokens": 128, "requests": 16}
+      ]
+    },
+    {
+      "id": "lanes4-pool32k-prompt-order-active",
+      "lanes": 4,
+      "pool_tokens": 32768,
+      "skippy_flags": {"batch-policy": "prompt_order", "batch-prefill-wait": "active"},
+      "points": [
+        {"id": "c4-depth4096-pool32k-prompt-order-active", "concurrency": 4, "depth": 4096, "input_tokens": 512, "output_tokens": 128, "requests": 16}
+      ]
+    },
+    {
+      "id": "lanes4-pool32k-prompt-order-separate",
+      "lanes": 4,
+      "pool_tokens": 32768,
+      "skippy_flags": {"batch-policy": "prompt_order", "batch-mixing": "separate"},
+      "points": [
+        {"id": "c4-depth4096-pool32k-prompt-order-separate", "concurrency": 4, "depth": 4096, "input_tokens": 512, "output_tokens": 128, "requests": 16}
+      ]
     }
   ]
 }

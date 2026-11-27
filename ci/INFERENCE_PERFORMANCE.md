@@ -111,6 +111,15 @@ one host, never across hosts. The job refuses to run as root.
    `ci/inference-performance.json`, then drives each of its points with the
    pinned AIPerf.
 
+Each of these is a step of its own in the job's command (`just
+inference-performance-build-arm` per arm, then `just inference-performance-step`
+for the start, each model, each arm's server in each round, each trace pass and
+the final archive), and after each the command writes the percent of the job's
+expected time spent to `$JIANYANG_PROGRESS_PATH`, with what just finished. The
+expected times are rough: fifteen minutes for a Skippy build, five for
+`llama-server`, and half a minute per server start plus two seconds per request.
+A failed step names itself on stderr and the archive still runs.
+
 The scenario covers one request at a time, four lanes with short and long
 output, sixteen lanes with and without a 4,096-token shared prefix in a 32K
 pool, and four lanes at that depth with 16K and 32K pools: the cells where KV

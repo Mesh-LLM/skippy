@@ -239,12 +239,17 @@ inference-performance-dispatch evidence="target/ci-evidence/inference-performanc
 inference-performance-cancel ledger="target/ci-evidence/inference-performance/jobs.json":
     @"{{ automation_python }}" scripts/inference-performance.py cancel "$@"
 
-inference-performance-build:
+# The steps of a performance job, in the order its command runs them.
+inference-performance-toolcheck:
     @command -v hf uv cmake ninja cargo && {{ automation_python }} scripts/inference-performance.py toolcheck
-    @"{{ automation_python }}" scripts/inference-performance.py build
 
-inference-performance-execute:
-    @"{{ automation_python }}" scripts/inference-performance.py execute
+[positional-arguments]
+inference-performance-build-arm arm:
+    @"{{ automation_python }}" scripts/inference-performance.py build "$@"
+
+[positional-arguments]
+inference-performance-step +args:
+    @"{{ automation_python }}" scripts/inference-performance.py step "$@"
 
 # Linux diagnostic: retain all MiMo2 graph assertions and report peak memory.
 native-contract-build: llama-prepare

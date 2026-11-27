@@ -146,6 +146,27 @@ class PlanTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], performance_plan.MAX_ROUNDS + 1, None, "x")
 
+    def test_the_job_reports_progress_after_every_step_and_ends_at_100(self):
+        arm_list = performance_plan.arms(self.candidate, self.baseline, self.pin)
+        spec = performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 3, None, "any", trace=True)
+        self.assertNotIn("build", spec["runtime"]["workspace"])
+        lines = spec["runtime"]["command"].splitlines()
+        self.assertEqual(lines[0], "set -euo pipefail")
+        self.assertEqual((lines[4], lines[-1]), ('progress 0 "starting"', 'progress 100 "done"'))
+        steps = [line for line in lines if line.startswith("just ")]
+        reports = [line for line in lines if line.startswith("progress ")][1:-1]
+        self.assertEqual(len(steps), len(reports))
+        percents = [int(report.split()[1]) for report in reports]
+        self.assertEqual(percents, sorted(percents))
+        self.assertLess(percents[-1], 100)
+        self.assertEqual(steps[1:4], [f"just inference-performance-build-arm {arm}"
+                                      for arm in ("candidate", "baseline", "reference")])
+        measured = [step.split()[5] for step in steps if " measure " in step]
+        per_round = len(measured) // 3
+        # every arm leads one round
+        self.assertEqual([measured[index * per_round] for index in range(3)],
+                         ["candidate", "baseline", "reference"])
+
     def test_a_cuda_plan_targets_a_dgx_spark(self):
         arm_list = performance_plan.arms(self.candidate, self.baseline, self.pin)
         spec = performance_plan.job_spec("d" * 40, arm_list, ["qwen35-4b"], 3, "spark-000137", "sp",

@@ -28,13 +28,18 @@ from lib.performance_arms import build, capabilities, may_reject, server_args, s
 from lib.performance_backends import BACKENDS
 from lib.performance_load import run_point, tokenizer
 from lib.performance_plan import (SCENARIO, arms, branch_name, job_spec, models, nodes, pull_request_head,
-                                  pull_request_number, round_order, scenario)
+                                  pull_request_number, scenario)
 from lib.performance_report import markdown, rows, summarize
 
 REPO = "Mesh-LLM/skippy"
 LLAMA_REPO = "ggml-org/llama.cpp"
 WORK = Path("target/inference-performance")
-BUILT = WORK / "built.json"
+# One file per arm, as each arm builds in a job step of its own.
+BUILT = WORK / "built"
+# What the steps after `start` and `model` read back: each arm's options, each admitted model.
+HELPS = WORK / "helps.json"
+MODELS = WORK / "models"
+RECORD = "performance.json"
 # Outside the artifact directory: artifact names are flat, so the traces travel as one archive.
 TRACES = WORK / "traces"
 TERMINAL = {"succeeded", "failed", "cancelled", "expired"}
@@ -254,20 +259,19 @@ def toolcheck():
         command(check, timeout=120, capture_stdout=True)
 
 
-def build_arms():
+def build_arm(label):
     plan = native_plan()
-    WORK.mkdir(parents=True, exist_ok=True)
+    arm = next((arm for arm in plan["arms"] if arm["label"] == label), None)
+    if arm is None:
+        raise ValueError(f"{label} is not an arm of the admitted plan")
+    BUILT.mkdir(parents=True, exist_ok=True)
+    log = WORK / f"build-{label}.log"
     try:
-        write_json(BUILT, [build(arm, WORK / f'build-{arm["label"]}.log', plan["backend"])
-                           for arm in plan["arms"]])
+        write_json(BUILT / f"{label}.json", build(arm, log, plan["backend"]))
     finally:
-        # execute() is the only other place build logs reach the artifact
-        # directory, and it never runs after a build failure.
-        output = os.environ.get("JIANYANG_ARTIFACT_DIR")
-        if output:
-            Path(output).mkdir(parents=True, exist_ok=True)
-            for log in WORK.glob("build-*.log"):
-                (Path(output) / log.name).write_bytes(log.read_bytes())
+        # Copied at once, failed or not: a failed build ends the job.
+        if log.is_file():
+            (artifacts() / log.name).write_bytes(log.read_bytes())
 
 
 def ready(server, seconds):
@@ -326,26 +330,30 @@ def measure(built, help_text, model, inputs, key, index, server, shape, output, 
     return samples
 
 
-def execute():
+def artifacts():
+    output = Path(os.environ["JIANYANG_ARTIFACT_DIR"])
+    output.mkdir(parents=True, exist_ok=True)
+    return output
+
+
+def start_measurement():
+    """Check every arm before any round, so a variant whose flag an arm lacks fails before
+    anything is measured, and write the record the later steps add to."""
     if os.geteuid() == 0:
         raise ValueError("native inference must not execute as root")
     plan = native_plan()
     entry = BACKENDS[plan["backend"]]
-    built = read_json(BUILT)
+    built = [read_json(BUILT / f'{arm["label"]}.json') for arm in plan["arms"]]
     if [(arm["label"], arm["sha"]) for arm in built] != [(arm["label"], arm["sha"]) for arm in plan["arms"]]:
         raise ValueError("built arms differ from the admitted plan")
     for arm in built:
         if digest(Path(arm["binary"])) != arm["binary_sha256"]:
             raise ValueError(f'{arm["label"]} binary changed after it was built')
-    output = Path(os.environ["JIANYANG_ARTIFACT_DIR"])
-    output.mkdir(parents=True, exist_ok=True)
-    for log in WORK.glob("build-*.log"):
-        (output / log.name).write_bytes(log.read_bytes())
-    shape, helps = scenario(plan.get("servers")), {entry["label"]: capabilities(entry) for entry in built}
-    # before any round, so a variant whose flag an arm lacks fails before it measures anything
+    shape, helps = scenario(plan.get("servers")), {arm["label"]: capabilities(arm) for arm in built}
     for arm in built:
         for server in shape["servers"]:
             server_flags(arm, helps[arm["label"]], server)
+    write_json(HELPS, helps)
     record = {"schema_version": 1, "harness": plan["harness"], "scenario_sha256": digest(SCENARIO),
               "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
               "host": {"node": os.environ.get("JIANYANG_NODE"), "backend": plan["backend"],
@@ -355,39 +363,55 @@ def execute():
         # Tracing slows the arm it runs on, so its samples never join the comparison.
         record["diagnostic"] = {"telemetry": "debug", "arm": "candidate", "samples": []}
         TRACES.mkdir(parents=True, exist_ok=True)
-    try:
-        for key in plan["models"]:
-            inputs = fixture(key)
-            available = entry["free_memory"](record["host"])
-            reserve = entry["reserve_gib"] * 1024**3
-            if available < sum(file["size"] for file in inputs["files"]) + reserve:
-                raise ValueError(f"{key}: insufficient {plan['backend']} free memory for weights and reserve")
-            model = admit_model(key, inputs)
-            inputs = {**inputs, "tokenizer_path": tokenizer(inputs)}
-            record["models"][key] = {"repo": inputs["repo"], "revision": inputs["revision"],
-                                     "files": inputs["files"]}
-            for index in range(plan["rounds"]):
-                for arm in round_order(built, index):
-                    for server in shape["servers"]:
-                        record["samples"] += measure(arm, helps[arm["label"]], model, inputs, key,
-                                                     index, server, shape, output,
-                                                     prefixes=entry["device_prefixes"])
-                        write_json(output / "performance.json", record)
-            if plan["trace"]:
-                candidate = next(arm for arm in built if arm["label"] == "candidate")
-                for server in shape["servers"]:
-                    record["diagnostic"]["samples"] += measure(
-                        candidate, helps["candidate"], model, inputs, key, None, server, shape, output,
-                        trace=TRACES / f'{key}-{server["id"]}', prefixes=entry["device_prefixes"])
-                    write_json(output / "performance.json", record)
-    finally:
-        write_json(output / "performance.json", record)
-        if (WORK / "aiperf").is_dir():
-            with tarfile.open(output / "aiperf.tar.gz", "w:gz") as archive:
-                archive.add(WORK / "aiperf", arcname="aiperf")
-        if TRACES.is_dir():
-            with tarfile.open(output / "traces.tar.gz", "w:gz") as archive:
-                archive.add(TRACES, arcname="traces")
+    write_json(artifacts() / RECORD, record)
+
+
+def prepare_model(key):
+    plan = native_plan()
+    if key not in plan["models"]:
+        raise ValueError(f"{key} is not a model of the admitted plan")
+    entry, record = BACKENDS[plan["backend"]], read_json(artifacts() / RECORD)
+    inputs = fixture(key)
+    available = entry["free_memory"](record["host"])
+    if available < sum(file["size"] for file in inputs["files"]) + entry["reserve_gib"] * 1024**3:
+        raise ValueError(f"{key}: insufficient {plan['backend']} free memory for weights and reserve")
+    model = admit_model(key, inputs)
+    inputs = {**inputs, "tokenizer_path": str(tokenizer(inputs))}
+    record["models"][key] = {"repo": inputs["repo"], "revision": inputs["revision"], "files": inputs["files"]}
+    MODELS.mkdir(parents=True, exist_ok=True)
+    write_json(MODELS / f"{key}.json", {"model": str(model), "inputs": inputs})
+    write_json(artifacts() / RECORD, record)
+
+
+def measure_step(key, label, server_id, round_number=None):
+    """One arm on one server for one round, or the candidate's diagnostic pass without a round."""
+    plan = native_plan()
+    shape = scenario(plan.get("servers"))
+    server = next((server for server in shape["servers"] if server["id"] == server_id), None)
+    diagnostic = round_number is None
+    if (server is None or label not in {arm["label"] for arm in plan["arms"]}
+            or not diagnostic and not 1 <= round_number <= plan["rounds"]
+            or diagnostic and (not plan["trace"] or label != "candidate")):
+        raise ValueError(f"{label} on {server_id} is not a step of the admitted plan")
+    output = artifacts()
+    record, prepared = read_json(output / RECORD), read_json(MODELS / f"{key}.json")
+    samples = measure(read_json(BUILT / f"{label}.json"), read_json(HELPS)[label], Path(prepared["model"]),
+                      prepared["inputs"], key, None if diagnostic else round_number - 1, server, shape,
+                      output, trace=TRACES / f"{key}-{server_id}" if diagnostic else None,
+                      prefixes=BACKENDS[plan["backend"]]["device_prefixes"])
+    (record["diagnostic"] if diagnostic else record)["samples"] += samples
+    write_json(output / RECORD, record)
+
+
+def finish_measurement():
+    """Archive what the steps measured; the job runs it after a failure too."""
+    output = artifacts()
+    if (WORK / "aiperf").is_dir():
+        with tarfile.open(output / "aiperf.tar.gz", "w:gz") as archive:
+            archive.add(WORK / "aiperf", arcname="aiperf")
+    if TRACES.is_dir():
+        with tarfile.open(output / "traces.tar.gz", "w:gz") as archive:
+            archive.add(TRACES, arcname="traces")
 
 
 def main():
@@ -397,8 +421,17 @@ def main():
         actions.add_parser(name).add_argument("evidence", type=Path)
     actions.add_parser("cancel").add_argument("ledger", type=Path)
     actions.add_parser("toolcheck")
-    actions.add_parser("build")
-    actions.add_parser("execute")
+    actions.add_parser("build").add_argument("arm")
+    step = actions.add_parser("step").add_subparsers(dest="step", required=True)
+    step.add_parser("start")
+    step.add_parser("model").add_argument("model")
+    measured = step.add_parser("measure")
+    for name in ("model", "round", "arm", "server"):
+        measured.add_argument(name, type=int if name == "round" else str)
+    traced_pass = step.add_parser("trace")
+    for name in ("model", "server"):
+        traced_pass.add_argument(name)
+    step.add_parser("finish")
     args = parser.parse_args()
     if args.action == "admit":
         admit(args.evidence)
@@ -409,9 +442,17 @@ def main():
     elif args.action == "toolcheck":
         toolcheck()
     elif args.action == "build":
-        build_arms()
+        build_arm(args.arm)
+    elif args.step == "start":
+        start_measurement()
+    elif args.step == "model":
+        prepare_model(args.model)
+    elif args.step == "measure":
+        measure_step(args.model, args.arm, args.server, args.round)
+    elif args.step == "trace":
+        measure_step(args.model, "candidate", args.server)
     else:
-        execute()
+        finish_measurement()
 
 
 if __name__ == "__main__":
