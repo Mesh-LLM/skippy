@@ -10,6 +10,9 @@ pub(crate) struct Args {
     pub(crate) command: Command,
 }
 
+// Parsed once per run. A `PathBuf` is larger on Windows, where the variants'
+// sizes cross the lint's threshold; on Linux they don't.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
     #[command(name = "__fetch-layer-package-worker", hide = true)]

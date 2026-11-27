@@ -490,11 +490,14 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::{
-        PartialDownloadState, PointerSource, acquire_lock, blob_path, create_pointer_symlink,
+        PartialDownloadState, PointerSource, acquire_lock, blob_path,
         create_pointer_without_symlink, is_commit_hash, lock_path, no_exist_path,
-        parse_repo_folder_name, partial_download_state, read_commit_refs, read_ref, ref_path,
-        repo_folder_name, scan_cache_dir, scan_cached_repo_dir, snapshot_path, write_ref,
+        parse_repo_folder_name, partial_download_state, read_ref, ref_path, repo_folder_name,
+        scan_cache_dir, scan_cached_repo_dir, snapshot_path, write_ref,
     };
+    // Only the symlink and nested-ref tests use these, and they skip Windows.
+    #[cfg(not(windows))]
+    use super::{create_pointer_symlink, read_commit_refs};
 
     #[test]
     fn test_repo_folder_name_model_with_org() {
