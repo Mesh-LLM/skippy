@@ -21,15 +21,17 @@ directory. Every release therefore makes hosts download its runtime, and changed
 runtime contents can never ship under an earlier release's identity.
 
 `release.yml` stages the version commit, then calls the same `ci.yml` used by PRs and main in release CUDA
-architecture mode. It requires all three enabled hosts and eight complete
-bundles. Windows targets remain declared but disabled until infrastructure is
-available:
+architecture mode. It requires thirteen complete bundles across four hosts.
 
 | Platform | Bundles |
 | --- | --- |
 | macOS arm64 | CPU, Metal |
-| Linux x86_64 | CPU, CUDA 12, CUDA 13 |
+| Linux x86_64 | CPU, CUDA 12, CUDA 13, ROCm 7.2.4 |
 | Linux arm64 | CPU, CUDA 12, CUDA 13 |
+| Windows x86_64 | CPU, CUDA 12, CUDA 13, ROCm 7.2.0 |
+
+The Windows bundles and Linux ROCm bundle require archive validation. Release
+notes mark them as awaiting inference qualification.
 
 Each `skippy-<tag>-<variant>.tar.gz` contains the backend-neutral CLI, its verified
 native runtime under `native-runtimes/`, licenses and provenance. SHA-256 sidecars
@@ -41,15 +43,35 @@ native-only CUDA products.
 The release also publishes `native-runtimes.json`, the catalog a host reads to
 download a runtime (`skippy runtime install`, and products that embed Skippy).
 Each entry names one of the release archives and its SHA-256, and `release.json`
-binds the catalog. Only the `skippy-*` archives, the catalog, `release.json` and
-their checksums are published. No public registry or package-manager publication
-happens as a side effect.
+binds the catalog. The GitHub release contains the `skippy-*` archives, the
+catalog, `release.json` and their checksums.
 
 The publisher uploads to a source-bound draft, downloads every asset, checks all
 hashes and the exact roster, then publishes. A partial draft may be resumed only
 when existing assets have matching GitHub SHA-256 identities. Reruns upload only
 missing assets; they cannot overwrite a published release or move a tag. A
 conflicting draft is an error requiring investigation. Preserve diagnostics.
+
+Stable releases and stable canaries compile the crates.io packages against the
+verified Linux x64 CPU runtime without publication credentials. Run
+`just release-crates plan` to see the packages declared for crates.io and their
+dependency order. Each package uses the stable release's workspace version.
+The **publish_crates** job runs after the GitHub release and uploads from its
+verified tag. If publication stops partway through, rerun the failed job for the
+same release. It skips indexed packages from the same commit and rejects
+conflicting or yanked versions.
+
+To enable crates.io publishing, configure the existing crate names for
+[Trusted Publishing](https://crates.io/docs/trusted-publishing) with owner
+`Mesh-LLM`, repository `skippy`, workflow `release.yml` and environment
+`release`. For the first publication of any new crate names, set
+`SKIPPY_CRATES_BOOTSTRAP_TOKEN` in the `release` environment to a crates.io token
+with permission to publish new names and update the existing packages in that
+release. Then set the repository variable `SKIPPY_PUBLISH_CRATES` to `true`.
+The bootstrap job observes the [crates.io publishing rate limits](https://crates.io/docs/rate-limits)
+and resumes after the registry's retry time for up to three hours.
+After the first release, configure Trusted Publishing for the new names and
+remove the bootstrap secret to use temporary credentials for subsequent releases.
 
 After the GitHub release is published, the documentation job downloads the
 exact `release-docs-site` artifact built by the shared validation workflow and

@@ -107,6 +107,14 @@ on:
       artifact_scope:
         type: string
         default: ci
+      approved_fork_pr:
+        description: PR number supplied only by the protected approved-fork controller.
+        type: string
+        default: ''
+      approved_fork_routes:
+        description: Protected path decisions for the admitted fork head.
+        type: string
+        default: ''
       source_ref:
         type: string
         default: ''
@@ -136,6 +144,10 @@ env:
   SCCACHE_GHA_ENABLED: 'true'
   SKIPPY_REQUIRE_SCCACHE: '1'
   SKIPPY_CUDA_ARCHITECTURE_MODE: ${{ inputs.cuda_architecture_mode || 'native' }}
+  # actions/checkout refuses fork code in a workflow_run workflow. Every checkout
+  # of this ref opts in with allow-unsafe-pr-checkout, only when the protected
+  # approved-fork controller supplied the PR; that caller has a read-only token
+  # and forwards no secrets.
   SKIPPY_CI_SOURCE_REF: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || inputs.source_ref || github.sha }}
   SKIPPY_ARTIFACT_SCOPE: ${{ inputs.artifact_scope || 'ci' }}
   # Release builds report anonymous usage; every other build is keyless and
@@ -168,17 +180,44 @@ jobs:
       contents: read
       pull-requests: read
       actions: read
+    # A fork's own pull_request run selects nothing: it exists only so GitHub
+    # holds it for maintainer approval. The approved-fork controller then runs
+    # every selected check once, on protected runners with warm caches.
     outputs:
-      automation: ${{ steps.release.outputs.verified != 'true' && (!github.event.pull_request || steps.paths.outputs.automation == 'true') }}
-      code: ${{ steps.release.outputs.verified != 'true' && (!github.event.pull_request || steps.paths.outputs.code == 'true' || (github.event_name == 'pull_request' && steps.paths.outputs.packages == 'true')) }}
-      packages: ${{ steps.release.outputs.verified != 'true' && ((github.event_name == 'pull_request_target' && steps.paths.outputs.packages == 'true') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && (steps.main_base.outputs.force == 'true' || steps.paths.outputs.packages == 'true' || steps.paths.outputs.inference == 'true' || steps.paths.outputs.packaging == 'true' || steps.paths.outputs.native == 'true'))) }}
+      automation: ${{ steps.release.outputs.verified != 'true' && (github.event_name == 'workflow_run' && steps.fork.outputs.automation == 'true' || github.event_name != 'workflow_run' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.id == github.event.repository.id) && (!github.event.pull_request || steps.paths.outputs.automation == 'true')) }}
+      code: ${{ steps.release.outputs.verified != 'true' && (github.event_name == 'workflow_run' && steps.fork.outputs.code == 'true' || github.event_name != 'workflow_run' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.id == github.event.repository.id) && (!github.event.pull_request || steps.paths.outputs.code == 'true' || (github.event_name == 'pull_request' && steps.paths.outputs.packages == 'true'))) }}
+      packages: ${{ steps.release.outputs.verified != 'true' && ((github.event_name == 'workflow_run' && steps.fork.outputs.packages == 'true') || (github.event_name == 'pull_request_target' && steps.paths.outputs.packages == 'true') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && (steps.main_base.outputs.force == 'true' || steps.paths.outputs.packages == 'true' || steps.paths.outputs.inference == 'true' || steps.paths.outputs.packaging == 'true' || steps.paths.outputs.native == 'true'))) }}
       native: ${{ steps.release.outputs.verified != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' && (steps.main_base.outputs.force == 'true' || steps.paths.outputs.native == 'true') }}
-      hosted_requires_native: ${{ github.event_name == 'pull_request' && steps.paths.outputs.packages == 'true' }}
     steps:
+      - name: Verify the approved-fork caller and current source
+        id: fork
+        if: github.event_name == 'workflow_run'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          SOURCE: ${{ inputs.source_ref }}
+          PR: ${{ inputs.approved_fork_pr }}
+          ROUTES: ${{ inputs.approved_fork_routes }}
+        with:
+          script: |
+            if (process.env.WORKFLOW_REF !== 'Mesh-LLM/skippy/.github/workflows/fork-native.yml@refs/heads/main' ||
+                process.env.SOURCE !== context.payload.workflow_run.head_sha ||
+                !/^[a-f0-9]{40}$/.test(process.env.SOURCE) || !/^[1-9][0-9]*$/.test(process.env.PR)) {
+              throw new Error('Fork CI requires the protected approved-fork controller');
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo, pull_number: Number(process.env.PR),
+            });
+            if (pr.state !== 'open' || pr.head.sha !== process.env.SOURCE) throw new Error('Fork PR head changed');
+            const routes = JSON.parse(process.env.ROUTES);
+            for (const name of ['automation', 'code', 'packages']) {
+              if (typeof routes[name] !== 'boolean') throw new Error('Invalid protected path decisions');
+              core.setOutput(name, String(routes[name]));
+            }
       - name: Reject custom candidate inputs on pull requests
         if: >-
           github.event.pull_request != null &&
-          (inputs.source_ref != '' || inputs.candidate_artifact != '' || inputs.candidate_sha != '' ||
+          (inputs.approved_fork_pr != '' || inputs.approved_fork_routes != '' || inputs.source_ref != '' || inputs.candidate_artifact != '' || inputs.candidate_sha != '' ||
             (inputs.artifact_scope != '' && inputs.artifact_scope != 'ci'))
         run: |
           echo '::error::Pull requests must use the source from their event.'
@@ -260,6 +299,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/setup
         with:
@@ -292,6 +332,7 @@ jobs:
       cuda12_digest: ${{ steps.images.outputs.cuda12 }}
       cuda12_arm_digest: ${{ steps.images.outputs.cuda12_arm }}
       cuda13_digest: ${{ steps.images.outputs.cuda13 }}
+      rocm_digest: ${{ steps.images.outputs.rocm }}
       runtimes: ${{ steps.plan.outputs.runtimes }}
       registry-owner: ${{ steps.registry.outputs.owner }}
     steps:
@@ -317,6 +358,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/source
@@ -353,11 +395,16 @@ jobs:
             resolve cuda12 cuda12:latest
             resolve cuda12_arm cuda12:latest-arm64
             resolve cuda13 cuda13:latest
+            resolve rocm rocm:latest
           fi
   quality:
     name: Quality canary
     needs: [changes, plan, automation]
-    if: needs.changes.outputs.code == 'true'
+    if: >-
+      !cancelled() && needs.changes.result == 'success' &&
+      needs.plan.result == 'success' && needs.changes.outputs.code == 'true' &&
+      (needs.automation.result == 'success' ||
+       (needs.changes.outputs.automation == 'false' && needs.automation.result == 'skipped'))
     env:
       CARGO_BUILD_JOBS: '2'
       CMAKE_BUILD_PARALLEL_LEVEL: '2'
@@ -386,6 +433,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/source
         with:
@@ -471,6 +519,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/source
         with:
@@ -521,6 +570,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -549,6 +599,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -570,6 +621,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -599,6 +651,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -621,6 +674,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-smoke
         with:
@@ -648,6 +702,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -658,6 +713,57 @@ jobs:
           compiler-image-digest: ${{ needs.plan.outputs.cuda13_digest }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
+  package_linux_x86_64_rocm:
+    name: Build, package, and smoke · Linux x64 ROCm
+    needs: [plan, quality, package_linux_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on:
+      group: jy-rnr_gsxt2m73mgpcbbh
+      labels: [self-hosted, skippy-ephemeral, Linux, X64, rocm]
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-rocm@${{ needs.plan.outputs.rocm_digest }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --user 0 --device=/dev/kfd --device=/dev/dri --cpus=8 --memory=32g --pids-limit=4096
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+      CMAKE_BUILD_PARALLEL_LEVEL: '8'
+      CARGO_BUILD_JOBS: '8'
+      LD_LIBRARY_PATH: /opt/rocm/lib
+      SKIPPY_CI_ROCM_DEVICE_SMOKE: '1'
+      TAR_OPTIONS: --no-same-owner
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/rocm-workspace
+      - name: Trust the host-owned checkout inside the job container
+        shell: bash
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: linux-x86_64-rocm
+          host-id: linux-x86_64
+          smoke: inference
+          containerized: 'true'
+          compiler-image-digest: ${{ needs.plan.outputs.rocm_digest }}
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+      - name: Upload ROCm preflight evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-rocm-device
+          path: target/ci-evidence/rocm-preflight.log
+          if-no-files-found: warn
+          retention-days: 14
   package_linux_aarch64_cpu:
     name: Build, package, and smoke · Linux ARM64 CPU
     needs: [plan, quality]
@@ -670,6 +776,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -699,6 +806,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -721,6 +829,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-smoke
         with:
@@ -747,6 +856,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-package
         with:
@@ -767,6 +877,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
           persist-credentials: false
       - uses: ./.github/actions/ci-smoke
         with:
@@ -774,14 +885,297 @@ jobs:
           download-package: 'true'
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
+  package_windows_x86_64_cpu:
+    name: Build and verify archive · Windows x64 CPU
+    needs: [plan, quality]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-2022
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-cpu
+          host-id: windows-x86_64
+          build-cli: 'true'
+          setup-host: 'true'
+          smoke: artifact
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_windows_x86_64_cuda12:
+    name: Build and verify archive · Windows x64 CUDA 12
+    needs: [plan, quality, package_windows_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-2022
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-cuda12
+          host-id: windows-x86_64
+          setup-host: 'true'
+          smoke: artifact
+          windows-cuda: '12.9.2'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_windows_x86_64_cuda13:
+    name: Build and verify archive · Windows x64 CUDA 13
+    needs: [plan, quality, package_windows_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-windows-2022-8' || 'windows-2022' }}
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-cuda13
+          host-id: windows-x86_64
+          setup-host: 'true'
+          smoke: artifact
+          windows-cuda: '13.1.2'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_windows_x86_64_rocm:
+    name: Build and verify archive · Windows x64 ROCm
+    needs: [plan, quality, package_windows_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-2022
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-rocm
+          host-id: windows-x86_64
+          setup-host: 'true'
+          smoke: artifact
+          windows-rocm: '7.2.0'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_linux_x86_64_vulkan:
+    name: Build and verify archive · Linux x64 Vulkan
+    needs: [plan, quality, package_linux_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    # The shared CLI must also run in the Ubuntu 24.04 CUDA toolchain images.
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: linux-x86_64-vulkan
+          host-id: linux-x86_64
+          smoke: artifact
+          vulkan-version: '1.4.328.1'
+          setup-host: 'true'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  package_windows_x86_64_vulkan:
+    name: Build and verify archive · Windows x64 Vulkan
+    needs: [plan, quality, package_windows_x86_64_cpu]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-2022
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+      # Exercise shader-generator compiler checks beyond the old MAX_PATH failure.
+      SKIPPY_LLAMA_BUILD_ROOT: ${{ github.workspace }}/.deps/windows/vulkan/long-path-regression/llama-build
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-x86_64-vulkan
+          host-id: windows-x86_64
+          setup-host: 'true'
+          smoke: artifact
+          vulkan-version: '1.4.328.1'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  smoke_linux_x86_64_vulkan_nvidia:
+    name: Vulkan GPU smoke · Linux x64 · nvidia
+    needs: [plan, package_linux_x86_64_vulkan]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on:
+      group: jy-rnr_p0zx3thw895vrka
+      labels: [self-hosted, skippy-ephemeral, Linux, X64, runtime-image, cuda13]
+    permissions:
+      contents: read
+      packages: read
+    # This pool already runs inside its pinned GPU image, without a Docker socket.
+    timeout-minutes: 40
+    env:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
+      SKIPPY_CI_VULKAN_VENDOR: nvidia
+      TAR_OPTIONS: --no-same-owner
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - uses: ./.github/actions/source
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
+      - name: Provision Vulkan loader and device inspection
+        run: bash scripts/ci-vulkan-runtime.sh
+      - uses: ./.github/actions/ci-smoke
+        with:
+          runtime_id: linux-x86_64-vulkan
+          download-package: 'true'
+          evidence-suffix: -nvidia
+      - name: Upload Vulkan setup failure evidence
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-vulkan-setup-nvidia
+          path: target/ci-evidence/vulkan-runtime.log
+          if-no-files-found: warn
+          retention-days: 14
+  smoke_linux_x86_64_vulkan_amd:
+    name: Vulkan GPU smoke · Linux x64 · amd
+    needs: [plan, package_linux_x86_64_vulkan]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on:
+      group: jy-rnr_gsxt2m73mgpcbbh
+      labels: [self-hosted, skippy-ephemeral, Linux, X64, rocm]
+    permissions:
+      contents: read
+      packages: read
+    container:
+      # Use the established Ubuntu 24.04 image so the shared CLI keeps its ABI baseline.
+      image: ghcr.io/${{ needs.plan.outputs.registry-owner }}/skippy-ci-cuda13@${{ needs.plan.outputs.cuda13_digest }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --user 0 --device=/dev/dri --env NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics --cpus=8 --memory=16g --pids-limit=4096
+    timeout-minutes: 40
+    env:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
+      SKIPPY_CI_VULKAN_VENDOR: amd
+      TAR_OPTIONS: --no-same-owner
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/rocm-workspace
+      - name: Trust the host-owned checkout inside the job container
+        shell: bash
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: ./.github/actions/source
+        with:
+          artifact: ${{ inputs.candidate_artifact }}
+          sha: ${{ inputs.candidate_sha }}
+      - name: Provision Vulkan loader and device inspection
+        run: bash scripts/ci-vulkan-runtime.sh
+      - uses: ./.github/actions/ci-smoke
+        with:
+          runtime_id: linux-x86_64-vulkan
+          download-package: 'true'
+          evidence-suffix: -amd
+      - name: Upload Vulkan setup failure evidence
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-vulkan-setup-amd
+          path: target/ci-evidence/vulkan-runtime.log
+          if-no-files-found: warn
+          retention-days: 14
+  smoke_windows_cuda:
+    name: Windows GPU smoke · CUDA 12 and 13
+    needs: [plan, package_windows_x86_64_cuda12, package_windows_x86_64_cuda13]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on:
+      group: jy-rnr_j74hjtfyzpp6943
+      labels: [self-hosted, Linux, X64, windows-vm, cuda]
+    timeout-minutes: 90
+    env:
+      SKIPPY_CI_PROFILE: full
+      WINDOWS_HOST_PROFILE: ${{ vars.SKIPPY_WINDOWS_CUDA_PROFILE }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-windows-smoke
+        with:
+          backend: cuda
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
+  smoke_windows_rocm:
+    name: Windows GPU smoke · ROCm
+    needs: [plan, package_windows_x86_64_rocm]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on:
+      group: jy-rnr_ya8h5cpegg47v3x
+      labels: [self-hosted, Linux, X64, windows-vm, rocm]
+    timeout-minutes: 90
+    env:
+      SKIPPY_CI_PROFILE: full
+      WINDOWS_HOST_PROFILE: ${{ vars.SKIPPY_WINDOWS_ROCM_PROFILE }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-windows-smoke
+        with:
+          backend: rocm
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
   gate:
     name: ${{ needs.plan.outputs.profile == 'full' && 'Full CI gate' || (github.event_name == 'pull_request_target' && 'Same-repository CI' || 'CI') }}
     needs: [
       changes, automation, plan, quality, native_contracts,
       package_darwin_aarch64_cpu, package_darwin_aarch64_metal,
-      package_linux_x86_64_cpu, package_linux_x86_64_cuda12, package_linux_x86_64_cuda13,
+      package_linux_x86_64_cpu, package_linux_x86_64_cuda12, package_linux_x86_64_cuda13, package_linux_x86_64_rocm, package_linux_x86_64_vulkan,
       package_linux_aarch64_cpu, package_linux_aarch64_cuda12, package_linux_aarch64_cuda13,
-      release_smoke_linux_x86_64_cuda12, release_smoke_linux_aarch64_cuda12, release_smoke_linux_x86_64_cuda13
+      package_windows_x86_64_cpu, package_windows_x86_64_cuda12, package_windows_x86_64_cuda13, package_windows_x86_64_rocm, package_windows_x86_64_vulkan,
+      smoke_linux_x86_64_vulkan_nvidia, smoke_linux_x86_64_vulkan_amd,
+      release_smoke_linux_x86_64_cuda12, release_smoke_linux_aarch64_cuda12, release_smoke_linux_x86_64_cuda13,
+      smoke_windows_cuda, smoke_windows_rocm
     ]
     if: always() && needs.changes.result != 'skipped'
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
@@ -799,8 +1193,7 @@ jobs:
                 !['true', 'false'].includes(paths?.automation) ||
                 !['true', 'false'].includes(paths?.code) ||
                 !['true', 'false'].includes(paths?.packages) ||
-                !['true', 'false'].includes(paths?.native) ||
-                !['true', 'false'].includes(paths?.hosted_requires_native)) {
+                !['true', 'false'].includes(paths?.native)) {
               throw new Error('Path selection failed or did not report all decisions');
             }
             const packages = paths.packages === 'true';
@@ -820,7 +1213,8 @@ jobs:
               const rows = JSON.parse(needs.plan.outputs.runtimes).include;
               const matrixJobs = rows.map(row => 'package_' + row.id.replaceAll('-', '_'));
               if (matrixJobs.length === 0 ||
-                  matrixJobs.length !== packageJobs.length || new Set(matrixJobs).size !== matrixJobs.length ||
+                  (full && matrixJobs.length !== packageJobs.length) || new Set(matrixJobs).size !== matrixJobs.length ||
+                  prPackages.some(job => !matrixJobs.includes(job)) ||
                   matrixJobs.some(job => !packageJobs.includes(job))) {
                 throw new Error('Package jobs do not match the active runtime matrix');
               }
@@ -836,9 +1230,9 @@ jobs:
             requireResult('plan', selected);
             requireResult('quality', code);
             requireResult('native_contracts', full || paths.native === 'true');
+            requireResult('smoke_linux_x86_64_vulkan_nvidia', full);
+            requireResult('smoke_linux_x86_64_vulkan_amd', full);
             for (const job of prPackages) if (!packageJobs.includes(job)) throw new Error(`Missing package job ${job}`);
             for (const job of packageJobs) requireResult(job, full || (packages && prPackages.includes(job)));
             for (const job of releaseSmokes) requireResult(job, release);
-            if (paths.hosted_requires_native === 'true') {
-              throw new Error('These changes require native hardware qualification on an isolated runner');
-            }
+            for (const job of ['smoke_windows_cuda', 'smoke_windows_rocm']) requireResult(job, full);

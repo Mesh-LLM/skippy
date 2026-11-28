@@ -52,105 +52,104 @@ pub enum ggml_op {
     Dup = 1,
     Add = 2,
     AddId = 3,
-    ADD1 = 4,
-    Acc = 5,
-    Sub = 6,
-    Mul = 7,
-    Div = 8,
-    Sqr = 9,
-    Sqrt = 10,
-    Log = 11,
-    Sin = 12,
-    Cos = 13,
-    Sum = 14,
-    SumRows = 15,
-    Cumsum = 16,
-    Mean = 17,
-    Argmax = 18,
-    CountEqual = 19,
-    Repeat = 20,
-    RepeatBack = 21,
-    Concat = 22,
-    SiluBack = 23,
-    Norm = 24,
-    RmsNorm = 25,
-    RmsNormBack = 26,
-    GroupNorm = 27,
-    L2Norm = 28,
-    MulMat = 29,
-    MulMatId = 30,
-    OutProd = 31,
-    Scale = 32,
-    Set = 33,
-    Cpy = 34,
-    Cont = 35,
-    Reshape = 36,
-    View = 37,
-    Permute = 38,
-    Transpose = 39,
-    GetRows = 40,
-    GetRowsBack = 41,
-    SetRows = 42,
-    Diag = 43,
-    DiagMaskInf = 44,
-    DiagMaskZero = 45,
-    SoftMax = 46,
-    SoftMaxBack = 47,
-    Rope = 48,
-    RopeBack = 49,
-    Clamp = 50,
-    ConvTranspose1D = 51,
-    IM2COL = 52,
-    IM2COLBack = 53,
-    IM2COL3D = 54,
-    COL2IM1D = 55,
-    Conv2D = 56,
-    Conv3D = 57,
-    Conv2DDw = 58,
-    ConvTranspose2D = 59,
-    Pool1D = 60,
-    Pool2D = 61,
-    Pool2DBack = 62,
-    Upscale = 63,
-    Pad = 64,
-    PadReflect1D = 65,
-    Roll = 66,
-    Arange = 67,
-    TimestepEmbedding = 68,
-    Argsort = 69,
-    TopK = 70,
-    LeakyRelu = 71,
-    Tri = 72,
-    Fill = 73,
-    FlashAttnExt = 74,
-    FlashAttnBack = 75,
-    SsmConv = 76,
-    SsmScan = 77,
-    WinPart = 78,
-    WinUnpart = 79,
-    GetRelPos = 80,
-    AddRelPos = 81,
-    RwkvWKV6 = 82,
-    GatedLinearAttn = 83,
-    RwkvWKV7 = 84,
-    SolveTri = 85,
-    GatedDeltaNet = 86,
-    LightningIndexer = 87,
-    DSV4HcComb = 88,
-    DSV4HcPre = 89,
-    DSV4HcPost = 90,
-    TopKMask = 91,
-    Unary = 92,
-    MapCUSTOM1 = 93,
-    MapCUSTOM2 = 94,
-    MapCUSTOM3 = 95,
-    Custom = 96,
-    CrossEntropyLoss = 97,
-    CrossEntropyLossBack = 98,
-    OptStepAdamw = 99,
-    OptStepSgd = 100,
-    Glu = 101,
-    Count = 102,
+    Acc = 4,
+    Sub = 5,
+    Mul = 6,
+    Div = 7,
+    Sqr = 8,
+    Sqrt = 9,
+    Log = 10,
+    Sin = 11,
+    Cos = 12,
+    Sum = 13,
+    SumRows = 14,
+    Cumsum = 15,
+    Mean = 16,
+    Argmax = 17,
+    CountEqual = 18,
+    Repeat = 19,
+    RepeatBack = 20,
+    Concat = 21,
+    SiluBack = 22,
+    Norm = 23,
+    RmsNorm = 24,
+    RmsNormBack = 25,
+    GroupNorm = 26,
+    L2Norm = 27,
+    MulMat = 28,
+    MulMatId = 29,
+    OutProd = 30,
+    Scale = 31,
+    Set = 32,
+    Cpy = 33,
+    Cont = 34,
+    Reshape = 35,
+    View = 36,
+    Permute = 37,
+    Transpose = 38,
+    GetRows = 39,
+    GetRowsBack = 40,
+    SetRows = 41,
+    Diag = 42,
+    SoftMax = 43,
+    SoftMaxBack = 44,
+    Rope = 45,
+    RopeBack = 46,
+    Clamp = 47,
+    ConvTranspose1D = 48,
+    IM2COL = 49,
+    IM2COLBack = 50,
+    IM2COL3D = 51,
+    COL2IM1D = 52,
+    Conv2D = 53,
+    Conv3D = 54,
+    Conv2DDw = 55,
+    ConvTranspose2D = 56,
+    Pool1D = 57,
+    Pool2D = 58,
+    Pool2DBack = 59,
+    Upscale = 60,
+    Pad = 61,
+    PadReflect1D = 62,
+    Roll = 63,
+    Arange = 64,
+    TimestepEmbedding = 65,
+    Argsort = 66,
+    TopK = 67,
+    LeakyRelu = 68,
+    Tri = 69,
+    Fill = 70,
+    FlashAttnExt = 71,
+    FlashAttnBack = 72,
+    SsmConv = 73,
+    SsmScan = 74,
+    WinPart = 75,
+    WinUnpart = 76,
+    GetRelPos = 77,
+    AddRelPos = 78,
+    RwkvWKV6 = 79,
+    GatedLinearAttn = 80,
+    RwkvWKV7 = 81,
+    SolveTri = 82,
+    GatedDeltaNet = 83,
+    LightningIndexer = 84,
+    DSV4HcComb = 85,
+    DSV4HcPre = 86,
+    DSV4HcPost = 87,
+    TopKMask = 88,
+    Unary = 89,
+    MapCUSTOM1 = 90,
+    MapCUSTOM2 = 91,
+    MapCUSTOM3 = 92,
+    Custom = 93,
+    CrossEntropyLoss = 94,
+    CrossEntropyLossBack = 95,
+    OptStepAdamw = 96,
+    OptStepSgd = 97,
+    Glu = 98,
+    Sleep = 99,
+    SigmoidBack = 100,
+    Count = 101,
 }
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -411,6 +410,12 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn mtmd_bitmap_set_is_video(bitmap: *mut mtmd_bitmap, is_video: bool);
 }
+unsafe extern "C" {
+    pub fn mtmd_bitmap_set_transcript(
+        bitmap: *mut mtmd_bitmap,
+        transcript: *const ::std::os::raw::c_char,
+    );
+}
 pub type mtmd_bitmap_lazy_callback = ::std::option::Option<
     unsafe extern "C" fn(
         chunk_idx: usize,
@@ -643,12 +648,21 @@ pub enum mtmd_gen_audio_type {
     LFM3A = 4,
     Chatterbox = 5,
     DRAMA3 = 6,
+    ZONOS3 = 7,
+    YUE2 = 8,
+    MinimaxMUSIC3 = 9,
+    FishS2 = 10,
+    Moshi = 11,
+    Kokoro = 12,
+    TinyVoca = 13,
+    VOXCPM2 = 14,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct mtmd_gen_audio_info {
     pub type_: mtmd_gen_audio_type,
     pub sample_rate: i32,
+    pub n_channels: i32,
     pub model_variant: *const ::std::os::raw::c_char,
     pub n_voices: i32,
 }
@@ -668,6 +682,14 @@ unsafe extern "C" {
         ctx: *const mtmd_context,
         idx: i32,
     ) -> *const ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+    pub fn mtmd_gen_audio_g2p(
+        ctx: *const mtmd_context,
+        word: *const ::std::os::raw::c_char,
+        buf: *mut ::std::os::raw::c_char,
+        buf_size: usize,
+    ) -> i32;
 }
 unsafe extern "C" {
     pub fn mtmd_gen_audio_get_voice(
@@ -696,6 +718,12 @@ pub struct mtmd_gen_inp {
     pub n_codes: usize,
     pub feats: *const f32,
     pub n_feats: usize,
+    pub speed: f32,
+    pub backbone_state: *const u8,
+    pub backbone_state_size: usize,
+    pub backbone_n_past: i32,
+    pub n_steps: i32,
+    pub cfg_scale: f32,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -733,6 +761,12 @@ unsafe extern "C" {
     pub fn mtmd_gen_state_set_ref(ctx: *mut mtmd_context, state: *mut mtmd_gen_state) -> i32;
 }
 unsafe extern "C" {
+    pub fn mtmd_gen_state_get_ref_codes(
+        state: *const mtmd_gen_state,
+        n_codes: *mut usize,
+    ) -> *const i32;
+}
+unsafe extern "C" {
     pub fn mtmd_gen_inp_default(ctx: *const mtmd_context) -> mtmd_gen_inp;
 }
 unsafe extern "C" {
@@ -753,11 +787,60 @@ pub struct mtmd_helper_video {
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq)]
+pub struct mtmd_helper_video_stream_info {
+    pub width: u32,
+    pub height: u32,
+    pub fps: f32,
+    pub n_frames: i32,
+    pub duration: f32,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct mtmd_helper_video_decoder {
+    pub open: ::std::option::Option<
+        unsafe extern "C" fn(
+            user_data: *mut ::std::os::raw::c_void,
+            path: *const ::std::os::raw::c_char,
+            buf: *const ::std::os::raw::c_uchar,
+            len: usize,
+            info: *mut mtmd_helper_video_stream_info,
+        ) -> *mut ::std::os::raw::c_void,
+    >,
+    pub start: ::std::option::Option<
+        unsafe extern "C" fn(
+            state: *mut ::std::os::raw::c_void,
+            width: u32,
+            height: u32,
+            fps: f32,
+            fps_picked: *mut bool,
+        ) -> bool,
+    >,
+    pub read_frame: ::std::option::Option<
+        unsafe extern "C" fn(
+            state: *mut ::std::os::raw::c_void,
+            rgb: *mut ::std::os::raw::c_uchar,
+            width: u32,
+            height: u32,
+        ) -> bool,
+    >,
+    pub read_audio: ::std::option::Option<
+        unsafe extern "C" fn(
+            state: *mut ::std::os::raw::c_void,
+            sample_rate: ::std::os::raw::c_int,
+            n_samples: *mut usize,
+        ) -> *const f32,
+    >,
+    pub close: ::std::option::Option<unsafe extern "C" fn(state: *mut ::std::os::raw::c_void)>,
+    pub user_data: *mut ::std::os::raw::c_void,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct mtmd_helper_video_init_params {
     pub fps_target: f32,
     pub ffmpeg_bin_dir: *const ::std::os::raw::c_char,
     pub timestamp_interval_ms: i64,
     pub no_soundtrack: bool,
+    pub decoder: *const mtmd_helper_video_decoder,
 }
 unsafe extern "C" {
     pub fn mtmd_helper_video_init_params_default() -> mtmd_helper_video_init_params;
@@ -798,6 +881,32 @@ unsafe extern "C" {
         placeholder: bool,
         opt: mtmd_helper_init_opt,
     ) -> mtmd_helper_bitmap_wrapper;
+}
+#[repr(u32)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub enum mtmd_helper_media_type {
+    Unknown = 0,
+    Image = 1,
+    Audio = 2,
+    Video = 3,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct mtmd_helper_media_meta {
+    pub type_: mtmd_helper_media_type,
+    pub width: u32,
+    pub height: u32,
+    pub sample_rate: i32,
+    pub duration: f32,
+    pub n_frames: i32,
+}
+unsafe extern "C" {
+    pub fn mtmd_helper_get_media_meta(
+        buf: *const ::std::os::raw::c_uchar,
+        len: usize,
+        opt: mtmd_helper_init_opt,
+        out: *mut mtmd_helper_media_meta,
+    ) -> i32;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -960,6 +1069,7 @@ pub struct mtmd_helper_cap {
     pub audio: bool,
     pub video: bool,
     pub audio_stream: bool,
+    pub audio_duplex: bool,
     pub text_gen: bool,
     pub audio_gen: bool,
     pub audio_gen_spk_ref: bool,
@@ -1008,11 +1118,16 @@ pub struct mtmd_helper_gen_audio_inp {
     pub n_past: i32,
     pub out_mode: mtmd_helper_gen_audio_out_mode,
     pub speaker_ref: *mut mtmd_bitmap,
+    pub speaker_ref_text: *const ::std::os::raw::c_char,
     pub lang: *const ::std::os::raw::c_char,
     pub top_k: i32,
     pub top_p: f32,
     pub temp: f32,
     pub seed: u32,
+    pub speed: f32,
+    pub loudness: f32,
+    pub cfg_scale: f32,
+    pub flow_steps: i32,
     pub out_type: mtmd_helper_gen_audio_outtype,
 }
 unsafe extern "C" {
@@ -1029,6 +1144,9 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn mtmd_helper_gen_audio_reset(ctx: *mut mtmd_helper_gen_audio);
+}
+unsafe extern "C" {
+    pub fn mtmd_helper_gen_audio_max_frames(ctx: *const mtmd_helper_gen_audio) -> i32;
 }
 unsafe extern "C" {
     pub fn mtmd_helper_gen_audio_set_input(

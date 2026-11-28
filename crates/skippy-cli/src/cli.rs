@@ -531,6 +531,20 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(debug_assertions)]
+    fn cli_definition_is_internally_consistent() {
+        use clap::CommandFactory;
+
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn serve_settings_definition_is_internally_consistent() {
+        crate::serve_settings::command().debug_assert();
+    }
+
+    #[test]
     fn split_planning_uses_native_admission_without_a_family_flag() {
         let argv = [
             "skippy",

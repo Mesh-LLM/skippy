@@ -1,6 +1,6 @@
-From 3c879050cfbaf20c0808e954636512f7893aed76 Mon Sep 17 00:00:00 2001
+From 58e78503898269fca19cf8da2091570d15ff9269 Mon Sep 17 00:00:00 2001
 From: Skippy <build@skippy.local>
-Date: Wed, 28 Oct 2026 02:04:42 -0500
+Date: Sat, 28 Nov 2026 08:27:27 +1100
 Subject: [PATCH] skippy: add receipt recorder and replay
 
 Receipt tensors are found from graph structure, with no architecture,
@@ -114,7 +114,7 @@ ABI 0.1.78 -> 0.1.91.
  src/skippy/receipts_source.cpp          |  10 +
  src/skippy/receipts_state.cpp           | 261 +++++++
  src/skippy/receipts_storage.h           |  23 +
- src/skippy/receipts_token_axis.cpp      | 425 ++++++++++
+ src/skippy/receipts_token_axis.cpp      | 426 ++++++++++
  src/skippy/receipts_token_axis.h        | 116 +++
  src/skippy/receipts_values.h            |  80 ++
  src/skippy/runtime_types.h              |   7 +
@@ -126,7 +126,7 @@ ABI 0.1.78 -> 0.1.91.
  tests/test-skippy-kv-place-together.cpp |  29 +
  tests/test-skippy-receipt-classify.cpp  | 532 +++++++++++++
  tests/test-skippy-receipt-draw.cpp      | 137 ++++
- 49 files changed, 8349 insertions(+), 7 deletions(-)
+ 49 files changed, 8350 insertions(+), 7 deletions(-)
  create mode 100644 ggml/src/ggml-cuda/receipt-digest.cu
  create mode 100644 ggml/src/ggml-cuda/receipt-digest.cuh
  create mode 100644 include/skippy/receipts.h
@@ -156,18 +156,18 @@ ABI 0.1.78 -> 0.1.91.
  create mode 100644 tests/test-skippy-receipt-draw.cpp
 
 diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
-index 38caaf041..cd3f13c68 100644
+index d0be6ef4bb3515b65878b4b3bffdcd9a166835f1..61185a79e12cf74fdd982a679a3f21478784ed46 100644
 --- a/ggml/src/ggml-cuda/ggml-cuda.cu
 +++ b/ggml/src/ggml-cuda/ggml-cuda.cu
-@@ -29,6 +29,7 @@
- #include "ggml-cuda/diagmask.cuh"
+@@ -28,6 +28,7 @@
+ #include "ggml-cuda/cumsum.cuh"
  #include "ggml-cuda/diag.cuh"
  #include "ggml-cuda/diffusion-sampling.cuh"
 +#include "ggml-cuda/receipt-digest.cuh"
  #include "ggml-cuda/fattn.cuh"
  #include "ggml-cuda/fp8.cuh"
  #include "ggml-cuda/fwht.cuh"
-@@ -7217,6 +7218,9 @@ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, con
+@@ -7389,6 +7390,9 @@ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, con
      if (strcmp(name, "ggml_backend_cuda_diffusion_sample") == 0) {
          return (void *)ggml_cuda_diffusion_sample;
      }
@@ -179,7 +179,7 @@ index 38caaf041..cd3f13c68 100644
  
 diff --git a/ggml/src/ggml-cuda/receipt-digest.cu b/ggml/src/ggml-cuda/receipt-digest.cu
 new file mode 100644
-index 000000000..adfeff560
+index 0000000000000000000000000000000000000000..adfeff560024ac637bbbe3d288ed957b75362f16
 --- /dev/null
 +++ b/ggml/src/ggml-cuda/receipt-digest.cu
 @@ -0,0 +1,353 @@
@@ -538,7 +538,7 @@ index 000000000..adfeff560
 +}
 diff --git a/ggml/src/ggml-cuda/receipt-digest.cuh b/ggml/src/ggml-cuda/receipt-digest.cuh
 new file mode 100644
-index 000000000..c4100f38c
+index 0000000000000000000000000000000000000000..c4100f38c138c380b97d649e68253036555d0ee2
 --- /dev/null
 +++ b/ggml/src/ggml-cuda/receipt-digest.cuh
 @@ -0,0 +1,46 @@
@@ -589,10 +589,10 @@ index 000000000..c4100f38c
 +        uint64_t       * bases,
 +        void           * out);
 diff --git a/ggml/src/ggml-metal/ggml-metal.cpp b/ggml/src/ggml-metal/ggml-metal.cpp
-index 833fe8549..ba47a3cec 100644
+index 91e5452cf48e34015365e229030b9c05ca65318a..559baca033ac0393e3ee0f6a25d360e3ba5fc990 100644
 --- a/ggml/src/ggml-metal/ggml-metal.cpp
 +++ b/ggml/src/ggml-metal/ggml-metal.cpp
-@@ -1013,7 +1013,15 @@ static void ggml_backend_metal_fusion_set_enabled(ggml_backend_fusion_t finfo, b
+@@ -1017,7 +1017,15 @@ static void ggml_backend_metal_fusion_set_enabled(ggml_backend_fusion_t finfo, b
      ggml_metal_fusion_info_set_enabled((struct ggml_metal_fusion_info *) finfo, enabled);
  }
  
@@ -609,7 +609,7 @@ index 833fe8549..ba47a3cec 100644
          return (void *)ggml_backend_metal_get_features;
      }
 diff --git a/include/skippy.h b/include/skippy.h
-index 27f96181e..abe4423e7 100644
+index 27f96181ea737b795d78d12cebd4a0dbaa48f62a..abe4423e7e7c2f1e8dc7fa9458909dfd0707ba81 100644
 --- a/include/skippy.h
 +++ b/include/skippy.h
 @@ -25,6 +25,7 @@
@@ -621,7 +621,7 @@ index 27f96181e..abe4423e7 100644
  #include "skippy/system_one.h"
  #include "skippy/laya.h"
 diff --git a/include/skippy/common.h b/include/skippy/common.h
-index e06e491d5..ee9bb3f1f 100644
+index e06e491d546c2d8497d49092cdee347f1d9cbd39..ee9bb3f1f928885d3256ebcb2a6fe4b46fdbb386 100644
 --- a/include/skippy/common.h
 +++ b/include/skippy/common.h
 @@ -46,7 +46,7 @@ extern "C" {
@@ -635,7 +635,7 @@ index e06e491d5..ee9bb3f1f 100644
  #define SKIPPY_DEPRECATED(message) __declspec(deprecated(message))
 diff --git a/include/skippy/receipts.h b/include/skippy/receipts.h
 new file mode 100644
-index 000000000..fad8dad03
+index 0000000000000000000000000000000000000000..fad8dad03b6d17d6016a77cff4462ea5a68fc892
 --- /dev/null
 +++ b/include/skippy/receipts.h
 @@ -0,0 +1,719 @@
@@ -1359,7 +1359,7 @@ index 000000000..fad8dad03
 +
 +#endif // SKIPPY_RECEIPTS_H
 diff --git a/include/skippy/sampling.h b/include/skippy/sampling.h
-index c1a755c4c..2ff44e01e 100644
+index c1a755c4cc795170d3a71ae89f91a05ecb9b3a40..2ff44e01ebb25e4c616d3d06641ef7a795332b73 100644
 --- a/include/skippy/sampling.h
 +++ b/include/skippy/sampling.h
 @@ -20,6 +20,12 @@ extern "C" {
@@ -1376,7 +1376,7 @@ index c1a755c4c..2ff44e01e 100644
  enum skippy_sampler_type {
      SKIPPY_SAMPLER_PENALTIES = 1,
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 3d11e2444..0d45f92f9 100644
+index a4952c269472d2bb0aa430b75f08288039fdd003..7d25678636edfa9893e9e8a86804d983b14b2e95 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -89,6 +89,18 @@ add_library(llama
@@ -1433,7 +1433,7 @@ index 3d11e2444..0d45f92f9 100644
  
  # The Clef decision read renders the model's `systemone` chat template with
 diff --git a/src/llama-context.cpp b/src/llama-context.cpp
-index c187033fe..9602098b9 100644
+index 50fb9a6e2514d1c21b36c6a2120aa21f4c367d0e..f58d3c8c077e0bf357a08105eddf664cab660721 100644
 --- a/src/llama-context.cpp
 +++ b/src/llama-context.cpp
 @@ -17,6 +17,7 @@
@@ -1444,7 +1444,7 @@ index c187033fe..9602098b9 100644
  #include "skippy/trace_scope.h"
  
  #include <algorithm>
-@@ -1500,6 +1501,21 @@ void llama_context::set_n_threads(int32_t n_threads, int32_t n_threads_batch) {
+@@ -1489,6 +1490,21 @@ void llama_context::set_n_threads(int32_t n_threads, int32_t n_threads_batch) {
      cparams.n_threads_batch = n_threads_batch;
  }
  
@@ -1466,7 +1466,7 @@ index c187033fe..9602098b9 100644
  void llama_context::set_abort_callback(bool (*abort_callback)(void * data), void * abort_callback_data) {
      LLAMA_LOG_DEBUG("%s: call\n", __func__);
  
-@@ -2025,6 +2041,26 @@ llm_graph_result * llama_context::process_ubatch(
+@@ -2005,6 +2021,26 @@ llm_graph_result * llama_context::process_ubatch(
              return nullptr;
          }
  
@@ -1493,7 +1493,7 @@ index c187033fe..9602098b9 100644
          skippy_trace::scope alloc_trace("llama.graph_alloc");
          if (!ggml_backend_sched_alloc_graph(sched.get(), gf)) {
              LLAMA_LOG_ERROR("%s: failed to allocate graph\n", __func__);
-@@ -2047,6 +2083,10 @@ llm_graph_result * llama_context::process_ubatch(
+@@ -2027,6 +2063,10 @@ llm_graph_result * llama_context::process_ubatch(
          //LLAMA_LOG_INFO("graph set inputs time: %.3f ms\n", (ggml_time_us() - t_start_us)/1000.0);
      }
  
@@ -1504,7 +1504,7 @@ index c187033fe..9602098b9 100644
      // submits the graph; the device may still be running it on return
      skippy_trace::scope compute_trace("llama.graph_compute", "nodes", ggml_graph_n_nodes(res->get_gf()));
      const auto status = graph_compute(res->get_gf(), ubatch.n_tokens > 1);
-@@ -2057,6 +2097,10 @@ llm_graph_result * llama_context::process_ubatch(
+@@ -2037,6 +2077,10 @@ llm_graph_result * llama_context::process_ubatch(
          return nullptr;
      }
  
@@ -1515,7 +1515,7 @@ index c187033fe..9602098b9 100644
      ret = GGML_STATUS_SUCCESS;
  
      return res;
-@@ -2372,6 +2416,10 @@ int llama_context::decode(
+@@ -2356,6 +2400,10 @@ int llama_context::decode(
          return -1;
      }
  
@@ -1526,7 +1526,7 @@ index c187033fe..9602098b9 100644
      const auto & vocab   = model.vocab;
      const auto & hparams = model.hparams;
  
-@@ -3394,6 +3442,10 @@ ggml_cgraph * llama_context::graph_reserve(uint32_t                          n_t
+@@ -3363,6 +3411,10 @@ ggml_cgraph * llama_context::graph_reserve(uint32_t                          n_t
      res->reset();
  
      auto * gf = model.build_graph(gparams);
@@ -1538,7 +1538,7 @@ index c187033fe..9602098b9 100644
      if ((cache_capabilities & skippy_cache_admitted_capabilities) != skippy_cache_admitted_capabilities) {
          LLAMA_LOG_ERROR("%s: reserved graph state exceeds loaded cache admission\n", __func__);
 diff --git a/src/llama-context.h b/src/llama-context.h
-index 020f55b78..91866108d 100644
+index e09428d41be74052aadb0b914977b376c7b3e6be..4b9e2b2a333851dee9f12dfd5439fb4d1faa709f 100644
 --- a/src/llama-context.h
 +++ b/src/llama-context.h
 @@ -50,6 +50,7 @@ llama_context * llama_init_from_model_with_graph_inputs(
@@ -1559,7 +1559,7 @@ index 020f55b78..91866108d 100644
      void set_embeddings (bool value);
      void set_embeddings_nextn(bool value, bool masked);
      void set_embeddings_layer_inp(uint32_t lid, bool enable);
-@@ -549,6 +553,8 @@ private:
+@@ -548,6 +552,8 @@ private:
      ggml_abort_callback abort_callback      = nullptr;
      void *              abort_callback_data = nullptr;
  
@@ -1569,10 +1569,10 @@ index 020f55b78..91866108d 100644
  
      // pointers and buffer types used for the compute buffer of each backend
 diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
-index 1358811e8..92a923b2e 100644
+index 8668bde10b449f7ebf91f53a4b9b5ef34bbab504..e328973065605476716e8b45a24b6782f105782a 100644
 --- a/src/llama-graph.cpp
 +++ b/src/llama-graph.cpp
-@@ -1573,6 +1573,7 @@ void llm_graph_result::reset() {
+@@ -1699,6 +1699,7 @@ void llm_graph_result::reset() {
      fused_nodes.clear();
      hdmd_inputs.clear();
      block_boundaries.clear();
@@ -1580,7 +1580,7 @@ index 1358811e8..92a923b2e 100644
      state_effects.clear();
      input_choices.clear();
      build_inputs = {};
-@@ -1743,6 +1744,26 @@ void llm_graph_result::add_skippy_input_choice(
+@@ -1869,6 +1870,26 @@ void llm_graph_result::add_skippy_input_choice(
      input_choices.push_back({alternatives, selected});
  }
  
@@ -1608,7 +1608,7 @@ index 1358811e8..92a923b2e 100644
          ggml_cgraph * graph,
          std::vector<skippy_activation_port> imports,
 diff --git a/src/llama-graph.h b/src/llama-graph.h
-index 56ade9666..e4cb17e82 100644
+index b8fe5d2632875bd205c259d90a3b4423d6e3508b..c6c0c995cffd5234ac07c22869b2419d979f8586 100644
 --- a/src/llama-graph.h
 +++ b/src/llama-graph.h
 @@ -18,6 +18,7 @@
@@ -1619,7 +1619,7 @@ index 56ade9666..e4cb17e82 100644
  
  struct ggml_cgraph;
  struct ggml_context;
-@@ -1078,6 +1079,15 @@ public:
+@@ -1129,6 +1130,15 @@ public:
              std::vector<skippy_activation_port> imports,
              std::vector<skippy_activation_port> exports,
              std::vector<skippy_state_effect> effects);
@@ -1635,7 +1635,7 @@ index 56ade9666..e4cb17e82 100644
  
      ggml_tensor * get_layer_inp(int il) const { return t_layer_inp[il]; }
  
-@@ -1148,6 +1158,8 @@ public:
+@@ -1202,6 +1212,8 @@ public:
      std::vector<llm_graph_input_ptr> inputs;
      std::vector<llm_graph_fused_node> fused_nodes;
      std::vector<skippy_block_boundary> block_boundaries;
@@ -1645,10 +1645,10 @@ index 56ade9666..e4cb17e82 100644
      std::vector<skippy_input_choice> input_choices;
  
 diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
-index b8c00f857..6f9b7a85f 100644
+index bc4c707a6adb18fac06909499138069627bc6f11..99908418c422032f6c95c47f796f7260b4719c58 100644
 --- a/src/llama-kv-cache.cpp
 +++ b/src/llama-kv-cache.cpp
-@@ -554,6 +554,8 @@ void llama_kv_cache::init_rotation(const char * name_tag) {
+@@ -551,6 +551,8 @@ void llama_kv_cache::init_rotation(const char * name_tag) {
  
  void llama_kv_cache::clear(bool data) {
      skippy_trace::scope trace("llama.kv_clear");
@@ -1657,7 +1657,7 @@ index b8c00f857..6f9b7a85f 100644
      for (uint32_t s = 0; s < n_stream; ++s) {
          v_cells[s].reset();
          v_heads[s] = 0;
-@@ -620,7 +622,10 @@ void llama_kv_cache::release_free_chunks() {
+@@ -617,7 +619,10 @@ void llama_kv_cache::release_free_chunks() {
  }
  
  void llama_kv_cache::release_free_chunks(uint32_t stream) {
@@ -1669,7 +1669,7 @@ index b8c00f857..6f9b7a85f 100644
          return;
      }
      skippy_trace::scope trace("llama.kv_release_cells");
-@@ -699,6 +704,8 @@ bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
+@@ -713,6 +718,8 @@ bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
          return true;
      }
  
@@ -1678,7 +1678,7 @@ index b8c00f857..6f9b7a85f 100644
      // TODO: fix incosistent handling of `seq_id < 0` and `seq_id == -1` in the codebase [TAG_LLAMA_SEQ_ID_NEG]
      GGML_ASSERT(seq_id == -1 || (seq_id >= 0 && (size_t) seq_id < seq_to_stream.size()));
  
-@@ -808,6 +815,8 @@ void llama_kv_cache::seq_cp(llama_seq_id seq_id_src, llama_seq_id seq_id_dst, ll
+@@ -810,6 +817,8 @@ void llama_kv_cache::seq_cp(llama_seq_id seq_id_src, llama_seq_id seq_id_dst, ll
          return;
      }
  
@@ -1687,7 +1687,7 @@ index b8c00f857..6f9b7a85f 100644
      GGML_ASSERT(seq_id_src >= 0 && (size_t) seq_id_src < seq_to_stream.size());
      GGML_ASSERT(seq_id_dst >= 0 && (size_t) seq_id_dst < seq_to_stream.size());
  
-@@ -901,6 +910,8 @@ void llama_kv_cache::seq_keep(llama_seq_id seq_id) {
+@@ -903,6 +912,8 @@ void llama_kv_cache::seq_keep(llama_seq_id seq_id) {
          return;
      }
  
@@ -1696,7 +1696,7 @@ index b8c00f857..6f9b7a85f 100644
      GGML_ASSERT(seq_id >= 0 && (size_t) seq_id < seq_to_stream.size());
  
      auto & cells = v_cells[seq_to_stream[seq_id]];
-@@ -931,6 +942,8 @@ void llama_kv_cache::seq_add(llama_seq_id seq_id, llama_pos p0, llama_pos p1, ll
+@@ -933,6 +944,8 @@ void llama_kv_cache::seq_add(llama_seq_id seq_id, llama_pos p0, llama_pos p1, ll
          return;
      }
  
@@ -1705,7 +1705,7 @@ index b8c00f857..6f9b7a85f 100644
      GGML_ASSERT(seq_id >= 0 && (size_t) seq_id < seq_to_stream.size());
      GGML_ASSERT(hparams.n_pos_per_embd() == 1 && "seq_add() is only supported for n_pos_per_embd() == 1");
  
-@@ -983,6 +996,8 @@ void llama_kv_cache::seq_div(llama_seq_id seq_id, llama_pos p0, llama_pos p1, in
+@@ -985,6 +998,8 @@ void llama_kv_cache::seq_div(llama_seq_id seq_id, llama_pos p0, llama_pos p1, in
          return;
      }
  
@@ -1714,7 +1714,7 @@ index b8c00f857..6f9b7a85f 100644
      GGML_ASSERT(seq_id >= 0 && (size_t) seq_id < seq_to_stream.size());
      GGML_ASSERT(hparams.n_pos_per_embd() == 1 && "seq_div() is only supported for n_pos_per_embd() == 1");
  
-@@ -1114,6 +1129,7 @@ llama_memory_context_ptr llama_kv_cache::init_update(llama_context * lctx, bool
+@@ -1116,6 +1131,7 @@ llama_memory_context_ptr llama_kv_cache::init_update(llama_context * lctx, bool
              if (did_compact) {
                  // a row moved into a released chunk must not be zeroed by the next write there
                  reclaim_compaction_targets(moves);
@@ -1722,7 +1722,7 @@ index b8c00f857..6f9b7a85f 100644
                  copy_compacted_cells(moves);
                  LLAMA_LOG_DEBUG("%s: compacted %zu KV cells\n", __func__, moves.size());
              }
-@@ -1286,17 +1302,55 @@ bool llama_kv_cache::update(llama_context * lctx, bool do_shift, const stream_co
+@@ -1288,17 +1304,55 @@ bool llama_kv_cache::update(llama_context * lctx, bool do_shift, const stream_co
  // llama_kv_cells::place_together), so row lists hold long runs, which the
  // row-attention kernels read at dense speed.
  std::vector<uint32_t> llama_kv_cache::find_chunked_cells(
@@ -1755,9 +1755,9 @@ index b8c00f857..6f9b7a85f 100644
 +    receipt_pinned = std::move(next);
 +}
 +
- llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch, bool cont) const {
+ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch, bool cont, bool empty_only) const {
 +    if (!receipt_has_pins.load(std::memory_order_acquire)) {
-+        return find_slot(ubatch, cont, nullptr);
++        return find_slot(ubatch, cont, empty_only, nullptr);
 +    }
 +    // a snapshot: the pins may be replaced while the ubatch is placed
 +    std::shared_ptr<const std::vector<bool>> pinned;
@@ -1766,20 +1766,20 @@ index b8c00f857..6f9b7a85f 100644
 +        pinned = receipt_pinned;
 +    }
 +    // pinned cells are left alone while the ubatch fits elsewhere
-+    slot_info res = find_slot(ubatch, cont, pinned.get());
++    slot_info res = find_slot(ubatch, cont, empty_only, pinned.get());
 +    if (!res.empty() || !cont || pinned == nullptr) {
 +        // the scan of a slot that is not continuous falls back to the pinned cells itself
 +        return res;
 +    }
-+    return find_slot(ubatch, cont, nullptr);
++    return find_slot(ubatch, cont, empty_only, nullptr);
 +}
 +
 +llama_kv_cache::slot_info llama_kv_cache::find_slot(
-+        const llama_ubatch & ubatch, bool cont, const std::vector<bool> * pinned) const {
++        const llama_ubatch & ubatch, bool cont, bool empty_only, const std::vector<bool> * pinned) const {
  
      if (debug > 0) {
          for (uint32_t s = 0; s < ubatch.n_seqs_unq; ++s) {
-@@ -1383,6 +1437,30 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
+@@ -1385,6 +1439,30 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
  
      res.resize(n_seqs);
  
@@ -1810,7 +1810,7 @@ index b8c00f857..6f9b7a85f 100644
      for (uint32_t s = 0; s < n_seqs; ++s) {
          const auto seq_id = ubatch.seq_id_unq[s];
  
-@@ -1446,7 +1524,8 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
+@@ -1448,7 +1526,8 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
          }
  
          if (n_stream == 1 && n_swa == 0) {
@@ -1820,7 +1820,7 @@ index b8c00f857..6f9b7a85f 100644
              if (res.idxs[s].size() < n_tokens) {
                  return { };
              }
-@@ -1455,6 +1534,11 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
+@@ -1457,6 +1536,11 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
  
          uint32_t n_tested = 0;
  
@@ -1832,7 +1832,7 @@ index b8c00f857..6f9b7a85f 100644
          // for continuous slots, we test that all tokens in the ubatch fit, starting from the current head
          // for non-continuous slots, we test the tokens one by one
          const uint32_t n_test = cont ? n_tokens : 1;
-@@ -1481,7 +1565,14 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
+@@ -1483,7 +1567,14 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
                  //    - (disabled) mask causally, if the sequence is the same as the one we are inserting
                  //    - mask SWA, using current max pos for that sequence in the cache
                  //                always insert in the cell with minimum pos
@@ -1846,9 +1846,9 @@ index b8c00f857..6f9b7a85f 100644
 +                    idxs_any.push_back(idx);
 +                }
  
-                 if (!can_use && cells.seq_count(idx) == 1) {
+                 if (!empty_only && !can_use && cells.seq_count(idx) == 1) {
                      const llama_pos pos_cell = cells.pos_get(idx);
-@@ -1504,6 +1595,9 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
+@@ -1506,6 +1597,9 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
  
                  if (can_use) {
                      res.idxs[s].push_back(idx);
@@ -1858,7 +1858,7 @@ index b8c00f857..6f9b7a85f 100644
                  } else {
                      if (cont) {
                          break;
-@@ -1520,6 +1614,11 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
+@@ -1522,6 +1616,11 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
              }
  
              if (n_tested >= cells.size()) {
@@ -1870,7 +1870,7 @@ index b8c00f857..6f9b7a85f 100644
                  //LLAMA_LOG_ERROR("%s: failed to find a slot for %d tokens\n", __func__, n_tokens);
                  return { };
              }
-@@ -1878,6 +1977,96 @@ const llama_kv_cells & llama_kv_cache::get_cells(llama_seq_id seq_id) const {
+@@ -1880,6 +1979,96 @@ const llama_kv_cells & llama_kv_cache::get_cells(llama_seq_id seq_id) const {
      return v_cells[seq_to_stream[seq_id]];
  }
  
@@ -1967,7 +1967,7 @@ index b8c00f857..6f9b7a85f 100644
  uint32_t llama_kv_cache::get_stream(llama_seq_id seq_id) const {
      GGML_ASSERT(seq_id >= 0 && (size_t) seq_id < seq_to_stream.size());
  
-@@ -2270,6 +2459,11 @@ bool llama_kv_cache::stage_import_kv_page(
+@@ -2291,6 +2480,11 @@ bool llama_kv_cache::stage_import_kv_page(
          return true;
      }
  
@@ -1979,7 +1979,7 @@ index b8c00f857..6f9b7a85f 100644
      llama_ubatch ubatch = {};
      auto udata = std::make_shared<llama_ubatch::data_t>();
      const uint32_t n_tokens = static_cast<uint32_t>(desc.token_count);
-@@ -2760,6 +2954,9 @@ bool llama_kv_cache::stage_import_cachegen_kv_page(llama_seq_id
+@@ -2793,6 +2987,9 @@ bool llama_kv_cache::stage_import_cachegen_kv_page(llama_seq_id
      ubatch.output       = udata->output.data();
      ubatch.data         = std::move(udata);
  
@@ -1987,9 +1987,9 @@ index b8c00f857..6f9b7a85f 100644
 +    receipt_notify(SKIPPY_RECEIPT_MEMORY_STATE_READ, seq_id, -1, -1, -1);
 +
      const uint32_t  head_before = v_heads[strm];
-     const slot_info sinfo       = find_slot(ubatch, false);
-     if (sinfo.empty()) {
-@@ -2805,6 +3002,10 @@ uint32_t llama_kv_cache::get_n_kv(const slot_info & sinfo) const {
+     // Import rollback removes only this session's new cells. Never displace
+     // another owner's SWA cells or overwrite their payload during decode.
+@@ -2840,6 +3037,10 @@ uint32_t llama_kv_cache::get_n_kv(const slot_info & sinfo) const {
      // note: this also helps some backends with performance (f.ex https://github.com/ggml-org/llama.cpp/pull/16812#issuecomment-3455112220)
      const uint32_t n_pad = 256;
  
@@ -2000,7 +2000,7 @@ index b8c00f857..6f9b7a85f 100644
      for (uint32_t s = 0; s < sinfo.n_stream(); ++s) {
          const auto & cells = v_cells[sinfo.strm[s]];
  
-@@ -3964,6 +4165,10 @@ void llama_kv_cache::state_read_sinfo(
+@@ -4013,6 +4214,10 @@ void llama_kv_cache::state_read_sinfo(
    llama_state_seq_flags   flags,
        slot_info_vec_t *   sinfos_out,
  const slot_info_vec_t *   sinfos_in) {
@@ -2011,7 +2011,7 @@ index b8c00f857..6f9b7a85f 100644
      // TODO: refactor [TAG_KV_CACHE_SHARE_CELLS]
      if (other) {
          return;
-@@ -4802,6 +5007,24 @@ uint32_t llama_kv_cache_context::get_n_kv_rows() const {
+@@ -4851,6 +5056,24 @@ uint32_t llama_kv_cache_context::get_n_kv_rows() const {
      return n_kv_rows;
  }
  
@@ -2037,7 +2037,7 @@ index b8c00f857..6f9b7a85f 100644
      // Full-cache and update contexts do not carry a concrete ubatch/slot pair.
      if (ubatches.empty() || sinfos.empty() || i_cur >= ubatches.size() || i_cur >= sinfos.size()) {
 diff --git a/src/llama-kv-cache.h b/src/llama-kv-cache.h
-index ad9257353..cba20ef50 100644
+index c2535892d6b578896a2c818d0f5765cced31a343..9237957ac639baa108f939b10e4bf9c1a9bb7dc9 100644
 --- a/src/llama-kv-cache.h
 +++ b/src/llama-kv-cache.h
 @@ -5,7 +5,10 @@
@@ -2051,7 +2051,19 @@ index ad9257353..cba20ef50 100644
  #include <unordered_map>
  #include <string>
  #include <vector>
-@@ -283,8 +286,11 @@ public:
+@@ -276,6 +279,11 @@ public:
+     // return empty slot_info on failure
+     slot_info find_slot(const llama_ubatch & ubatch, bool cont, bool empty_only = false) const;
+ 
++    // skippy receipts: preserve empty-only allocation while avoiding pinned cells
++    // whenever the ubatch fits elsewhere. The fallback may use pinned empty cells.
++    slot_info find_slot(const llama_ubatch & ubatch, bool cont, bool empty_only,
++            const std::vector<bool> * pinned) const;
++
+     // cells a sequence claims at a time in the unified pool; a multiple of the
+     // row-attention kernels' 32-row block
+     static constexpr uint32_t kv_chunk_cells = 64;
+@@ -283,8 +291,11 @@ public:
      // (OP_FLASH_ATTN_EXT_VEC_NCPSG); the runs of a list start on a block boundary
      static constexpr uint32_t kv_rows_block = 32;
  
@@ -2064,19 +2076,7 @@ index ad9257353..cba20ef50 100644
  
      // Cells are zeroed as the pool's high-water mark advances, not all at creation: attention
      // reads nothing above the cells get_n_kv() covers, and a page never written costs no memory.
-@@ -318,6 +324,11 @@ public:
-     void for_each_chunk_range(uint32_t stream, uint32_t chunk0, uint32_t chunk1,
-             const std::function<void(ggml_tensor *, size_t, size_t)> & fn) const;
- 
-+    // skippy receipts: find_slot, leaving the empty cells in `pinned` alone while the
-+    // ubatch fits in the others. A ubatch that needs no continuous slot and does not fit
-+    // there takes the first cells it can use, pinned or not, found by the same scan.
-+    slot_info find_slot(const llama_ubatch & ubatch, bool cont, const std::vector<bool> * pinned) const;
-+
-     // emplace the ubatch context into slot: [sinfo.idxs[0...ubatch.n_tokens - 1]]
-     void apply_ubatch(const slot_info & sinfo, const llama_ubatch & ubatch);
- 
-@@ -358,7 +369,42 @@ public:
+@@ -359,7 +370,42 @@ public:
      // note: used by n-gram input embeddings
      void get_prev_tokens(const llama_ubatch & ubatch, uint32_t n, std::vector<llama_token> & res) const;
  
@@ -2119,7 +2119,7 @@ index ad9257353..cba20ef50 100644
      const llama_model & model;
      const llama_hparams & hparams;
  
-@@ -530,6 +576,11 @@ public:
+@@ -531,6 +577,11 @@ public:
  
      uint32_t get_n_kv() const;
      uint32_t get_n_kv_rows() const;
@@ -2132,10 +2132,10 @@ index ad9257353..cba20ef50 100644
  
      ggml_type type_k() const;
 diff --git a/src/llama-kv-cells.h b/src/llama-kv-cells.h
-index ac6ae063e..a6aa9d588 100644
+index d30090efd63eb042f97f5dafd00d4870fd586b27..6f3463d585a21e3a17f021ab060f5ffee41a073f 100644
 --- a/src/llama-kv-cells.h
 +++ b/src/llama-kv-cells.h
-@@ -635,11 +635,19 @@ public:
+@@ -664,11 +664,19 @@ public:
      // row list stay block aligned, and is sized in whole chunks, which leaves the sequence
      // room to grow where it lands. When nothing holds the rest, the longest stretch is
      // filled and what remains is placed the same way. Empty when the cells run out.
@@ -2157,7 +2157,7 @@ index ac6ae063e..a6aa9d588 100644
          struct share {
              llama_seq_id          seq;
 diff --git a/src/skippy/chat_sampling.cpp b/src/skippy/chat_sampling.cpp
-index 2d266fbb7..a6cefa9f3 100644
+index 2d266fbb71755be7e27aeed0f756f6b0f19ba364..a6cefa9f3b887f8161a0ff6599f9315425e18c69 100644
 --- a/src/skippy/chat_sampling.cpp
 +++ b/src/skippy/chat_sampling.cpp
 @@ -3,6 +3,7 @@
@@ -2179,7 +2179,7 @@ index 2d266fbb7..a6cefa9f3 100644
      skippy_mark_context_synchronized(session->stage_model);
      const auto * candidates = common_sampler_get_candidates(session->sampler, false);
 diff --git a/src/skippy/model_lifecycle.cpp b/src/skippy/model_lifecycle.cpp
-index caa9fcd6d..1029871f6 100644
+index caa9fcd6de0d0dabfe636feba45bbdd1808bf87f..1029871f6afa3ac151f93449cb7a6d6507a11161 100644
 --- a/src/skippy/model_lifecycle.cpp
 +++ b/src/skippy/model_lifecycle.cpp
 @@ -110,6 +110,8 @@ enum skippy_status skippy_model_free(
@@ -2192,7 +2192,7 @@ index caa9fcd6d..1029871f6 100644
              llama_free(model->ctx);
          }
 diff --git a/src/skippy/model_loading.cpp b/src/skippy/model_loading.cpp
-index 61100a17e..dc93b891a 100644
+index 2cf87e1580ed7957fb517fd3e04dd6a1e82b4093..d2ea1439ee370953b490e472d0baa7f461584a5c 100644
 --- a/src/skippy/model_loading.cpp
 +++ b/src/skippy/model_loading.cpp
 @@ -22,6 +22,7 @@
@@ -2215,7 +2215,7 @@ index 61100a17e..dc93b891a 100644
          if (event_scope != nullptr) {
 diff --git a/src/skippy/receipts.cpp b/src/skippy/receipts.cpp
 new file mode 100644
-index 000000000..4d9359783
+index 0000000000000000000000000000000000000000..4d9359783302b7e2d37c71f326772f156cc6d2df
 --- /dev/null
 +++ b/src/skippy/receipts.cpp
 @@ -0,0 +1,791 @@
@@ -3012,7 +3012,7 @@ index 000000000..4d9359783
 +}
 diff --git a/src/skippy/receipts_attention.cpp b/src/skippy/receipts_attention.cpp
 new file mode 100644
-index 000000000..e75d4a59b
+index 0000000000000000000000000000000000000000..e75d4a59b9885abc5b3e77f6eaaace77bf142bea
 --- /dev/null
 +++ b/src/skippy/receipts_attention.cpp
 @@ -0,0 +1,211 @@
@@ -3229,7 +3229,7 @@ index 000000000..e75d4a59b
 +}
 diff --git a/src/skippy/receipts_attention.h b/src/skippy/receipts_attention.h
 new file mode 100644
-index 000000000..70b96ef16
+index 0000000000000000000000000000000000000000..70b96ef16174107a1cd261183465e8e4fd11c3e8
 --- /dev/null
 +++ b/src/skippy/receipts_attention.h
 @@ -0,0 +1,70 @@
@@ -3305,7 +3305,7 @@ index 000000000..70b96ef16
 +        const std::unordered_set<const ggml_tensor *> & constants);
 diff --git a/src/skippy/receipts_digest.cpp b/src/skippy/receipts_digest.cpp
 new file mode 100644
-index 000000000..88852b621
+index 0000000000000000000000000000000000000000..88852b621a24757241c559b030dd9c42b546bc56
 --- /dev/null
 +++ b/src/skippy/receipts_digest.cpp
 @@ -0,0 +1,149 @@
@@ -3460,7 +3460,7 @@ index 000000000..88852b621
 +}
 diff --git a/src/skippy/receipts_draw.cpp b/src/skippy/receipts_draw.cpp
 new file mode 100644
-index 000000000..44aaed8bf
+index 0000000000000000000000000000000000000000..44aaed8bf1537a69874de8dab6ee4ffd54547f33
 --- /dev/null
 +++ b/src/skippy/receipts_draw.cpp
 @@ -0,0 +1,172 @@
@@ -3638,7 +3638,7 @@ index 000000000..44aaed8bf
 +}
 diff --git a/src/skippy/receipts_draw.h b/src/skippy/receipts_draw.h
 new file mode 100644
-index 000000000..ce84702f7
+index 0000000000000000000000000000000000000000..ce84702f79faaa2688c1d967396fa7d507718ed4
 --- /dev/null
 +++ b/src/skippy/receipts_draw.h
 @@ -0,0 +1,33 @@
@@ -3677,7 +3677,7 @@ index 000000000..ce84702f7
 +void skippy_receipt_draw_set_index(llama_sampler * chain, uint64_t index);
 diff --git a/src/skippy/receipts_glue.cpp b/src/skippy/receipts_glue.cpp
 new file mode 100644
-index 000000000..8d8c8086e
+index 0000000000000000000000000000000000000000..8d8c8086eb6f185ae43ce587c7e83ab439e1e933
 --- /dev/null
 +++ b/src/skippy/receipts_glue.cpp
 @@ -0,0 +1,406 @@
@@ -4089,7 +4089,7 @@ index 000000000..8d8c8086e
 +}
 diff --git a/src/skippy/receipts_graph.cpp b/src/skippy/receipts_graph.cpp
 new file mode 100644
-index 000000000..74cabab5a
+index 0000000000000000000000000000000000000000..74cabab5a4678e6dcb91e07ac3895f770dd4e87a
 --- /dev/null
 +++ b/src/skippy/receipts_graph.cpp
 @@ -0,0 +1,811 @@
@@ -4906,7 +4906,7 @@ index 000000000..74cabab5a
 +}
 diff --git a/src/skippy/receipts_internal.h b/src/skippy/receipts_internal.h
 new file mode 100644
-index 000000000..f52ce9f0e
+index 0000000000000000000000000000000000000000..f52ce9f0e717d3aa4385112edeff9b320cf7c7f3
 --- /dev/null
 +++ b/src/skippy/receipts_internal.h
 @@ -0,0 +1,407 @@
@@ -5319,7 +5319,7 @@ index 000000000..f52ce9f0e
 +        llama_context & ctx, int32_t seq, const uint8_t * bytes, size_t n_bytes, std::string & error);
 diff --git a/src/skippy/receipts_layers.cpp b/src/skippy/receipts_layers.cpp
 new file mode 100644
-index 000000000..efb52d03c
+index 0000000000000000000000000000000000000000..efb52d03c91ef2666f3dd43fab55ee0642232ea7
 --- /dev/null
 +++ b/src/skippy/receipts_layers.cpp
 @@ -0,0 +1,610 @@
@@ -5935,7 +5935,7 @@ index 000000000..efb52d03c
 +}
 diff --git a/src/skippy/receipts_layers.h b/src/skippy/receipts_layers.h
 new file mode 100644
-index 000000000..4d87c6753
+index 0000000000000000000000000000000000000000..4d87c6753986417641915979c856011bd3a2638c
 --- /dev/null
 +++ b/src/skippy/receipts_layers.h
 @@ -0,0 +1,162 @@
@@ -6103,7 +6103,7 @@ index 000000000..4d87c6753
 +int64_t skippy_receipt_columns(const skippy_receipt_value & value);
 diff --git a/src/skippy/receipts_mixing_state.cpp b/src/skippy/receipts_mixing_state.cpp
 new file mode 100644
-index 000000000..2996be495
+index 0000000000000000000000000000000000000000..2996be495256fad1db5d96d7a64c8001fde7ee7d
 --- /dev/null
 +++ b/src/skippy/receipts_mixing_state.cpp
 @@ -0,0 +1,156 @@
@@ -6265,7 +6265,7 @@ index 000000000..2996be495
 +}
 diff --git a/src/skippy/receipts_mixing_state.h b/src/skippy/receipts_mixing_state.h
 new file mode 100644
-index 000000000..01d8a995f
+index 0000000000000000000000000000000000000000..01d8a995f0ec2814fd71df14c558def481ab8607
 --- /dev/null
 +++ b/src/skippy/receipts_mixing_state.h
 @@ -0,0 +1,34 @@
@@ -6305,7 +6305,7 @@ index 000000000..01d8a995f
 +        std::vector<skippy_receipt_state> & states);
 diff --git a/src/skippy/receipts_readback.cpp b/src/skippy/receipts_readback.cpp
 new file mode 100644
-index 000000000..971d193c1
+index 0000000000000000000000000000000000000000..971d193c14b388d75a5f864c205612a3f3a775a9
 --- /dev/null
 +++ b/src/skippy/receipts_readback.cpp
 @@ -0,0 +1,985 @@
@@ -7296,7 +7296,7 @@ index 000000000..971d193c1
 +}
 diff --git a/src/skippy/receipts_scratch.h b/src/skippy/receipts_scratch.h
 new file mode 100644
-index 000000000..8293c7348
+index 0000000000000000000000000000000000000000..8293c7348c0cc8e1ec9c2136840145ae069bd29e
 --- /dev/null
 +++ b/src/skippy/receipts_scratch.h
 @@ -0,0 +1,48 @@
@@ -7350,7 +7350,7 @@ index 000000000..8293c7348
 +};
 diff --git a/src/skippy/receipts_source.cpp b/src/skippy/receipts_source.cpp
 new file mode 100644
-index 000000000..b1404e74b
+index 0000000000000000000000000000000000000000..b1404e74b1fdb134c8ee64daa2f6c86b4afb1757
 --- /dev/null
 +++ b/src/skippy/receipts_source.cpp
 @@ -0,0 +1,10 @@
@@ -7366,7 +7366,7 @@ index 000000000..b1404e74b
 +}
 diff --git a/src/skippy/receipts_state.cpp b/src/skippy/receipts_state.cpp
 new file mode 100644
-index 000000000..582607858
+index 0000000000000000000000000000000000000000..5826078586f7622cec34b6dcf26fc26c6ac0e68e
 --- /dev/null
 +++ b/src/skippy/receipts_state.cpp
 @@ -0,0 +1,261 @@
@@ -7633,7 +7633,7 @@ index 000000000..582607858
 +}
 diff --git a/src/skippy/receipts_storage.h b/src/skippy/receipts_storage.h
 new file mode 100644
-index 000000000..1f4adbb1c
+index 0000000000000000000000000000000000000000..1f4adbb1c447195762050ccf942c5dfd1ad1c208
 --- /dev/null
 +++ b/src/skippy/receipts_storage.h
 @@ -0,0 +1,23 @@
@@ -7662,10 +7662,10 @@ index 000000000..1f4adbb1c
 +}
 diff --git a/src/skippy/receipts_token_axis.cpp b/src/skippy/receipts_token_axis.cpp
 new file mode 100644
-index 000000000..bd0ff1b4c
+index 0000000000000000000000000000000000000000..8221ce9bfe87fb9f9afd92fdf9c7e595a0c0f320
 --- /dev/null
 +++ b/src/skippy/receipts_token_axis.cpp
-@@ -0,0 +1,425 @@
+@@ -0,0 +1,426 @@
 +// Token-axis rules of the layer classifier; see receipts_token_axis.h.
 +
 +#include "receipts_token_axis.h"
@@ -7974,7 +7974,9 @@ index 000000000..bd0ff1b4c
 +// - CONCAT: the dimension in op_params[0] (concat() here);
 +// - CPY: src[1] is the destination, written and not read
 +//   (receipts_layers.cpp, receipts_mixing_state.cpp).
-+static_assert(GGML_OP_COUNT == 102, "ggml ops changed: review the receipt op table (see the comment above)");
++// Upstream removed ADD1 and both DIAG_MASK ops, and added SLEEP and SIGMOID_BACK.
++// The new scheduling/training ops remain refused below.
++static_assert(GGML_OP_COUNT == 101, "ggml ops changed: review the receipt op table (see the comment above)");
 +
 +axis_rule token_axis_rules::clean_rule(const ggml_tensor * node) const {
 +    const ggml_tensor * x = node->src[0];
@@ -7990,7 +7992,6 @@ index 000000000..bd0ff1b4c
 +        case GGML_OP_SCALE:
 +        case GGML_OP_CLAMP:
 +        case GGML_OP_LEAKY_RELU:
-+        case GGML_OP_ADD1:
 +        case GGML_OP_ADD_ID:
 +            return keep(a0);
 +        case GGML_OP_CONT:
@@ -8057,8 +8058,6 @@ index 000000000..bd0ff1b4c
 +            }
 +            return keep(a0);
 +        case GGML_OP_DIAG:
-+        case GGML_OP_DIAG_MASK_INF:
-+        case GGML_OP_DIAG_MASK_ZERO:
 +        case GGML_OP_TRI:
 +            if (tracked(a0) && a0 <= 1 && x->ne[a0] > 1) {
 +                return mixes(a0);
@@ -8069,6 +8068,8 @@ index 000000000..bd0ff1b4c
 +        case GGML_OP_PERMUTE:
 +        case GGML_OP_TRANSPOSE:
 +            return view(node);
++        case GGML_OP_SLEEP:
++        case GGML_OP_SIGMOID_BACK:
 +        default:
 +            return unknown_op();
 +    }
@@ -8093,7 +8094,7 @@ index 000000000..bd0ff1b4c
 +}  // namespace skippy_receipt_token_axis
 diff --git a/src/skippy/receipts_token_axis.h b/src/skippy/receipts_token_axis.h
 new file mode 100644
-index 000000000..812d2d1c8
+index 0000000000000000000000000000000000000000..812d2d1c80c900f563a562a87a6b235724da9f39
 --- /dev/null
 +++ b/src/skippy/receipts_token_axis.h
 @@ -0,0 +1,116 @@
@@ -8215,7 +8216,7 @@ index 000000000..812d2d1c8
 +}  // namespace skippy_receipt_token_axis
 diff --git a/src/skippy/receipts_values.h b/src/skippy/receipts_values.h
 new file mode 100644
-index 000000000..04d9a0d8c
+index 0000000000000000000000000000000000000000..04d9a0d8c69931959df22f1a81ddb395139ca3a2
 --- /dev/null
 +++ b/src/skippy/receipts_values.h
 @@ -0,0 +1,80 @@
@@ -8300,7 +8301,7 @@ index 000000000..04d9a0d8c
 +
 +}  // namespace skippy_receipt_values
 diff --git a/src/skippy/runtime_types.h b/src/skippy/runtime_types.h
-index e610e8205..a7cb1b389 100644
+index e610e8205f26d00c36c5642eefbb81ed4bf0a085..a7cb1b389ecf6e5219279cb2a516efd0b4b38532 100644
 --- a/src/skippy/runtime_types.h
 +++ b/src/skippy/runtime_types.h
 @@ -9,6 +9,7 @@
@@ -8325,7 +8326,7 @@ index e610e8205..a7cb1b389 100644
      bool has_input_activation_boundary = false;
      skippy_activation_boundary_desc input_activation_boundary = {};
 diff --git a/src/skippy/sampling_config.cpp b/src/skippy/sampling_config.cpp
-index 6be5559e2..57a09cdf3 100644
+index 32b36bdcd413a58b384e5e5dd483569b815452cc..2e577f99462abfdda297c235babfb694e7749d65 100644
 --- a/src/skippy/sampling_config.cpp
 +++ b/src/skippy/sampling_config.cpp
 @@ -1,5 +1,6 @@
@@ -8335,7 +8336,7 @@ index 6be5559e2..57a09cdf3 100644
  #include "../../common/common.h"
  #include "../../common/sampling.h"
  #include "../vendor/nlohmann/json.hpp"
-@@ -169,6 +170,10 @@ bool skippy_initialize_chat_sampler(skippy_session * session,
+@@ -174,6 +175,10 @@ bool skippy_initialize_chat_sampler(skippy_session * session,
      session->sampler = common_sampler_init(model, params);
      if (session->sampler == nullptr) { return false; }
      session->sampling_chain = common_sampler_get(session->sampler);
@@ -8347,7 +8348,7 @@ index 6be5559e2..57a09cdf3 100644
      session->sampling_has_reasoning_budget = !params.reasoning_budget_start.empty() &&
              !params.reasoning_budget_end.empty() && (params.grammar_lazy || params.reasoning_budget_tokens >= 0);
 diff --git a/src/skippy/stage_realization.cpp b/src/skippy/stage_realization.cpp
-index c044b686b..4e8c0599d 100644
+index 481528345e1e9f936ab159cd78e6c901f0b794ec..9791cd17daab9b74728b282c2cf1f6a8376852c9 100644
 --- a/src/skippy/stage_realization.cpp
 +++ b/src/skippy/stage_realization.cpp
 @@ -297,6 +297,7 @@ void skippy_realize_stage_graph(
@@ -8359,7 +8360,7 @@ index c044b686b..4e8c0599d 100644
      ggml_cgraph * graph = ggml_new_graph_custom(
              result.get_ctx(), result.get_max_nodes(), false);
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 077620687..ee286c722 100644
+index 0d5df59014f2fbb3236ac1ff961481a2116c93cb..3e06682a5af19b99a3033284773eba0b5462e2b5 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
 @@ -198,6 +198,8 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
@@ -8373,7 +8374,7 @@ index 077620687..ee286c722 100644
      llama_build_and_test(test-unicode.cpp  LABEL behavior  LINK llama)
 diff --git a/tests/skippy-receipt-storage.h b/tests/skippy-receipt-storage.h
 new file mode 100644
-index 000000000..0ba005299
+index 0000000000000000000000000000000000000000..0ba005299b0ce081d3704b056f040837ac2374b3
 --- /dev/null
 +++ b/tests/skippy-receipt-storage.h
 @@ -0,0 +1,43 @@
@@ -8421,7 +8422,7 @@ index 000000000..0ba005299
 +
 +} // namespace receipt_storage_tests
 diff --git a/tests/test-skippy-kv-page-export.cpp b/tests/test-skippy-kv-page-export.cpp
-index 8c109c1e9..fd33f881d 100644
+index 8c109c1e9ab8fa8d88a5f3d0f11a14ea364c278d..fd33f881d13d0d4f32cb333338e3bbf8b836f802 100644
 --- a/tests/test-skippy-kv-page-export.cpp
 +++ b/tests/test-skippy-kv-page-export.cpp
 @@ -274,7 +274,29 @@ int main() {
@@ -8520,7 +8521,7 @@ index 8c109c1e9..fd33f881d 100644
      return 0;
  }
 diff --git a/tests/test-skippy-kv-place-together.cpp b/tests/test-skippy-kv-place-together.cpp
-index b7c50f142..e3eaf10c7 100644
+index b7c50f142b4007e2a5fe88373876c1952da40677..e3eaf10c7dece4289978fd7183ca91e154eab12f 100644
 --- a/tests/test-skippy-kv-place-together.cpp
 +++ b/tests/test-skippy-kv-place-together.cpp
 @@ -153,6 +153,34 @@ static void fragmented_pool() {
@@ -8568,7 +8569,7 @@ index b7c50f142..e3eaf10c7 100644
          std::printf("ok\n");
 diff --git a/tests/test-skippy-receipt-classify.cpp b/tests/test-skippy-receipt-classify.cpp
 new file mode 100644
-index 000000000..a8c9eb5aa
+index 0000000000000000000000000000000000000000..a8c9eb5aacf79ed043d5a42da91f34d255886496
 --- /dev/null
 +++ b/tests/test-skippy-receipt-classify.cpp
 @@ -0,0 +1,532 @@
@@ -9106,7 +9107,7 @@ index 000000000..a8c9eb5aa
 +}
 diff --git a/tests/test-skippy-receipt-draw.cpp b/tests/test-skippy-receipt-draw.cpp
 new file mode 100644
-index 000000000..3c3d6f245
+index 0000000000000000000000000000000000000000..3c3d6f2459690f0eeebc0512b84869c88e325777
 --- /dev/null
 +++ b/tests/test-skippy-receipt-draw.cpp
 @@ -0,0 +1,137 @@

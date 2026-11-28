@@ -1420,6 +1420,8 @@ unsafe extern "C" {
 pub enum skippy_kv_page_flag {
     VTransposed = 1,
     HasKIdx = 2,
+    #[doc = " Secondary position axes equal token_start + row; no position sideband is needed."]
+    CanonicalPositions = 4,
 }
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]

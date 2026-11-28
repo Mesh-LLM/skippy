@@ -4034,17 +4034,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "process-supervision"
-version = "0.80.0"
-dependencies = [
- "libc",
- "serde_json",
- "tempfile",
- "thiserror 2.0.21",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "process-wrap"
 version = "10.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5272,7 +5261,6 @@ dependencies = [
  "async-trait",
  "futures-util",
  "hex",
- "process-supervision",
  "reqwest 0.13.5",
  "same-file",
  "serde",
@@ -5294,12 +5282,12 @@ dependencies = [
  "skippy-runtime",
  "skippy-runtime-install",
  "skippy-serving",
+ "skippy-subprocess",
  "skippy-topology",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
- "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5450,9 +5438,9 @@ dependencies = [
 name = "skippy-gpu-bench"
 version = "0.80.0"
 dependencies = [
- "process-supervision",
  "serde",
  "serde_json",
+ "skippy-subprocess",
  "tempfile",
  "thiserror 2.0.21",
  "tracing",
@@ -5839,6 +5827,18 @@ dependencies = [
  "tracing",
  "tracy-client",
  "uuid",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "skippy-subprocess"
+version = "0.80.0"
+dependencies = [
+ "libc",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

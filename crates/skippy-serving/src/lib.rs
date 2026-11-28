@@ -6,6 +6,7 @@
 pub mod binary_transport;
 pub mod compute_meter;
 pub mod embedded;
+pub mod file_identity;
 pub mod frontend;
 pub mod generation_stats;
 mod grammar_bounds;

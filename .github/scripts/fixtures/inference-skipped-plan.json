@@ -1,0 +1,11 @@
+{
+  "url": "https://github.com/Mesh-LLM/skippy/actions/runs/45489845896",
+  "run": {"id": 45489845896, "run_attempt": 1, "conclusion": "success"},
+  "jobs": [
+    {"id": 138784923060, "name": "summary", "run_attempt": 1, "status": "completed", "conclusion": "success"},
+    {"id": 138784924701, "name": "plan", "run_attempt": 1, "status": "completed", "conclusion": "skipped"},
+    {"id": 138784925358, "name": "Publish nightly qualification", "run_attempt": 1, "status": "completed", "conclusion": "skipped"},
+    {"id": 138785012334, "name": "qualification (${{ matrix.id }})", "run_attempt": 1, "status": "completed", "conclusion": "skipped"},
+    {"id": 138785264336, "name": "report", "run_attempt": 1, "status": "completed", "conclusion": "skipped"}
+  ]
+}
