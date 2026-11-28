@@ -24,11 +24,29 @@ pub struct HttpExchangeAdmission {
     pub observer: Option<Arc<dyn WireBytesObserver>>,
     pub denial: Option<InferenceError>,
     pub observation_id: Option<String>,
+    /// Opaque host-assigned ID for dispatch and request-log correlation.
+    /// The host decides how to expose it in [`HttpExchangePolicy::write_response_headers`].
+    pub exchange_id: Option<String>,
     /// Bounded host-validated metadata supplied before response headers commit.
     pub response_headers: Vec<(String, String)>,
 }
 
 tokio::task_local! { static HTTP_EXCHANGE_OBSERVATION: String; }
+tokio::task_local! { static HTTP_EXCHANGE_ID: String; }
+
+#[derive(Clone)]
+pub(crate) struct HostExchangeId(pub(crate) String);
+
+/// The id for a typed dispatch's exchange: the one the host named at HTTP
+/// admission ([`HttpExchangeAdmission::exchange_id`]) when there is one, a
+/// fresh UUID otherwise.
+pub fn dispatch_exchange_id() -> String {
+    current_host_exchange_id().unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
+}
+
+pub(crate) fn current_host_exchange_id() -> Option<String> {
+    HTTP_EXCHANGE_ID.try_with(Clone::clone).ok()
+}
 
 /// Exact host-owned observation correlated with this typed backend dispatch.
 pub fn current_http_exchange_observation_id() -> Option<String> {
@@ -45,6 +63,9 @@ pub trait HttpExchangePolicy: Send + Sync + 'static {
     async fn is_enabled(&self) -> bool {
         true
     }
+    /// Add trusted host headers for the opaque ID named at admission.
+    fn write_response_headers(&self, _exchange_id: &str, _headers: &mut HeaderMap) {}
+
     async fn received(
         &self,
         method: &str,
@@ -99,10 +120,18 @@ pub(crate) async fn http_exchange_middleware(
             request_id,
         )
         .await;
+    let host_exchange_id = admission.exchange_id;
     let mut response = match admission.denial {
         Some(error) => error.into_response(),
         None => {
             let call = next.run(Request::from_parts(parts, Body::from(body)));
+            let scoped_exchange_id = host_exchange_id.clone();
+            let call = async move {
+                match scoped_exchange_id {
+                    Some(id) => HTTP_EXCHANGE_ID.scope(id, call).await,
+                    None => call.await,
+                }
+            };
             match admission.observation_id {
                 Some(id) => HTTP_EXCHANGE_OBSERVATION.scope(id, call).await,
                 None => call.await,
@@ -129,6 +158,10 @@ pub(crate) async fn http_exchange_middleware(
         ) {
             response.headers_mut().append(name, value);
         }
+    }
+    if let Some(id) = host_exchange_id {
+        policy.write_response_headers(&id, response.headers_mut());
+        response.extensions_mut().insert(HostExchangeId(id));
     }
     match admission.observer {
         Some(observer) => {

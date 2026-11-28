@@ -16,7 +16,7 @@ use tower::ServiceExt;
 use crate::{
     CompletionChunk, CompletionRequest, CompletionResponse, CompletionStream, InferenceBackend,
     InferenceError, InferenceRequestContext, InferenceResult, ModelObject, RequestId, Usage,
-    http_exchange::{HttpExchangeAdmission, HttpExchangePolicy},
+    http_exchange::{HostExchangeId, HttpExchangeAdmission, HttpExchangePolicy},
     wire_bytes::{WireBytesCommitment, WireBytesIncomplete, WireBytesObserver, commit_wire_bytes},
 };
 
@@ -27,10 +27,18 @@ struct Recorder {
     terminals: Mutex<Vec<WireBytesCommitment>>,
     deny: bool,
     response_headers: Vec<(String, String)>,
+    /// The exchange id this host names at admission.
+    exchange_id: Option<String>,
+    /// [`crate::http_exchange::dispatch_exchange_id`] as each dispatch saw it.
+    dispatched: Mutex<Vec<String>>,
 }
 
 #[async_trait]
 impl HttpExchangePolicy for Arc<Recorder> {
+    fn write_response_headers(&self, exchange_id: &str, headers: &mut HeaderMap) {
+        headers.insert("x-host-test-id", exchange_id.parse().unwrap());
+    }
+
     async fn received(
         &self,
         _method: &str,
@@ -42,6 +50,7 @@ impl HttpExchangePolicy for Arc<Recorder> {
         self.original.lock().unwrap().push(body.to_vec());
         HttpExchangeAdmission {
             observation_id: None,
+            exchange_id: self.exchange_id.clone(),
             observer: Some(self.clone()),
             response_headers: self.response_headers.clone(),
             denial: self.deny.then(|| {
@@ -73,12 +82,18 @@ struct Backend {
 }
 
 impl Backend {
-    fn count_call(&self, model: &str) -> InferenceResult<()> {
+    fn count_call(&self, model: &str) -> InferenceResult<String> {
         self.calls.fetch_add(1, Ordering::SeqCst);
+        let exchange_id = crate::http_exchange::dispatch_exchange_id();
+        self.recorder
+            .dispatched
+            .lock()
+            .unwrap()
+            .push(exchange_id.clone());
         match model {
             "error" => Err(InferenceError::backend("failed backend")),
             "timeout" => Err(InferenceError::timeout("backend deadline")),
-            _ => Ok(()),
+            _ => Ok(exchange_id),
         }
     }
 }
@@ -95,18 +110,19 @@ impl InferenceBackend for Backend {
         &self,
         request: GenerationRequest,
     ) -> InferenceResult<GenerationResponse> {
-        self.count_call(&request.model)?;
+        let exchange_id = self.count_call(&request.model)?;
         let mut response = GenerationResponse::new(request.model, "hello", Usage::new(2, 1));
         response.id = "fixed".into();
         response.created = 1;
+        response.exchange_id = Some(exchange_id);
         Ok(response)
     }
     async fn chat_completion_stream(
         &self,
         request: GenerationRequest,
-        _context: InferenceRequestContext,
+        context: InferenceRequestContext,
     ) -> InferenceResult<GenerationEventStream> {
-        self.count_call(&request.model)?;
+        context.publish_exchange_id(self.count_call(&request.model)?);
         if request.model == "pending" {
             return Ok(Box::pin(futures_util::stream::pending()));
         }
@@ -292,4 +308,59 @@ async fn dropped_pending_stream_has_one_incomplete_terminal() {
         terminals[0].incomplete,
         Some(WireBytesIncomplete::Cancelled)
     );
+}
+
+/// A dispatch inside an exchange the host named takes that id on every
+/// endpoint; without one, each dispatch gets a fresh id.
+#[tokio::test]
+async fn dispatch_takes_the_exchange_id_the_host_named() {
+    for path in ["/v1/chat/completions", "/v1/completions", "/v1/responses"] {
+        for stream in [false, true] {
+            for named in [Some("host-named-exchange"), None] {
+                let backend = Arc::new(Backend {
+                    recorder: Arc::new(Recorder {
+                        exchange_id: named.map(str::to_owned),
+                        ..Recorder::default()
+                    }),
+                    calls: AtomicUsize::new(0),
+                });
+                let response = crate::router(backend.clone())
+                    .oneshot(request(path, &request_body(path, stream, "tiny")))
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::OK);
+                let host_id = response.extensions().get::<HostExchangeId>();
+                assert_eq!(host_id.map(|id| id.0.as_str()), named);
+                let host_header = response
+                    .headers()
+                    .get("x-host-test-id")
+                    .map(|value| value.to_str().unwrap());
+                assert_eq!(host_header, named);
+                let header = response
+                    .headers()
+                    .get("x-exchange-id")
+                    .map(|value| value.to_str().unwrap().to_owned());
+                let backend_reports_id = path != "/v1/completions";
+                assert_eq!(
+                    header.is_some(),
+                    named.is_none() && backend_reports_id,
+                    "{path} stream={stream}"
+                );
+                let _ = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+                let dispatched = backend.recorder.dispatched.lock().unwrap().clone();
+                assert_eq!(dispatched.len(), 1, "{path} stream={stream}");
+                if let Some(header) = header {
+                    assert_eq!(header, dispatched[0], "{path} stream={stream}");
+                }
+                match named {
+                    Some(id) => assert_eq!(dispatched[0], id, "{path} stream={stream}"),
+                    None => assert!(
+                        uuid::Uuid::parse_str(&dispatched[0]).is_ok(),
+                        "{path} stream={stream}: {}",
+                        dispatched[0]
+                    ),
+                }
+            }
+        }
+    }
 }
