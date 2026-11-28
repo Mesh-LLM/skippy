@@ -46,6 +46,7 @@ pub const MAX_VERIFY_WINDOW_RUNAHEAD_TOKENS: usize = 4096;
 pub enum StageFrameError {
     BadGeneration { got: u32 },
     InvalidEndpointId { got: usize },
+    MissingStagePeerNodeId,
     InvalidArtifactDigestLength { got: usize },
     InvalidSourceDigestLength { got: usize },
     MissingRequiredSourceDigest,
@@ -78,6 +79,9 @@ impl std::fmt::Display for StageFrameError {
             ),
             StageFrameError::InvalidEndpointId { got } => {
                 write!(f, "invalid endpoint_id length: expected 32, got {got}")
+            }
+            StageFrameError::MissingStagePeerNodeId => {
+                write!(f, "stage neighbour requires a node_id")
             }
             StageFrameError::InvalidArtifactDigestLength { got } => write!(
                 f,
@@ -278,6 +282,16 @@ fn validate_load_stage_admission(load: &proto::stage::LoadStage) -> Result<(), S
     }
     validate_activation_codec(load.activation_codec)?;
     validate_activation_codec_policy(load.activation_codec, load.activation_codec_policy)?;
+    for peer in [load.upstream.as_ref(), load.downstream.as_ref()]
+        .into_iter()
+        .flatten()
+    {
+        let node_id = peer
+            .node_id
+            .as_deref()
+            .ok_or(StageFrameError::MissingStagePeerNodeId)?;
+        validate_endpoint_id(node_id.len())?;
+    }
     validate_topology_stages(load)?;
     Ok(())
 }

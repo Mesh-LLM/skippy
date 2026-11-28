@@ -514,6 +514,40 @@ mod tests {
             ..frame.clone()
         };
         validate_stage_control_request(&strict_load).unwrap();
+        for request in [&load, &strict_load] {
+            // End stages can omit the neighbour entirely.
+            validate_stage_control_request(request).unwrap();
+            for upstream in [true, false] {
+                for (node_id, expected) in [
+                    (None, Err(StageFrameError::MissingStagePeerNodeId)),
+                    (
+                        Some(vec![8u8; 31]),
+                        Err(StageFrameError::InvalidEndpointId { got: 31 }),
+                    ),
+                    (Some(vec![8u8; 32]), Ok(())),
+                ] {
+                    let mut with_peer = request.clone();
+                    let stage = match with_peer.command.as_mut() {
+                        Some(
+                            stage_control_request::Command::LoadStage(stage)
+                            | stage_control_request::Command::LoadLocalStage(stage),
+                        ) => stage,
+                        _ => unreachable!("load fixture must contain a stage load"),
+                    };
+                    let peer = Some(super::proto::stage::StagePeer {
+                        stage_id: "neighbour".to_string(),
+                        stage_index: 1,
+                        node_id,
+                    });
+                    if upstream {
+                        stage.upstream = peer;
+                    } else {
+                        stage.downstream = peer;
+                    }
+                    assert_eq!(validate_stage_control_request(&with_peer), expected);
+                }
+            }
+        }
         let mut malformed_reference = strict_load.clone();
         let Some(stage_control_request::Command::LoadLocalStage(load)) =
             malformed_reference.command.as_mut()
