@@ -169,6 +169,7 @@ fn worker_options(
 ) -> Result<BinaryStageOptions, ExecutionError> {
     let config = plan.worker.clone();
     Ok(BinaryStageOptions {
+        receipts: None,
         max_inflight: config.lane_count as usize,
         config,
         topology: Some(plan.topology.clone()),

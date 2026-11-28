@@ -142,6 +142,11 @@ native-full-replay backend="cpu": llama-prepare
 cache-reuse-smoke base_url model prompt_file output wave="4":
     @cargo run --locked -p skippy-correctness -- open-ai-cache-reuse --base-url "{{ base_url }}" --model "{{ model }}" --prompt-file "{{ prompt_file }}" --wave "{{ wave }}" > "{{ output }}"
 
+# Explicit hardware capture; never part of the offline/default test suite.
+receipts-metal-build: llama-prepare
+    cmake -S evals/receipts-metal -B target/receipts-metal -G Ninja -DCMAKE_BUILD_TYPE=Release -DNATIVE_SOURCE="$(cd '{{llama_dir}}' && pwd)"
+    cmake --build target/receipts-metal --parallel 8
+
 kv-matrix-build native_lib_dir: llama-prepare
     #!/usr/bin/env bash
     set -euo pipefail

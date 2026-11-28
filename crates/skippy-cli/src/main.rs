@@ -11,6 +11,7 @@ mod managed;
 mod model_source;
 mod multi_model;
 mod native_logging;
+mod receipts;
 mod residency;
 mod runtime;
 mod serve;
@@ -74,7 +75,8 @@ fn run_application(cli: Cli, startup_warnings: Vec<String>) -> std::process::Exi
         Err(error) => {
             native_logs.flush_on_error();
             let _ = skippy_commands::console::failure(&error);
-            std::process::ExitCode::FAILURE
+            // a receipt audit that did not pass names its own exit code
+            receipts::audit_exit_code(&error).unwrap_or(std::process::ExitCode::FAILURE)
         }
     }
 }
@@ -144,7 +146,10 @@ async fn run_command(cli: Cli, native_logs: Arc<native_logging::NativeDiagnostic
     let native_options = runtime::resolve_options(cli.native_runtime)?;
     #[cfg(feature = "dynamic-native-runtime")]
     if matches!(&cli.command, Command::Serve(args) if !args.print_effective_config || args.public.config.is_none())
-        || matches!(&cli.command, Command::PlanSplit(_))
+        || matches!(
+            &cli.command,
+            Command::PlanSplit(_) | Command::AuditReceipt(_) | Command::RecheckReceipt(_)
+        )
     {
         runtime::prepare_native_runtime(&native_options, automatic_runtime).await?;
     }
@@ -182,6 +187,8 @@ async fn run_command(cli: Cli, native_logs: Arc<native_logging::NativeDiagnostic
         Command::TuneTrial { input } => tuning::run_trial(input).await,
         Command::Models { command } => skippy_commands::models::run_standalone(&command).await,
         Command::PlanSplit(args) => skippy_commands::split::run(args.into()),
+        Command::AuditReceipt(args) => receipts::audit(args).await,
+        Command::RecheckReceipt(args) => receipts::recheck(args).await,
         Command::Runtime { command } => {
             skippy_commands::runtime::run(
                 command.into(),

@@ -569,6 +569,8 @@ if [[ "$LLAMA_STAGE_FULL_REPLAY" == "ON" ]]; then
     test-skippy-activation-validation
     test-skippy-cachegen-import
     test-skippy-kv-cells-contiguous
+    test-skippy-receipt-classify
+    test-skippy-receipt-draw
     test-skippy-kv-page-export
     test-skippy-kv-rows-aligned
     test-skippy-kv-place-together
