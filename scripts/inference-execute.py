@@ -22,6 +22,7 @@ from lib.inference_inputs import admit, fixture, input_hashes, record
 from lib.inference_ladder import plan
 from lib.inference_admission import split_admissions_digest
 from lib.inference_probe import measure
+from lib.inference_failure import failure_diagnostics, record_failure
 from lib.inference_peer import PeerControl, port_available
 
 
@@ -118,7 +119,8 @@ def execute(profile, key, mode):
         ]
     log = output / "server.log"
     peer_context = PeerControl.from_environment(sha, key, profile) if mode == "split" else nullcontext()
-    with log.open("wb") as stream, peer_context as peer:
+    with failure_diagnostics(output, sha, f"{key}-{mode}", profile), \
+            log.open("wb") as stream, peer_context as peer:
         # Keep formation identity observable while the leader runs longer
         # nightly/release numerical checks, before starting its serving child.
         if not worker and profile != "pr":
@@ -162,6 +164,9 @@ def execute(profile, key, mode):
                 "split_admissions_sha256": (split_admissions_digest(read_json(output / "split-admissions.json"))
                                              if mode == "split" else None),
             })
+        except (Exception, KeyboardInterrupt) as error:
+            record_failure(output, sha, f"{key}-{mode}", profile, error, server.pid)
+            raise
         finally:
             stop(server)
 

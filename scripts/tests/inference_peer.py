@@ -123,6 +123,9 @@ class PeerTests(unittest.TestCase):
 
 
 class ExecuteTests(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(patch("lib.inference_failure.resources", return_value={}))
+
     def test_leader_control_is_served_during_nightly_and_release_numerical_checks(self):
         execute = run_path(str(Path(__file__).resolve().parents[1] / "inference-execute.py"))["execute"]
         for profile in ("nightly", "release"):
