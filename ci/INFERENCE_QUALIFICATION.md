@@ -258,3 +258,18 @@ and retry limits. Capture errors/gaps are visible in Actions and
 `*-logs/diagnostics.txt`; they do not change the native qualification verdict.
 Actions command processing is disabled around native output using a fresh,
 controller-only resume token. Lines are prefixed and control characters escaped.
+
+### Native failure diagnostics
+
+A serving failure records `failure-diagnostics.json` in the native artifact
+directory before child cleanup. It includes the source/configuration/run identity,
+server PID and log tail, GPU memory/process inventory, process names and RSS,
+`/proc/meminfo`, process limits and cgroup memory limits/events. Each file or
+command result is bounded to 64 KiB; truncated results are marked. Each diagnostic
+command has a five-second timeout. Process arguments and environment values are
+excluded. Missing tools or unreadable files are recorded as diagnostic errors.
+
+The same JSON is emitted to the native log stream, forwarded into Actions and
+retained in the per-attempt JSONL log artifact, so diagnosis does not require an
+external lab console. Evidence collection cannot turn a failed qualification into
+a pass or replace its original error; the successful path collects nothing.
