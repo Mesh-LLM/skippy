@@ -56,6 +56,7 @@ fn observed_request(config: StageConfig) -> (ModelLoadRequest, Receiver<ModelOpe
             telemetry_queue_capacity: 0,
             telemetry_level: skippy_serving::telemetry::TelemetryLevel::Off,
             session_lifecycle_observer: None,
+            receipts: None,
         },
         open_events: ModelOpenEvents::observe(move |observation| {
             let _ = tx.send(observation);

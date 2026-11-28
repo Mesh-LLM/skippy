@@ -11,6 +11,7 @@ homepage = "https://github.com/Mesh-LLM/skippy"
 [dependencies]
 async-trait = "0.1"
 axum = { version = "0.8", features = ["multipart", "ws"] }
+hex = "0.4"
 base64 = "0.22"
 futures-core = "0.3"
 futures-util = { version = "0.3", features = ["sink"] }
