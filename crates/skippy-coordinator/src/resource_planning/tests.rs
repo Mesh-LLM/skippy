@@ -939,3 +939,70 @@ fn a_draft_that_leaves_no_room_for_the_minimum_context_does_not_fit() {
     assert!(!tight.fits());
     assert_eq!(tight.context_length, MIN_AUTO_CONTEXT_LENGTH);
 }
+
+fn qwen3_4b_metadata() -> GgufCompactMeta {
+    GgufCompactMeta {
+        context_length: 40_960,
+        vocab_size: 151_936,
+        head_count: 32,
+        kv_head_count: 8,
+        layer_count: 36,
+        key_length: 128,
+        value_length: 128,
+        ..Default::default()
+    }
+}
+
+fn plan_qwen3_4b(
+    free_after_weights: u64,
+    local_layer_fraction: Option<f64>,
+) -> RuntimeResourcePlan {
+    let metadata = qwen3_4b_metadata();
+    plan_runtime_resources(RuntimeResourcePlanInput {
+        ctx_size_override: None,
+        parallel_override: None,
+        model_bytes: 2_497_280_256,
+        projector_bytes: 0,
+        vram_bytes: 2_497_280_256 + free_after_weights,
+        metadata: Some(&metadata),
+        kv_cache_quant: GgufKvCacheQuant::F16,
+        local_layer_fraction,
+        planning_profile: RuntimeResourcePlanningProfile::SharedMesh,
+        measured_buffers: None,
+    })
+}
+
+#[test]
+fn a_tight_budget_keeps_room_for_the_logits() {
+    // 3 GB after the weights: the 15% tax alone (450 MB) would plan four lanes
+    // of 4096 (2.42 GB of KV), but the worst-case graph's two copies of
+    // 512 x 151,936 f32 logits take 622 MB (616 MiB measured on a Radeon 780M).
+    let floor = 151_936 * 512 * 4 * 2;
+    let plan = plan_qwen3_4b(3_000_000_000, None);
+    let breakdown = plan.breakdown.expect("static plans carry a breakdown");
+    assert_eq!(plan.slots, 4);
+    assert_eq!(plan.context_length, 2048);
+    assert_eq!(
+        breakdown.compute_charge_bytes,
+        3_000_000_000 - breakdown.kv_budget_bytes
+    );
+    assert!(breakdown.compute_charge_bytes >= floor);
+    assert!(breakdown.planned_kv_bytes + floor <= 3_000_000_000);
+}
+
+#[test]
+fn a_roomy_budget_keeps_the_compute_tax() {
+    // 10 GB after the weights: 15% is already more than the logits need.
+    let plan = plan_qwen3_4b(10_000_000_000, None);
+    let breakdown = plan.breakdown.expect("static plans carry a breakdown");
+    assert_eq!(breakdown.compute_charge_bytes, 1_500_000_000);
+}
+
+#[test]
+fn a_pipeline_stage_without_the_whole_model_keeps_the_compute_tax() {
+    // A stage holding half the layers may not hold the output head, so it is
+    // charged the tax as before rather than the logits floor.
+    let plan = plan_qwen3_4b(3_000_000_000, Some(0.5));
+    let breakdown = plan.breakdown.expect("static plans carry a breakdown");
+    assert_eq!(breakdown.compute_charge_bytes, 450_000_000);
+}

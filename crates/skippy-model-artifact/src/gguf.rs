@@ -154,6 +154,22 @@ fn skip_gguf_value(f: &mut GgufReader, typ: GgufType) -> std::io::Result<()> {
     skip_gguf_value_with_depth(f, typ, 0)
 }
 
+/// Skips a value and returns its element count when it is an array, without
+/// reading the elements.
+fn skip_gguf_value_counting(f: &mut GgufReader, typ: GgufType) -> std::io::Result<Option<usize>> {
+    if typ != GgufType::Array {
+        skip_gguf_value(f, typ)?;
+        return Ok(None);
+    }
+    let elem_type = GgufType::from_u32(read_u32(f)?)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "bad array type"))?;
+    let count = read_bounded_len(f, MAX_GGUF_ARRAY_ELEMENTS, "array")?;
+    for _ in 0..count {
+        skip_gguf_value_with_depth(f, elem_type, 1)?;
+    }
+    Ok(Some(count))
+}
+
 fn skip_gguf_value_with_depth(
     f: &mut GgufReader,
     typ: GgufType,

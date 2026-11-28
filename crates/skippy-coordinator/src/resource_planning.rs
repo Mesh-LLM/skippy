@@ -266,8 +266,7 @@ pub fn plan_runtime_resources_with_draft(
         })
         .unwrap_or(0)
         .saturating_add(draft_kv_bytes_per_token);
-    let estimated_kv_budget =
-        usable_kv_cache_budget(input.vram_bytes, input.model_bytes, input.projector_bytes);
+    let estimated_kv_budget = static_kv_budget(&input);
     let estimated_compute_charge =
         free_bytes_after_weights(input.vram_bytes, input.model_bytes, input.projector_bytes)
             .saturating_sub(estimated_kv_budget);
@@ -390,8 +389,7 @@ fn planned_context_length(
     let kv_bytes_per_token = scale_by_layer_fraction(kv_bytes_per_token_full, input)
         .saturating_add(draft_kv_bytes_per_token);
 
-    let kv_budget =
-        usable_kv_cache_budget(input.vram_bytes, input.model_bytes, input.projector_bytes);
+    let kv_budget = static_kv_budget(input);
     if kv_bytes_per_token == 0 {
         return native_context;
     }
@@ -452,6 +450,46 @@ fn usable_kv_cache_budget(vram_bytes: u64, model_bytes: u64, projector_bytes: u6
     let budget = u128::from(free_bytes) * u128::from(KV_CACHE_BUDGET_NUMERATOR)
         / u128::from(KV_CACHE_BUDGET_DENOMINATOR);
     budget.min(u128::from(u64::MAX)) as u64
+}
+
+/// Tokens in the micro-batch llama.cpp reserves its worst-case graph for, its
+/// default `n_ubatch`. A larger `n_ubatch` the operator sets is picked up by
+/// the measured footprint once the model has loaded.
+const DEFAULT_UBATCH_TOKENS: u64 = 512;
+
+/// Copies of the logits the worst-case graph holds: the output projection's,
+/// and the backend samplers' once every lane has one. On a Radeon 780M
+/// (Vulkan) the compute buffer for a 151,936-token vocabulary is 319 MiB
+/// before the samplers are set and 616 MiB after, at one, two or four lanes.
+const WORST_CASE_LOGITS_COPIES: u64 = 2;
+
+/// Compute bytes the worst-case graph needs for logits whatever the budget:
+/// `n_ubatch` outputs of `vocab_size` f32 values, per copy. Only the node that
+/// holds the output head computes logits, so a pipeline stage holding part of
+/// the layers is charged as before.
+fn logits_compute_floor(input: &RuntimeResourcePlanInput<'_>) -> u64 {
+    if input
+        .local_layer_fraction
+        .is_some_and(|fraction| fraction < 1.0)
+    {
+        return 0;
+    }
+    input.metadata.map_or(0, |metadata| {
+        u64::from(metadata.vocab_size)
+            .saturating_mul(DEFAULT_UBATCH_TOKENS)
+            .saturating_mul(std::mem::size_of::<f32>() as u64)
+            .saturating_mul(WORST_CASE_LOGITS_COPIES)
+    })
+}
+
+/// The KV budget a static plan may fill: what the weights leave, less the 15%
+/// compute tax or the logits floor, whichever is larger. The tax alone shrinks
+/// with the budget, while the logits don't, so on a tight device it charged
+/// a fraction of the compute buffer the context then had to share.
+fn static_kv_budget(input: &RuntimeResourcePlanInput<'_>) -> u64 {
+    let free = free_bytes_after_weights(input.vram_bytes, input.model_bytes, input.projector_bytes);
+    usable_kv_cache_budget(input.vram_bytes, input.model_bytes, input.projector_bytes)
+        .min(free.saturating_sub(logits_compute_floor(input)))
 }
 
 fn fallback_context_length(input: &RuntimeResourcePlanInput<'_>) -> u32 {
