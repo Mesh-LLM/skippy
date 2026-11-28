@@ -263,7 +263,6 @@ pub(crate) fn attach_split_dflash(
             max_draft_tokens: plan.max_draft_tokens,
             n_gpu_layers: plan.draft_n_gpu_layers,
             device: draft_device_on_this_node(plan.draft_device.as_deref()),
-            ane_target_path: None,
         };
         let info = runtime
             .model

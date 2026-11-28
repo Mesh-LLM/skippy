@@ -30,6 +30,7 @@ struct Lane {
 struct PackageMetadata {
     format_version: u32,
     draft_sha256: String,
+    target_sha256: String,
     embeddings_sha256: String,
     context: usize,
     rows: usize,
@@ -87,6 +88,7 @@ impl AneDraft {
             n_vocab,
             mask_token,
             pair.draft,
+            pair.target,
         )?;
         draft._package_dir = Some(package_dir);
         Ok(draft)
@@ -97,11 +99,12 @@ impl AneDraft {
         n_vocab: usize,
         mask_token: i32,
         draft_path: &Path,
+        target_path: &Path,
     ) -> Result<Option<Self>> {
-        let Ok(model) = std::env::var("SKIPPY_DFLASH_ANE_MODEL") else {
+        let Some(model) = std::env::var_os("SKIPPY_DFLASH_ANE_MODEL") else {
             return Ok(None);
         };
-        let embeddings = std::env::var("SKIPPY_DFLASH_ANE_EMBEDDINGS")
+        let embeddings = std::env::var_os("SKIPPY_DFLASH_ANE_EMBEDDINGS")
             .context("SKIPPY_DFLASH_ANE_EMBEDDINGS must name the paired target embeddings")?;
         Self::open(
             Path::new(&model),
@@ -110,6 +113,7 @@ impl AneDraft {
             n_vocab,
             mask_token,
             draft_path,
+            target_path,
         )
         .map(Some)
     }
@@ -121,6 +125,7 @@ impl AneDraft {
         n_vocab: usize,
         mask_token: i32,
         draft_path: &Path,
+        target_path: &Path,
     ) -> Result<Self> {
         let metadata_path = Path::new(&model).with_extension("json");
         let metadata: PackageMetadata = serde_json::from_slice(
@@ -147,6 +152,9 @@ impl AneDraft {
         }
         if file_sha256(draft_path)? != metadata.draft_sha256 {
             bail!("ANE DFlash package was generated from a different draft GGUF");
+        }
+        if file_sha256(target_path)? != metadata.target_sha256 {
+            bail!("ANE DFlash package was generated from a different target GGUF");
         }
         if file_sha256(embeddings_path)? != metadata.embeddings_sha256 {
             bail!("ANE DFlash target embeddings do not match the package metadata");
@@ -384,4 +392,48 @@ fn file_sha256(path: &Path) -> Result<String> {
         digest.update(&buffer[..count]);
     }
     Ok(hex::encode(digest.finalize()))
+}
+
+#[cfg(all(test, feature = "conversion"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compiled_package_rejects_a_different_target_before_opening_core_ml() -> Result<()> {
+        let files = tempfile::tempdir()?;
+        let model = files.path().join("draft.mlmodelc");
+        let embeddings = files.path().join("embeddings.f16");
+        let draft = files.path().join("draft.gguf");
+        let target = files.path().join("target.gguf");
+        std::fs::write(&draft, b"draft")?;
+        std::fs::write(&target, b"first")?;
+        let metadata = serde_json::json!({
+            "format_version": 2,
+            "draft_sha256": file_sha256(&draft)?,
+            "target_sha256": file_sha256(&target)?,
+            "embeddings_sha256": "",
+            "context": 2,
+            "rows": 2,
+            "token_output": true,
+            "taps": [0],
+            "profile": {
+                "width": 2, "vocabulary": 2, "mask_token": 1, "target_layers": [0],
+                "query_heads": [1], "kv_heads": [1], "head_width": 2, "rotary_width": 2,
+                "ffn_width": [2], "block_size": 2, "decoder": "standard", "causal": false,
+                "rope_base": 10000.0, "rms_epsilon": 1e-5, "embedding_scale": 1.0,
+                "value_scale": 1.0, "attention_scale": 1.0, "activation": "silu"
+            }
+        });
+        std::fs::write(model.with_extension("json"), serde_json::to_vec(&metadata)?)?;
+        std::fs::write(&target, b"other")?;
+
+        let Err(error) = AneDraft::open(&model, &embeddings, 1, 2, 1, &draft, &target) else {
+            bail!("a package bound to another target should be rejected");
+        };
+        assert_eq!(
+            error.to_string(),
+            "ANE DFlash package was generated from a different target GGUF"
+        );
+        Ok(())
+    }
 }

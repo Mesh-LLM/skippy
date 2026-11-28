@@ -304,9 +304,6 @@ fn attach_planned_dflash_draft(
         max_draft_tokens: dflash.max_draft_tokens,
         n_gpu_layers,
         device: speculative.draft_device.clone(),
-        ane_target_path: (speculative.draft_device.as_deref() == Some("ANE"))
-            .then(|| config.model_path.as_ref().map(std::path::PathBuf::from))
-            .flatten(),
     };
     let mut runtime = lock_runtime(runtime);
     runtime
