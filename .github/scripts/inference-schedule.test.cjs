@@ -11,7 +11,8 @@ const needs = (profile, result = 'success', event = github) => ({ plan: { result
 
 test('scheduled Release calls do not select nightly smoke expansion or public metrics collection', () => {
   const flags = [...workflow.matchAll(/^ +NIGHTLY_PUBLICATION: \$\{\{ (.+) \}\}$/gm)];
-  assert.equal(flags.length, 2);
+  assert.equal(flags.length, 1);
+  assert.match(workflow, /if \[\[ "\$PROFILE" == pr \|\| "\$PROFILE" == nightly \]\]; then flags\+=\(--collect-metrics\)/);
   for (const [, expression] of flags) {
     const enabled = new Function('github', 'steps', 'needs', `return (${expression});`);
     assert.equal(enabled(github, steps('release'), needs('release')), 'false');
@@ -41,10 +42,11 @@ async function status(profile, publication, result = 'success', plan = 'success'
   const statuses = [], failures = [];
   await evaluate({ env: {
     SOURCE_SHA: 'a'.repeat(40), PROFILE: profile, PLAN: plan, RESULT: result,
-    PUBLICATION_REQUIRED: String(profile === 'nightly'), PUBLICATION: publication, RUN_URL: 'https://example.invalid/run',
+    PUBLICATION_REQUIRED: String(profile === 'nightly'), COMPARISON: 'success', PUBLICATION: publication, RUN_URL: 'https://example.invalid/run',
   } }, { eventName, repo: { owner: 'Mesh-LLM', repo: 'skippy' } }, {
     rest: { repos: { createCommitStatus: async value => statuses.push(value) } },
-  }, { setFailed: message => failures.push(message) });
+  }, { setFailed: message => failures.push(message),
+       summary: { addHeading() { return this; }, addRaw() { return this; }, async write() {} } });
   return { state: statuses[0].state, failures };
 }
 

@@ -275,7 +275,6 @@ jobs:
           RESULT: ${{ needs.qualification.result }}
           PUBLICATION: ${{ needs.nightly_publish.result }}
           COMPARISON: ${{ needs.compare.result }}
-          PROFILE: ${{ needs.plan.outputs.profile }}
           RELEASE_CANDIDATE: ${{ inputs.release_candidate }}
           PUBLICATION_REQUIRED: ${{ needs.plan.outputs.publication }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
