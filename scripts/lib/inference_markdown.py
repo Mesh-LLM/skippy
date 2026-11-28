@@ -189,7 +189,7 @@ def latest_tables(view):
     return lines
 
 
-def health_sections(view, charts, image_base_url=None):
+def health_sections(view, charts, image_base_url=None, chart_format="png"):
     run, counts = view["run"], view["counts"]
     tolerance = f"{TOLERANCE * 100:.0f}%"
     lines = [
@@ -213,15 +213,27 @@ def health_sections(view, charts, image_base_url=None):
         ])])
     if view["errors"]:
         lines.extend(["", "**Request errors were measured.** " + ", ".join(f"{value:g}%" for value in view["errors"]) + "."])
+    if run.get("comparison_error"):
+        lines.extend(["", "**Comparison unavailable.** " + plain(run["comparison_error"])])
+    elif run.get("comparison_notice"):
+        lines.extend(["", plain(run["comparison_notice"])])
     lines.extend(regression_table(view))
     if charts:
-        lines.extend(["", "## Performance over time", "",
+        explanation = ("Each panel compares the measured value with its saved reference. "
+                       "The comparison colour indicates its 1% verdict: green improved, blue within tolerance, "
+                       "red regressed, and grey a new series. No unmeasured samples are filled in."
+                       if chart_format == "mermaid" else
                       f'Each panel shows one measured model and Spark configuration. The dashed line is '
                       f'the current comparison reference; the shaded band is ±{tolerance}. '
                       'Blue circles are within tolerance, green triangles indicate improvements, '
                       'red triangles indicate regressions, and grey squares mark first measurements. '
-                      'Missing measurements leave gaps. Dates are UTC.'])
+                      'Missing measurements leave gaps. Dates are UTC.')
+        lines.extend(["", "## Measured comparisons" if chart_format == "mermaid" else "## Performance over time", "", explanation])
         for index, chart in enumerate(charts, start=1):
+            if chart_format == "mermaid":
+                from .inference_mermaid import measured_panels
+                lines.extend(["", "### " + chart.title, *measured_panels(chart)])
+                continue
             path = image_path(index)
             url = f"{image_base_url.rstrip('/')}/{path}" if image_base_url else path
             lines.extend(["", "### " + chart.title, "",
@@ -255,13 +267,18 @@ def health_sections(view, charts, image_base_url=None):
             links.append(f"[Historical comparison audit]({HF_DATASET}/blob/main/comparability.json)")
     if links:
         lines.extend(["", " · ".join(links)])
+    if run.get("baseline_revision"):
+        sha(run["baseline_revision"])
+        lines.extend(["", link("Saved baseline snapshot", f"{HF_DATASET}/blob/{run['baseline_revision']}/baselines.json")])
     return lines
 
 
-def run_summary(report, run_id, image_base_url=None):
+def run_summary(report, run_id, image_base_url=None, chart_format="png"):
+    if chart_format not in {"png", "mermaid"}:
+        raise ValueError("unsupported health chart format")
     view = health_view(report, run_id)
     charts = health_charts(view)
-    return "\n".join(["# Inference qualification", "", *health_sections(view, charts, image_base_url), ""])
+    return "\n".join(["# Inference qualification", "", *health_sections(view, charts, image_base_url, chart_format), ""])
 
 
 def dataset_card(report, charts=None):

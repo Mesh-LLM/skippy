@@ -21,8 +21,8 @@ def benchmark_tree(node):
     return node
 
 
-def benchmark_functions(path, names):
-    tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+def benchmark_functions(path, names, *, source=None):
+    tree = ast.parse(Path(path).read_text(encoding="utf-8") if source is None else source)
     selected = {node.name: benchmark_tree(node)
                 for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names}
     if set(selected) != set(names):

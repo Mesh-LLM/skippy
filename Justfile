@@ -189,6 +189,10 @@ ci-plan:
 inference-plan profile source output="target/ci-evidence/inference-plan.json":
     @"{{ automation_python }}" scripts/inference-plan.py plan "$@"
 
+[positional-arguments]
+inference-compare evidence:
+    @"{{ automation_python }}" scripts/inference-compare.py "$@"
+
 process-supervision-test:
     @cargo test --locked -p skippy-subprocess
 

@@ -1,4 +1,4 @@
-"""Build the public nightly report from validated Actions artifacts."""
+"""Build inference reports from validated Actions artifacts."""
 
 from pathlib import Path
 import re
@@ -65,13 +65,20 @@ def failure_outcome(directory, entry, sha):
     return "incomplete"
 
 
-def read_configuration(root, entry, sha, run_id, attempt):
-    directory = root / f'inference-{entry["id"]}-{run_id}-{attempt}'
+def read_configuration(root, entry, sha, run_id, attempt, *, reuse_prior=True):
+    prefix = f'inference-{entry["id"]}-{run_id}-'
+    directory = root / f"{prefix}{attempt}"
+    if reuse_prior and not directory.is_dir():
+        prior = [int(suffix) for path in root.glob(f"{prefix}*")
+                 if path.is_dir() and re.fullmatch(r"[1-9][0-9]*", suffix := path.name[len(prefix):])
+                 and int(suffix) < int(attempt)]
+        if prior:
+            directory = root / f"{prefix}{max(prior)}"
     try:
         workload, rows = measurements(directory, entry, sha)
         return {"id": entry["configuration"], "workload": workload, "outcome": "passed", "metrics": rows}
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
-        print(f'{entry["id"]}: unverified nightly measurements ({type(error).__name__})', file=sys.stderr)
+        print(f'{entry["id"]}: unverified inference measurements ({type(error).__name__})', file=sys.stderr)
         workload = WORKLOADS[entry["profile"]]
         return {
             "id": entry["configuration"], "workload": workload,
@@ -81,18 +88,24 @@ def read_configuration(root, entry, sha, run_id, attempt):
         }
 
 
-def nightly_run(root: Path, source, run_id, attempt, started_at, matrix_passed):
+def qualification_run(root: Path, profile, source, run_id, attempt, started_at, matrix_passed, *, published=False):
+    if profile not in METRIC_NAMES or (published and profile != "nightly"):
+        raise ValueError("unsupported inference measurement profile")
     configs = [
-        read_configuration(root, entry, source, run_id, attempt)
-        for entry in matrix("nightly", source, include_smoke=True)
+        read_configuration(root, entry, source, run_id, attempt, reuse_prior=True)
+        for entry in matrix(profile, source, include_smoke=published)
     ]
     passed = matrix_passed and all(config["outcome"] == "passed" for config in configs)
     return {
-        "id": f"{run_id}-{attempt}", "profile": "nightly", "source_sha": source,
+        "id": f"{run_id}-{attempt}", "profile": profile, "source_sha": source,
         "started_at": started_at, "outcome": "passed" if passed else "failed",
-        "published": True, "configurations": configs,
+        "published": published, "configurations": configs,
         "note": (
             "AgentX values are means of two trial summaries. Request counts are combined. "
             "The performance tolerance and improvement threshold are 1%."
         ),
     }
+
+
+def nightly_run(root: Path, source, run_id, attempt, started_at, matrix_passed):
+    return qualification_run(root, "nightly", source, run_id, attempt, started_at, matrix_passed, published=True)

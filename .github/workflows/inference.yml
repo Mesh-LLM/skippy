@@ -100,6 +100,7 @@ jobs:
       profile: ${{ steps.admission.outputs.profile || 'pr' }}
       publication: ${{ steps.admission.outputs.publication }}
       matrix: ${{ steps.matrix.outputs.matrix }}
+      controller: ${{ steps.controller.outputs.sha }}
     steps:
       # Credentialed controller source always comes from protected main.
       # Candidate source is never checked out or executed by this workflow.
@@ -107,6 +108,8 @@ jobs:
         with:
           ref: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && github.sha || 'main' }}
           persist-credentials: false
+      - id: controller
+        run: printf 'sha=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/setup
       - id: admission
         env:
@@ -139,7 +142,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && github.sha || 'main' }}
+          ref: ${{ needs.plan.outputs.controller }}
           persist-credentials: false
       - uses: ./.github/actions/setup
       - name: Dispatch and await native Spark qualification
@@ -147,11 +150,10 @@ jobs:
           SOURCE_SHA: ${{ needs.plan.outputs.source }}
           PROFILE: ${{ matrix.profile }}
           CONFIGURATION: ${{ matrix.configuration }}
-          NIGHTLY_PUBLICATION: ${{ needs.plan.outputs.publication }}
           JIANYANG_INFERENCE_SSH_KEY: ${{ secrets.JIANYANG_INFERENCE_SSH_KEY }}
         run: |
           flags=()
-          if [[ "$NIGHTLY_PUBLICATION" == true ]]; then flags+=(--collect-public); fi
+          if [[ "$PROFILE" == pr || "$PROFILE" == nightly ]]; then flags+=(--collect-metrics); fi
           just inference-dispatch "$PROFILE" "$SOURCE_SHA" "$EVIDENCE" "$CONFIGURATION" "${flags[@]}"
       - name: Cancel outstanding JY jobs and formations
         if: cancelled() || failure()
@@ -190,7 +192,7 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         continue-on-error: true
         with:
-          pattern: inference-*-${{ github.run_id }}-${{ github.run_attempt }}
+          pattern: inference-*-${{ github.run_id }}-*
           path: target/ci-evidence/nightly-inference
       - name: Prepare reporting dependencies
         env:
@@ -219,8 +221,46 @@ jobs:
           path: target/ci-evidence/nightly-inference/publication-report.json
           if-no-files-found: warn
           retention-days: 30
+
+  compare:
+    name: Compare with published inference baseline
+    needs: [plan, qualification]
+    if: >-
+      always() && !cancelled() && needs.plan.result == 'success' &&
+      needs.plan.outputs.publication != 'true' &&
+      (github.event_name == 'pull_request_target' || github.event_name == 'workflow_dispatch') &&
+      (needs.plan.outputs.profile == 'pr' || needs.plan.outputs.profile == 'nightly')
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ needs.plan.outputs.controller }}
+          persist-credentials: false
+      - name: Collect source-bound measurements
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        continue-on-error: true
+        with:
+          # Failed-jobs-only reruns can retain successful configurations from prior attempts.
+          pattern: inference-*-${{ github.run_id }}-*
+          path: target/ci-evidence/inference-comparison
+      - name: Publish comparison charts and check for regressions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROFILE: ${{ needs.plan.outputs.profile }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source }}
+          MATRIX_RESULT: ${{ needs.qualification.result }}
+        run: |
+          RUN_STARTED_AT=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
+            --jq '.run_started_at')
+          export RUN_STARTED_AT
+          just inference-compare target/ci-evidence/inference-comparison
+
   summary:
-    needs: [plan, qualification, nightly_publish]
+    needs: [plan, qualification, nightly_publish, compare]
     if: always() && needs.plan.result != 'skipped'
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 5
@@ -234,20 +274,36 @@ jobs:
           PLAN: ${{ needs.plan.result }}
           RESULT: ${{ needs.qualification.result }}
           PUBLICATION: ${{ needs.nightly_publish.result }}
+          COMPARISON: ${{ needs.compare.result }}
+          RELEASE_CANDIDATE: ${{ inputs.release_candidate }}
           PUBLICATION_REQUIRED: ${{ needs.plan.outputs.publication }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |
-            const { SOURCE_SHA: sha, PROFILE: profile, PLAN: plan, RESULT: result, PUBLICATION: publication, RUN_URL: url } = process.env;
+            const { SOURCE_SHA: sha, PLAN: plan, RESULT: result, PUBLICATION: publication,
+              COMPARISON: comparison, PROFILE: profile, RELEASE_CANDIDATE: candidate, RUN_URL: url } = process.env;
             if (!/^[a-f0-9]{40}$/i.test(sha)) throw new Error('Invalid qualification source SHA');
+            const pullRequest = context.eventName === 'pull_request_target';
             const nightly = process.env.PUBLICATION_REQUIRED === 'true';
+            const compare = !nightly && (pullRequest || context.eventName === 'workflow_dispatch') &&
+              (profile === 'pr' || profile === 'nightly');
             const passed = plan === 'success' && result === 'success' &&
-              (!nightly || publication === 'success');
+              (!nightly || publication === 'success') && (!compare || comparison === 'success');
             const description = passed
               ? 'Native Spark lab qualification'
               : nightly
               ? 'Nightly qualification or publication incomplete or failed'
+              : compare && result === 'success'
+              ? 'Published baseline comparison failed or incomplete'
               : 'Inference admission or qualification incomplete or failed';
+            if (plan !== 'success' || profile === 'release') {
+              const detail = plan !== 'success'
+                ? 'Qualification did not reach the lab. See the admission job for details.'
+                : 'The release profile runs longer AgentX trials and has no matching published baseline.';
+              const outcome = passed ? 'Passed' : 'Failed';
+              await core.summary.addHeading('Inference qualification')
+                .addRaw(`**${outcome}** · \`${sha.slice(0, 12)}\`\n\n${detail}\n`, true).write();
+            }
             await github.rest.repos.createCommitStatus({
               ...context.repo, sha, context: 'Inference qualification',
               state: passed ? 'success' : 'failure', description, target_url: url
@@ -266,13 +322,13 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: main
+          ref: ${{ needs.plan.outputs.controller }}
           persist-credentials: false
       - name: Collect controller receipts when available
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         continue-on-error: true
         with:
-          pattern: inference-*-${{ github.run_id }}-${{ github.run_attempt }}
+          pattern: inference-*-${{ github.run_id }}-*
           path: target/inference-comment
           merge-multiple: true
       - name: Update the PR results comment

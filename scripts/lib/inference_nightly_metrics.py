@@ -66,22 +66,28 @@ def agentx_metrics(trials):
             "requests": sum(requests), "request_error_pct": 0}
 
 
-def contract(profile, row, key):
+def benchmark_definition(profile, mode, backend="cuda"):
     functions = {
         "scripts/inference-execute.py": ["execute"],
         "scripts/lib/inference_checks.py": ["score"],
     }
-    if row["mode"] == "split":
+    if mode == "split":
         functions["scripts/inference-execute.py"].append("prepare_split")
     files = ("ci/inference-quality.json",)
     if profile == "pr":
         functions["scripts/lib/inference_checks.py"].extend(["streaming", "request"])
         functions["scripts/lib/inference_nightly_metrics.py"] = ["smoke_metrics"]
-        files += ("scripts/lib/inference_throughput.py", "scripts/lib/inference_probe.py")
+        functions["scripts/lib/inference_throughput.py"] = ["collect", "totals"]
+        files += ("scripts/lib/inference_probe.py",)
     else:
         functions["scripts/lib/inference_checks.py"].append("performance")
         functions["scripts/lib/inference_nightly_metrics.py"] = ["agentx_metrics"]
         files += ("ci/inference-corpus.json", "ci/aiperf-requirements.lock")
+    return functions, files
+
+
+def contract(profile, row, key):
+    functions, files = benchmark_definition(profile, row["mode"], row.get("backend", "cuda"))
     inputs = {
         "recipe_version": 2,
         "profile": profile, "mode": row["mode"], "device": "NVIDIA GB10",

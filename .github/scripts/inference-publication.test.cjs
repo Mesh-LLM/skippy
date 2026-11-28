@@ -15,13 +15,14 @@ async function status(eventName, publication, overrides = {}) {
   const process = { env: {
     SOURCE_SHA: 'a'.repeat(40), PLAN: 'success', RESULT: 'success',
     PUBLICATION_REQUIRED: 'true', PUBLICATION: publication,
-    RUN_URL: 'https://example.invalid/run', ...overrides,
+    RUN_URL: 'https://example.invalid/run', PROFILE: 'nightly', COMPARISON: 'skipped', ...overrides,
   } };
   const github = { rest: { repos: {
     createCommitStatus: async value => statuses.push(value),
   } } };
-  await evaluate(process, github, { eventName, repo: { owner: 'Mesh-LLM', repo: 'skippy' } },
-    { setFailed: message => failures.push(message) });
+  const summary = { addHeading() { return this; }, addRaw() { return this; }, async write() {} };
+  await evaluate(process, github, { eventName, repo: { owner: 'Mesh-LLM', repo: 'skippy' }, payload: { pull_request: { labels: [] } } },
+    { summary, setFailed: message => failures.push(message) });
   assert.equal(statuses.length, 1);
   return { state: statuses[0].state, failures };
 }
@@ -38,7 +39,7 @@ test('scheduled and manual nightly success requires successful publication', asy
 });
 
 test('PR qualification requires admission and skipped plans cannot satisfy it', async () => {
-  assert.deepEqual(await status('pull_request_target', 'skipped', { PUBLICATION_REQUIRED: 'false' }),
+  assert.deepEqual(await status('pull_request_target', 'skipped', { PUBLICATION_REQUIRED: 'false', PROFILE: 'pr', COMPARISON: 'success' }),
     { state: 'success', failures: [] });
   const skipped = await status('pull_request_target', 'skipped', {
     PUBLICATION_REQUIRED: '', PLAN: 'skipped', RESULT: 'skipped',

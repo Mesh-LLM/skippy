@@ -38,3 +38,5 @@ Current values and signed changes against the saved reference, or the previous c
 Smoke throughput uses scored request token totals divided by measured phase time. It is a different workload from nightly AgentX.
 
 The ±1% rule expresses tolerance, not statistical significance. Comparisons preserve workload identity; a changed benchmark starts a new series.
+
+[Saved baseline snapshot](https://huggingface.co/datasets/meshllm/skippy-inference-qualification/blob/ffffffffffffffffffffffffffffffffffffffff/baselines.json)

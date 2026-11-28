@@ -1,4 +1,4 @@
-"""Evaluate nightly measurements against saved, workload-compatible baselines."""
+"""Evaluate inference measurements against saved, workload-compatible baselines."""
 
 from copy import deepcopy
 from decimal import Decimal
@@ -7,6 +7,9 @@ import re
 from .inference_nightly_metrics import metric_value
 from .inference_comparability import contracts_match
 
+DATASET = "meshllm/skippy-inference-qualification"
+HISTORY_LIMIT = 64
+RUN_PATH = re.compile(r"runs/([1-9][0-9]*)/([1-9][0-9]*)\.parquet")
 TOLERANCE = Decimal("0.01")
 DIRECTION = {
     "prefill_tok_s": 1, "decode_tok_s": 1, "output_tok_s": 1,
@@ -14,6 +17,23 @@ DIRECTION = {
 }
 SHA = re.compile(r"[0-9a-f]{40}")
 CONTRACT = re.compile(r"[0-9a-f]{64}")
+
+
+def prior_state(files, fetch):
+    if "baselines.json" not in files:
+        if any(path.startswith("runs/") for path in files):
+            raise ValueError("nightly history exists without a baseline manifest")
+        return {"schema_version": 1, "last_run_number": 0, "history": [], "baselines": []}
+    state = fetch("baselines.json")
+    history = state["history"]
+    if (type(state["schema_version"]) is not int or state["schema_version"] != 1
+            or type(state["last_run_number"]) is not int or state["last_run_number"] < 1
+            or type(history) is not list or not 0 < len(history) <= HISTORY_LIMIT
+            or any(not isinstance(path, str) or not RUN_PATH.fullmatch(path) or path not in files
+                   for path in history) or len(set(history)) != len(history)
+            or type(state["baselines"]) is not list):
+        raise ValueError("invalid nightly baseline manifest")
+    return state
 
 
 def metric_key(configuration, item):
@@ -44,12 +64,12 @@ def classify(metric, measured, saved):
     return "passed"
 
 
-def apply_baselines(run, baselines):
+def apply_baselines(run, baselines, *, read_only=False):
     result = deepcopy(run)
     active = baseline_index(deepcopy(baselines))
     regression = False
     for config in result["configurations"]:
-        if config["outcome"] != "passed":
+        if config["outcome"] != "passed" or config.get("benchmark_compatible") is False:
             continue
         for row in config["metrics"]:
             metric = row["metric"]
@@ -64,6 +84,8 @@ def apply_baselines(run, baselines):
             latest = {"value": current, "source_sha": result["source_sha"], "run_id": result["id"]}
             if saved is None or not contracts_match(config["id"], row["workload"],
                                                     saved["contract_sha256"], contract):
+                if read_only:
+                    continue
                 row["baseline_update"] = "seeded"
             else:
                 row["reference"] = {"value": saved["value"], "source_sha": saved["source_sha"]}
@@ -71,6 +93,8 @@ def apply_baselines(run, baselines):
                 row["verdict"] = verdict
                 if verdict == "regressed":
                     regression = True
+                    continue
+                if read_only:
                     continue
                 if verdict == "passed" or saved["source_sha"] == result["source_sha"]:
                     saved["latest_passing"] = latest

@@ -46,3 +46,5 @@ Two trials per configuration. Throughput and latency values are means of trial s
 The ±1% rule expresses tolerance, not statistical significance. Comparisons preserve workload identity; a changed benchmark starts a new series.
 
 [Full results and history](https://huggingface.co/datasets/meshllm/skippy-inference-qualification/tree/main/runs)
+
+[Saved baseline snapshot](https://huggingface.co/datasets/meshllm/skippy-inference-qualification/blob/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/baselines.json)

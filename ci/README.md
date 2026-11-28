@@ -267,6 +267,17 @@ the token. Public receipts contain aggregate results, source and workload
 identities, and verdicts. Native logs, lab receipts, and native access
 credentials stay in their existing systems.
 
+Labeled PRs and manual smoke runs use
+the same metric receipts and 1% tolerance to compare with the public dataset.
+They read a pinned dataset revision anonymously and publish a chart and table
+to the Actions summary. A regression, incomplete required lab evidence, or a
+failure to read or verify the published baseline fails qualification. The
+summary identifies measurements with no matching baseline, including before
+the first nightly publication and when benchmark inputs change. The longer
+`release` workload continues to use its lab qualification result because the
+dataset has no comparable release workload. A merge to `main` adds no
+qualification run.
+
 Dispatch `inference.yml` on `main` with `profile=nightly` to run the same
 nineteen-configuration matrix, collect public measurements, and publish the
 report as a scheduled run. Both triggers require publication to succeed for
