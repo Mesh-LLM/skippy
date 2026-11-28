@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from upgrade_lifecycle import fixture, commit
+from upgrade_abi import seed_abi_fixture
 from lib.upgrade_ci_failure import classify
 from lib.upgrade_lifecycle import verify_or_repair
 from lib.upgrade_repair import repair
@@ -28,6 +29,7 @@ class CompleteGates(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             checkout = fixture(root)
+            seed_abi_fixture(checkout)
             calls = root / 'calls.json'
             gate = checkout / 'gate.py'
             gate.write_text(
@@ -57,7 +59,7 @@ class CompleteGates(unittest.TestCase):
                 'if len(turns)==1:\n'
                 '    assert "undefined symbol: llama_set_embeddings_nextn" in logs\n'
                 '    path=Path("crates/skippy-ffi/src/static_bindings.rs")\n'
-                '    path.parent.mkdir(parents=True)\n    path.write_text("FFI repair\\n")\n'
+                '    path.parent.mkdir(parents=True, exist_ok=True)\n    path.write_text("FFI repair\\n")\n'
                 'else:\n'
                 '    assert "LLM_FUSED_OP_LIGHTNING_INDEXER" in logs\n'
                 '    Path("llama_cpp/patches/graph.patch").write_text("native test repair\\n")\n')

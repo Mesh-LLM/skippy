@@ -55,6 +55,7 @@ ELF_HOST = {
     "libz.so.1",
     "libcuda.so",
     "libcuda.so.1",
+    "libvulkan.so.1",
 }
 
 NATIVE_TARGETS = {

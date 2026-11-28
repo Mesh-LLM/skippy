@@ -27,8 +27,61 @@ env:
   SCCACHE_GHA_ENABLED: 'true'
   SKIPPY_REQUIRE_SCCACHE: '1'
 jobs:
-  candidate:
+  resolve:
     if: github.ref == 'refs/heads/main'
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      changed: ${{ steps.resolve.outputs.changed }}
+      validate: ${{ steps.resolve.outputs.validate }}
+      upstream_sha: ${{ steps.resolve.outputs.upstream_sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+      - name: Resolve immutable upstream source
+        id: resolve
+        env:
+          UPSTREAM_SHA: ${{ inputs.upstream_sha }}
+          FORCE_CHECK: ${{ inputs.force_check || false }}
+          GH_TOKEN: ${{ github.token }}
+        run: just automation-run upgrade resolve --upstream "$UPSTREAM_SHA" --force-check "$FORCE_CHECK"
+  publisher_preflight:
+    needs: resolve
+    if: needs.resolve.outputs.validate == 'true' && needs.resolve.outputs.changed == 'true'
+    runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Check publisher configuration
+        env:
+          SKIPPY_UPGRADE_APP_ID: ${{ vars.SKIPPY_UPGRADE_APP_ID }}
+          SKIPPY_UPGRADE_APP_KEY_CONFIGURED: ${{ secrets.SKIPPY_UPGRADE_APP_PRIVATE_KEY != '' }}
+        run: bash scripts/check-upgrade-publisher.sh
+      - name: Verify repository-scoped publisher access
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
+        with:
+          app-id: ${{ vars.SKIPPY_UPGRADE_APP_ID }}
+          private-key: ${{ secrets.SKIPPY_UPGRADE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: skippy
+          permission-contents: write
+          permission-pull-requests: write
+  candidate:
+    needs: [resolve, publisher_preflight]
+    if: >-
+      !cancelled() && github.ref == 'refs/heads/main' && needs.resolve.result == 'success' &&
+      needs.resolve.outputs.validate == 'true' &&
+      (needs.publisher_preflight.result == 'success' || needs.resolve.outputs.changed == 'false')
     runs-on:
       group: jy-rnr_vfnz8k5p4yrh334
       labels: [self-hosted, jy-linux-docker, Linux]
@@ -48,10 +101,10 @@ jobs:
       GOOSE_DISABLE_SESSION_NAMING: 'true'
       SKIPPY_UPGRADE_REPAIR_COMMAND: ${{ vars.SKIPPY_UPGRADE_REPAIR_COMMAND || '["goose","run","--with-builtin","developer","--text"]' }}
     outputs:
-      changed: ${{ steps.resolve.outputs.changed }}
-      validate: ${{ steps.resolve.outputs.validate }}
+      changed: ${{ needs.resolve.outputs.changed }}
+      validate: ${{ needs.resolve.outputs.validate }}
       candidate_sha: ${{ steps.prepare.outputs.candidate_sha }}
-      upstream_sha: ${{ steps.resolve.outputs.upstream_sha }}
+      upstream_sha: ${{ needs.resolve.outputs.upstream_sha }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -62,31 +115,24 @@ jobs:
           cache: 'false'
       - name: Check runner GitHub CLI
         run: gh --version
-      - name: Resolve immutable upstream source
-        id: resolve
-        env:
-          UPSTREAM_SHA: ${{ inputs.upstream_sha }}
-          FORCE_CHECK: ${{ inputs.force_check || false }}
-          GH_TOKEN: ${{ github.token }}
-        run: just automation-run upgrade resolve --upstream "$UPSTREAM_SHA" --force-check "$FORCE_CHECK"
       - name: Check JY native tools and repair agent
-        if: steps.resolve.outputs.validate == 'true'
+        if: needs.resolve.outputs.validate == 'true'
         run: just automation-run upgrade runner-check
       - uses: ./.github/actions/cache
-        if: steps.resolve.outputs.validate == 'true'
+        if: needs.resolve.outputs.validate == 'true'
         with:
           scope: upgrade-candidate-jy-llvm22
           download-scope: upgrade-candidate
       - uses: ./.github/actions/sccache
         id: compiler_cache
-        if: steps.resolve.outputs.validate == 'true'
+        if: needs.resolve.outputs.validate == 'true'
         with:
           scope: upgrade-candidate-jy-${{ runner.os }}-${{ runner.arch }}-llvm22
       - name: Prepare and freeze candidate
         id: prepare
-        if: steps.resolve.outputs.validate == 'true'
+        if: needs.resolve.outputs.validate == 'true'
         env:
-          UPSTREAM_SHA: ${{ steps.resolve.outputs.upstream_sha }}
+          UPSTREAM_SHA: ${{ needs.resolve.outputs.upstream_sha }}
         run: just automation-run upgrade prepare "$UPSTREAM_SHA"
       - uses: ./.github/actions/report-sccache
         if: ${{ !cancelled() && steps.compiler_cache.outcome == 'success' }}
@@ -102,7 +148,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        if: ${{ always() && steps.resolve.outputs.validate == 'true' }}
+        if: ${{ always() && needs.resolve.outputs.validate == 'true' }}
         with:
           name: llama-preparation-diagnostics-recovery
           path: target/llama-upgrade/diagnostics/recovery

@@ -39,7 +39,7 @@ pub struct CuratedDeleteCatalog;
 
 impl DeleteModelCatalog for CuratedDeleteCatalog {
     fn local_stem_for_identifier(&self, identifier: &str) -> Option<String> {
-        crate::remote_catalog::find_model_exact(identifier)
+        crate::remote_catalog::find_cached_model_exact(identifier)
             .map(|model| model.file.trim_end_matches(".gguf").to_string())
     }
 }
@@ -64,6 +64,14 @@ async fn parse_delete_model_ref(
         bail!("Delete does not support filesystem paths. Use a model stem or Hugging Face ref.");
     }
 
+    if let Some((repo, revision, file)) = parse_huggingface_file_ref(input) {
+        return Ok(DeleteModelRef::HuggingFace {
+            repo,
+            revision,
+            file,
+        });
+    }
+
     if let Some(stem) = catalog.local_stem_for_identifier(input)
         && find_model_path(&stem).exists()
     {
@@ -77,13 +85,6 @@ async fn parse_delete_model_ref(
         }
     }
 
-    if let Some((repo, revision, file)) = parse_huggingface_file_ref(input) {
-        return Ok(DeleteModelRef::HuggingFace {
-            repo,
-            revision,
-            file,
-        });
-    }
     if let Some((repo, revision, selector)) = parse_huggingface_repo_ref(input) {
         return Ok(DeleteModelRef::HuggingFace {
             repo,
@@ -541,5 +542,31 @@ mod tests {
         assert!(collect_delete_paths_in(std::slice::from_ref(&mesh_model), &mesh_root).is_ok());
         assert!(collect_delete_paths_in(std::slice::from_ref(&mesh_model), &skippy_root).is_err());
         assert!(collect_delete_paths_in(std::slice::from_ref(&skippy_model), &mesh_root).is_err());
+    }
+
+    #[tokio::test]
+    async fn parse_delete_model_ref_skips_catalog_for_huggingface_file_ref() {
+        struct PanicCatalog;
+        impl DeleteModelCatalog for PanicCatalog {
+            fn local_stem_for_identifier(&self, _identifier: &str) -> Option<String> {
+                panic!("full Hugging Face file ref must not consult the remote catalog");
+            }
+        }
+
+        let parsed = parse_delete_model_ref("org/model/model-Q4_K_M.gguf", &PanicCatalog)
+            .await
+            .expect("full Hugging Face file ref should parse without catalog");
+        match parsed {
+            DeleteModelRef::HuggingFace {
+                repo,
+                revision,
+                file,
+            } => {
+                assert_eq!(repo, "org/model");
+                assert_eq!(revision, None);
+                assert_eq!(file, "model-Q4_K_M.gguf");
+            }
+            DeleteModelRef::LocalStem(_) => panic!("expected HuggingFace ref"),
+        }
     }
 }

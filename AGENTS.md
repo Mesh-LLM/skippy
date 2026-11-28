@@ -41,6 +41,13 @@ Keep all third-party licenses and preserve wire/hash compatibility deliberately.
 Never commit credentials. The extraction plan and progress ledger are under
 `docs/design/`.
 
+For opt-in inference performance investigations, use the pinned InferenceKit
+wrapper in `scripts/inferencekit.sh` and follow the public contributing guide
+at `docs-site/content/contributing/index.mdx`. Record the exact workload,
+hardware, model, baseline, quality evidence, and result before making a
+performance claim. InferenceKit experiments do not replace Skippy's model and
+hardware qualification.
+
 ## Pull requests
 
 Use `.github/PULL_REQUEST_TEMPLATE.md` for PR descriptions, including when
