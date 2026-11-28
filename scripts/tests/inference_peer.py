@@ -29,14 +29,9 @@ class PeerTests(unittest.TestCase):
         self.leader.peer_url = f"http://127.0.0.1:{self.worker.port}"
         self.worker.peer_url = f"http://127.0.0.1:{self.leader.port}"
         self.process = Mock(poll=Mock(return_value=None))
-        self.child_log = Path(self.enterContext(TemporaryDirectory())) / "server.log"
-        self.child_log.touch()
 
     def stage(self, port):
         return {"bind_addr": f"127.0.0.1:{port}", "stage_id": "stage-1"}
-
-    def listener_report(self, port):
-        return f"INFO skippy-serving listening: binary=127.0.0.1:{port} stage_id=stage-1 layer_range=2..4\n"
 
     def ready(self):
         self.worker.await_peer(seconds=1)
@@ -44,8 +39,8 @@ class PeerTests(unittest.TestCase):
             listener.bind(("127.0.0.1", 0))
             listener.listen(1)
             port = listener.getsockname()[1]
-            self.child_log.write_text(self.listener_report(port))
-            self.worker.worker_ready(self.process, self.child_log, self.stage(port), port=port, seconds=1)
+            with patch("lib.inference_peer.owns_listener", return_value=True):
+                self.worker.worker_ready(self.process, self.stage(port), port=port, seconds=1)
         self.leader.await_peer("ready", seconds=1)
 
     def test_ready_and_completion_require_both_matching_attempts(self):
@@ -91,33 +86,18 @@ class PeerTests(unittest.TestCase):
 
     def test_exited_native_process_cannot_become_ready(self):
         with self.assertRaisesRegex(RuntimeError, "worker exited"):
-            self.worker.worker_ready(Mock(poll=Mock(return_value=1)), self.child_log, self.stage(9401), seconds=0.1)
+            self.worker.worker_ready(Mock(poll=Mock(return_value=1)), self.stage(9401), seconds=0.1)
 
     def test_listener_taken_during_model_load_cannot_make_child_ready(self):
         with socket.socket() as unrelated:
             unrelated.bind(("127.0.0.1", 0))
             unrelated.listen(1)
             port = unrelated.getsockname()[1]
-            for log in ("loading runtime\n", self.listener_report(port).replace("stage-1", "stage-0")):
-                with self.subTest(log=log):
-                    self.child_log.write_text(log)
-                    with self.assertRaisesRegex(RuntimeError, "own bound listener"):
-                        self.worker.worker_ready(self.process, self.child_log, self.stage(port), port=port, seconds=0.04)
-                    self.assertEqual(self.worker.phase, "starting")
-
-    def test_child_post_bind_report_can_arrive_in_partial_writes(self):
-        with socket.socket() as listener:
-            listener.bind(("127.0.0.1", 0))
-            listener.listen(1)
-            port = listener.getsockname()[1]
-            report = self.listener_report(port)
-            fragments = iter((report[:40], report[40:]))
-            def poll():
-                with self.child_log.open("a") as output:
-                    output.write(next(fragments, ""))
-                return None
-            self.worker.worker_ready(Mock(poll=poll), self.child_log, self.stage(port), port=port, seconds=2)
-            self.assertEqual(self.worker.phase, "ready")
+            with patch("lib.inference_peer.owns_listener", return_value=False) as owns:
+                with self.assertRaisesRegex(RuntimeError, "does not own"):
+                    self.worker.worker_ready(self.process, self.stage(port), port=port, seconds=0.04)
+                self.assertEqual(self.worker.phase, "starting")
+                owns.assert_called_with(self.process.pid, "127.0.0.1", port)
 
     def test_existing_native_listener_is_not_admitted_as_new_worker(self):
         with socket.socket() as listener:

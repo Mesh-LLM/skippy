@@ -133,7 +133,7 @@ def execute(profile, key, mode):
         server = start(args, stdin=subprocess.DEVNULL, stdout=stream, stderr=stream)
         try:
             if worker:
-                peer.worker_ready(server, log, read_json(output / "stage.json"))
+                peer.worker_ready(server, read_json(output / "stage.json"))
                 peer.await_peer("complete", server, seconds=18000)
                 offload(log)
                 peer.acknowledge()
