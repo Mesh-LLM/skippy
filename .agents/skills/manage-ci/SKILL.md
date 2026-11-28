@@ -233,6 +233,17 @@ contract; no downstream product's workflow topology applies here.
   Only release controller jobs may write the candidate refs. Release promotion
   and upgrade publication each use a scoped App credential. Do not expose
   publisher secrets to builds.
+- Scheduled and manually dispatched nightly runs of the protected inference
+  workflow use the same full matrix, collect public measurements and publish
+  the public report. Publication is required for their final success; the
+  trigger type must not disable it. PR and release profiles keep their own
+  qualification contracts.
+- Hugging Face and Actions share the measured inference-health report: changes
+  over time, current values, complete standalone/split chart coverage and 1%
+  tolerance. Reporting/admission-only edits must not reset unrelated benchmark
+  histories. Recipe changes start new series; audited historical equivalence
+  is explicit and configuration/workload-bound. Never fill missing data or
+  describe an unmeasured workload as a performance regression.
 - Native inference logs must stream into the Actions qualification step for every
   standalone/split attempt and be retained with its evidence, including failures.
   Treat candidate log text as data, never Actions commands. Report capture gaps

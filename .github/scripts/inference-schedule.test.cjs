@@ -5,23 +5,24 @@ const { join } = require('node:path');
 
 const workflow = readFileSync(join(__dirname, '../workflows/inference.yml'), 'utf8');
 const github = { event_name: 'schedule', ref: 'refs/heads/main', repository: 'Mesh-LLM/skippy' };
-const steps = profile => ({ admission: { outputs: { profile } } });
-const needs = (profile, result = 'success') => ({ plan: { result, outputs: { profile } } });
+const publication = (profile, event = github) => String(profile === 'nightly' && ['schedule', 'workflow_dispatch'].includes(event.event_name) && event.ref === 'refs/heads/main' && event.repository === 'Mesh-LLM/skippy');
+const steps = (profile, event = github) => ({ admission: { outputs: { profile, publication: publication(profile, event) } } });
+const needs = (profile, result = 'success', event = github) => ({ plan: { result, outputs: { profile, publication: publication(profile, event) } } });
 
 test('scheduled Release calls do not select nightly smoke expansion or public metrics collection', () => {
   const flags = [...workflow.matchAll(/^ +NIGHTLY_PUBLICATION: \$\{\{ (.+) \}\}$/gm)];
   assert.equal(flags.length, 2);
   for (const [, expression] of flags) {
     const enabled = new Function('github', 'steps', 'needs', `return (${expression});`);
-    assert.equal(enabled(github, steps('release'), needs('release')), false);
-    assert.equal(enabled(github, steps('nightly'), needs('nightly')), true);
-    assert.equal(enabled({ ...github, event_name: 'workflow_dispatch' }, steps('nightly'), needs('nightly')), false);
-    assert.equal(enabled({ ...github, ref: 'refs/heads/branch' }, steps('nightly'), needs('nightly')), false);
-    assert.equal(enabled({ ...github, repository: 'Elsewhere/skippy' }, steps('nightly'), needs('nightly')), false);
+    assert.equal(enabled(github, steps('release'), needs('release')), 'false');
+    assert.equal(enabled(github, steps('nightly'), needs('nightly')), 'true');
+    assert.equal(enabled({ ...github, event_name: 'workflow_dispatch' }, steps('nightly', { ...github, event_name: 'workflow_dispatch' }), needs('nightly', 'success', { ...github, event_name: 'workflow_dispatch' })), 'true');
+    assert.equal(enabled({ ...github, ref: 'refs/heads/branch' }, steps('nightly', { ...github, ref: 'refs/heads/branch' }), needs('nightly', 'success', { ...github, ref: 'refs/heads/branch' })), 'false');
+    assert.equal(enabled({ ...github, repository: 'Elsewhere/skippy' }, steps('nightly', { ...github, repository: 'Elsewhere/skippy' }), needs('nightly', 'success', { ...github, repository: 'Elsewhere/skippy' })), 'false');
   }
 });
 
-test('public report publication belongs only to admitted scheduled nightly runs', () => {
+test('public report publication requires protected nightly admission', () => {
   const section = workflow.split('\n  nightly_publish:\n')[1].split('\n  summary:\n')[0];
   const condition = section.match(/    if: >-\n([\s\S]+?)\n    runs-on:/)[1];
   const publish = new Function('github', 'needs', 'always', 'cancelled', `return (${condition});`);
@@ -40,7 +41,7 @@ async function status(profile, publication, result = 'success', plan = 'success'
   const statuses = [], failures = [];
   await evaluate({ env: {
     SOURCE_SHA: 'a'.repeat(40), PROFILE: profile, PLAN: plan, RESULT: result,
-    PUBLICATION: publication, RUN_URL: 'https://example.invalid/run',
+    PUBLICATION_REQUIRED: String(profile === 'nightly'), PUBLICATION: publication, RUN_URL: 'https://example.invalid/run',
   } }, { eventName, repo: { owner: 'Mesh-LLM', repo: 'skippy' } }, {
     rest: { repos: { createCommitStatus: async value => statuses.push(value) } },
   }, { setFailed: message => failures.push(message) });

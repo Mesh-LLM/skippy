@@ -8,6 +8,7 @@ from statistics import fmean
 import time
 
 from .ci_artifacts import digest, write_json
+from .inference_comparability import benchmark_functions
 from .inference_inputs import fixture, input_hashes
 from .inference_admission import split_admissions_digest
 from .inference_throughput import collect, successful_run
@@ -17,10 +18,6 @@ WORKLOADS = {"pr": WORKLOAD, "nightly": "DGX Spark AgentX nightly v1"}
 SMOKE_METRICS = ("prefill_tok_s", "decode_tok_s")
 AGENTX_METRICS = ("output_tok_s", "ttft_p95_ms", "itl_p95_ms", "requests", "request_error_pct")
 METRIC_NAMES = {"pr": SMOKE_METRICS, "nightly": AGENTX_METRICS}
-HARNESS = (
-    "scripts/inference-execute.py", "scripts/lib/inference_checks.py",
-    "scripts/lib/inference_nightly_metrics.py", "ci/inference-quality.json",
-)
 
 
 def metric_value(value, *, positive=False):
@@ -70,15 +67,28 @@ def agentx_metrics(trials):
 
 
 def contract(profile, row, key):
-    files = HARNESS
+    functions = {
+        "scripts/inference-execute.py": ["execute"],
+        "scripts/lib/inference_checks.py": ["score"],
+    }
+    if row["mode"] == "split":
+        functions["scripts/inference-execute.py"].append("prepare_split")
+    files = ("ci/inference-quality.json",)
     if profile == "pr":
+        functions["scripts/lib/inference_checks.py"].extend(["streaming", "request"])
+        functions["scripts/lib/inference_nightly_metrics.py"] = ["smoke_metrics"]
         files += ("scripts/lib/inference_throughput.py", "scripts/lib/inference_probe.py")
     else:
+        functions["scripts/lib/inference_checks.py"].append("performance")
+        functions["scripts/lib/inference_nightly_metrics.py"] = ["agentx_metrics"]
         files += ("ci/inference-corpus.json", "ci/aiperf-requirements.lock")
     inputs = {
+        "recipe_version": 2,
         "profile": profile, "mode": row["mode"], "device": "NVIDIA GB10",
         "admission": "native-stage-plan-v2", "model": fixture(key),
         "harness": {name: digest(Path(name)) for name in files},
+        "benchmark_functions": {path: benchmark_functions(path, names)
+                                for path, names in functions.items()},
     }
     encoded = json.dumps(inputs, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()

@@ -260,7 +260,7 @@ class ReleaseAdmissionTests(unittest.TestCase):
                            github=Mock(side_effect=[self.ref, self.commit]), output=output):
             admit()
         planner.assert_called_once_with("release", self.candidate)
-        output.assert_called_once_with(source=self.candidate, profile="release")
+        output.assert_called_once_with(source=self.candidate, profile="release", publication="false")
 
 
 if __name__ == "__main__":
