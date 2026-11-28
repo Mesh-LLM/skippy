@@ -1,0 +1,136 @@
+From d88b3bac0ee5d005eb0b565e0abeea0fe53304b4 Mon Sep 17 00:00:00 2001
+From: Skippy contributors <ci@skippy.local>
+Date: Sat, 28 Nov 2026 16:23:10 +1100
+Subject: [PATCH 56/56] tests: let the attention timing tool take any head
+ shape
+
+With the KV cache in pinned host memory, gemma3n's 256-wide flash
+attention ran 9.3x slower in a serve profile, but the tool measured only
+Qwen3-Coder's 128-wide heads, where host memory cost 2.5x.
+
+--head-dim, --heads and --kv-heads set the shape, and --rows, --slices
+and --layout keep one case, so Nsight Compute sees one kernel.
+---
+ tests/test-flash-attn-rows-perf.cpp | 57 ++++++++++++++++++++++-------
+ 1 file changed, 44 insertions(+), 13 deletions(-)
+
+diff --git a/tests/test-flash-attn-rows-perf.cpp b/tests/test-flash-attn-rows-perf.cpp
+index b6c3c9442..877e6e02f 100644
+--- a/tests/test-flash-attn-rows-perf.cpp
++++ b/tests/test-flash-attn-rows-perf.cpp
+@@ -5,6 +5,10 @@
+ // backend's command timing gives the GPU time of the whole chain.
+ //
+ //   test-flash-attn-rows-perf [--backend NAME] [--iters N] [--depth N] [--kv-memory device|host|both]
++//                             [--head-dim N] [--heads N] [--kv-heads N] [--rows N] [--slices N] [--layout NAME]
++//
++// The shape defaults to Qwen3-Coder-30B-A3B's; gemma3n-e4b is --head-dim 256 --heads 8 --kv-heads 2.
++// --rows, --slices and --layout keep only matching cases, so a profiler sees one kernel.
+ //
+ // --kv-memory places K and V in the device's own buffer type or in its pinned host buffer
+ // type, the way GGML_CUDA_INTEGRATED keeps the cache on a GB10.
+@@ -32,11 +36,12 @@
+ 
+ namespace {
+ 
+-// Qwen3-Coder-30B-A3B: 32 query heads over 4 K/V heads, 128-wide, F16 cache
+-constexpr int64_t dk       = 128;
+-constexpr int64_t dv       = 128;
+-constexpr int64_t heads    = 32;
+-constexpr int64_t kv_heads = 4;
++// one head width for K and V, since each output is the next layer's query
++struct attn_shape {
++    int64_t dk       = 128;
++    int64_t heads    = 32;
++    int64_t kv_heads = 4;
++};
+ constexpr int64_t mask_queries = 64;
+ constexpr int64_t slack    = 256;
+ 
+@@ -124,7 +129,11 @@ struct chain {
+     ggml_tensor * last = nullptr;
+     ggml_cgraph * graph = nullptr;
+ 
+-    chain(ggml_backend_t backend, ggml_backend_buffer_type_t kv_buft, layout value, int64_t rows_per_slice, int64_t slices, int depth) {
++    chain(ggml_backend_t backend, ggml_backend_buffer_type_t kv_buft, const attn_shape & shape, layout value, int64_t rows_per_slice, int64_t slices, int depth) {
++        const int64_t dk = shape.dk;
++        const int64_t dv = shape.dk;
++        const int64_t heads = shape.heads;
++        const int64_t kv_heads = shape.kv_heads;
+         const bool row_based = value != layout::dense;
+         ggml_init_params params{(size_t) (8 + 2*depth)*ggml_tensor_overhead() + ggml_graph_overhead_custom(2*depth + 8, false), nullptr, true};
+         ctx = ggml_init(params);
+@@ -252,8 +261,8 @@ struct result {
+     float checksum;
+ };
+ 
+-result measure(ggml_backend_t backend, timing_sink & sink, const kv_memory & kv, layout value, int64_t rows, int64_t slices, int depth, int iters) {
+-    chain c(backend, kv.buft, value, rows, slices, depth);
++result measure(ggml_backend_t backend, timing_sink & sink, const kv_memory & kv, const attn_shape & shape, layout value, int64_t rows, int64_t slices, int depth, int iters) {
++    chain c(backend, kv.buft, shape, value, rows, slices, depth);
+     c.fill(value, rows, slices);
+     for (int i = 0; i < 5; ++i) {
+         require(ggml_backend_graph_compute(backend, c.graph) == GGML_STATUS_SUCCESS, "warm-up compute");
+@@ -287,6 +296,10 @@ int main(int argc, char ** argv) {
+         int iters = 50;
+         int depth = 48;
+         std::string memory = "device";
++        attn_shape shape;
++        int64_t only_rows = 0;
++        int64_t only_slices = 0;
++        std::string only_layout;
+         for (int i = 1; i < argc; ++i) {
+             if (std::strcmp(argv[i], "--backend") == 0 && i + 1 < argc) {
+                 backend_name = argv[++i];
+@@ -297,8 +310,21 @@ int main(int argc, char ** argv) {
+             } else if (std::strcmp(argv[i], "--kv-memory") == 0 && i + 1 < argc) {
+                 memory = argv[++i];
+                 require(memory == "device" || memory == "host" || memory == "both", "--kv-memory takes device, host or both");
++            } else if (std::strcmp(argv[i], "--head-dim") == 0 && i + 1 < argc) {
++                shape.dk = std::stoll(argv[++i]);
++            } else if (std::strcmp(argv[i], "--heads") == 0 && i + 1 < argc) {
++                shape.heads = std::stoll(argv[++i]);
++            } else if (std::strcmp(argv[i], "--kv-heads") == 0 && i + 1 < argc) {
++                shape.kv_heads = std::stoll(argv[++i]);
++            } else if (std::strcmp(argv[i], "--rows") == 0 && i + 1 < argc) {
++                only_rows = std::stoll(argv[++i]);
++            } else if (std::strcmp(argv[i], "--slices") == 0 && i + 1 < argc) {
++                only_slices = std::stoll(argv[++i]);
++            } else if (std::strcmp(argv[i], "--layout") == 0 && i + 1 < argc) {
++                only_layout = argv[++i];
+             } else {
+-                require(false, "usage: test-flash-attn-rows-perf [--backend NAME] [--iters N] [--depth N] [--kv-memory device|host|both]");
++                require(false, "usage: test-flash-attn-rows-perf [--backend NAME] [--iters N] [--depth N] [--kv-memory device|host|both] "
++                               "[--head-dim N] [--heads N] [--kv-heads N] [--rows N] [--slices N] [--layout NAME]");
+             }
+         }
+         ggml_backend_load_all();
+@@ -326,16 +352,21 @@ int main(int argc, char ** argv) {
+ 
+         std::printf("backend=%s device_type=%s dk=%lld dv=%lld heads=%lld kv_heads=%lld depth=%d iters=%d\n",
+                 ggml_backend_name(backend.get()), ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_IGPU ? "igpu" : "gpu",
+-                (long long) dk, (long long) dv, (long long) heads, (long long) kv_heads, depth, iters);
++                (long long) shape.dk, (long long) shape.dk, (long long) shape.heads, (long long) shape.kv_heads, depth, iters);
+         std::printf("%-6s %-14s %6s %6s %12s %12s %8s %12s\n", "kv", "layout", "rows", "slices", "gpu_us/call", "wall_us/call", "cmd/chain", "checksum");
+-        for (int64_t slices : {1, 4}) {
+-            for (int64_t rows : {768, 4864}) {
++        const std::vector<int64_t> slice_counts = only_slices ? std::vector<int64_t>{only_slices} : std::vector<int64_t>{1, 4};
++        const std::vector<int64_t> row_counts = only_rows ? std::vector<int64_t>{only_rows} : std::vector<int64_t>{768, 4864};
++        for (int64_t slices : slice_counts) {
++            for (int64_t rows : row_counts) {
+                 for (layout value : {layout::dense, layout::identity, layout::chunk64, layout::stride, layout::padded, layout::tail, layout::split}) {
+                     if (slices == 1 && (value == layout::chunk64 || value == layout::stride)) {
+                         continue; // identical to identity with one slice
+                     }
++                    if (!only_layout.empty() && only_layout != layout_name(value)) {
++                        continue;
++                    }
+                     for (const kv_memory & kv : memories) {
+-                        const result r = measure(backend.get(), sink, kv, value, rows, slices, depth, iters);
++                        const result r = measure(backend.get(), sink, kv, shape, value, rows, slices, depth, iters);
+                         std::printf("%-6s %-14s %6lld %6lld %12.2f %12.2f %8.1f %12.4g\n", r.kv, layout_name(r.value),
+                                 (long long) r.rows, (long long) r.slices, r.gpu_us, r.wall_us, r.commands, r.checksum);
+                     }
+-- 
+2.43.0
+
