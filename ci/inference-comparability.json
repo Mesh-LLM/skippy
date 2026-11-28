@@ -1,11 +1,14 @@
 {
   "schema_version": 1,
   "audit": {
-    "reason": "Whole-file hashes changed for split admission and receipt acceptance; standalone execution, model inputs, corpus and benchmark settings were unchanged. Legacy measurements remain immutable. Each alias is restricted to its measured configuration and workload. The native stage-plan change affects split execution and receipt validation. Standalone server arguments, model inputs, corpus and trials are unchanged; the quality prompt file changed only in whitespace. Carry forward standalone nightly recipes only.",
+    "reason": "Whole-file hashes changed for split admission and receipt acceptance; standalone execution, model inputs, corpus and benchmark settings were unchanged. Legacy measurements remain immutable. Each alias is restricted to its measured configuration and workload. The native stage-plan change affects split execution and receipt validation. Standalone server arguments, model inputs, corpus and trials are unchanged; the quality prompt file changed only in whitespace. Carry forward standalone nightly recipes only. CUDA keeps the same server arguments, workloads and trial settings when Metal is added. Native split recipes compare only within the native admission workload. Historical experimental split recipes remain separate.",
     "sources": [
       "d3d9bd694084d2d3f397aa77bf03cbfc9625a840",
       "061a1ed61c22e596b84caf4093d8ceab7efbeac7",
-      "f3b18d3ef9a5f1e5e9a9e9b80dc617029064a131"
+      "f2374721f0b03de2ae4c6a4c095b09398eeabb31",
+      "f3b18d3ef9a5f1e5e9a9e9b80dc617029064a131",
+      "4b35fe0741a6dce4c782676b0343b16e72fe0219",
+      "4eca7f82e342b0992dcf83cfa59cc69200dfa7da"
     ],
     "benchmark_recipe_version": 2
   },
@@ -15,196 +18,364 @@
       "workload": "DGX Spark AgentX nightly v1",
       "source_sha": "d3d9bd694084d2d3f397aa77bf03cbfc9625a840",
       "legacy_sha256": "c4c766c2095e577d4fe8b632fb9dfab67cb75526f3fcd6046986e3562587ea4b",
-      "recipe_sha256": "d3014e0940ddda51ca71ab4793e8f0d64e7aad95ffce43966a1445dd0cc1b2f5"
+      "recipe_sha256": "214a7858f18930f0fd883bfa84081f200ea2f9fdaa1fa6b65435ed37e74bef2d"
     },
     {
       "configuration": "qwen35-2b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
       "source_sha": "d3d9bd694084d2d3f397aa77bf03cbfc9625a840",
       "legacy_sha256": "8c3ea509f4d960e0cbc0892bc0da80685621f7dc3c75dae79838d16565c885e4",
-      "recipe_sha256": "3b4d48a0ebc96755f05107956dcf765063b5aa6a3ff929d4c90251c669cac3ad"
+      "recipe_sha256": "bb5bc22e2c60ac34ba7045156a5a954a80065598f9da754380f0e6b9b77310bc"
     },
     {
       "configuration": "qwen35-4b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
       "source_sha": "d3d9bd694084d2d3f397aa77bf03cbfc9625a840",
       "legacy_sha256": "7458fbbbfba51803aa312947e62035c0d3c50ce9937212c551f85fbed0f43222",
-      "recipe_sha256": "043f2d2d3e8a7b2b9326256e45578ef1ab7e25f2fa6891bbc6fe58a185851949"
+      "recipe_sha256": "664669b6bc14644629a6eec257afdd4a9611526c9554535dc06356af08869a2a"
     },
     {
       "configuration": "qwen35-9b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
       "source_sha": "d3d9bd694084d2d3f397aa77bf03cbfc9625a840",
       "legacy_sha256": "0be480197228bdb7728e84f58e593939c5f27fd8bcbef4b7001b8db7ad666eb3",
-      "recipe_sha256": "af2b3de34cf7ac8497b4bdf35c2a257ea5f04a338f07e9bd2429c51b62bae78e"
+      "recipe_sha256": "5064cd7d26e7b7e32ed903847c70a4dabf331aabf41e23acbb9c071c31eb50ff"
     },
     {
       "configuration": "qwen38-27b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
       "source_sha": "d3d9bd694084d2d3f397aa77bf03cbfc9625a840",
       "legacy_sha256": "db62a6f042e3c4d501451c56d0f05a66bc4c71b6b973e5da5b48c6e643ad669c",
-      "recipe_sha256": "4b36e711b7db947dbf40384ee1d1342941f532012b05c79ae23e15f98c8338a2"
+      "recipe_sha256": "26065c5311441f1026abf7fb0e1135808562a170e76d604dfb3adaaf6cdff5c4"
     },
     {
       "configuration": "qwen38-27b-split",
       "workload": "DGX Spark AgentX nightly v1 (experimental split)",
       "source_sha": "d3d9bd694084d2d3f397aa77bf03cbfc9625a840",
       "legacy_sha256": "db128a51f097984e7b18a669da85759240e9d7441737345a834f0d319fbf9281",
-      "recipe_sha256": "774471871ba4d2f2eebf96e6123debc19a4910f7281b9333dd5a8ba3e769858c"
+      "recipe_sha256": "549cf73df45a5b2c1d470e364336c716ed6c76d84186963e514ddb3ebba49fe7"
     },
     {
       "configuration": "qwen3-coder-30b-a3b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
       "source_sha": "d3d9bd694084d2d3f397aa77bf03cbfc9625a840",
       "legacy_sha256": "0f30f8863b24cdb01a39f38d061895d5e9777363c18b37b4305699d95a173b72",
-      "recipe_sha256": "61a208ade6c2c2fdf0b1938b4aa63f99195f3aa8e2f154d6d877ddee27374567"
+      "recipe_sha256": "27743be8a30e30cf5295263f5996fb07914d48ffe83369584050eb0a45e54491"
     },
     {
       "configuration": "qwen3-coder-30b-a3b-split",
       "workload": "DGX Spark AgentX nightly v1 (experimental split)",
       "source_sha": "d3d9bd694084d2d3f397aa77bf03cbfc9625a840",
       "legacy_sha256": "31c71116969f90493fe5b136ded4458c0fef9841e82cbad0cb19be2cf9149731",
-      "recipe_sha256": "20d09d3bd2abcf4651b7cf0153551b5fdd6c4213ebc121bd352b0476b1a5f7ba"
+      "recipe_sha256": "0b921ce6dedf18d34caff3f3bdef2e2fb92c754104579b29d5427e4bf6e61418"
     },
     {
       "configuration": "qwen36-35b-a3b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
       "source_sha": "d3d9bd694084d2d3f397aa77bf03cbfc9625a840",
       "legacy_sha256": "85d20791a0bf7d6b599b209adc38194e5d8a88be4981b4dcd99d7cff1517f895",
-      "recipe_sha256": "206332f749a72f6b1486e3e8cb09f1f9dc557cbe9f369fc79b4e2dafcdeff279"
+      "recipe_sha256": "fc240b7d0392ea973bd0f06db1c9feaa864e53e1ceb4e2c1b3c9a0878699d40d"
     },
     {
       "configuration": "qwen36-35b-a3b-split",
       "workload": "DGX Spark AgentX nightly v1 (experimental split)",
       "source_sha": "d3d9bd694084d2d3f397aa77bf03cbfc9625a840",
       "legacy_sha256": "782e347748a12cc9a7f485b36e12442ff941adeeb8a7c5b949917fa539239adf",
-      "recipe_sha256": "b683cc46584d8a0c4b694f78b99a4e9a864b8fae97f34b3944f18ef49ccdcc08"
+      "recipe_sha256": "2a4d2cf3ab8c8ec33be322fcf9ea4481b08d5c0110524c0577ac21bb153d82db"
     },
     {
       "configuration": "qwen38-flash-next-standalone",
       "workload": "DGX Spark AgentX nightly v1",
       "source_sha": "d3d9bd694084d2d3f397aa77bf03cbfc9625a840",
       "legacy_sha256": "0f4296df0834e3610dfdef924a61b6d8bf87ea9483cd1dd795d58c8e1a235e3d",
-      "recipe_sha256": "9a17809d28577727514e37d1d1b68bd3ebaa9197cee8459f5ea50db7f5cb52e0"
+      "recipe_sha256": "2e35b61cd5735f1719a69edee5f146c4513086dce84eb0a4d4a31bea23279dc6"
     },
     {
       "configuration": "qwen38-flash-next-split",
       "workload": "DGX Spark AgentX nightly v1 (experimental split)",
       "source_sha": "d3d9bd694084d2d3f397aa77bf03cbfc9625a840",
       "legacy_sha256": "5b8769781056b9e7198c1bf9bbe99bde747334c09a72f72bd26b6ad54bc59b15",
-      "recipe_sha256": "0e1bffa22e1f71b582c04ac093bee0ba0d84abe790ffaa927059e978380a4bd0"
+      "recipe_sha256": "07c9bee0223472ff58276c2a2292ec9bb8137ea09e3254cacffc3dad136aae5c"
     },
     {
       "configuration": "qwen35-08b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
       "source_sha": "061a1ed61c22e596b84caf4093d8ceab7efbeac7",
       "legacy_sha256": "733c3829c56cd985e39a4da49b6446a04554fca413cd298d64c9ba5ef9a389db",
-      "recipe_sha256": "d3014e0940ddda51ca71ab4793e8f0d64e7aad95ffce43966a1445dd0cc1b2f5"
+      "recipe_sha256": "214a7858f18930f0fd883bfa84081f200ea2f9fdaa1fa6b65435ed37e74bef2d"
     },
     {
       "configuration": "qwen35-2b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
       "source_sha": "061a1ed61c22e596b84caf4093d8ceab7efbeac7",
       "legacy_sha256": "feca1c5542d84744f749a1ecbe420ced729ad733bedc5d2787b2b9ebb741192a",
-      "recipe_sha256": "3b4d48a0ebc96755f05107956dcf765063b5aa6a3ff929d4c90251c669cac3ad"
+      "recipe_sha256": "bb5bc22e2c60ac34ba7045156a5a954a80065598f9da754380f0e6b9b77310bc"
     },
     {
       "configuration": "qwen35-4b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
       "source_sha": "061a1ed61c22e596b84caf4093d8ceab7efbeac7",
       "legacy_sha256": "8b20ea42d2f2fea3a1a60b8d727586893c16e989edb5f0bc6a947dd585722fdb",
-      "recipe_sha256": "043f2d2d3e8a7b2b9326256e45578ef1ab7e25f2fa6891bbc6fe58a185851949"
+      "recipe_sha256": "664669b6bc14644629a6eec257afdd4a9611526c9554535dc06356af08869a2a"
     },
     {
       "configuration": "qwen35-9b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
       "source_sha": "061a1ed61c22e596b84caf4093d8ceab7efbeac7",
       "legacy_sha256": "ed17c2cfe891e5a6d3edbf42d5c8511ba32f9ed8e1901a0fe09daf09b0f7d970",
-      "recipe_sha256": "af2b3de34cf7ac8497b4bdf35c2a257ea5f04a338f07e9bd2429c51b62bae78e"
+      "recipe_sha256": "5064cd7d26e7b7e32ed903847c70a4dabf331aabf41e23acbb9c071c31eb50ff"
     },
     {
       "configuration": "qwen38-27b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
       "source_sha": "061a1ed61c22e596b84caf4093d8ceab7efbeac7",
       "legacy_sha256": "b61ccc5119ad80f1759b9615efb0f0c6834a6c621e732f406c0a657816f72cec",
-      "recipe_sha256": "4b36e711b7db947dbf40384ee1d1342941f532012b05c79ae23e15f98c8338a2"
+      "recipe_sha256": "26065c5311441f1026abf7fb0e1135808562a170e76d604dfb3adaaf6cdff5c4"
     },
     {
       "configuration": "qwen3-coder-30b-a3b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
       "source_sha": "061a1ed61c22e596b84caf4093d8ceab7efbeac7",
       "legacy_sha256": "d3e9adc75896ef1f2554430552b2c7f51b29ae2beb07396d128f4c47ad9486d1",
-      "recipe_sha256": "61a208ade6c2c2fdf0b1938b4aa63f99195f3aa8e2f154d6d877ddee27374567"
+      "recipe_sha256": "27743be8a30e30cf5295263f5996fb07914d48ffe83369584050eb0a45e54491"
     },
     {
       "configuration": "qwen36-35b-a3b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
       "source_sha": "061a1ed61c22e596b84caf4093d8ceab7efbeac7",
       "legacy_sha256": "66b8082ea168e5ec5bcf47dab2573b0b838e66beedbde74a35bbdc602d2bc7b7",
-      "recipe_sha256": "206332f749a72f6b1486e3e8cb09f1f9dc557cbe9f369fc79b4e2dafcdeff279"
+      "recipe_sha256": "fc240b7d0392ea973bd0f06db1c9feaa864e53e1ceb4e2c1b3c9a0878699d40d"
     },
     {
       "configuration": "qwen38-flash-next-standalone",
       "workload": "DGX Spark AgentX nightly v1",
       "source_sha": "061a1ed61c22e596b84caf4093d8ceab7efbeac7",
       "legacy_sha256": "1988bc18eef0615fb62d214740627ba851e4ec61e0768966960d3019c98f3966",
-      "recipe_sha256": "9a17809d28577727514e37d1d1b68bd3ebaa9197cee8459f5ea50db7f5cb52e0"
+      "recipe_sha256": "2e35b61cd5735f1719a69edee5f146c4513086dce84eb0a4d4a31bea23279dc6"
     },
     {
       "configuration": "qwen35-08b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
-      "source_sha": "f3b18d3ef9a5f1e5e9a9e9b80dc617029064a131",
+      "source_sha": "f2374721f0b03de2ae4c6a4c095b09398eeabb31",
       "legacy_sha256": "5aae165b30d9885f13fabdb00a1e55559e849329e18f61898b081dde5ce4d20d",
-      "recipe_sha256": "d3014e0940ddda51ca71ab4793e8f0d64e7aad95ffce43966a1445dd0cc1b2f5"
+      "recipe_sha256": "214a7858f18930f0fd883bfa84081f200ea2f9fdaa1fa6b65435ed37e74bef2d"
     },
     {
       "configuration": "qwen35-2b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
-      "source_sha": "f3b18d3ef9a5f1e5e9a9e9b80dc617029064a131",
+      "source_sha": "f2374721f0b03de2ae4c6a4c095b09398eeabb31",
       "legacy_sha256": "3ae42ca10cc6433ac9d51c1f0a71791b847f49df64d7779986a948c092713679",
-      "recipe_sha256": "3b4d48a0ebc96755f05107956dcf765063b5aa6a3ff929d4c90251c669cac3ad"
+      "recipe_sha256": "bb5bc22e2c60ac34ba7045156a5a954a80065598f9da754380f0e6b9b77310bc"
     },
     {
       "configuration": "qwen35-4b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
-      "source_sha": "f3b18d3ef9a5f1e5e9a9e9b80dc617029064a131",
+      "source_sha": "f2374721f0b03de2ae4c6a4c095b09398eeabb31",
       "legacy_sha256": "1f71651b3167f929d030977be9d4fe934a9f923d81450c9c239048e9d3e31e89",
-      "recipe_sha256": "043f2d2d3e8a7b2b9326256e45578ef1ab7e25f2fa6891bbc6fe58a185851949"
+      "recipe_sha256": "664669b6bc14644629a6eec257afdd4a9611526c9554535dc06356af08869a2a"
     },
     {
       "configuration": "qwen35-9b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
-      "source_sha": "f3b18d3ef9a5f1e5e9a9e9b80dc617029064a131",
+      "source_sha": "f2374721f0b03de2ae4c6a4c095b09398eeabb31",
       "legacy_sha256": "530d79bdfc7a7694165ee75b5aba78de8b3c21059ed614fbec935028c14dbca7",
-      "recipe_sha256": "af2b3de34cf7ac8497b4bdf35c2a257ea5f04a338f07e9bd2429c51b62bae78e"
+      "recipe_sha256": "5064cd7d26e7b7e32ed903847c70a4dabf331aabf41e23acbb9c071c31eb50ff"
     },
     {
       "configuration": "qwen38-27b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
-      "source_sha": "f3b18d3ef9a5f1e5e9a9e9b80dc617029064a131",
+      "source_sha": "f2374721f0b03de2ae4c6a4c095b09398eeabb31",
       "legacy_sha256": "4a5211fdff65633015c09f4e374c0675fe93babe3502f154fa34a9e460a37d43",
-      "recipe_sha256": "4b36e711b7db947dbf40384ee1d1342941f532012b05c79ae23e15f98c8338a2"
+      "recipe_sha256": "26065c5311441f1026abf7fb0e1135808562a170e76d604dfb3adaaf6cdff5c4"
+    },
+    {
+      "configuration": "qwen38-27b-split",
+      "workload": "DGX Spark AgentX nightly v1 (experimental split)",
+      "source_sha": "f2374721f0b03de2ae4c6a4c095b09398eeabb31",
+      "legacy_sha256": "774471871ba4d2f2eebf96e6123debc19a4910f7281b9333dd5a8ba3e769858c",
+      "recipe_sha256": "549cf73df45a5b2c1d470e364336c716ed6c76d84186963e514ddb3ebba49fe7"
     },
     {
       "configuration": "qwen3-coder-30b-a3b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
-      "source_sha": "f3b18d3ef9a5f1e5e9a9e9b80dc617029064a131",
+      "source_sha": "f2374721f0b03de2ae4c6a4c095b09398eeabb31",
       "legacy_sha256": "6b9aeb4138a6332186eff784812862285c11632de115550e04e8b00007498223",
-      "recipe_sha256": "61a208ade6c2c2fdf0b1938b4aa63f99195f3aa8e2f154d6d877ddee27374567"
+      "recipe_sha256": "27743be8a30e30cf5295263f5996fb07914d48ffe83369584050eb0a45e54491"
+    },
+    {
+      "configuration": "qwen3-coder-30b-a3b-split",
+      "workload": "DGX Spark AgentX nightly v1 (experimental split)",
+      "source_sha": "f2374721f0b03de2ae4c6a4c095b09398eeabb31",
+      "legacy_sha256": "20d09d3bd2abcf4651b7cf0153551b5fdd6c4213ebc121bd352b0476b1a5f7ba",
+      "recipe_sha256": "0b921ce6dedf18d34caff3f3bdef2e2fb92c754104579b29d5427e4bf6e61418"
     },
     {
       "configuration": "qwen36-35b-a3b-standalone",
       "workload": "DGX Spark AgentX nightly v1",
-      "source_sha": "f3b18d3ef9a5f1e5e9a9e9b80dc617029064a131",
+      "source_sha": "f2374721f0b03de2ae4c6a4c095b09398eeabb31",
       "legacy_sha256": "c3dddf1ab17080efde7b27b5faab652d640f0220a7b59c787bf20a1a99af00b3",
-      "recipe_sha256": "206332f749a72f6b1486e3e8cb09f1f9dc557cbe9f369fc79b4e2dafcdeff279"
+      "recipe_sha256": "fc240b7d0392ea973bd0f06db1c9feaa864e53e1ceb4e2c1b3c9a0878699d40d"
+    },
+    {
+      "configuration": "qwen36-35b-a3b-split",
+      "workload": "DGX Spark AgentX nightly v1 (experimental split)",
+      "source_sha": "f2374721f0b03de2ae4c6a4c095b09398eeabb31",
+      "legacy_sha256": "b683cc46584d8a0c4b694f78b99a4e9a864b8fae97f34b3944f18ef49ccdcc08",
+      "recipe_sha256": "2a4d2cf3ab8c8ec33be322fcf9ea4481b08d5c0110524c0577ac21bb153d82db"
     },
     {
       "configuration": "qwen38-flash-next-standalone",
       "workload": "DGX Spark AgentX nightly v1",
-      "source_sha": "f3b18d3ef9a5f1e5e9a9e9b80dc617029064a131",
+      "source_sha": "f2374721f0b03de2ae4c6a4c095b09398eeabb31",
       "legacy_sha256": "36acac3b8d3e847c084cfae651f81f28664f67c67dc056c85ef3362fe6e456d2",
-      "recipe_sha256": "9a17809d28577727514e37d1d1b68bd3ebaa9197cee8459f5ea50db7f5cb52e0"
+      "recipe_sha256": "2e35b61cd5735f1719a69edee5f146c4513086dce84eb0a4d4a31bea23279dc6"
+    },
+    {
+      "configuration": "qwen38-flash-next-split",
+      "workload": "DGX Spark AgentX nightly v1 (experimental split)",
+      "source_sha": "f2374721f0b03de2ae4c6a4c095b09398eeabb31",
+      "legacy_sha256": "0e1bffa22e1f71b582c04ac093bee0ba0d84abe790ffaa927059e978380a4bd0",
+      "recipe_sha256": "07c9bee0223472ff58276c2a2292ec9bb8137ea09e3254cacffc3dad136aae5c"
+    },
+    {
+      "configuration": "qwen35-08b-standalone",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4b35fe0741a6dce4c782676b0343b16e72fe0219",
+      "legacy_sha256": "a21f393ba33161a377fa2d797516f6e47a8dd911f1747f21deb53d62c6a13d72",
+      "recipe_sha256": "214a7858f18930f0fd883bfa84081f200ea2f9fdaa1fa6b65435ed37e74bef2d"
+    },
+    {
+      "configuration": "qwen35-2b-standalone",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4b35fe0741a6dce4c782676b0343b16e72fe0219",
+      "legacy_sha256": "a00cd61037b7bb2c456259a58f28ea866845b54ac4ec6e04af272ff539b62c23",
+      "recipe_sha256": "bb5bc22e2c60ac34ba7045156a5a954a80065598f9da754380f0e6b9b77310bc"
+    },
+    {
+      "configuration": "qwen35-4b-standalone",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4b35fe0741a6dce4c782676b0343b16e72fe0219",
+      "legacy_sha256": "301ccbaa67cd817c13ecade5c413b6f533c6bdbc2ac789f44381cd7a40a5081b",
+      "recipe_sha256": "664669b6bc14644629a6eec257afdd4a9611526c9554535dc06356af08869a2a"
+    },
+    {
+      "configuration": "qwen35-9b-standalone",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4b35fe0741a6dce4c782676b0343b16e72fe0219",
+      "legacy_sha256": "2f02098e4df3ccacbccdb223701bc810e6b81c2fda0ceb7ed6b1e013eff5cdcc",
+      "recipe_sha256": "5064cd7d26e7b7e32ed903847c70a4dabf331aabf41e23acbb9c071c31eb50ff"
+    },
+    {
+      "configuration": "qwen38-27b-standalone",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4b35fe0741a6dce4c782676b0343b16e72fe0219",
+      "legacy_sha256": "46801169b58d448f8290697f07d8066d4f41e1ec63a3c6a84b7a9805e4311d3b",
+      "recipe_sha256": "26065c5311441f1026abf7fb0e1135808562a170e76d604dfb3adaaf6cdff5c4"
+    },
+    {
+      "configuration": "qwen3-coder-30b-a3b-standalone",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4b35fe0741a6dce4c782676b0343b16e72fe0219",
+      "legacy_sha256": "7e163250fcedc147ca50acedf9d00c363dc08b01eba1c377ea866ea867abd6ad",
+      "recipe_sha256": "27743be8a30e30cf5295263f5996fb07914d48ffe83369584050eb0a45e54491"
+    },
+    {
+      "configuration": "qwen36-35b-a3b-standalone",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4b35fe0741a6dce4c782676b0343b16e72fe0219",
+      "legacy_sha256": "14132cbc8f93fe2cfeceb8eaeb90d63db90e1a52efd500f9d10dd244b74fcc4b",
+      "recipe_sha256": "fc240b7d0392ea973bd0f06db1c9feaa864e53e1ceb4e2c1b3c9a0878699d40d"
+    },
+    {
+      "configuration": "qwen38-flash-next-standalone",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4b35fe0741a6dce4c782676b0343b16e72fe0219",
+      "legacy_sha256": "bc8134fe0e6ee83ad3600069d504829f3d8bf3338a62d8967eb5b66883af8576",
+      "recipe_sha256": "2e35b61cd5735f1719a69edee5f146c4513086dce84eb0a4d4a31bea23279dc6"
+    },
+    {
+      "configuration": "qwen35-08b-standalone",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4eca7f82e342b0992dcf83cfa59cc69200dfa7da",
+      "legacy_sha256": "d3014e0940ddda51ca71ab4793e8f0d64e7aad95ffce43966a1445dd0cc1b2f5",
+      "recipe_sha256": "214a7858f18930f0fd883bfa84081f200ea2f9fdaa1fa6b65435ed37e74bef2d"
+    },
+    {
+      "configuration": "qwen35-2b-standalone",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4eca7f82e342b0992dcf83cfa59cc69200dfa7da",
+      "legacy_sha256": "3b4d48a0ebc96755f05107956dcf765063b5aa6a3ff929d4c90251c669cac3ad",
+      "recipe_sha256": "bb5bc22e2c60ac34ba7045156a5a954a80065598f9da754380f0e6b9b77310bc"
+    },
+    {
+      "configuration": "qwen35-4b-standalone",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4eca7f82e342b0992dcf83cfa59cc69200dfa7da",
+      "legacy_sha256": "043f2d2d3e8a7b2b9326256e45578ef1ab7e25f2fa6891bbc6fe58a185851949",
+      "recipe_sha256": "664669b6bc14644629a6eec257afdd4a9611526c9554535dc06356af08869a2a"
+    },
+    {
+      "configuration": "qwen35-9b-standalone",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4eca7f82e342b0992dcf83cfa59cc69200dfa7da",
+      "legacy_sha256": "af2b3de34cf7ac8497b4bdf35c2a257ea5f04a338f07e9bd2429c51b62bae78e",
+      "recipe_sha256": "5064cd7d26e7b7e32ed903847c70a4dabf331aabf41e23acbb9c071c31eb50ff"
+    },
+    {
+      "configuration": "qwen38-27b-standalone",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4eca7f82e342b0992dcf83cfa59cc69200dfa7da",
+      "legacy_sha256": "4b36e711b7db947dbf40384ee1d1342941f532012b05c79ae23e15f98c8338a2",
+      "recipe_sha256": "26065c5311441f1026abf7fb0e1135808562a170e76d604dfb3adaaf6cdff5c4"
+    },
+    {
+      "configuration": "qwen38-27b-split",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4eca7f82e342b0992dcf83cfa59cc69200dfa7da",
+      "legacy_sha256": "9e6be9fd113a7a579403d0aefe220a9f90d7e522dcb20520f99470888286c9d1",
+      "recipe_sha256": "a1f9b5dd4d271d68125f70d690482b767c548afe715e9c978e99d7886220483d"
+    },
+    {
+      "configuration": "qwen3-coder-30b-a3b-standalone",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4eca7f82e342b0992dcf83cfa59cc69200dfa7da",
+      "legacy_sha256": "61a208ade6c2c2fdf0b1938b4aa63f99195f3aa8e2f154d6d877ddee27374567",
+      "recipe_sha256": "27743be8a30e30cf5295263f5996fb07914d48ffe83369584050eb0a45e54491"
+    },
+    {
+      "configuration": "qwen3-coder-30b-a3b-split",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4eca7f82e342b0992dcf83cfa59cc69200dfa7da",
+      "legacy_sha256": "129fa40188262c257682aafcf3d956c2b852595933fa9e58808c829c35e74fe5",
+      "recipe_sha256": "82474af50a657e45a78f32d3c3d8087c02b82c46fae5efc75f83eeaa0a2355fb"
+    },
+    {
+      "configuration": "qwen36-35b-a3b-standalone",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4eca7f82e342b0992dcf83cfa59cc69200dfa7da",
+      "legacy_sha256": "206332f749a72f6b1486e3e8cb09f1f9dc557cbe9f369fc79b4e2dafcdeff279",
+      "recipe_sha256": "fc240b7d0392ea973bd0f06db1c9feaa864e53e1ceb4e2c1b3c9a0878699d40d"
+    },
+    {
+      "configuration": "qwen36-35b-a3b-split",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4eca7f82e342b0992dcf83cfa59cc69200dfa7da",
+      "legacy_sha256": "721497e8a8baa30ec60d99ec2af8842e9c21a33cb13f48f10f800b4efbd1cd98",
+      "recipe_sha256": "25ce6d1069d645e6bb816dcf595ee45fbc9b7edd01f8d2975144eb2b8437d789"
+    },
+    {
+      "configuration": "qwen38-flash-next-standalone",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4eca7f82e342b0992dcf83cfa59cc69200dfa7da",
+      "legacy_sha256": "9a17809d28577727514e37d1d1b68bd3ebaa9197cee8459f5ea50db7f5cb52e0",
+      "recipe_sha256": "2e35b61cd5735f1719a69edee5f146c4513086dce84eb0a4d4a31bea23279dc6"
+    },
+    {
+      "configuration": "qwen38-flash-next-split",
+      "workload": "DGX Spark AgentX nightly v1",
+      "source_sha": "4eca7f82e342b0992dcf83cfa59cc69200dfa7da",
+      "legacy_sha256": "f4ce6449618801a149a8a803102559b6f8b73bbc95b954674edef9d6f4beabdd",
+      "recipe_sha256": "d8282c003b0e9a87b966f87e60fd7475ea70b2b51ddda1cd4061298971da56df"
     }
   ]
 }

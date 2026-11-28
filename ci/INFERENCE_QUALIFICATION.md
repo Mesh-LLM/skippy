@@ -1,30 +1,29 @@
-# DGX Spark inference qualification
+# GPU inference qualification
 
 The agreed inventory lives in `inference-ladder.json`. Generate a source-bound
 plan with `just inference-plan pr FULL_COMMIT_SHA`, or use `nightly` / `release`
-for the extended ladder. Split runs apply only to models with at least 27B total
+for the extended ladder. CUDA split runs apply only to models with at least 27B total
 parameters (not activated parameters for MoE). Smaller models run standalone.
 PR selects four architecture representatives: four standalone and three split
 runs (seven rows). Nightly and release select all eight models: eight standalone
-and four split runs (twelve rows). The inventory's explicit `split` flag records
-this selection. `just inference-contracts` checks this contract
+and four split runs (twelve rows). Metal uses the same selected models in
+standalone mode on an M3 Ultra, adding four PR jobs and eight extended jobs.
+Scheduled and manually dispatched nightly runs on protected main also executes both smoke matrices to publish matching PR
+baselines. `just inference-contracts` checks this contract
 offline. Planning does not load weights or produce qualification evidence.
 
-The protected PR workflow always reports the `Inference qualification` status.
-It checks the current PR's changed-file list before dispatch: serving and build
-inputs require all seven smoke configurations; a complete list containing only
-unrelated files reports that model tests were not required. A full first page is
-treated conservatively as relevant. Required runs never accept skipped model
-jobs, and admission failures report failure on the PR head. This permits the
-status to be required without leaving documentation-only PRs waiting forever.
-Enable that branch requirement only after this workflow has landed on protected
-main and its live pilot has passed.
+The protected PR workflow uses native path routing. An applicable PR with the
+`qualify` label requires all eleven smoke configurations. An applicable PR
+without the label reports an intentional skip. Admission failures report
+failure on the PR head. Both platform matrices must pass for a qualification
+run to succeed.
 
 ## Execution boundary
 
 Reuse the Pilot GitHub App, signed workflow-job webhooks and JY-managed runner
-integration. The Actions jobs orchestrate at most three configurations concurrently. Each hosted
-job is bounded to six hours; model execution runs in native JY jobs with five-hour
+integration. Actions orchestrates up to three CUDA configurations alongside
+one Metal configuration. Each hosted job is bounded to six hours; model execution
+runs in native JY jobs with five-hour
 leases. Model loading, serving,
 correctness checks and AgentX run in native JY jobs, outside the Actions
 container's 6 GiB limit. Do not raise the limit globally or expose the host
@@ -99,6 +98,12 @@ because the formation renderer does not apply job hardware selectors.
 Each native member independently verifies Linux/aarch64 and an actual GB10.
 The process supervisor bounds foreground commands; serving process groups are
 terminated on normal and error paths. JY leases bound abrupt termination.
+
+The Metal template selects an ARM64 Mac with an Apple M3 Ultra. The native
+job checks the actual Metal device, available system pages and Metal's
+recommended working-set size. The run requires a Metal device-selection event
+and positive GPU-layer offload in the serving log. CUDA split and Metal
+standalone receipts have independent workload fingerprints and saved baselines.
 
 `inference-artifacts.json` pins the base GGUF shard hashes and sizes plus the
 matching official tokenizer revision and layer count. Most fixtures use Q4_K_M;

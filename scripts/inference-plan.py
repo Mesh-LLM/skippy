@@ -114,12 +114,13 @@ def main():
             action.add_argument("output", type=Path)
         else:
             action.add_argument("--include-smoke", action="store_true")
+            action.add_argument("--backend", choices=("cuda", "metal"), default="cuda")
     args = parser.parse_args()
     if args.action == "admit":
         admit()
         return
     if args.action == "matrix":
-        rows = matrix(args.profile, args.sha, args.include_smoke)
+        rows = matrix(args.profile, args.sha, args.include_smoke, backend=args.backend)
         output(matrix=json.dumps({"include": rows}, separators=(",", ":")))
     else:
         result = plan(args.profile, args.sha)

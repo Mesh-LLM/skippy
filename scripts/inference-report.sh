@@ -2,6 +2,7 @@
 # Runs from protected main; evidence is data, never executable source.
 set -euo pipefail
 export LC_ALL=C
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 [[ ${GITHUB_EVENT_NAME:-} == pull_request_target ]] || fail 'Results comments require pull_request_target'
@@ -10,7 +11,6 @@ fail() { printf '%s\n' "$*" >&2; exit 1; }
 [[ ${GITHUB_RUN_ATTEMPT:-} =~ ^[1-9][0-9]*$ ]] || fail 'Invalid workflow attempt'
 [[ ${REQUIRED:-} == true ]] || fail 'Results comments require inference qualification'
 
-root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 repository=repos/Mesh-LLM/skippy
 marker='<!-- skippy-inference-results:v1 -->'
 number=$(jq -er '.number | select(type == "number" and . > 0 and . == floor)' "$GITHUB_EVENT_PATH")
@@ -24,22 +24,20 @@ url="https://github.com/Mesh-LLM/skippy/actions/runs/$run"
 # Pagination is needed even though today's PR ladder fits on one page.
 gh api "$repository/actions/runs/$run/attempts/$attempt/jobs?per_page=100" --paginate --slurp |
   jq -e '[.[] | .jobs[]]' > "$temporary/jobs.json"
-jq -e '
-  if .schema_version != 1 then error("Unsupported ladder") else
-    [.models[] | select(.pr) |
-      if (.id | test("^[a-z0-9-]+$")) then
-        (.id + "-standalone"), (select(.split) | .id + "-split")
-      else error("Invalid configuration ID") end]
-  end | if length > 0 and length == (unique | length) then . else error("Invalid PR ladder") end
-' "$root/ci/inference-ladder.json" > "$temporary/rows.json"
+jq -en --argjson cuda "$CUDA_MATRIX" --argjson metal "$METAL_MATRIX" '
+  [($cuda.include[], $metal.include[]) | {id, name}] |
+  if length > 0 and length == (map(.id) | unique | length) and
+    all(.[]; (.id | test("^[a-z0-9-]+$")) and (.name | test("^(CUDA|Metal) - [a-zA-Z0-9./_-]+ - (standalone|split) - pr$")))
+  then . else error("Invalid PR qualification matrix") end
+' > "$temporary/rows.json"
 
 outcome='Failed or incomplete'
 description='Inference admission or qualification incomplete or failed'
 if [[ ${PLAN:-} == success && ${RESULT:-} == success ]]; then
-  description='Native Spark lab qualification'
+  description='Native CUDA and Metal lab qualification'
   if jq -e --slurpfile jobs "$temporary/jobs.json" '
     all(.[]; . as $id | any($jobs[0][];
-      .name == ("qualification (" + $id + ")") and .conclusion == "success"))
+      .name == $id.name and .conclusion == "success"))
   ' "$temporary/rows.json" > /dev/null; then
     outcome=Passed
   fi
@@ -75,9 +73,9 @@ rate() {
   if [[ $value == Unavailable ]]; then printf '%s' "$value"; else printf '%.1f' "$value"; fi
 }
 
-jq -r '.[]' "$temporary/rows.json" > "$temporary/rows.txt"
-while IFS= read -r row; do
-  job=$(jq -c --arg name "qualification ($row)" '[.[] | select(.name == $name)][0] // {}' "$temporary/jobs.json")
+jq -r '.[] | [.id, .name] | @tsv' "$temporary/rows.json" > "$temporary/rows.txt"
+while IFS=$'\t' read -r row name; do
+  job=$(jq -c --arg name "$name" '[.[] | select(.name == $name)][0] // {}' "$temporary/jobs.json")
   case $(jq -r '.conclusion // ""' <<< "$job") in
     success) state=Passed ;;
     failure|timed_out|action_required|startup_failure) state=Failed ;;

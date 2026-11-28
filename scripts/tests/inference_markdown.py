@@ -178,7 +178,7 @@ class InferenceMarkdownTests(unittest.TestCase):
 
     def test_history_aliases_are_explicit_and_scoped_to_configuration_and_workload(self):
         audit = json.loads(AUDITS.read_text())
-        self.assertEqual(len(audit["series"]), 28)
+        self.assertEqual(len(audit["series"]), 52)
         entry = audit["series"][0]
         args = entry["legacy_sha256"], entry["recipe_sha256"]
         self.assertTrue(contracts_match(entry["configuration"], entry["workload"], *args))

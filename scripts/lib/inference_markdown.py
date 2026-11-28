@@ -162,8 +162,8 @@ def latest_tables(view):
              "Current values and signed changes against the saved reference, "
              "or the previous comparable measurement when no saved reference exists. "
              "Higher throughput and lower latency are better.", ""]
-    for split, heading in ((False, "One Spark"), (True, "Two Sparks")):
-        configs = [config for config in view["configurations"] if config["id"].endswith("-split") == split]
+    for platform, heading in (("standalone", "One Spark"), ("split", "Two Sparks"), ("metal", "Metal · Apple M3 Ultra")):
+        configs = [config for config in view["configurations"] if ("metal" if config["id"].startswith("metal-") else "split" if config["id"].endswith("-split") else "standalone") == platform]
         if not configs:
             continue
         if any("experimental" in config["workload"] for config in configs):
@@ -223,7 +223,7 @@ def health_sections(view, charts, image_base_url=None, chart_format="png"):
                        "The comparison colour indicates its 1% verdict: green improved, blue within tolerance, "
                        "red regressed, and grey a new series. No unmeasured samples are filled in."
                        if chart_format == "mermaid" else
-                      f'Each panel shows one measured model and Spark configuration. The dashed line is '
+                      f'Each panel shows one measured model and hardware configuration. The dashed line is '
                       f'the current comparison reference; the shaded band is ±{tolerance}. '
                       'Blue circles are within tolerance, green triangles indicate improvements, '
                       'red triangles indicate regressions, and grey squares mark first measurements. '

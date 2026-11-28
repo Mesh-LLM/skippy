@@ -43,12 +43,16 @@ chmod +x "$fixture/bin/gh"
 printf '{"number":52}\n' > "$GITHUB_EVENT_PATH"
 jq -n --arg sha "$SOURCE_SHA" '{state:"open",head:{sha:$sha}}' > "$fixture/pr.json"
 printf '[[]]\n' > "$fixture/comments.json"
-jq '[.models[] | select(.pr) | (.id + "-standalone"), (select(.split) | .id + "-split")]' \
-  "$root/ci/inference-ladder.json" > "$fixture/rows.json"
-jq 'to_entries | map({id:(.key+1), name:("qualification ("+.value+")"), conclusion:"success"}) |
+GITHUB_OUTPUT="$fixture/cuda" python3 "$root/scripts/inference-plan.py" matrix pr "$SOURCE_SHA"
+GITHUB_OUTPUT="$fixture/metal" python3 "$root/scripts/inference-plan.py" matrix pr "$SOURCE_SHA" --backend metal
+CUDA_MATRIX=$(sed 's/^matrix=//' "$fixture/cuda")
+METAL_MATRIX=$(sed 's/^matrix=//' "$fixture/metal")
+export CUDA_MATRIX METAL_MATRIX
+jq -n --argjson cuda "$CUDA_MATRIX" --argjson metal "$METAL_MATRIX" \
+  '[$cuda.include[], $metal.include[]] | to_entries | map({id:(.key+1), name:.value.name, conclusion:"success"}) |
   [{jobs: .[:3]}, {jobs: .[3:]}]' \
-  "$fixture/rows.json" > "$fixture/jobs.json"
-row=$(jq -r '.[0]' "$fixture/rows.json")
+  > "$fixture/jobs.json"
+row=$(jq -r '.include[0].id' <<< "$CUDA_MATRIX")
 receipt="$fixture/evidence/$row-job.json"
 rates="$fixture/evidence/$row-throughput.json"
 jq -n --arg sha "$SOURCE_SHA" '{repo_rev:$sha,id:"job_test",status:"succeeded",runs:[{id:"run_test",status:"succeeded"}]}' > "$receipt"
@@ -66,7 +70,7 @@ reject() {
 }
 
 report
-jq -e '.body | contains("Lab Qualification: Passed") and contains("| 500.0 | Unavailable | 100.0 | Unavailable |") and contains("/job/1") and (contains("pilot.jianyang.cloud") | not) and (contains("Lab record") | not) and contains("/attempts/2")' "$fixture/posted.json" > /dev/null
+jq -e '.body | contains("Lab Qualification: Passed") and contains("| 500.0 | Unavailable | 100.0 | Unavailable |") and contains("/job/1") and (contains("pilot.jianyang.cloud") | not) and (contains("Lab record") | not) and contains("/attempts/2") and contains("metal-qwen35-4b-standalone")' "$fixture/posted.json" > /dev/null
 grep -q 'POST$' "$fixture/mutation"
 cmp "$GITHUB_STEP_SUMMARY" <(jq -rj .body "$fixture/posted.json")
 
@@ -135,8 +139,10 @@ SOURCE_SHA=invalid reject 'mutable source'
 # Latest successful main: ignore newer failed runs and PR branches called main.
 cp "$fixture/good-receipt.json" "$receipt"
 cp "$fixture/good-rates.json" "$rates"
-jq 'to_entries | map({id:(.key+1), name:("qualification ("+.value+")"), conclusion:"success"}) |
-  [{jobs: .}]' "$fixture/rows.json" > "$fixture/jobs.json"
+jq -n --argjson cuda "$CUDA_MATRIX" --argjson metal "$METAL_MATRIX" \
+  '[$cuda.include[], $metal.include[]] | to_entries | map({id:(.key+1), name:.value.name, conclusion:"success"}) |
+  [{jobs: .}]' > "$fixture/jobs.json"
+jq -n --argjson cuda "$CUDA_MATRIX" '[$cuda.include[].id]' > "$fixture/rows.json"
 export BASELINE_SHA=2222222222222222222222222222222222222222
 jq -n --arg sha "$BASELINE_SHA" '[{workflow_runs:[
   {id:40,run_attempt:3,head_branch:"main",head_sha:$sha,conclusion:"success",event:"workflow_dispatch",created_at:"2026-11-21"},
@@ -144,7 +150,8 @@ jq -n --arg sha "$BASELINE_SHA" '[{workflow_runs:[
   {id:50,run_attempt:1,head_branch:"main",head_sha:$sha,conclusion:"failure",event:"schedule",created_at:"2026-11-22"},
   {id:60,run_attempt:1,head_branch:"main",head_sha:$sha,conclusion:"success",event:"pull_request_target",created_at:"2026-11-22"}
 ]}]' > "$fixture/main-runs.json"
-cp "$fixture/jobs.json" "$fixture/main-jobs.json"
+jq 'to_entries | map({id:(.key+1), name:("qualification ("+.value+")"), conclusion:"success"}) |
+  [{jobs: .}]' "$fixture/rows.json" > "$fixture/main-jobs.json"
 jq -n '{truncated:false,tree:(["scripts/inference-execute.py", "scripts/lib/inference_checks.py",
   "scripts/lib/inference_throughput.py", "scripts/lib/inference_probe.py", "scripts/lib/inference_inputs.py",
   "scripts/lib/inference_ladder.py", "scripts/lib/ci_artifacts.py", "scripts/lib/ci_process.py",
@@ -171,7 +178,8 @@ jq --arg row "$row" '.[0].jobs[0].name=("qualification (smoke-"+$row+")")' "$fix
 report
 jq -e '.body | contains("+100.0% (main 250.0)")' "$fixture/posted.json" > /dev/null
 mv "$nightly" "$baseline"
-cp "$fixture/jobs.json" "$fixture/main-jobs.json"
+jq 'to_entries | map({id:(.key+1), name:("qualification ("+.value+")"), conclusion:"success"}) |
+  [{jobs: .}]' "$fixture/rows.json" > "$fixture/main-jobs.json"
 
 unavailable() {
   report
@@ -194,7 +202,8 @@ done
 cp "$fixture/main-job.json" "$baseline/$row-job.json"
 jq '.[0].jobs[0].conclusion="failure"' "$fixture/jobs.json" > "$fixture/main-jobs.json"
 unavailable
-cp "$fixture/jobs.json" "$fixture/main-jobs.json"
+jq 'to_entries | map({id:(.key+1), name:("qualification ("+.value+")"), conclusion:"success"}) |
+  [{jobs: .}]' "$fixture/rows.json" > "$fixture/main-jobs.json"
 # One phase can remain comparable when only the other phase has different work.
 jq '.prefill_tokens=301' "$fixture/main-rates.json" > "$baseline/$row-throughput.json"
 report

@@ -12,7 +12,7 @@ const needs = (profile, result = 'success', event = github) => ({ plan: { result
 test('scheduled Release calls do not select nightly smoke expansion or public metrics collection', () => {
   const flags = [...workflow.matchAll(/^ +NIGHTLY_PUBLICATION: \$\{\{ (.+) \}\}$/gm)];
   assert.equal(flags.length, 1);
-  assert.match(workflow, /if \[\[ "\$PROFILE" == pr \|\| "\$PROFILE" == nightly \]\]; then flags\+=\(--collect-metrics\)/);
+  assert.match(workflow, /just inference-dispatch .*--backend "\$BACKEND" --collect-metrics/);
   for (const [, expression] of flags) {
     const enabled = new Function('github', 'steps', 'needs', `return (${expression});`);
     assert.equal(enabled(github, steps('release'), needs('release')), 'false');
@@ -38,10 +38,10 @@ const script = summary.split('          script: |\n')[1].replace(/^ {12}/gm, '')
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 const evaluate = new AsyncFunction('process', 'context', 'github', 'core', script);
 
-async function status(profile, publication, result = 'success', plan = 'success', eventName = 'schedule') {
+async function status(profile, publication, result = 'success', plan = 'success', eventName = 'schedule', metal = 'success') {
   const statuses = [], failures = [];
   await evaluate({ env: {
-    SOURCE_SHA: 'a'.repeat(40), PROFILE: profile, PLAN: plan, RESULT: result,
+    SOURCE_SHA: 'a'.repeat(40), PROFILE: profile, PLAN: plan, RESULT: result, METAL: metal,
     PUBLICATION_REQUIRED: String(profile === 'nightly'), COMPARISON: 'success', PUBLICATION: publication, RUN_URL: 'https://example.invalid/run',
   } }, { eventName, repo: { owner: 'Mesh-LLM', repo: 'skippy' } }, {
     rest: { repos: { createCommitStatus: async value => statuses.push(value) } },
@@ -81,4 +81,12 @@ test('PR summary requires successful admission and matrix; skipped plans cannot 
 
 test('ungated fork target events cannot publish a failing qualification status before approval', () => {
   assert.match(summary, /if: always\(\) && needs.plan.result != 'skipped'/);
+});
+
+
+test('required Metal qualification cannot be skipped or fail while CUDA passes', async () => {
+  for (const metal of ['skipped', 'failure', 'cancelled', '']) {
+    const result = await status('pr', 'skipped', 'success', 'success', 'pull_request_target', metal);
+    assert.equal(result.state, 'failure', metal);
+  }
 });

@@ -39,14 +39,16 @@ def check_executables(directory, identity, sha):
         raise ValueError("cached inference executable provenance mismatch")
 
 
-def record(output, sha):
+def record(output, sha, *, backend="cuda"):
     identity = read_json(BUILD_IDENTITY)
     check_executables(DEBUG_DIR, identity, sha)
+    if identity.get("build_inputs", {}).get("backend") != backend:
+        raise ValueError("native inference build backend differs from requested backend")
     identity.update(input_hashes(), harness="aiperf-0.13.0-python-3.12")
     write_json(output / "provenance.json", identity)
 
 
-def identity(sha):
+def identity(sha, backend):
     source = Path("crates/skippy-ffi/src/lib.rs").read_text(encoding="utf-8")
     abi = []
     for component in ("MAJOR", "MINOR", "PATCH"):
@@ -54,18 +56,26 @@ def identity(sha):
         if not match:
             raise ValueError("native ABI source constant missing")
         abi.append(int(match[1]))
-    cache = next(Path(".deps/llama-build").glob("*/CMakeCache.txt"), None)
-    if cache is None:
-        raise ValueError("native CUDA build cache missing")
-    compiler = next((line.partition("=")[2] for line in cache.read_text(encoding="utf-8").splitlines()
-                     if line.startswith("CMAKE_CUDA_COMPILER:")), None)
-    if not compiler:
-        raise ValueError("native CUDA compiler missing from build cache")
+    settings = {"LLAMA_STAGE_BACKEND": backend, "LLAMA_STAGE_LINK_MODE": "static"}
+    if backend == "cuda":
+        settings["LLAMA_STAGE_CUDA_ARCHITECTURES"] = "121"
+    directory = command(["scripts/build-llama.sh", "--print-build-dir"], overrides=settings,
+                        timeout=30, capture_stdout=True).strip()
+    cache = (Path(directory) / "CMakeCache.txt").read_text(encoding="utf-8")
+    if backend == "cuda":
+        compiler = re.search(r"^CMAKE_CUDA_COMPILER:[^=]+=(.+)$", cache, re.M)
+        if not compiler:
+            raise ValueError("native CUDA compiler missing from build cache")
+        toolkit = {"cuda_compiler": capture([compiler[1], "--version"])}
+    else:
+        if "GGML_METAL:BOOL=ON" not in cache.splitlines():
+            raise ValueError("native build did not enable Metal")
+        toolkit = {"macos_sdk": capture(["xcrun", "--sdk", "macosx", "--show-sdk-version"]).strip()}
     return {
         "stack_commit": sha, "native_upstream": Path("llama_cpp/upstream.txt").read_text().strip(),
         "native_tree": capture(["git", "-C", ".deps/llama.cpp", "rev-parse", "HEAD^{tree}"]).strip(),
         "native_abi": abi, "harness": "aiperf-0.13.0-python-3.12",
-        "cuda_compiler": capture([compiler, "--version"]), **input_hashes(),
+        **toolkit, **input_hashes(),
         **{field: digest(DEBUG_DIR / name) for name, field in BINARIES.items()},
     }
 

@@ -11,13 +11,17 @@ from .ci_artifacts import digest, write_json
 from .inference_comparability import benchmark_functions
 from .inference_inputs import fixture, input_hashes
 from .inference_admission import split_admissions_digest
+from .inference_metal import DEVICE as METAL_DEVICE
 from .inference_throughput import collect, successful_run
 from .inference_probe import WORKLOAD
 
-WORKLOADS = {"pr": WORKLOAD, "nightly": "DGX Spark AgentX nightly v1"}
+WORKLOADS = {"pr": WORKLOAD, "nightly": "DGX Spark AgentX nightly v1",
+             "release": "DGX Spark AgentX release v1"}
+METAL_WORKLOADS = {"pr": "Apple M3 Ultra warm probe v2", "nightly": "Apple M3 Ultra AgentX nightly v1",
+                   "release": "Apple M3 Ultra AgentX release v1"}
 SMOKE_METRICS = ("prefill_tok_s", "decode_tok_s")
 AGENTX_METRICS = ("output_tok_s", "ttft_p95_ms", "itl_p95_ms", "requests", "request_error_pct")
-METRIC_NAMES = {"pr": SMOKE_METRICS, "nightly": AGENTX_METRICS}
+METRIC_NAMES = {"pr": SMOKE_METRICS, "nightly": AGENTX_METRICS, "release": AGENTX_METRICS}
 
 
 def metric_value(value, *, positive=False):
@@ -83,6 +87,9 @@ def benchmark_definition(profile, mode, backend="cuda"):
         functions["scripts/lib/inference_checks.py"].append("performance")
         functions["scripts/lib/inference_nightly_metrics.py"] = ["agentx_metrics"]
         files += ("ci/inference-corpus.json", "ci/aiperf-requirements.lock")
+    if backend == "metal":
+        functions["scripts/lib/inference_metal.py"] = ["device_and_budget", "available_memory", "offload"]
+        functions["scripts/lib/ci_smoke.py"] = ["require_device"]
     return functions, files
 
 
@@ -90,7 +97,7 @@ def contract(profile, row, key):
     functions, files = benchmark_definition(profile, row["mode"], row.get("backend", "cuda"))
     inputs = {
         "recipe_version": 2,
-        "profile": profile, "mode": row["mode"], "device": "NVIDIA GB10",
+        "profile": profile, "mode": row["mode"], "device": METAL_DEVICE if row.get("backend") == "metal" else "NVIDIA GB10",
         "admission": "native-stage-plan-v2", "model": fixture(key),
         "harness": {name: digest(Path(name)) for name in files},
         "benchmark_functions": {path: benchmark_functions(path, names)
@@ -100,9 +107,9 @@ def contract(profile, row, key):
     return hashlib.sha256(encoded).hexdigest()
 
 
-def collect_nightly(pilot, job, row, sha, output, key, profile):
+def collect_measurements(pilot, job, row, sha, output, key, profile):
     if profile not in METRIC_NAMES:
-        raise ValueError("nightly publication only supports AgentX and smoke evidence")
+        raise ValueError("unsupported inference evidence profile")
     run_id = successful_run(job, sha)
     prefix = f"/v1/artifacts/{run_id}"
     if profile == "pr":
@@ -119,8 +126,10 @@ def collect_nightly(pilot, job, row, sha, output, key, profile):
                 "status": "passed", "artifact_manifest_sha256": input_hashes()["model_manifest_sha256"]}
     if any(qualification.get(field) != value for field, value in expected.items()):
         raise ValueError("nightly measurement provenance mismatch")
-    if qualification.get("gpu", "").strip() != "NVIDIA GB10":
-        raise ValueError("nightly evidence requires the DGX Spark GPU")
+    backend = row.get("backend", "cuda")
+    device = METAL_DEVICE if backend == "metal" else "NVIDIA GB10"
+    if qualification.get("gpu", "").strip() != device or qualification.get("backend", "cuda") != backend:
+        raise ValueError(f"inference evidence requires {backend} on {device}")
     admission_hash = None
     if row["mode"] == "split":
         admissions = await_artifacts(lambda: pilot.api("GET", prefix + "/raw/split-admissions.json"))
@@ -130,6 +139,6 @@ def collect_nightly(pilot, job, row, sha, output, key, profile):
         write_json(output / "split-admissions.json", admissions)
     write_json(output / "measurements.json", {
         "schema_version": 1, "source_sha": sha, "configuration": row["id"], "profile": profile,
-        "job_id": job["id"], "run_id": run_id, "split_admissions_sha256": admission_hash,
+        "job_id": job["id"], "run_id": run_id, "split_admissions_sha256": admission_hash, "backend": backend,
         "contract_sha256": contract(profile, row, key), "metrics": measurements,
     })

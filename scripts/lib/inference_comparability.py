@@ -18,6 +18,8 @@ def benchmark_tree(node):
         }}
     if isinstance(node, list):
         return [benchmark_tree(value) for value in node]
+    if isinstance(node, bytes):
+        return {"bytes": node.hex()}
     return node
 
 

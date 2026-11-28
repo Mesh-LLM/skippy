@@ -12,10 +12,10 @@ from pathlib import Path
 
 from lib.ci_artifacts import read_json, write_json
 from lib.ci_process import cancel_on_signal
-from lib.inference_ladder import plan
+from lib.inference_ladder import matrix, plan
+from lib.inference_nightly_metrics import collect_measurements
 from lib.inference_logs import NativeLogs
 from lib.inference_peer_evidence import verify_split_peer
-from lib.inference_nightly_metrics import collect_nightly
 from lib.inference_throughput import collect
 from lib.jy_qualification import Pilot, placement
 
@@ -137,8 +137,10 @@ def record(ledger, identifiers):
         temporary.unlink(missing_ok=True)
 
 
-def dispatch(pilot, profile, sha, output, configuration, collect_metrics=False):
+def dispatch(pilot, profile, sha, output, configuration, collect_metrics=False, *, backend="cuda"):
     result = plan(profile, sha)
+    if backend != "cuda":
+        result["rows"] = matrix(profile, sha, backend=backend)
     if configuration is not None:
         result["rows"] = [row for row in result["rows"] if row["id"] == configuration]
         if len(result["rows"]) != 1:
@@ -154,14 +156,18 @@ def dispatch(pilot, profile, sha, output, configuration, collect_metrics=False):
     try:
         for row in result["rows"]:
             identity, mode = row["id"], row["mode"]
-            model_key = identity.removesuffix(f"-{mode}")
+            model_key = identity.removeprefix("metal-").removesuffix(f"-{mode}")
             template = "inference-" + ("pr-" if profile == "pr" else "") + mode
+            inputs = {"profile": profile, "model_key": model_key}
+            if backend == "metal":
+                template = "inference-metal-standalone"
+            else:
+                inputs["model"] = row["model"].split("/")[1]
             run_id = os.environ.get("GITHUB_RUN_ID", "local")
             attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "1")
             body = {
                 "ref": sha,
-                "inputs": {"profile": profile, "model": row["model"].split("/")[1],
-                           "model_key": model_key},
+                "inputs": inputs,
                 "idempotency_key": f"inference-{run_id}-{profile}-{attempt}-{identity}-{sha}",
             }
             launched = launch(pilot, f"/v1/repos/skippy/templates/{template}/launch", body,
@@ -175,7 +181,7 @@ def dispatch(pilot, profile, sha, output, configuration, collect_metrics=False):
             if mode == "split":
                 verify_split_peer(pilot, job, row, sha, profile, output)
             if collect_metrics:
-                collect_nightly(pilot, job, row, sha, output, model_key, profile)
+                collect_measurements(pilot, job, row, sha, output, model_key, profile)
             elif profile == "pr":
                 try:
                     collect(pilot, job, row, sha, output, model_key)
@@ -198,12 +204,14 @@ def main():
     action.add_argument("output", type=Path)
     action.add_argument("configuration", nargs="?")
     action.add_argument("--collect-metrics", "--collect-public", dest="collect_metrics", action="store_true")
+    action.add_argument("--backend", choices=("cuda", "metal"), default="cuda")
     actions.add_parser("cancel").add_argument("ledger", type=Path)
     actions.add_parser("control-preflight")
     args = parser.parse_args()
     pilot = Pilot()
     if args.action == "dispatch":
-        dispatch(pilot, args.profile, args.sha, args.output, args.configuration, args.collect_metrics)
+        dispatch(pilot, args.profile, args.sha, args.output, args.configuration, args.collect_metrics,
+                 backend=args.backend)
     elif args.action == "cancel":
         cancel(pilot, args.ledger)
     else:

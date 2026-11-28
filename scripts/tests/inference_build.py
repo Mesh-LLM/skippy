@@ -13,6 +13,35 @@ BUILD = run_path(str(Path(__file__).resolve().parents[1] / "inference-build.py")
 
 
 class NativeCacheTests(unittest.TestCase):
+    def test_backend_inputs_preserve_metal_sdk_without_probing_cuda(self):
+        source_inputs = BUILD["source_inputs"]
+        calls = []
+        def capture(args):
+            calls.append(args)
+            return "26.1\n" if args[0] == "xcrun" else "tool-version\n"
+        with patch.dict(os.environ, {"SCCACHE_EXTRAFILES": ""}), patch.dict(
+            source_inputs.__globals__, capture=capture,
+            native_inputs=lambda: "1" * 64, digest=lambda _: "2" * 64,
+        ):
+            metal = source_inputs("a" * 40, "metal")
+        self.assertEqual(metal["backend"], "metal")
+        self.assertEqual(metal["macos_sdk"], "26.1")
+        self.assertNotIn("cuda", metal)
+        self.assertFalse(any(args[0] == "nvcc" for args in calls))
+
+    def test_backend_inputs_preserve_cuda_architecture_and_separate_cache_keys(self):
+        source_inputs = BUILD["source_inputs"]
+        with patch.dict(os.environ, {"SCCACHE_EXTRAFILES": ""}), patch.dict(
+            source_inputs.__globals__, capture=lambda _: "tool-version\n",
+            native_inputs=lambda: "1" * 64, digest=lambda _: "2" * 64,
+        ):
+            cuda = source_inputs("a" * 40, "cuda")
+            metal = source_inputs("a" * 40, "metal")
+        self.assertEqual(cuda["architectures"], "121")
+        self.assertIn("cuda", cuda)
+        self.assertNotIn("macos_sdk", cuda)
+        self.assertNotEqual(BUILD["dependency_key"](cuda), BUILD["dependency_key"](metal))
+
     def test_native_transition_isolates_dependencies_but_rust_edits_reuse_them(self):
         old = {"schema": 2, "source": "a" * 40, "native_inputs_sha256": "1" * 64}
         new = dict(old, source="b" * 40, native_inputs_sha256="2" * 64)
@@ -34,7 +63,8 @@ class NativeCacheTests(unittest.TestCase):
     def test_build_hashes_native_identity_in_compiler_cache_and_retains_extra_files(self):
         build = BUILD["build"]
         calls = []
-        inputs = {"schema": 2, "source": "a" * 40, "native_inputs_sha256": "1" * 64}
+        inputs = {"schema": 2, "source": "a" * 40, "native_inputs_sha256": "1" * 64,
+                  "backend": "cuda"}
         def command(args, overrides, timeout):
             calls.append((args, overrides))
             # The command helper merges overrides into the complete inherited environment.
@@ -42,13 +72,13 @@ class NativeCacheTests(unittest.TestCase):
         with TemporaryDirectory() as tmp, chdir(tmp), patch.dict(os.environ, {
             "SCCACHE_EXTRAFILES": "/existing/input", "PROVIDER_CONFIGURATION": "retained",
         }), patch.dict(build.__globals__, command=command, install_binaries=lambda _: None,
-                       identity=lambda _: {}), \
+                       identity=lambda _sha, _backend: {}), \
                 patch("shutil.which", return_value="/bin/sccache"), \
                 patch("shutil.copy"), patch("pathlib.Path.rename"):
             root = Path(tmp) / "inference-build-v2"
             root.mkdir()
             build(inputs["source"], root, inputs, "key", root / "key")
-        compiler = next(env for args, env in calls if args == ["just", "inference-build-uncached"])
+        compiler = next(env for args, env in calls if args == ["just", "inference-build-uncached", "cuda"])
         self.assertIn("cargo-v2", compiler["CARGO_TARGET_DIR"])
         self.assertEqual(compiler["SCCACHE_EXTRAFILES"].split(os.pathsep)[0], "/existing/input")
         self.assertTrue(compiler["SCCACHE_EXTRAFILES"].endswith("target/inference-native-inputs.json"))

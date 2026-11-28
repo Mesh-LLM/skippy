@@ -79,6 +79,9 @@ def same_harness(profile, source, repository, configuration=None):
 
 def compare(run, repository, *, load=published_baselines, compatible=same_harness):
     run = dict(run)
+    if run["profile"] == "release":
+        run["comparison_notice"] = "Release measurements establish separate series; nightly baselines do not apply."
+        return run
     revision, saved = load()
     if revision:
         run["baseline_revision"] = revision

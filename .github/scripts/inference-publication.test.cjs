@@ -13,7 +13,7 @@ async function status(eventName, publication, overrides = {}) {
   const statuses = [];
   const failures = [];
   const process = { env: {
-    SOURCE_SHA: 'a'.repeat(40), PLAN: 'success', RESULT: 'success',
+    SOURCE_SHA: 'a'.repeat(40), PLAN: 'success', RESULT: 'success', METAL: 'success',
     PUBLICATION_REQUIRED: 'true', PUBLICATION: publication,
     RUN_URL: 'https://example.invalid/run', PROFILE: 'nightly', COMPARISON: 'skipped', ...overrides,
   } };

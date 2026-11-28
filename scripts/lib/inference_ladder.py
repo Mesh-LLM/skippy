@@ -53,14 +53,22 @@ def plan(profile, sha):
     }
 
 
-def matrix(profile, sha, include_smoke=False):
-    rows = [{**row, "configuration": row["id"], "profile": profile}
-            for row in plan(profile, sha)["rows"]]
+def matrix(profile, sha, include_smoke=False, *, backend="cuda"):
+    if backend not in {"cuda", "metal"}:
+        raise ValueError("unknown inference backend")
+
+    def rows_for(selected_profile, prefix):
+        for row in plan(selected_profile, sha)["rows"]:
+            if backend == "metal" and row["mode"] != "standalone":
+                continue
+            configuration = row["id"] if backend == "cuda" else f'metal-{row["id"]}'
+            name = f'{backend.upper() if backend == "cuda" else "Metal"} - {row["model"]} - {row["mode"]} - {selected_profile}'
+            yield {**row, "id": prefix + configuration, "configuration": configuration,
+                   "profile": selected_profile, "backend": backend, "name": name}
+
+    rows = list(rows_for(profile, ""))
     if include_smoke:
         if profile != "nightly":
             raise ValueError("the additional smoke matrix requires the nightly profile")
-        rows.extend(
-            {**row, "id": f'smoke-{row["id"]}', "configuration": row["id"], "profile": "pr"}
-            for row in plan("pr", sha)["rows"]
-        )
+        rows.extend(rows_for("pr", "smoke-"))
     return rows

@@ -14,7 +14,7 @@ from lib.inference_inputs import input_hashes
 from lib.inference_ladder import matrix
 from lib.inference_markdown import run_summary
 from lib.inference_admission import split_admissions_digest
-from lib.inference_nightly_metrics import agentx_metrics, await_artifacts, collect_nightly, contract
+from lib.inference_nightly_metrics import agentx_metrics, await_artifacts, collect_measurements, contract
 from lib.inference_nightly_results import nightly_run, qualification_run, read_configuration
 from lib.inference_publication_policy import publication_allowed
 
@@ -41,9 +41,9 @@ def trial(throughput, latency, requests):
 
 
 def smoke_receipt(root, sha, run_id, configuration="qwen35-4b-standalone", value=100,
-                  *, published=True, attempt="1"):
+                  *, published=True, attempt="1", backend="cuda"):
     profile = "nightly" if published else "pr"
-    entry = next(row for row in matrix(profile, sha, include_smoke=published)
+    entry = next(row for row in matrix(profile, sha, include_smoke=published, backend=backend)
                  if (row["profile"], row["configuration"]) == ("pr", configuration))
     directory = root / f'inference-{entry["id"]}-{run_id}-{attempt}'
     directory.mkdir(parents=True)
@@ -60,9 +60,10 @@ def smoke_receipt(root, sha, run_id, configuration="qwen35-4b-standalone", value
                         {"job_id": "job_worker", "role": "worker", "status": "succeeded"}],
         })
     write_json(directory / f"{configuration}-job.json", job)
-    model = configuration.removesuffix(f'-{entry["mode"]}')
+    model = configuration.removeprefix("metal-").removesuffix(f'-{entry["mode"]}')
     write_json(directory / "measurements.json", {
         "schema_version": 1, "source_sha": sha, "configuration": configuration, "profile": "pr",
+        "backend": backend,
         "job_id": "job_fixture", "run_id": "run_fixture", "split_admissions_sha256": admission_hash,
         "contract_sha256": contract("pr", entry, model),
         "metrics": {"prefill_tok_s": value, "decode_tok_s": value},
@@ -110,7 +111,7 @@ class NightlyTests(unittest.TestCase):
             root = Path(temporary)
             directory = root / f"inference-{configuration}-23-1"
             directory.mkdir()
-            collect_nightly(pilot, job, entry, SOURCE, directory, key, "nightly")
+            collect_measurements(pilot, job, entry, SOURCE, directory, key, "nightly")
             write_json(directory / f"{configuration}-job.json", job)
             write_json(directory / f"{configuration}-formation.json", formation)
             result = read_configuration(root, entry, SOURCE, "23", "1")
@@ -118,6 +119,23 @@ class NightlyTests(unittest.TestCase):
             self.assertEqual(result["workload"], "DGX Spark AgentX nightly v1")
             self.assertEqual(result["metrics"][0]["measured"], 21)
             self.assertEqual(result["metrics"][0]["contract_sha256"], contract("nightly", entry, key))
+
+    def test_platform_recipes_and_audited_cuda_history_stay_separate(self):
+        from lib.inference_comparability import canonical_contract
+        audit = json.loads(Path("ci/inference-comparability.json").read_text())
+        for entry in audit["series"]:
+            row = next(row for row in matrix("nightly", SOURCE) if row["id"] == entry["configuration"])
+            recipe = contract("nightly", row, row["id"].removesuffix("-" + row["mode"]))
+            canonical = canonical_contract(row["id"], entry["workload"], entry["legacy_sha256"])
+            # Main now verifies formation peers and fresh serving listeners.
+            # Its execution contract starts a new series; historical aliases
+            # remain bound to their audited recipes instead of being rewritten.
+            self.assertNotEqual(canonical, recipe)
+            self.assertEqual(canonical, entry["recipe_sha256"])
+        cuda = matrix("nightly", SOURCE)[0]
+        metal = matrix("nightly", SOURCE, backend="metal")[0]
+        key = cuda["id"].removesuffix("-standalone")
+        self.assertNotEqual(contract("nightly", cuda, key), contract("nightly", metal, key))
 
     def test_matrix_preserves_existing_profiles_and_uses_pr_smoke(self):
         ordinary = matrix("nightly", SOURCE)
@@ -202,7 +220,7 @@ class NightlyTests(unittest.TestCase):
                          if config["id"] == "qwen3-coder-30b-a3b-split" and config["workload"] == "DGX Spark warm probe v2")
             self.assertEqual(split["outcome"], "passed")
             self.assertEqual(report["outcome"], "failed")
-            self.assertEqual(len(report["configurations"]), 19)
+            self.assertEqual(len(report["configurations"]), 31)
             wrong_source = nightly_run(root, "b" * 40, "23", "1", report["started_at"], True)
             self.assertTrue(all(config["outcome"] != "passed" for config in wrong_source["configurations"]))
 
@@ -259,8 +277,9 @@ class NightlyTests(unittest.TestCase):
                 values = dict(line.split("=", 1) for line in output.read_text().splitlines())
                 publish = values["publication"] == "true"
                 self.assertEqual(publish, profile == "nightly")
-                rows = matrix(values["profile"], values["source"], include_smoke=publish)
-                self.assertEqual(len(rows), {"nightly": 19, "pr": 7, "release": 12}[profile])
+                rows = [row for backend in ("cuda", "metal") for row in matrix(
+                    values["profile"], values["source"], include_smoke=publish, backend=backend)]
+                self.assertEqual(len(rows), {"nightly": 31, "pr": 11, "release": 20}[profile])
 
 
 class ComparisonTests(unittest.TestCase):
@@ -308,9 +327,10 @@ class ComparisonTests(unittest.TestCase):
         stamp = "2026-11-21T00:00:00Z"
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
-            for index, row in enumerate(matrix("pr", candidate)):
-                value = (94, 107, 99)[index % 3]
-                smoke_receipt(root, candidate, "23", row["id"], value, published=False)
+            for backend in ("cuda", "metal"):
+                for index, row in enumerate(matrix("pr", candidate, backend=backend)):
+                    value = (94, 107, 99)[index % 3] + (12 if backend == "metal" else 0)
+                    smoke_receipt(root, candidate, "23", row["id"], value, published=False, backend=backend)
             smoke_receipt(root, candidate, "23", matrix("pr", candidate)[1]["id"], 108,
                           published=False, attempt="2")
             run = qualification_run(root, "pr", candidate, "23", "2", stamp, True)
@@ -321,7 +341,8 @@ class ComparisonTests(unittest.TestCase):
              "contract_sha256": row["contract_sha256"], "source_sha": SOURCE, "value": 100}
             for c in run["configurations"] for row in c["metrics"]
         ]
-        compared = COMPARISON["compare"](run, repo, load=lambda: (revision, saved), compatible=Mock(return_value=True))
+        compared = COMPARISON["compare"](run, repo, load=lambda: (revision, saved),
+                                         compatible=Mock(return_value=True))
         self.assertEqual(compared["outcome"], "failed")
         observations = [row for c in compared["configurations"] for row in c["metrics"]]
         self.assertEqual({row["verdict"] for row in observations}, {"regressed", "improved", "passed"})
@@ -331,7 +352,10 @@ class ComparisonTests(unittest.TestCase):
         for expected in ("6 regressions", "```mermaid", "Regressed", "Improved",
                          "94.00 tok/s", "-6.00%", f"/blob/{revision}/baselines.json"):
             self.assertIn(expected, report)
-        changed = COMPARISON["compare"](run, repo, load=lambda: (revision, saved), compatible=Mock(return_value=False))
+        charts = [part.split("```", 1)[0] for part in report.split("```mermaid")[1:]]
+        self.assertIn("Metal - Qwen3.5-4B", report)
+        changed = COMPARISON["compare"](run, repo, load=lambda: (revision, saved),
+                                        compatible=Mock(return_value=False))
         self.assertEqual(changed["outcome"], "passed")
         self.assertIn("changed benchmark inputs", changed["note"])
         first = COMPARISON["compare"](run, repo, load=lambda: (None, []))

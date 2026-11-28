@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 
 from inference_nightly import PR_PATH, SOURCE, smoke_receipt
 from lib.ci_artifacts import read_json
+from lib.inference_markdown import dataset_charts
 from lib.inference_parquet import read_run
 
 
@@ -119,6 +120,7 @@ class PublicationTests(unittest.TestCase):
 
             first_stamp = "2026-11-21T00:00:00Z"
             smoke_receipt(evidence, SOURCE, "23")
+            smoke_receipt(evidence, SOURCE, "23", "metal-qwen35-4b-standalone", 125, backend="metal")
             first = release(SOURCE, "23", 1, first_stamp)
             self.assertEqual(first["outcome"], "failed")
             self.assertEqual(dataset.version, 2)
@@ -127,7 +129,7 @@ class PublicationTests(unittest.TestCase):
                              "https://huggingface.co/datasets/meshllm/skippy-inference-qualification/resolve/"
                              + dataset.sha + "/reports/23-1")
             initial = read_json(dataset.directory / "baselines.json")
-            self.assertEqual(len(initial["baselines"]), 2)
+            self.assertEqual(len(initial["baselines"]), 4)
             self.assertEqual(read_run(dataset.directory / "runs/23/1.parquet"), first)
             self.assertTrue((dataset.directory / "charts/qualification-1.png").is_file())
             self.assertEqual(release(SOURCE, "23", 1, first_stamp), first)
@@ -137,6 +139,7 @@ class PublicationTests(unittest.TestCase):
             second_stamp = "2026-11-22T00:00:00Z"
             other_source = "b" * 40
             smoke_receipt(evidence, other_source, "24", value=90)
+            smoke_receipt(evidence, other_source, "24", "metal-qwen35-4b-standalone", 112, backend="metal")
             second = release(other_source, "24", 2, second_stamp)
             self.assertEqual(second["outcome"], "failed")
             self.assertEqual(second["baseline_revision"], f"{2:040d}")
@@ -153,6 +156,11 @@ class PublicationTests(unittest.TestCase):
             self.assertIn("## Latest numbers", card)
             self.assertIn("-10.00% · Regressed", card)
             self.assertIn("## Performance over time", card)
+            self.assertIn("Metal · Apple M3 Ultra", card)
+            charts = dataset_charts({"schema_version": 1, "runs": [first, second]})
+            self.assertEqual(len(charts[0].panels), 2)
+            self.assertEqual({panel.current for panel in charts[0].panels}, {90, 112})
+            self.assertEqual({panel.reference for panel in charts[0].panels}, {100, 125})
             self.assertNotIn("job_fixture", card)
             self.assertEqual(read_run(dataset.directory / "runs/24/1.parquet"), second)
             # Replaying an older run must embed its own immutable images, not

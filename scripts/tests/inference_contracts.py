@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from urllib.error import HTTPError
 from unittest.mock import Mock, patch
 
+from lib import inference_metal
 from lib import inference_ladder, inference_throughput, inference_probe
 from lib.inference_inputs import fixture
 from lib.jy_qualification import Pilot, PilotHTTPError, placement
@@ -50,6 +51,18 @@ class LadderTests(unittest.TestCase):
         with patch.object(inference_ladder, "read_json", return_value=ladder):
             with self.assertRaises(ValueError):
                 inference_ladder.plan("pr", self.sha)
+
+    def test_metal_uses_the_same_models_only_in_standalone_mode(self):
+        for profile, count in (("pr", 4), ("nightly", 8), ("release", 8)):
+            cuda = inference_ladder.matrix(profile, self.sha)
+            metal = inference_ladder.matrix(profile, self.sha, backend="metal")
+            self.assertEqual(len(metal), count)
+            self.assertEqual([row["model"] for row in metal],
+                             [row["model"] for row in cuda if row["mode"] == "standalone"])
+            self.assertTrue(all(row["mode"] == "standalone" and row["name"].startswith("Metal - ")
+                                for row in metal))
+            self.assertFalse({row["id"] for row in cuda} & {row["id"] for row in metal})
+        self.assertEqual(len(inference_ladder.matrix("nightly", self.sha, True, backend="metal")), 12)
 
 
 class PilotRequestTests(unittest.TestCase):
@@ -261,6 +274,46 @@ class ReleaseAdmissionTests(unittest.TestCase):
             admit()
         planner.assert_called_once_with("release", self.candidate)
         output.assert_called_once_with(source=self.candidate, profile="release", publication="false")
+
+    def test_only_the_staged_commit_from_protected_release_dispatch_is_admitted(self):
+        admission = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))
+        admit = admission["admit_release_candidate"]
+        candidate, base = "a" * 40, "b" * 40
+        env = {
+            "GITHUB_EVENT_NAME": "workflow_dispatch",
+            "GITHUB_REF": "refs/heads/main",
+            "GITHUB_WORKFLOW_REF": "Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main",
+            "GITHUB_RUN_ID": "123",
+            "GITHUB_SHA": base,
+        }
+        ref = {"object": {"sha": candidate}}
+        commit = {"parents": [{"sha": base}], "message": "Release\n\nSkippy-Release-Run: 123"}
+        with patch.dict(os.environ, env):
+            with patch.dict(admit.__globals__, github=lambda path: ref if "/ref/" in path else commit):
+                admit(candidate)
+                with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "schedule"}):
+                    admit(candidate)
+                with self.assertRaisesRegex(ValueError, "does not belong"):
+                    admit("c" * 40)
+                with patch.dict(os.environ, GITHUB_REF="refs/heads/branch"):
+                    with self.assertRaisesRegex(ValueError, "protected Release dispatch or schedule"):
+                        admit(candidate)
+
+
+class MetalAdmissionTests(unittest.TestCase):
+    def test_available_memory_is_bounded_by_vm_stats_and_metal_budget(self):
+        stats = "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 3.\nPages inactive: 5.\n"
+        self.assertEqual(inference_metal.available_memory(stats, 2**20), 8 * 16384)
+        self.assertEqual(inference_metal.available_memory(stats, 65536), 65536)
+        with self.assertRaisesRegex(ValueError, "could not be measured"):
+            inference_metal.available_memory("invalid", 65536)
+
+    def test_rejects_the_wrong_apple_chip(self):
+        with patch.object(inference_metal.platform, "system", return_value="Darwin"), \
+             patch.object(inference_metal.platform, "machine", return_value="arm64"), \
+             patch.object(inference_metal, "capture", return_value="Apple M5 Max\n"):
+            with self.assertRaisesRegex(ValueError, "Apple M3 Ultra"):
+                inference_metal.device_and_budget()
 
 
 if __name__ == "__main__":

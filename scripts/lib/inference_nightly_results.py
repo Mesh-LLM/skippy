@@ -5,10 +5,14 @@ import re
 import sys
 
 from .ci_artifacts import read_json
-from .inference_ladder import matrix
 from .inference_admission import split_admissions_digest
-from .inference_nightly_metrics import METRIC_NAMES, WORKLOADS, contract, metric_value
+from .inference_ladder import matrix
+from .inference_nightly_metrics import METAL_WORKLOADS, METRIC_NAMES, WORKLOADS, contract, metric_value
 from .inference_throughput import successful_run
+
+
+def workload_for(entry):
+    return (METAL_WORKLOADS if entry["backend"] == "metal" else WORKLOADS)[entry["profile"]]
 
 
 def measurements(directory, entry, sha):
@@ -21,6 +25,7 @@ def measurements(directory, entry, sha):
     }
     if (type(receipt.get("schema_version")) is not int or receipt["schema_version"] != 1
             or any(receipt.get(field) != value for field, value in expected.items())
+            or receipt.get("backend", "cuda") != entry["backend"]
             or not re.fullmatch(r"job_[A-Za-z0-9_]+", job["id"])):
         raise ValueError("inference measurement receipt identity mismatch")
     if entry["mode"] == "split":
@@ -31,11 +36,10 @@ def measurements(directory, entry, sha):
                 or any(member["status"] != "succeeded" for member in members)
                 or not any(member["role"] == "leader" and member["job_id"] == job["id"] for member in members)):
             raise ValueError("nightly receipt requires a successful split formation")
-    if entry["mode"] == "split":
         if receipt.get("split_admissions_sha256") != split_admissions_digest(read_json(directory / "split-admissions.json")):
             raise ValueError("nightly split admission evidence mismatch")
-    workload = WORKLOADS[entry["profile"]]
-    model = entry["configuration"].removesuffix(f'-{entry["mode"]}')
+    workload = workload_for(entry)
+    model = entry["configuration"].removeprefix("metal-").removesuffix(f'-{entry["mode"]}')
     fingerprint = contract(entry["profile"], entry, model)
     if receipt["contract_sha256"] != fingerprint:
         raise ValueError("inference workload fingerprint mismatch")
@@ -79,7 +83,7 @@ def read_configuration(root, entry, sha, run_id, attempt, *, reuse_prior=True):
         return {"id": entry["configuration"], "workload": workload, "outcome": "passed", "metrics": rows}
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         print(f'{entry["id"]}: unverified inference measurements ({type(error).__name__})', file=sys.stderr)
-        workload = WORKLOADS[entry["profile"]]
+        workload = workload_for(entry)
         return {
             "id": entry["configuration"], "workload": workload,
             "outcome": failure_outcome(directory, entry, sha),
@@ -91,9 +95,11 @@ def read_configuration(root, entry, sha, run_id, attempt, *, reuse_prior=True):
 def qualification_run(root: Path, profile, source, run_id, attempt, started_at, matrix_passed, *, published=False):
     if profile not in METRIC_NAMES or (published and profile != "nightly"):
         raise ValueError("unsupported inference measurement profile")
+    entries = (matrix(profile, source, include_smoke=published)
+               + matrix(profile, source, include_smoke=published, backend="metal"))
     configs = [
-        read_configuration(root, entry, source, run_id, attempt, reuse_prior=True)
-        for entry in matrix(profile, source, include_smoke=published)
+        read_configuration(root, entry, source, run_id, attempt)
+        for entry in entries
     ]
     passed = matrix_passed and all(config["outcome"] == "passed" for config in configs)
     return {

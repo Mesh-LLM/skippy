@@ -274,7 +274,7 @@ to the Actions summary. A regression, incomplete required lab evidence, or a
 failure to read or verify the published baseline fails qualification. The
 summary identifies measurements with no matching baseline, including before
 the first nightly publication and when benchmark inputs change. The longer
-`release` workload continues to use its lab qualification result because the
+`release` workload shows measured lab results without comparisons because the
 dataset has no comparable release workload. A merge to `main` adds no
 qualification run.
 

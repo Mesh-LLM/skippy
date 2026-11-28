@@ -142,9 +142,9 @@ class ExecuteTests(unittest.TestCase):
                         raise RuntimeError("stop during preparation")
                     start = Mock()
                     overrides = {
-                        "authority": lambda: (SHA, "GB10"),
+                        "authority": lambda _: (SHA, "GB10", None),
                         "plan": lambda *_: {"rows": [{"id": "fixture-split"}]},
-                        "record": Mock(), "available_memory": lambda: 10**15,
+                        "record": Mock(), "available_memory": lambda _: 10**15,
                         "fixture": lambda _: {"files": [{"size": 1}], "repo": "Fixture/Model", "revision": "b" * 40},
                         "admit": Mock(return_value=Path("fixture.gguf")),
                         "prepare_split": Mock(return_value=[]), "start": start,
@@ -157,6 +157,7 @@ class ExecuteTests(unittest.TestCase):
                             execute("pr", "fixture", "split")
                     start.assert_not_called()
                     port_available("127.0.0.1", local.port)
+
 
     def test_leader_control_is_served_during_nightly_and_release_numerical_checks(self):
         execute = run_path(str(Path(__file__).resolve().parents[1] / "inference-execute.py"))["execute"]
@@ -172,9 +173,9 @@ class ExecuteTests(unittest.TestCase):
                     raise RuntimeError("stop after observing control during numerical preparation")
                 with worker, patch.dict(os.environ, JIANYANG_ROLE="leader", JIANYANG_ARTIFACT_DIR=tmp), \
                      patch.dict(execute.__globals__, {
-                         "authority": lambda: (SHA, "GB10"),
+                         "authority": lambda _: (SHA, "GB10", None),
                          "plan": lambda *_: {"rows": [{"id": "fixture-split"}]},
-                         "record": Mock(), "available_memory": lambda: 10**15,
+                         "record": Mock(), "available_memory": lambda _: 10**15,
                          "fixture": lambda _: {"files": [{"size": 1}], "repo": "Fixture/Model", "revision": "b" * 40},
                          "admit": Mock(), "prepare_split": Mock(return_value=[]), "numerical": numerical,
                          "PeerControl": Mock(from_environment=Mock(return_value=leader)),
@@ -193,9 +194,9 @@ class ExecuteTests(unittest.TestCase):
         stop = Mock()
         with TemporaryDirectory() as tmp, patch.dict(os.environ, JIANYANG_ROLE="leader", JIANYANG_ARTIFACT_DIR=tmp), \
              patch.dict(execute.__globals__, {
-                 "authority": lambda: (SHA, "GB10"),
+                 "authority": lambda _: (SHA, "GB10", None),
                  "plan": lambda *_: {"rows": [{"id": "fixture-split"}], "performance_claim": "smoke-only"},
-                 "record": Mock(), "available_memory": lambda: 10**15,
+                 "record": Mock(), "available_memory": lambda _: 10**15,
                  "fixture": lambda _: {"files": [{"size": 1}], "repo": "Fixture/Model", "revision": "b" * 40, "layers": 2},
                  "admit": Mock(), "prepare_split": Mock(return_value=[]), "port_available": Mock(),
                  "PeerControl": Mock(from_environment=Mock(return_value=peer)),
