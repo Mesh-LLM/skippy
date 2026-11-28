@@ -216,7 +216,11 @@ impl MediaProjector {
     }
 
     fn marker() -> String {
-        let marker = unsafe { skippy_ffi::mtmd_default_marker() };
+        let marker = if crate::native_runtime_loaded() {
+            unsafe { skippy_ffi::mtmd_default_marker() }
+        } else {
+            ptr::null()
+        };
         if marker.is_null() {
             "<__media__>".to_string()
         } else {
@@ -1010,6 +1014,11 @@ impl StageModel {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dummy_media_marker_is_available_before_native_startup() {
+        assert_eq!(crate::StageModel::new_dummy().media_marker(), "<__media__>");
+    }
+
     use super::clamp_image_min_tokens;
 
     #[test]

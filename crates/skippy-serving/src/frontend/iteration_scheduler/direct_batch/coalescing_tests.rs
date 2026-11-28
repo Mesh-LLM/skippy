@@ -9,6 +9,9 @@ fn worker(commands: std_mpsc::Receiver<SchedulerCommand>) -> SchedulerWorker {
         scheduler: Scheduler::new(build_scheduler_config(4, 64, 0, Some(8), Some(8), 8, false)),
         requests: BTreeMap::new(),
         direct_iterations: VecDeque::new(),
+        verifications: VecDeque::new(),
+        drafts: VecDeque::new(),
+        max_verify_iteration_tokens: 512,
         cache_runtime_queue: CacheRuntimeQueue::new(CACHE_AGING_COST_PER_TURN, true),
         commands,
         kv_capacity_tokens: 64,
@@ -103,4 +106,28 @@ fn planned_work_reaches_runtime_admission_without_coalescing_an_empty_direct_que
     assert!(worker.requests.is_empty());
     assert!(worker.direct_iterations.is_empty());
     assert!(!worker.last_served_direct);
+}
+
+#[test]
+fn verification_interrupts_direct_gather_without_waiting_for_its_target() {
+    let (commands, receiver) = std_mpsc::channel();
+    let mut worker = worker(receiver);
+    worker
+        .direct_iterations
+        .push_back(tests::direct_iteration("direct", 1));
+    commands
+        .send(SchedulerCommand::Verify(
+            shared_verification::tests::operation("verify", 4),
+        ))
+        .unwrap();
+    commands.send(SchedulerCommand::Shutdown).unwrap();
+    assert!(worker.coalesce_direct_iterations());
+    assert_eq!(worker.verifications.len(), 1);
+    assert_eq!(worker.direct_iterations.len(), 1);
+    assert!(matches!(
+        worker.commands.try_recv(),
+        Ok(SchedulerCommand::Shutdown)
+    ));
+    worker.iteration_interval = Duration::from_secs(1);
+    assert!(worker.wait_iteration_interval());
 }
