@@ -1,0 +1,108 @@
+From a0f46bc064913a38b56560663d31c71a3b6423fe Mon Sep 17 00:00:00 2001
+From: Skippy contributors <ci@skippy.local>
+Date: Sat, 28 Nov 2026 11:42:55 +1100
+Subject: [PATCH 54/54] llama: keep cache state in host memory on an integrated
+ GPU
+
+With GGML_CUDA_INTEGRATED=1 a GB10 reads graph inputs in place, but the KV
+cache and recurrent memory still sit in device allocations, so state the
+host reads crosses as a device-to-host transfer, as on a discrete card.
+
+llama_model::state_buft_layer picks where a layer's cache state lives: an
+integrated device that supports its own host buffer type gets that, so the
+KV cache and recurrent memory sit in pinned host memory the GPU reads
+directly, as Metal's sit in shared memory. Other devices keep their device
+buffer type, so nothing changes without the switch.
+
+Pinned host buffers are not given back to the kernel: their pages stay
+locked for the device, so skippy_kv_buffer_pages_are_host now accepts a host
+buffer only when its type belongs to the CPU.
+---
+ src/llama-kv-cache.cpp         |  8 +++++---
+ src/llama-memory-recurrent.cpp |  2 +-
+ src/llama-model.cpp            | 12 ++++++++++++
+ src/llama-model.h              |  1 +
+ 4 files changed, 19 insertions(+), 4 deletions(-)
+
+diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
+index 4a8c4db44..481c978b5 100644
+--- a/src/llama-kv-cache.cpp
++++ b/src/llama-kv-cache.cpp
+@@ -31,13 +31,15 @@ static bool ggml_is_power_of_2(int n) {
+ // Whether the kernel may take pages of this buffer back and hand them out
+ // again on demand: the CPU buffer, and Metal's shared buffer, which holds
+ // vm_allocate'd memory but does not report itself as host so the scheduler
+-// keeps it on the GPU. Metal's private and mapped buffers do not qualify.
++// keeps it on the GPU. Metal's private and mapped buffers do not qualify, nor
++// does a GPU's pinned host buffer, whose pages stay locked for the device.
+ static bool skippy_kv_buffer_pages_are_host(ggml_backend_buffer_t buf) {
+     if (buf == nullptr) {
+         return false;
+     }
+     if (ggml_backend_buffer_is_host(buf)) {
+-        return true;
++        ggml_backend_dev_t dev = ggml_backend_buft_get_device(ggml_backend_buffer_get_type(buf));
++        return dev == nullptr || ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_CPU;
+     }
+     const char * name = ggml_backend_buffer_name(buf);
+     return strncmp(name, "MTL", 3) == 0 && strspn(name + 3, "0123456789") == strlen(name + 3);
+@@ -279,7 +281,7 @@ llama_kv_cache::llama_kv_cache(
+ 
+         if (offload) {
+             auto * dev = model.dev_layer(il);
+-            buft = ggml_backend_dev_buffer_type(dev);
++            buft = model.state_buft_layer(il);
+ 
+             dev_name = ggml_backend_dev_name(dev);
+         }
+diff --git a/src/llama-memory-recurrent.cpp b/src/llama-memory-recurrent.cpp
+index 5807cdd65..1daee54e4 100644
+--- a/src/llama-memory-recurrent.cpp
++++ b/src/llama-memory-recurrent.cpp
+@@ -123,7 +123,7 @@ llama_memory_recurrent::llama_memory_recurrent(
+ 
+         if (offload) {
+             auto * dev = model.dev_layer(i);
+-            buft = ggml_backend_dev_buffer_type(dev);
++            buft = model.state_buft_layer(i);
+ 
+             dev_name = ggml_backend_dev_name(dev);
+         }
+diff --git a/src/llama-model.cpp b/src/llama-model.cpp
+index a0bf84344..5d5ec0e90 100644
+--- a/src/llama-model.cpp
++++ b/src/llama-model.cpp
+@@ -2896,6 +2896,18 @@ ggml_backend_dev_t llama_model::dev_layer(int il) const {
+     return pimpl->dev_layer.at(il).dev;
+ }
+ 
++// Where a layer's cache state lives: an integrated GPU that computes from its host buffer keeps
++// it there, as Metal keeps it in shared memory, so saving and restoring it are host copies.
++ggml_backend_buffer_type_t llama_model::state_buft_layer(int il) const {
++    ggml_backend_dev_t dev = dev_layer(il);
++    ggml_backend_buffer_type_t host = ggml_backend_dev_host_buffer_type(dev);
++    if (host != nullptr && ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_IGPU &&
++            ggml_backend_dev_supports_buft(dev, host)) {
++        return host;
++    }
++    return ggml_backend_dev_buffer_type(dev);
++}
++
+ ggml_backend_dev_t llama_model::dev_output() const {
+     return pimpl->dev_output.dev;
+ }
+diff --git a/src/llama-model.h b/src/llama-model.h
+index 7c5b4d550..c2bea36a8 100644
+--- a/src/llama-model.h
++++ b/src/llama-model.h
+@@ -994,6 +994,7 @@ struct llama_model {
+     void print_info() const;
+ 
+     ggml_backend_dev_t dev_layer(int il) const;
++    ggml_backend_buffer_type_t state_buft_layer(int il) const;
+     ggml_backend_dev_t dev_output() const;
+ 
+     ggml_backend_buffer_type_t select_buft(int il) const;
+-- 
+2.43.0
+
