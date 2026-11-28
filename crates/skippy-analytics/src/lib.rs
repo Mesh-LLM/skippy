@@ -255,7 +255,7 @@ pub fn init(config: ConfigPreference) -> Status {
     }
 
     let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
-    let worker = tokio::spawn(flush_loop(
+    let worker = tokio::spawn(report(
         receiver,
         api_key,
         install.as_str().to_owned(),
@@ -328,12 +328,7 @@ pub fn init_embedded(host: Host, install_id: &str) -> bool {
     }
     let endpoint = client::batch_endpoint(&ingestion_host());
     let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
-    let worker = tokio::spawn(flush_loop(
-        receiver,
-        api_key,
-        install_id.to_owned(),
-        endpoint,
-    ));
+    let worker = tokio::spawn(report(receiver, api_key, install_id.to_owned(), endpoint));
     REPORTER
         .set(Some(Reporter {
             sender: std::sync::Mutex::new(Some(sender)),
@@ -402,9 +397,9 @@ pub async fn shutdown() {
     }
 }
 
-/// Drain the queue, batching events and posting them.
-async fn flush_loop(
-    mut receiver: mpsc::Receiver<Envelope>,
+/// Build the HTTP client, then deliver the queue with it.
+async fn report(
+    receiver: mpsc::Receiver<Envelope>,
     api_key: String,
     distinct_id: String,
     endpoint: String,
@@ -419,6 +414,17 @@ async fn flush_loop(
             return;
         }
     };
+    flush_loop(receiver, http, api_key, distinct_id, endpoint).await;
+}
+
+/// Drain the queue, batching events and posting them.
+async fn flush_loop(
+    mut receiver: mpsc::Receiver<Envelope>,
+    http: reqwest::Client,
+    api_key: String,
+    distinct_id: String,
+    endpoint: String,
+) {
     let base = base_properties(HOST.get_or_init(Host::standalone));
     let mut pending: Vec<Envelope> = Vec::new();
 
