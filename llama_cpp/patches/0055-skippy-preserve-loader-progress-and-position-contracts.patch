@@ -1,4 +1,4 @@
-From e5c110740185f6e068e56168b74f1bc695be4404 Mon Sep 17 00:00:00 2001
+From 0072bad6a4a88a6afbaa5c44e97f46936290b107 Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Wed, 25 Nov 2026 11:11:17 +1100
 Subject: [PATCH] skippy: preserve loader, sampling and position contracts
@@ -31,10 +31,10 @@ index fc5dcd389..6f8a93484 100644
  
  enum skippy_kv_page_codec {
 diff --git a/src/llama-context.cpp b/src/llama-context.cpp
-index a742ba235..2cf413d2d 100644
+index e2683df92..5ca3645bf 100644
 --- a/src/llama-context.cpp
 +++ b/src/llama-context.cpp
-@@ -2418,11 +2418,6 @@ int llama_context::decode(
+@@ -2421,11 +2421,6 @@ int llama_context::decode(
  
      GGML_ASSERT((cparams.causal_attn || cparams.n_ubatch >= n_tokens_all) && "non-causal attention requires n_ubatch >= n_tokens");
  
@@ -46,7 +46,7 @@ index a742ba235..2cf413d2d 100644
      // TODO: this clear of the buffer can easily be forgotten - need something better
      // sync first so any in-flight async copies into embd_seq complete before it is freed
      if (!embd_seq.empty()) {
-@@ -2432,6 +2427,12 @@ int llama_context::decode(
+@@ -2435,6 +2430,12 @@ int llama_context::decode(
      output_swaps.clear();
      embd_batch_idxs.clear();
  
@@ -58,8 +58,8 @@ index a742ba235..2cf413d2d 100644
 +
      sched_reserve(graph_build_inputs);
  
-     bool did_optimize = false;
-@@ -5058,7 +5059,7 @@ llama_context * llama_init_from_model_with_graph_inputs(
+     if (t_compute_start_us == 0) {
+@@ -5066,7 +5067,7 @@ llama_context * llama_init_from_model_with_graph_inputs(
      }
  
      if (params.ctx_type == LLAMA_CONTEXT_TYPE_MTP &&
