@@ -145,18 +145,39 @@ class PeerControl:
             time.sleep(min(1, max(0, deadline - time.monotonic())))
         raise RuntimeError("split peer rendezvous timed out: " + last)
 
-    def worker_ready(self, process, *, port=9401, seconds=900):
+    def worker_ready(self, process, log, stage, *, port=9401, seconds=900):
+        address = f"[{self.host}]:{port}" if ":" in self.host else f"{self.host}:{port}"
+        if stage["bind_addr"] != address:
+            raise ValueError("worker stage listener differs from its reserved endpoint")
+        # binary_messaging emits this from the serving child only after its
+        # TcpListener::bind succeeds. The per-attempt log is newly truncated
+        # and receives only that child's stdout/stderr, not a peer's output.
+        marker = (f"skippy-serving listening: binary={address} "
+                  f"stage_id={stage['stage_id']} layer_range=").encode()
         deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
-            if process.poll() is not None:
-                raise RuntimeError("split worker exited before readiness; inspect server.log")
-            try:
-                with socket.create_connection((self.host, port), timeout=1):
-                    self.phase = "ready"
-                    return
-            except OSError:
-                time.sleep(1)
-        raise RuntimeError("split worker listener did not become ready")
+        bound = False
+        with log.open("rb") as child_output:
+            while time.monotonic() < deadline:
+                if process.poll() is not None:
+                    raise RuntimeError("split worker exited before readiness; inspect server.log")
+                while not bound:
+                    position = child_output.tell()
+                    line = child_output.readline()
+                    if not line.endswith(b"\n"):
+                        # A tracing write may be observed mid-line. Re-read
+                        # that fragment when the child appends its remainder.
+                        child_output.seek(position)
+                        break
+                    bound = marker in line
+                if bound:
+                    try:
+                        with socket.create_connection((self.host, port), timeout=1):
+                            self.phase = "ready"
+                            return
+                    except OSError:
+                        pass
+                time.sleep(min(1, max(0, deadline - time.monotonic())))
+        raise RuntimeError("split worker did not report its own bound listener; inspect server.log")
 
     def complete(self, process, *, seconds=60):
         if self.peer is None:

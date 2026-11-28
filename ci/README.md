@@ -154,7 +154,12 @@ budget waits for placement instead of failing fast.
 Split readiness uses a control listener on each reserved machine, bound to the
 JY formation, source SHA, model, profile, role and native attempt ID. The leader
 waits for its own worker's ready response; an unrelated stage listener cannot
-satisfy readiness. Existing data/control listeners cause failure rather than
+satisfy readiness. The worker requires its own child's post-bind log record
+for the exact stage and endpoint as well as a live child and reachable port;
+a port taken by another process during model loading cannot make it ready.
+Leader control is already served during the longer nightly/release numerical
+checks, so the worker can identify it without waiting for those checks to end.
+Existing data/control listeners cause failure rather than
 being reused or killed. The worker must acknowledge the leader's completion
 before either writes passing peer evidence. Missing peers and acknowledgements
 fail within the existing native lease; this does not change JY scheduling.
