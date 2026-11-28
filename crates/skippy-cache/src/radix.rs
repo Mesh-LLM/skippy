@@ -2,7 +2,6 @@ mod resident_matching;
 use resident_matching::resident_backing_prefix;
 
 use std::collections::{BTreeMap, HashMap};
-use std::num::NonZeroU64;
 
 use anyhow::{Result, bail};
 
@@ -18,7 +17,6 @@ struct ComponentEntry<T> {
     logical_bytes: u64,
     last_used: u64,
     active_refs: u32,
-    last_resident_reuse: Option<NonZeroU64>,
 }
 
 #[derive(Debug)]
@@ -94,8 +92,6 @@ pub struct RadixEvictionCandidate<T> {
     pub tokens: Vec<i32>,
     pub logical_bytes: u64,
     pub last_used: u64,
-    /// Number of resident insertions since the last successful restore, if any.
-    pub insertions_since_reuse: Option<u64>,
     pub value: T,
 }
 
@@ -128,7 +124,6 @@ pub struct UnifiedRadixCacheStats {
 #[derive(Debug)]
 pub struct UnifiedRadixCache<R, E> {
     clock: u64,
-    resident_insertions: u64,
     splits: u64,
     resident_evictions: u64,
     recurrent_evictions: u64,
@@ -145,7 +140,6 @@ impl<R, E> UnifiedRadixCache<R, E> {
     pub fn new() -> Self {
         Self {
             clock: 0,
-            resident_insertions: 0,
             splits: 0,
             resident_evictions: 0,
             recurrent_evictions: 0,
@@ -172,7 +166,6 @@ impl<R, E> UnifiedRadixCache<R, E> {
             bail!("cannot replace an active resident radix entry");
         }
         self.clock = self.clock.saturating_add(1);
-        self.resident_insertions = self.resident_insertions.saturating_add(1);
         let last_used = self.clock;
         let node = self.ensure_node(namespace, tokens);
         Ok(node
@@ -183,7 +176,6 @@ impl<R, E> UnifiedRadixCache<R, E> {
                 logical_bytes,
                 last_used,
                 active_refs: 0,
-                last_resident_reuse: None,
             })
             .map(|entry| entry.value))
     }
@@ -209,7 +201,6 @@ impl<R, E> UnifiedRadixCache<R, E> {
             return Ok(Some(value));
         }
         self.clock = self.clock.saturating_add(1);
-        self.resident_insertions = self.resident_insertions.saturating_add(1);
         let last_used = self.clock;
         let node = self.ensure_node(namespace, tokens);
         debug_assert!(node.components.resident.is_none());
@@ -218,7 +209,6 @@ impl<R, E> UnifiedRadixCache<R, E> {
             logical_bytes,
             last_used,
             active_refs: 0,
-            last_resident_reuse: None,
         });
         Ok(None)
     }
@@ -252,7 +242,6 @@ impl<R, E> UnifiedRadixCache<R, E> {
                 logical_bytes,
                 last_used,
                 active_refs: 0,
-                last_resident_reuse: None,
             })
             .map(|entry| entry.value))
     }
@@ -396,18 +385,6 @@ impl<R, E> UnifiedRadixCache<R, E> {
         self.clock
     }
 
-    /// Mark the exact backing entry after native restore succeeds.
-    pub fn mark_resident_reused(&mut self, namespace: &str, stored_tokens: &[i32]) {
-        if let Some(entry) = self
-            .roots
-            .get_mut(namespace)
-            .and_then(|root| node_at_mut(root, stored_tokens))
-            .and_then(|node| node.components.resident.as_mut())
-        {
-            entry.last_resident_reuse = NonZeroU64::new(self.resident_insertions);
-        }
-    }
-
     fn ensure_node(&mut self, namespace: String, tokens: &[i32]) -> &mut RadixNode<R, E> {
         let root = self.roots.entry(namespace).or_insert_with(RadixNode::root);
         ensure_node(root, tokens, &mut self.splits)
@@ -427,13 +404,7 @@ impl<R: Clone, E> UnifiedRadixCache<R, E> {
     pub fn resident_eviction_candidates(&self) -> Vec<RadixEvictionCandidate<R>> {
         let mut candidates = Vec::new();
         for (namespace, root) in &self.roots {
-            collect_resident_eviction_candidates(
-                namespace,
-                root,
-                self.resident_insertions,
-                &mut Vec::new(),
-                &mut candidates,
-            );
+            collect_resident_eviction_candidates(namespace, root, &mut Vec::new(), &mut candidates);
         }
         candidates
     }
@@ -914,7 +885,6 @@ fn collect_lru_victim<R, E>(
 fn collect_resident_eviction_candidates<R: Clone, E>(
     namespace: &str,
     node: &RadixNode<R, E>,
-    resident_insertions: u64,
     path: &mut Vec<i32>,
     candidates: &mut Vec<RadixEvictionCandidate<R>>,
 ) {
@@ -931,20 +901,11 @@ fn collect_resident_eviction_candidates<R: Clone, E>(
             tokens: path.clone(),
             logical_bytes: entry.logical_bytes,
             last_used: entry.last_used,
-            insertions_since_reuse: entry
-                .last_resident_reuse
-                .map(|reuse| resident_insertions.saturating_sub(reuse.get())),
             value: entry.value.clone(),
         });
     }
     for child in node.children.values() {
-        collect_resident_eviction_candidates(
-            namespace,
-            child,
-            resident_insertions,
-            path,
-            candidates,
-        );
+        collect_resident_eviction_candidates(namespace, child, path, candidates);
     }
     path.truncate(original_len);
 }
