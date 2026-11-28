@@ -13,6 +13,7 @@ from pathlib import Path
 from lib.ci_artifacts import read_json, write_json
 from lib.ci_process import cancel_on_signal
 from lib.inference_ladder import plan
+from lib.inference_peer_evidence import verify_split_peer
 from lib.inference_nightly_metrics import collect_nightly
 from lib.inference_throughput import collect
 from lib.jy_qualification import Pilot, placement
@@ -154,6 +155,8 @@ def dispatch(pilot, profile, sha, output, configuration, collect_public=False):
             record(ledger, identifiers)
             write_json(output / f"{identity}-launch.json", launched)
             job = wait(pilot, handle, identity, sha, output, deadline)
+            if mode == "split":
+                verify_split_peer(pilot, job, row, sha, profile, output)
             if collect_public:
                 collect_nightly(pilot, job, row, sha, output, model_key, profile)
             elif profile == "pr":

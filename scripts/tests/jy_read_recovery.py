@@ -89,7 +89,8 @@ class ReadRecoveryTests(unittest.TestCase):
         row = {"id": "model-split", "model": "Fixture/Model", "mode": "split"}
         launch = Mock(return_value={"job_id": "job_test"})
         cleanup = Mock()
-        return dispatch, {"plan": Mock(return_value={"rows": [row]}), "launch": launch, "cancel": cleanup}
+        return dispatch, {"plan": Mock(return_value={"rows": [row]}), "launch": launch, "cancel": cleanup,
+                          "verify_split_peer": Mock()}
 
     def use_fake_clock(self):
         clock = [0.0]
