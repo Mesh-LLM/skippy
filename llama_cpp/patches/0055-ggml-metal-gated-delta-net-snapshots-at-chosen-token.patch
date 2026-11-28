@@ -1,0 +1,165 @@
+From 03ccd0baf4df44994ac039170569a5f5971d2761 Mon Sep 17 00:00:00 2001
+From: Skippy contributors <ci@skippy.local>
+Date: Sat, 28 Nov 2026 20:47:39 +1100
+Subject: [PATCH 55/55] ggml-metal: gated delta net snapshots at chosen tokens
+
+GGML_OP_GATED_DELTA_NET_AT had no Metal kernel, so a Metal graph that
+used it would run every recurrent layer on the CPU.
+
+The kernel copies the state into a snapshot slot after each token the
+op names, as it already does for the last K tokens, and writes the
+final state to slot 0. A function constant selects the mapping, so the
+plain op's pipelines are unchanged.
+---
+ ggml/src/ggml-metal/ggml-metal-device.cpp     |  5 ++++-
+ ggml/src/ggml-metal/ggml-metal-device.m       |  3 +++
+ ggml/src/ggml-metal/ggml-metal-ops.cpp        |  3 +++
+ ggml/src/ggml-metal/ggml-metal-timing.cpp     |  1 +
+ .../ggml-metal/kernels/gated_delta_net.metal  | 20 +++++++++++++++++--
+ 5 files changed, 29 insertions(+), 3 deletions(-)
+
+diff --git a/ggml/src/ggml-metal/ggml-metal-device.cpp b/ggml/src/ggml-metal/ggml-metal-device.cpp
+index 17be454a5..63e518e80 100644
+--- a/ggml/src/ggml-metal/ggml-metal-device.cpp
++++ b/ggml/src/ggml-metal/ggml-metal-device.cpp
+@@ -752,6 +752,8 @@ ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_gated_delta_net(
+     const int ne30 = op->src[3]->ne[0]; // G
+     // state is src[5], 4D [S_v, S_v, H_v, n_seqs] (s0 only); K is op param 0.
+     const int K = ggml_get_op_params_i32(op, 0);
++    // GGML_OP_GATED_DELTA_NET_AT: slots after the final state follow src[6], not the last tokens
++    const bool at = op->op == GGML_OP_GATED_DELTA_NET_AT;
+ 
+     const int nsg = op->src[2]->ne[0]/32;
+ 
+@@ -760,7 +762,7 @@ ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_gated_delta_net(
+     GGML_ASSERT(ne20 % 32 == 0);
+ 
+     snprintf(base, 256, "kernel_gated_delta_net_%s_%d", ggml_type_name(op->src[0]->type), nsg);
+-    snprintf(name, 256, "%s_ne20=%d_ne30=%d_K=%d", base, ne20, ne30, K);
++    snprintf(name, 256, "%s_ne20=%d_ne30=%d_K=%d_at=%d", base, ne20, ne30, K, at);
+ 
+     ggml_metal_pipeline_with_params res = ggml_metal_library_get_pipeline(lib, name);
+     if (!res.pipeline) {
+@@ -769,6 +771,7 @@ ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_gated_delta_net(
+         ggml_metal_cv_set_int16(cv, ne20, FC_GATED_DELTA_NET + 0);
+         ggml_metal_cv_set_int16(cv, ne30, FC_GATED_DELTA_NET + 1);
+         ggml_metal_cv_set_int16(cv, K,    FC_GATED_DELTA_NET + 2);
++        ggml_metal_cv_set_bool (cv, at,   FC_GATED_DELTA_NET + 3);
+ 
+         res = ggml_metal_library_compile_pipeline(lib, base, name, cv);
+ 
+diff --git a/ggml/src/ggml-metal/ggml-metal-device.m b/ggml/src/ggml-metal/ggml-metal-device.m
+index db9889c79..782d46a45 100644
+--- a/ggml/src/ggml-metal/ggml-metal-device.m
++++ b/ggml/src/ggml-metal/ggml-metal-device.m
+@@ -2127,6 +2127,9 @@ bool ggml_metal_device_supports_op(ggml_metal_device_t dev, const struct ggml_te
+             return true;
+         case GGML_OP_GATED_DELTA_NET:
+             return has_simdgroup_reduction && op->src[2]->ne[0] % 32 == 0;
++        case GGML_OP_GATED_DELTA_NET_AT:
++            return has_simdgroup_reduction && op->src[2]->ne[0] % 32 == 0 &&
++                op->src[6]->type == GGML_TYPE_I32 && ggml_is_contiguous(op->src[6]);
+         case GGML_OP_SOLVE_TRI:
+             return has_simdgroup_reduction && op->src[0]->type == GGML_TYPE_F32;
+         case GGML_OP_MUL_MAT:
+diff --git a/ggml/src/ggml-metal/ggml-metal-ops.cpp b/ggml/src/ggml-metal/ggml-metal-ops.cpp
+index 9e68f20d9..ce8773459 100644
+--- a/ggml/src/ggml-metal/ggml-metal-ops.cpp
++++ b/ggml/src/ggml-metal/ggml-metal-ops.cpp
+@@ -414,6 +414,7 @@ static int ggml_metal_op_encode_impl(ggml_metal_op_t ctx, int idx) {
+                 n_fuse = ggml_metal_op_rwkv(ctx, idx);
+             } break;
+         case GGML_OP_GATED_DELTA_NET:
++        case GGML_OP_GATED_DELTA_NET_AT:
+             {
+                 n_fuse = ggml_metal_op_gated_delta_net(ctx, idx);
+             } break;
+@@ -2196,6 +2197,8 @@ int ggml_metal_op_gated_delta_net(ggml_metal_op_t ctx, int idx) {
+     ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op->src[5]), ida++); // state
+     ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op),         ida++); // dst (attn)
+     ggml_metal_encoder_set_buffer  (enc, bid_out,                              ida++); // state_out
++    // only GGML_OP_GATED_DELTA_NET_AT reads its snapshot tokens; the plain op binds any buffer there
++    ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op->op == GGML_OP_GATED_DELTA_NET_AT ? op->src[6] : op->src[0]), ida++);
+ 
+     const int nsg = pipeline.nsg;
+ 
+diff --git a/ggml/src/ggml-metal/ggml-metal-timing.cpp b/ggml/src/ggml-metal/ggml-metal-timing.cpp
+index a355681a4..9bbbc2691 100644
+--- a/ggml/src/ggml-metal/ggml-metal-timing.cpp
++++ b/ggml/src/ggml-metal/ggml-metal-timing.cpp
+@@ -136,6 +136,7 @@ int op_class(const ggml_tensor * node) {
+         case GGML_OP_RWKV_WKV7:
+         case GGML_OP_GATED_LINEAR_ATTN:
+         case GGML_OP_GATED_DELTA_NET:
++        case GGML_OP_GATED_DELTA_NET_AT:
+             return GGML_BACKEND_OP_CLASS_RECURRENT;
+         case GGML_OP_SOFT_MAX:
+             // a masked soft max is unfused attention; MoE routing has no mask
+diff --git a/ggml/src/ggml-metal/kernels/gated_delta_net.metal b/ggml/src/ggml-metal/kernels/gated_delta_net.metal
+index 5e4861ece..6bf05209d 100644
+--- a/ggml/src/ggml-metal/kernels/gated_delta_net.metal
++++ b/ggml/src/ggml-metal/kernels/gated_delta_net.metal
+@@ -3,6 +3,7 @@
+ constant short FC_gated_delta_net_ne20 [[function_constant(FC_GATED_DELTA_NET + 0)]];
+ constant short FC_gated_delta_net_ne30 [[function_constant(FC_GATED_DELTA_NET + 1)]];
+ constant short FC_gated_delta_net_K    [[function_constant(FC_GATED_DELTA_NET + 2)]];
++constant bool  FC_gated_delta_net_at   [[function_constant(FC_GATED_DELTA_NET + 3)]];
+ 
+ #if 1
+ template<short NSG>
+@@ -16,12 +17,14 @@ kernel void kernel_gated_delta_net_impl(
+         device const char * s,
+         device       char * dst,
+         device       char * dst_fuse,
++        device const int32_t * at,
+         uint3 tgpig[[threadgroup_position_in_grid]],
+         uint3 tpitg[[thread_position_in_threadgroup]],
+         uint3   ntg[[threads_per_threadgroup]])  {
+ #define S_v FC_gated_delta_net_ne20
+ #define G   FC_gated_delta_net_ne30
+ #define K   FC_gated_delta_net_K
++#define AT  FC_gated_delta_net_at
+ 
+     const uint tx = tpitg.x;
+     const uint ty = tpitg.y;
+@@ -120,7 +123,19 @@ kernel void kernel_gated_delta_net_impl(
+         b_ptr += args.ne21;
+         g_ptr += args.ne21*G;
+ 
+-        if (K > 1) {
++        if (AT) {
++            // GGML_OP_GATED_DELTA_NET_AT: slot 0 is the final state, slot s follows at[s - 1]
++            device const int32_t * at_seq = at + i23*(K - 1);
++            for (short slot = 1; slot < K; slot++) {
++                if (at_seq[slot - 1] == t) {
++                    device float * dst_state = (device float *)state_out + (uint)slot * slot_stride + state_out_base;
++                    FOR_UNROLL (short j = 0; j < NSG; j++) {
++                        const short is = tx*NSG + j;
++                        dst_state[is] = ls[j];
++                    }
++                }
++            }
++        } else if (K > 1) {
+             const int target_slot = (int)args.ne22 - 1 - (int)t;
+             if (target_slot >= 0 && target_slot < (int)K) {
+                 device float * dst_state = (device float *)state_out + (uint)target_slot * slot_stride + state_out_base;
+@@ -132,7 +147,7 @@ kernel void kernel_gated_delta_net_impl(
+         }
+     }
+ 
+-    if (K == 1) {
++    if (K == 1 || AT) {
+         device float * dst_state = (device float *)state_out + state_out_base;
+         FOR_UNROLL (short j = 0; j < NSG; j++) {
+             const short is = tx*NSG + j;
+@@ -143,6 +158,7 @@ kernel void kernel_gated_delta_net_impl(
+ #undef S_v
+ #undef G
+ #undef K
++#undef AT
+ }
+ 
+ typedef decltype(kernel_gated_delta_net_impl<4>) kernel_gated_delta_net_t;
+-- 
+2.43.0
+
