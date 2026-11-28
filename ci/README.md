@@ -157,6 +157,27 @@ its 60-second grace. This execution clock starts once and never resets on
 later status polls or when the other split member starts. The Actions job
 allows 130 minutes in total, leaving nine minutes for setup, evidence and
 cleanup. Nightly/release total deadlines and native lease budgets are unchanged.
+Split readiness uses a control listener on each reserved machine, bound to the
+JY formation, source SHA, model, profile, role and native attempt ID. The leader
+waits for its own worker's ready response; an unrelated stage listener cannot
+satisfy readiness. The worker joins the serving child's Linux `/proc/PID/fd`
+socket inodes with its TCP LISTEN table to verify ownership of the exact stage
+endpoint, as well as requiring a live child and reachable port. A port taken
+by another process during model loading cannot make it ready. This uses the
+existing same-user process visibility; no tracing subscriber is required.
+Leader control is already served during the longer nightly/release numerical
+checks, so the worker can identify it without waiting for those checks to end.
+Existing data/control listeners cause failure rather than
+being reused or killed. The worker must acknowledge the leader's completion
+before either writes passing peer evidence. Missing peers and acknowledgements
+fail within the existing native lease; this does not change JY scheduling.
+The protected controller requires both formation members to succeed on their
+distinct reserved nodes with overlapping execution windows and matching
+two-way `split-peer.json` evidence. It checks the leader's `qualification.json`
+and worker's peer receipt before accepting the split, independently of optional
+throughput reporting. These identities are diagnostic provenance, not secrets.
+Older split receipts without this evidence cannot qualify a new run; update the
+candidate harness from main before rerunning qualification.
 Branch PRs retain
 same-repository/collaborator admission; forks use the approved
 controller above. Both retain a fresh-head check and all seven GPU smoke
