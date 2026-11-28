@@ -53,7 +53,7 @@ class DeviceSmokeContract(unittest.TestCase):
 
     def test_each_gpu_backend_requires_its_own_device_and_positive_offload(self):
         for backend, device in (("rocm", "ROCm0: AMD Radeon 8060S"), ("rocm", "HIP0"),
-                                ("cuda", "CUDA0"), ("metal", "MTL0")):
+                                ("cuda", "CUDA0"), ("metal", "MTL0"), ("vulkan", "Vulkan0")):
             with self.subTest(backend=backend, device=device):
                 self.assert_device(backend, device)
                 self.assert_device(backend, device, offload=False, passes=False)
@@ -62,6 +62,11 @@ class DeviceSmokeContract(unittest.TestCase):
         for device in ("CPU", "CUDA0", "MTL0", "Vulkan0"):
             with self.subTest(device=device):
                 self.assert_device("rocm", device, passes=False)
+
+    def test_vulkan_rejects_cpu_fallback_and_other_gpu_backends(self):
+        for device in ("CPU", "CUDA0", "MTL0", "ROCm0", "HIP0"):
+            with self.subTest(device=device):
+                self.assert_device("vulkan", device, passes=False)
 
 
 class TargetPlannerContract(unittest.TestCase):

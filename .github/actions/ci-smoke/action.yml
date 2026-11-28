@@ -7,6 +7,9 @@ inputs:
   download-package:
     description: Restore the archived package for a separate release device smoke.
     default: 'false'
+  evidence-suffix:
+    description: Driver vendor suffix for independent Vulkan device evidence.
+    default: ''
   candidate_artifact:
     description: Protected candidate source artifact
     default: ''
@@ -58,7 +61,7 @@ runs:
     - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       if: inputs.download-package == 'true'
       with:
-        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-device-evidence-${{ inputs.runtime_id }}
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-device-evidence-${{ inputs.runtime_id }}${{ inputs.evidence-suffix }}
         path: dist/products/${{ inputs.runtime_id }}/evidence
         if-no-files-found: error
         compression-level: 0
@@ -68,7 +71,7 @@ runs:
       if: failure() && inputs.download-package == 'true'
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
-        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-device-${{ inputs.runtime_id }}-diagnostics
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-device-${{ inputs.runtime_id }}${{ inputs.evidence-suffix }}-diagnostics
         path: dist/products/${{ inputs.runtime_id }}/evidence/**
         if-no-files-found: ignore
         overwrite: true
