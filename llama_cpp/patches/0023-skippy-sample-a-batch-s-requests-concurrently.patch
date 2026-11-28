@@ -307,7 +307,7 @@ index 000000000..0c253ca71
 +// same time, one thread each; the rest sample first, on this thread.
 +std::vector<llama_token> skippy_sample_requests(const std::vector<skippy_sample_request> & requests);
 diff --git a/src/skippy/execution-batch.cpp b/src/skippy/execution-batch.cpp
-index a31540652..83c290ee2 100644
+index 2d34652b9..46b0d1a27 100644
 --- a/src/skippy/execution-batch.cpp
 +++ b/src/skippy/execution-batch.cpp
 @@ -1,5 +1,6 @@
@@ -317,7 +317,7 @@ index a31540652..83c290ee2 100644
  #include "skippy/errors.h"
  #include "skippy/graph_build_inputs.h"
  #include "skippy/runtime_support.h"
-@@ -467,7 +468,10 @@ enum skippy_status skippy_iteration_batch_sampled(
+@@ -466,7 +467,10 @@ enum skippy_status skippy_iteration_batch_sampled(
  
      // exports, readouts and sampling, request by request
      skippy_trace::scope outputs_trace("skippy.batch_outputs", "requests", static_cast<int64_t>(request_count));
@@ -326,10 +326,10 @@ index a31540652..83c290ee2 100644
 +    // once every request's outputs are recorded
 +    std::vector<skippy_sample_request> samples;
 +    std::vector<size_t> sample_request_indexes;
-     for (size_t request_index = 0; request_index < request_count; ++request_index) {
-         const auto & request = requests[request_index];
-         status = skippy_copy_batched_exports(
-@@ -495,16 +499,19 @@ enum skippy_status skippy_iteration_batch_sampled(
+     // Synchronize only when this iteration consumes GPU results: a sampled
+     // last token, a causal readout, or a batched activation export. Prefill
+     // chunks without any of those return with the context still pending, so
+@@ -511,16 +515,19 @@ enum skippy_status skippy_iteration_batch_sampled(
          if (request.sample_last && request_logits) {
              // Logits are indexed by the original batch row; llama.cpp handles
              // sparse output-row translation internally.

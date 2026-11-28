@@ -1,4 +1,4 @@
-From 408c23456ffe52e6dc8e2b4c561f59eea5ba6a59 Mon Sep 17 00:00:00 2001
+From 0adedf4e3ed0317e5fb1dd0a6be3eb44951c2edf Mon Sep 17 00:00:00 2001
 From: Mesh-LLM CI <ci@mesh-llm.local>
 Date: Sat, 14 Nov 2026 15:48:34 +1100
 Subject: [PATCH] feat(skippy): share target forwards across speculative lanes
@@ -46,7 +46,7 @@ index bf9fb497cfc4a9c78d9e6f7af065cf8ca0303641..5acc63909dd0fafbbd35a53103030df9
   * @brief Executes mixed prefill chunks and decode tokens in one model iteration.
   *
 diff --git a/src/skippy/execution-batch.cpp b/src/skippy/execution-batch.cpp
-index 83c290ee273c9c104a67d9345404f10e485adee8..280f174e13eda4ff8138ef0fda89ccf587ebe75f 100644
+index 46b0d1a270fc8ef7b445f9f4c318bdcf6d81f64f..4f1dfa21a0f085dadc7cf63a068a13a1495cdcac 100644
 --- a/src/skippy/execution-batch.cpp
 +++ b/src/skippy/execution-batch.cpp
 @@ -244,7 +244,7 @@ bool skippy_model_supports_causal_readout(const struct skippy_model * model) {
@@ -130,15 +130,15 @@ index 83c290ee273c9c104a67d9345404f10e485adee8..280f174e13eda4ff8138ef0fda89ccf5
      if (!skippy_contain_native_failure(
                  out_error, [&] { decode_rc = first->ctx->decode(batch, graph_inputs); })) {
          return SKIPPY_STATUS_RUNTIME_ERROR;
-@@ -472,6 +483,7 @@ enum skippy_status skippy_iteration_batch_sampled(
-     // once every request's outputs are recorded
-     std::vector<skippy_sample_request> samples;
-     std::vector<size_t> sample_request_indexes;
+@@ -488,6 +499,7 @@ enum skippy_status skippy_iteration_batch_sampled(
+     if (consumes_gpu_results) {
+         skippy_synchronize_context_if_pending(first->stage_model);
+     }
 +    size_t sampled_index = 0;
      for (size_t request_index = 0; request_index < request_count; ++request_index) {
          const auto & request = requests[request_index];
          status = skippy_copy_batched_exports(
-@@ -485,7 +497,7 @@ enum skippy_status skippy_iteration_batch_sampled(
+@@ -501,7 +513,7 @@ enum skippy_status skippy_iteration_batch_sampled(
          }
          request.session->sampling_backend_row_invalid = false;
          request.session->n_past += static_cast<int32_t>(request.token_count);
@@ -147,7 +147,7 @@ index 83c290ee273c9c104a67d9345404f10e485adee8..280f174e13eda4ff8138ef0fda89ccf5
          if (request.readout != nullptr && request_logits) {
              const auto & readout = *request.readout;
              const int32_t row = static_cast<int32_t>(offsets[request_index + 1] - 1);
-@@ -497,6 +509,20 @@ enum skippy_status skippy_iteration_batch_sampled(
+@@ -513,6 +525,20 @@ enum skippy_status skippy_iteration_batch_sampled(
              }
          }
          if (request.sample_last && request_logits) {
@@ -168,7 +168,7 @@ index 83c290ee273c9c104a67d9345404f10e485adee8..280f174e13eda4ff8138ef0fda89ccf5
              // Logits are indexed by the original batch row; llama.cpp handles
              // sparse output-row translation internally.
              samples.push_back({ request.session, request.sampling,
-@@ -504,6 +530,10 @@ enum skippy_status skippy_iteration_batch_sampled(
+@@ -520,6 +546,10 @@ enum skippy_status skippy_iteration_batch_sampled(
              sample_request_indexes.push_back(request_index);
          }
      }
@@ -179,7 +179,7 @@ index 83c290ee273c9c104a67d9345404f10e485adee8..280f174e13eda4ff8138ef0fda89ccf5
      const std::vector<llama_token> sampled = skippy_sample_requests(samples);
      const auto exhausted = std::find_if(sampled.begin(), sampled.end(), [](llama_token token) { return token < 0; });
      if (exhausted != sampled.end()) {
-@@ -515,6 +545,79 @@ enum skippy_status skippy_iteration_batch_sampled(
+@@ -531,6 +561,79 @@ enum skippy_status skippy_iteration_batch_sampled(
      return skippy_success(out_error);
  }
  

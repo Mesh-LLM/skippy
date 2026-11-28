@@ -293,6 +293,7 @@ fn server_scheduler_worker_batches_and_completes_default_generations() {
     let (reply_b, events_b) = std_mpsc::channel();
     worker.submit(ScheduledRequest {
         id: "a".into(),
+        priority: 0,
         prompt_tokens: vec![1, 2],
         max_tokens: 1,
         sampling: None,
@@ -304,6 +305,7 @@ fn server_scheduler_worker_batches_and_completes_default_generations() {
     });
     worker.submit(ScheduledRequest {
         id: "b".into(),
+        priority: 0,
         prompt_tokens: vec![3, 4],
         max_tokens: 1,
         sampling: None,
@@ -405,6 +407,7 @@ fn token_control_is_applied_without_blocking_the_scheduler_iteration() {
     let (reply, events) = std_mpsc::channel();
     worker.submit(ScheduledRequest {
         id: "slow-consumer".into(),
+        priority: 0,
         prompt_tokens: vec![1],
         max_tokens: 2,
         sampling: None,
@@ -956,6 +959,7 @@ fn worker_panic_is_contained_and_fails_active_requests() {
     commands
         .send(SchedulerCommand::Submit(ScheduledRequest {
             id: "panic-contained".into(),
+            priority: 0,
             prompt_tokens: vec![1],
             max_tokens: 1,
             sampling: None,
