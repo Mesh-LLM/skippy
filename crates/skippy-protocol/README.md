@@ -65,8 +65,13 @@ stage that lists none attaches no split DFlash.
 Generation 17 removes the obsolete family-certification fields from load and
 status messages. It uses a 64 MiB stage frame budget, so a
 prefill chunk of a wide boundary crosses as one frame; a chunk whose output
-still exceeds the budget is sent as consecutive prefill frames. All
-participants must advertise `stage-generation-17`; older peers fail closed.
+still exceeds the budget is sent as consecutive prefill frames.
+
+Generation 18 keeps node-local paths and endpoint addresses out of load,
+topology, and neighbour descriptors. Status and inventory carry source
+identities without local paths. The receiver resolves its own files and
+selects its own listening address. All participants must advertise
+`stage-generation-18`; older peers fail closed.
 
 Admission requires mesh-subprotocol control, list-valued status responses,
 strict local-content identity, canonical stage-admission descriptors, and stale
