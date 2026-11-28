@@ -29,6 +29,13 @@ def evidence(model=MODEL):
 
 
 class ProbeTests(unittest.TestCase):
+    def test_repeated_probes_have_distinct_early_prefixes(self):
+        prefixes = {probe.payload(MODEL, i, warmup, repetition)["messages"][0]["content"].splitlines()[0]
+                    for repetition in range(3) for i in range(3) for warmup in (True, False)}
+        self.assertEqual(len(prefixes), 18)
+        with self.assertRaisesRegex(ValueError, "repeated probe"):
+            probe.payload(MODEL, 0, False, 3)
+
     def test_only_measured_tokens_survive_validation(self):
         responses = probe.validate_evidence(evidence(), MODEL)
         self.assertEqual(len(responses), 3)

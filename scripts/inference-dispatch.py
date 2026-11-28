@@ -18,6 +18,7 @@ from lib.inference_peer_evidence import verify_split_peer
 from lib.inference_nightly_metrics import collect_nightly
 from lib.inference_throughput import collect
 from lib.jy_qualification import Pilot, placement
+from lib.inference_paired_collect import collect_pairs
 
 TERMINAL = {"succeeded", "failed", "cancelled", "expired"}
 FAILURE = TERMINAL - {"succeeded"}
@@ -100,15 +101,15 @@ def wait(pilot, handle, row, sha, output, deadline, execution_seconds=None):
             formation = pilot.api("GET", f"/v1/formations/{formation_id}", status_deadline=deadline)
             write_json(output / f"{row}-formation.json", formation)
         # Start the PR execution clock once either split member starts. The
-        # native lease still enforces its 30-minute limit plus 60-second grace;
+        # native paired lease enforces four hours plus 60-second grace;
         # a long queue must not make the controller cancel that lease early.
         if execution_seconds is not None and (
                 status == "running" or any(member.get("status") == "running"
                                           for member in (formation or {}).get("members", []))):
             deadline = time.monotonic() + execution_seconds
+            print(f"{row}: native execution started; controller budget {execution_seconds // 60} minutes", flush=True)
             execution_seconds = None
             phase = "during native execution"
-            print(f"{row}: native execution started; controller budget 31 minutes", flush=True)
         finished = status in TERMINAL and (not formation or formation.get("status") in TERMINAL)
         logs.capture(job, formation, deadline, final=finished or status in FAILURE)
         if status in FAILURE:
@@ -137,8 +138,12 @@ def record(ledger, identifiers):
         temporary.unlink(missing_ok=True)
 
 
-def dispatch(pilot, profile, sha, output, configuration, collect_public=False):
+def dispatch(pilot, profile, sha, output, configuration, collect_public=False, baseline=None):
     result = plan(profile, sha)
+    if profile == "pr":
+        if baseline is None or not re.fullmatch(r"[0-9a-f]{40}", baseline):
+            raise ValueError("PR comparisons require an admitted immutable main SHA")
+        result["baseline_sha"] = baseline
     if configuration is not None:
         result["rows"] = [row for row in result["rows"] if row["id"] == configuration]
         if len(result["rows"]) != 1:
@@ -148,11 +153,13 @@ def dispatch(pilot, profile, sha, output, configuration, collect_public=False):
     ledger = output / "jobs.json"
     identifiers = []
     record(ledger, identifiers)
-    # The PR placement/queue budget is separate from its native execution
-    # budget. Keep non-PR profiles' existing total deadline.
+    # PR placement/queue time is separate from its native execution lease.
+    # Non-PR profiles keep their existing total deadline.
     deadline = time.monotonic() + (5400 if profile == "pr" else 21000)
     try:
         for row in result["rows"]:
+            if profile == "pr":
+                deadline = time.monotonic() + 5400
             identity, mode = row["id"], row["mode"]
             model_key = identity.removesuffix(f"-{mode}")
             template = "inference-" + ("pr-" if profile == "pr" else "") + mode
@@ -164,6 +171,8 @@ def dispatch(pilot, profile, sha, output, configuration, collect_public=False):
                            "model_key": model_key},
                 "idempotency_key": f"inference-{run_id}-{profile}-{attempt}-{identity}-{sha}",
             }
+            if profile == "pr":
+                body["inputs"]["baseline_sha"] = baseline
             launched = launch(pilot, f"/v1/repos/skippy/templates/{template}/launch", body,
                               deadline, mode == "split")
             handle = resource_id(launched.get("job_id"))
@@ -171,9 +180,11 @@ def dispatch(pilot, profile, sha, output, configuration, collect_public=False):
             record(ledger, identifiers)
             write_json(output / f"{identity}-launch.json", launched)
             job = wait(pilot, handle, identity, sha, output, deadline,
-                       execution_seconds=1860 if profile == "pr" else None)
+                       execution_seconds=14460 if profile == "pr" else None)
             if mode == "split":
                 verify_split_peer(pilot, job, row, sha, profile, output)
+            if profile == "pr":
+                collect_pairs(pilot, job, row, sha, baseline, output)
             if collect_public:
                 collect_nightly(pilot, job, row, sha, output, model_key, profile)
             elif profile == "pr":
@@ -198,12 +209,13 @@ def main():
     action.add_argument("output", type=Path)
     action.add_argument("configuration", nargs="?")
     action.add_argument("--collect-public", action="store_true")
+    action.add_argument("--baseline", help="Protected admission's immutable main SHA")
     actions.add_parser("cancel").add_argument("ledger", type=Path)
     actions.add_parser("control-preflight")
     args = parser.parse_args()
     pilot = Pilot()
     if args.action == "dispatch":
-        dispatch(pilot, args.profile, args.sha, args.output, args.configuration, args.collect_public)
+        dispatch(pilot, args.profile, args.sha, args.output, args.configuration, args.collect_public, args.baseline)
     elif args.action == "cancel":
         cancel(pilot, args.ledger)
     else:

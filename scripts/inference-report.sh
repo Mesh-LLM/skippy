@@ -47,7 +47,7 @@ fi
 
 # shellcheck source=scripts/lib/inference-report-baseline.sh
 source "$root/scripts/lib/inference-report-baseline.sh"
-prepare_baseline
+baseline_note=$(prepare_baseline "$directory")
 
 cat > "$temporary/body.md" <<EOF
 $marker
@@ -60,8 +60,8 @@ $description.
 
 $baseline_note
 
-| Configuration | Outcome | Prefill tok/s | Prefill vs main | Decode tok/s | Decode vs main | Actions logs |
-| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Configuration · workload | Outcome | Prefill tok/s | Prefill vs main [95% CI] | Decode tok/s | Decode vs main [95% CI] | A/A noise prefill / decode | Actions logs |
+| --- | --- | ---: | --- | ---: | --- | --- | --- |
 EOF
 
 rate() {
@@ -97,6 +97,11 @@ while IFS= read -r row; do
   prefill_delta=Unavailable
   decode_delta=Unavailable
   rates="$directory/$row-throughput.json"
+  pairs="$directory/$row-paired.json"
+  if [[ $state == Passed && -f $pairs ]]; then
+    paired_rows "$pairs" "$receipt" "$row" "$state" "$action" >> "$temporary/body.md"
+    continue
+  fi
   if [[ $state == Passed && -f $rates ]]; then
     # Invalid current evidence remains a reporting failure, not an unavailable baseline.
     validate_rates "$rates" "$receipt" "$SOURCE_SHA" "$row" || fail 'Comment throughput evidence identity mismatch'
@@ -104,22 +109,18 @@ while IFS= read -r row; do
     if jq -e '.workload == "DGX Spark warm probe v2"' "$rates" > /dev/null; then
       prefill=$(rate "$rates" prefill)
       decode=$(rate "$rates" decode)
-      if baseline=$(baseline_for_row "$row" 2> /dev/null); then
-        prefill_delta=$(delta "$rates" "$baseline/$row-throughput.json" prefill "$receipt" "$baseline/$row-job.json")
-        decode_delta=$(delta "$rates" "$baseline/$row-throughput.json" decode "$receipt" "$baseline/$row-job.json")
-      fi
     fi
   fi
-  printf "| \`%s\` | %s | %s | %s | %s | %s | %s |\n" "$row" "$state" "$prefill" "$prefill_delta" "$decode" "$decode_delta" "$action" >> "$temporary/body.md"
+  printf "| \`%s\` | %s | %s | %s | %s | %s | Unavailable | %s |\n" "$row" "$state" "$prefill" "$prefill_delta" "$decode" "$decode_delta" "$action" >> "$temporary/body.md"
 done < "$temporary/rows.txt"
 
 cat >> "$temporary/body.md" <<'EOF'
 
-TPS comes from three separate warmed, uncached probes at concurrency 1, each generating exactly 128 tokens. The scored correctness answers and each probe's 64-token warmup are excluded. Each rate is total tokens / total server-reported phase time, not an average of request rates. Client elapsed times and raw responses are retained in throughput-probe.json. These bounded samples are not sustained benchmarks or controlled speedup comparisons. Legacy short-answer receipts and missing or invalid probe evidence show as Unavailable.
+Paired measurements run six main/main pairs, then six main/PR pairs, alternating A/B and B/A order. Every arm restarts the server and repeats each of three prompt shapes three times, with an uncached 64-token warmup and exactly 128 measured output tokens per request at concurrency 1. Correctness and streaming checks must pass for every arm. Each shape is reported separately.
 
-Deltas use unrounded rates from matching PR-profile smoke receipts on the latest successful main run, including the nightly smoke evidence. Positive means faster. Changed workload inputs, different serving host classes, unequal phase token counts or missing evidence show Unavailable. Physical Spark placement and runtime conditions can differ; deltas are descriptive, not controlled speedup claims.
+Rates are diagnostic server phase timings, not end-to-end client throughput. Each round rate is total tokens / total phase time; the table shows geometric mean rates and paired geometric ratios. Pointwise 95% Student-t intervals use six server-pair log ratios (df=5); nested requests are not independent trials. Raw responses, client times, build provenance, and placements are retained in lab evidence. A/A noise is the largest absolute log-interval bound, converted to a percentage. Improvement/regression requires the PR interval to clear that noise envelope. An A/A interval excluding equality or an envelope above 5% makes the comparison inconclusive. Intervals are per shape/phase, without a matrix-wide multiple-comparison correction. Missing paired evidence gives no delta; saved historical main runs are never substituted.
 
-Smoke checks cover GPU startup, deterministic endpoint repeats and bounded streaming. They do not establish an AgentX performance score. [Nightly history and saved performance baselines](https://huggingface.co/datasets/meshllm/skippy-inference-qualification) are published separately; a saved baseline can be older than the latest successful main run used here. Native build and qualification output streams into each configuration’s Actions log, with per-attempt copies in Saved evidence. Any capture gaps are reported in the log and saved diagnostics. GitHub evidence copies expire after 30 days.
+Smoke checks cover GPU startup, deterministic endpoint repeats and bounded streaming. They do not establish an AgentX performance score. [Nightly history and saved performance baselines](https://huggingface.co/datasets/meshllm/skippy-inference-qualification) are published separately from these paired comparisons. Native build and qualification output streams into each configuration’s Actions log, with per-attempt copies in Saved evidence. Any capture gaps are reported in the log and saved diagnostics. GitHub evidence copies expire after 30 days.
 EOF
 if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then cat "$temporary/body.md" >> "$GITHUB_STEP_SUMMARY"; fi
 

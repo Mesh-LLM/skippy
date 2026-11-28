@@ -24,14 +24,15 @@ class DeadlineTests(unittest.TestCase):
         self.cleanup = Mock()
         self.launch = Mock(return_value={"job_id": "job_leader"})
         self.row = {"id": "fixture-standalone", "model": "Fixture/Model", "mode": "standalone"}
+        self.rows = [self.row]
         self.starts = 4920
         self.ends = 6000
         self.status = "succeeded"
         self.deadlines = []
         self.pilot.api.side_effect = self.read
         self.enterContext(patch.dict(self.dispatch.__globals__, {
-            "plan": lambda *_: {"rows": [self.row]}, "launch": self.launch,
-            "cancel": self.cleanup, "collect": Mock(), "NativeLogs": Mock(),
+            "plan": lambda *_: {"rows": self.rows}, "launch": self.launch,
+            "cancel": self.cleanup, "collect": Mock(), "collect_pairs": Mock(), "NativeLogs": Mock(),
         }))
 
     def advance(self, seconds):
@@ -53,9 +54,10 @@ class DeadlineTests(unittest.TestCase):
                 job["status"] = "queued"
         return job
 
-    def run_dispatch(self, profile="pr"):
+    def run_dispatch(self, profile="pr", all_rows=False):
         with TemporaryDirectory() as tmp:
-            self.dispatch(self.pilot, profile, SHA, Path(tmp), self.row["id"])
+            self.dispatch(self.pilot, profile, SHA, Path(tmp), None if all_rows else self.row["id"],
+                          baseline="b" * 40 if profile == "pr" else None)
 
     def test_long_queue_does_not_consume_native_execution_budget(self):
         self.run_dispatch()
@@ -63,13 +65,25 @@ class DeadlineTests(unittest.TestCase):
         self.cleanup.assert_not_called()
         self.launch.assert_called_once()
 
+    def test_each_configuration_gets_a_fresh_queue_budget_after_prior_execution(self):
+        self.rows.append({**self.row, "id": "fixture-other-standalone"})
+        def launch(*_args):
+            if self.now >= 6000:
+                self.starts, self.ends = 10920, 12000
+            return {"job_id": "job_leader"}
+        self.launch.side_effect = launch
+        self.run_dispatch(all_rows=True)
+        self.assertEqual(self.now, 12000)
+        self.assertEqual(self.launch.call_count, 2)
+        self.cleanup.assert_not_called()
+
     def test_split_budget_starts_with_first_member_and_never_resets(self):
         self.row.update(id="fixture-split", mode="split")
         self.ends = float("inf")
         with self.assertRaisesRegex(RuntimeError, "timed out during native execution"):
             self.run_dispatch()
-        self.assertEqual(self.now, self.starts + 1860)
-        self.assertEqual(max(self.deadlines), self.starts + 1860)
+        self.assertEqual(self.now, self.starts + 14460)
+        self.assertEqual(max(self.deadlines), self.starts + 14460)
         self.cleanup.assert_called_once()
 
     def test_queue_without_any_execution_remains_bounded(self):
@@ -83,7 +97,7 @@ class DeadlineTests(unittest.TestCase):
         self.starts, self.ends = 0, float("inf")
         with self.assertRaisesRegex(RuntimeError, "timed out during native execution"):
             self.run_dispatch()
-        self.assertEqual(self.now, 1860)
+        self.assertEqual(self.now, 14460)
         self.cleanup.assert_called_once()
 
     def test_native_failure_is_not_retried_or_converted_to_success(self):
@@ -106,10 +120,10 @@ class DeadlineTests(unittest.TestCase):
         templates = json.loads((ROOT / ".gi/templates.yaml").read_text())["templates"]
         budgets = [t["budget"] for t in templates if t["key"].startswith("inference-pr-")]
         self.assertEqual(len(budgets), 2)
-        self.assertTrue(all(b["max_duration_s"] + b["grace_s"] == 1860 for b in budgets))
-        self.assertIn("matrix.profile == 'pr' && 130 || 360",
+        self.assertTrue(all(b["max_duration_s"] + b["grace_s"] == 14460 for b in budgets))
+        self.assertIn("matrix.profile == 'pr' && 340 || 360",
                       (ROOT / ".github/workflows/inference.yml").read_text())
-        self.assertGreater(130 * 60 - 5400 - 1860, 5 * 60)
+        self.assertGreater(340 * 60 - 5400 - 14460, 5 * 60)
 
 
 if __name__ == "__main__":

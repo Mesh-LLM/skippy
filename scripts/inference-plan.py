@@ -97,7 +97,11 @@ def admit():
     plan(profile, sha)
     if is_pr:
         admit_pr(sha)
-    output(source=sha, profile=profile)
+    # Pin main independently of nightly success. Never use a moving ref on a
+    # native worker or select the baseline by its measured performance.
+    baseline = github(f"repos/{REPO}/git/ref/heads/main")["object"]["sha"] if profile == "pr" else sha
+    plan(profile, baseline)
+    output(source=sha, profile=profile, baseline=baseline)
 
 
 def main():

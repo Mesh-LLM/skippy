@@ -97,7 +97,7 @@ class EvidenceTests(unittest.TestCase):
             "verify_split_peer": Mock(side_effect=ValueError("bad peer evidence")),
         }):
             with self.assertRaisesRegex(ValueError, "bad peer evidence"):
-                dispatch(self.pilot, "pr", SHA, self.output, self.row["id"])
+                dispatch(self.pilot, "pr", SHA, self.output, self.row["id"], baseline="b" * 40)
         collect.assert_not_called()
         cleanup.assert_called_once()
 

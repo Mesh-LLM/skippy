@@ -18,7 +18,7 @@ from lib.ci_artifacts import read_json, write_json
 from lib.ci_process import cancel_on_signal, capture, command, start, stop
 from lib.ci_smoke import curl
 from lib.inference_checks import ENDPOINT, numerical, offload, performance, score, streaming
-from lib.inference_inputs import admit, fixture, input_hashes, record
+from lib.inference_inputs import BINARY_DIR, admit, fixture, input_hashes, record
 from lib.inference_ladder import plan
 from lib.inference_admission import split_admissions_digest
 from lib.inference_probe import measure
@@ -60,7 +60,7 @@ def prepare_split(model, coordinate, profile, context, output, worker):
     with tempfile.TemporaryDirectory() as tmp:
         directory = Path(tmp) / "plan"
         args = [
-            "target/debug/skippy", "plan-split", "--model-path", str(model), "--model-id",
+            str(BINARY_DIR / "skippy"), "plan-split", "--model-path", str(model), "--model-id",
             coordinate, "--worker", address(leader, 9400), "--worker", address(follower, 9401),
             "--ctx-size", str(context), "--n-gpu-layers", "999", "--output-dir", str(directory),
         ]
@@ -90,7 +90,16 @@ def wait_for(server, url, seconds, poll, check):
     raise RuntimeError("inference server or split leader timed out")
 
 
-def execute(profile, key, mode):
+def server_command(worker, phase_profile=False):
+    args = [str(BINARY_DIR / "skippy"), "--debug", "serve", "--startup-timeout-secs", "300"]
+    if phase_profile:
+        args += ["--telemetry-level", "debug"]
+    if not worker:
+        args += ["--speculative-strategy", "disabled", "--generation-concurrency", "1"]
+    return args
+
+
+def execute(profile, key, mode, repetitions=1, probe=None, phase_profile=False):
     sha, gpu = authority()
     result = plan(profile, sha)
     if not any(row["id"] == f"{key}-{mode}" for row in result["rows"]):
@@ -107,9 +116,7 @@ def execute(profile, key, mode):
     model = admit(key, inputs)
     coordinate = f'{inputs["repo"]}@{inputs["revision"]}'
     context = 4096 if profile == "pr" else 65536
-    args = ["target/debug/skippy", "--debug", "serve", "--startup-timeout-secs", "300"]
-    if not worker:
-        args += ["--speculative-strategy", "disabled", "--generation-concurrency", "1"]
+    args = server_command(worker, phase_profile)
     if mode == "split":
         args += prepare_split(model, coordinate, profile, context, output, worker)
     else:
@@ -146,7 +153,13 @@ def execute(profile, key, mode):
             score(coordinate, output, profile)
             if profile == "pr":
                 streaming(coordinate, output)
-                measure(coordinate, output)
+                if probe is not None:
+                    probe(coordinate, output)
+                else:
+                    for repetition in range(repetitions):
+                        probe_output = output if repetition == 0 else output / f"probe-{repetition}"
+                        probe_output.mkdir(parents=True, exist_ok=True)
+                        measure(coordinate, probe_output, repetition if repetitions > 1 else None)
                 scope = "GPU startup, deterministic endpoint repeats and bounded streaming smoke"
             else:
                 performance(profile, coordinate, context, output, inputs)

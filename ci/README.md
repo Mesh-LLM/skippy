@@ -152,10 +152,11 @@ jobs fail qualification and cannot satisfy `PR checks`.
 Qualification may queue behind another PR's atomic Spark pair; the PR
 budget allows up to 90 minutes for placement and queueing instead of failing
 fast. Once either split member (or the standalone job) is observed running,
-the controller gives it 31 minutes to finish: the native 30-minute lease plus
+the controller gives it 241 minutes to finish: the native four-hour paired lease plus
 its 60-second grace. This execution clock starts once and never resets on
-later status polls or when the other split member starts. The Actions job
-allows 130 minutes in total, leaving nine minutes for setup, evidence and
+later status polls or when the other split member starts. A local dispatch of multiple
+PR configurations receives a fresh queue allowance for each configuration. The Actions job
+allows 340 minutes in total, leaving nine minutes for setup, evidence and
 cleanup. Nightly/release total deadlines and native lease budgets are unchanged.
 Split readiness uses a control listener on each reserved machine, bound to the
 JY formation, source SHA, model, profile, role and native attempt ID. The leader
@@ -175,7 +176,10 @@ The protected controller requires both formation members to succeed on their
 distinct reserved nodes with overlapping execution windows and matching
 two-way `split-peer.json` evidence. It checks the leader's `qualification.json`
 and worker's peer receipt before accepting the split, independently of optional
-throughput reporting. These identities are diagnostic provenance, not secrets.
+throughput reporting. Paired runs retain that mutual proof in every arm archive.
+Both roles also publish their final candidate-arm peer evidence at the top level,
+so the protected formation check continues to verify the candidate attempts while
+the controller independently collects the complete paired design. These identities are diagnostic provenance, not secrets.
 Older split receipts without this evidence cannot qualify a new run; update the
 candidate harness from main before rerunning qualification.
 Branch PRs retain
@@ -217,6 +221,92 @@ The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
 `gh` and `jq`; it needs no Rust setup or compilation. It checks receipt source,
 configuration and native-attempt identity, updates only its bot-owned comment,
 and refuses to replace results for a newer commit or workflow attempt.
+
+PR throughput comparisons pin current protected main during admission, regardless
+of the latest nightly outcome. Each PR-profile native job builds that main commit
+in a separate disposable worktree and retains the candidate build. Both revisions
+run inside the same exclusive job or atomic two-Spark formation. The two roles
+keep their placement and wait at a barrier after each restarted server arm.
+Build hashes, source commits, host/kernel/driver identities, raw responses and
+client timings remain in the lab evidence. All builds finish before measurement.
+Both source trees use the candidate's pinned qualification build driver and
+Just recipes, with each tree supplying its own source and native inputs. Rust
+uses the release profile at opt-level 3; the CUDA native libraries retain their
+Release/static configuration. Executables are installed in
+`target/inference-bin`, and the v3 cache identity records the shared driver hash,
+source, release settings, features, linkage and environment overrides. Different
+main/candidate build policies fail admission. This qualifies the source-built
+static CUDA configuration; it does not qualify a shipped dynamic runtime package.
+Earlier dev-profile receipts retain their original source and diagnostic scope.
+Each arm has a top-level evidence archive because JY does not upload nested
+directories. Collection requires every arm archive in the uploaded manifest,
+including the worker's archives for split runs, and retains their hashes.
+
+The fixed design runs six main/main pairs for noise calibration, followed by six
+main/candidate pairs, alternating A/B and B/A order. Every arm repeats each of
+the three prompt shapes three times. A shape-matched 64-token warmup precedes
+each uncached 128-token measured response at concurrency one. Prefixes differ
+between repetitions; cached or truncated responses invalidate the evidence.
+Quality, offload, streaming and native split admission checks run for every arm.
+No changes to the workload fixtures are accepted between the two revisions.
+
+The controller recomputes per-shape server-phase rates and paired log-ratio
+Student-t intervals (six pairs, df=5, pointwise 95%). It does not treat nested
+requests as independent rounds or combine different prompt lengths. A/A noise
+is the maximum absolute log-interval endpoint, converted back to a percentage.
+A performance verdict requires the candidate interval to clear that envelope;
+an A/A interval excluding equality, or an envelope above 5%, makes the comparison
+inconclusive. These per-metric intervals have no matrix-wide multiplicity
+correction. Qualification still tests correctness and complete evidence;
+inconclusive performance is not a claimed win or loss. The PR table reports the
+interval and noise alongside each estimate. Historical runs never replace a
+missing paired comparison.
+
+The opt-in `noise-pilot` experiment is a separate diagnostic, registered in
+`ci/inference-noise-pilot.json`. It runs two fresh main-only split arms with
+cycled/blocked shape order reversed between arms, twelve repetitions per shape
+and condition, and unchanged warmup/output lengths. The pinned InferenceKit
+wrapper records environment capabilities before timing. One-second GPU and host
+telemetry, raw responses, quality checks and mutual peer identities are archived
+for both roles. Default boost clocks remain in effect. This instrumented pilot
+writes `noise-pilot.json`, never a paired qualification receipt or speed verdict.
+Its requests are nested observations for diagnosing noise, not independent rounds.
+The separately registered `noise-profile` experiment in
+`ci/inference-noise-profile.json` uses three repetitions per condition and
+enables existing native OTLP phase spans on both roles. It retains
+`noise-profile.json` and per-arm `phases.jsonl` for correlating chunk counts,
+runtime locks, compute, writes and downstream waits. Instrumentation changes
+timing; this experiment likewise cannot produce performance qualification.
+The phase diagnostic explicitly sets `--telemetry-level debug`; a file sink alone
+preserves the server's summary level. Every leader request must have one matching
+prefill span with its phase breakdown and response timing. Worker traces must
+contain binary decode and message timing spans. Missing detailed spans fail the
+diagnostic even when the trace file is nonempty.
+For example, on an already admitted exclusive split allocation:
+
+```sh
+just inference-paired qwen3-coder-30b-a3b split cc2a27435e798649a9cb938d600d39722e4a2263 noise-pilot
+```
+
+The registered later performance target is a 2% material effect with at most
+1% pointwise 95% CI half-width. Choose and register the final round count from
+the pilot before fresh A/A and A/B collection; do not extend a final run until
+it becomes significant. Historical six-round inconclusive runs retain their
+original verdicts. The current v1 verdict implementation still needs an explicit
+within-tolerance decision and sufficient live precision before performance
+resolution can be claimed.
+
+Scheduled PR-profile smoke rows run the same design with main in both arms;
+their paired receipts retain the noise check in Actions artifacts. The twelve
+AgentX workloads and their saved historical baseline policy are separate.
+The paired native budget is four hours, with additional controller cleanup time.
+Offline protocol, statistics and reporting checks run with `just ci-automation`.
+They do not establish device qualification or a measured noise floor.
+
+Deployment requires the protected controller to reach main and JY's installed
+`.gi/templates.yaml` definitions to be synced. Before that controller is merged,
+old controllers retain their legacy smoke behavior through the template's
+explicit `legacy` default; they cannot produce a paired comparison receipt.
 
 The shared report renderer takes normalized qualification JSON. It renders
 Mermaid charts for Actions summaries and saves the Hugging Face card’s PNG
