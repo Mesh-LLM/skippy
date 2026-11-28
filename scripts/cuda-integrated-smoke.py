@@ -23,12 +23,15 @@ word for word with the first off run's, which only off runs need to match.
 
 Corruption in on that on-blocking does not show points to a race between host writes
 and running kernels; corruption in both points elsewhere. on against on-device splits a
-speed change between the in-place inputs and the host-resident state. The script exits 0 whenever
+speed change between the in-place inputs and the host-resident state. With --profile each
+server runs under Nsight Systems, and the kernels whose GPU time differs most between arms
+are reported. The script exits 0 whenever
 the experiment ran, whatever it found: summary.json holds the verdicts.
 """
 
 import argparse
 import collections
+import csv
 import json
 import os
 import re
@@ -167,11 +170,11 @@ def wait_ready(server, deadline):
     raise RuntimeError("server did not answer /v1/models in time")
 
 
-def stop(server):
+def stop(server, timeout=60):
     if server.poll() is None:
         os.killpg(server.pid, signal.SIGINT)
         try:
-            server.wait(timeout=60)
+            server.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             os.killpg(server.pid, signal.SIGKILL)
             server.wait()
@@ -196,7 +199,39 @@ def uploads(path):
     return dict(counts)
 
 
-def run_arm(label, arm, skippy, model, stem):
+def nsys_command(nsys, stem):
+    # node tracing, because ggml-cuda replays decode steps as CUDA graphs
+    return [nsys, "profile", "--trace=cuda", "--cuda-graph-trace=node", "--sample=none", "--cpuctxsw=none",
+            "--force-overwrite=true", "--output", str(stem)]
+
+
+def nsys_table(path):
+    """One nsys stats CSV as {name: (total_ms, instances)}."""
+    with path.open(newline="", encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream))
+    if not rows:
+        return {}
+    total = next(key for key in rows[0] if key.startswith("Total Time"))
+    count = next(key for key in rows[0] if key.startswith("Instances") or key.startswith("Count"))
+    name = next(key for key in rows[0] if key in ("Name", "Operation"))
+    return {row[name]: (float(row[total]) / 1e6, int(row[count])) for row in rows}
+
+
+def nsys_stats(nsys, report):
+    """Kernel and memory-operation GPU time from a finished report; the SQLite export it needs is removed."""
+    base = report.with_suffix("")
+    subprocess.run([nsys, "stats", "--force-export=true", "--format", "csv", "--output", str(base),
+                    "--report", "cuda_gpu_kern_sum", "--report", "cuda_gpu_mem_time_sum", str(report)],
+                   check=True, stdout=subprocess.DEVNULL)
+    base.with_suffix(".sqlite").unlink(missing_ok=True)
+    tables = {}
+    for key, report_name in (("kernels", "cuda_gpu_kern_sum"), ("memops", "cuda_gpu_mem_time_sum")):
+        found = sorted(report.parent.glob(f"{base.name}*{report_name}*.csv"))
+        tables[key] = nsys_table(found[0]) if found else {}
+    return tables
+
+
+def run_arm(label, arm, skippy, model, stem, nsys=None):
     extra_env, trace = ARMS[arm]
     log = stem.with_name(f"{stem.name}-server.log")
     trace_file = stem.with_name(f"{stem.name}.otlp.jsonl")
@@ -204,8 +239,10 @@ def run_arm(label, arm, skippy, model, stem):
     if trace:
         env["SKIPPY_TELEMETRY_OTLP_FILE"] = str(trace_file)
     run = {"label": label, "arm": arm, "env": extra_env, "trace": trace, "log": str(log)}
+    report = stem.with_name(f"{stem.name}-nsys.nsys-rep")
+    command = (nsys_command(nsys, report.with_suffix("")) if nsys else []) + server_args(skippy, model, trace)
     with log.open("wb") as stream:
-        server = subprocess.Popen(server_args(skippy, model, trace), stdin=subprocess.DEVNULL, stdout=stream,
+        server = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stream,
                                   stderr=stream, env=env, start_new_session=True)
         try:
             wait_ready(server, time.monotonic() + 900)
@@ -219,12 +256,18 @@ def run_arm(label, arm, skippy, model, stem):
             run["error"] = str(error)
             run["alive"] = False
         finally:
-            stop(server)
+            # nsys writes its report after the server exits
+            stop(server, timeout=900 if nsys else 60)
     text = log.read_text(errors="replace")
     run["in_place_logged"] = text.count(IN_PLACE_LINE)
     run["state_buffers"] = dict(collections.Counter(STATE_BUFFER.findall(text)))
     if trace:
         run["uploads"] = uploads(trace_file)
+    if nsys:
+        try:
+            run["nsys"] = nsys_stats(nsys, report) if report.exists() else {"error": "no report written"}
+        except (subprocess.CalledProcessError, OSError, StopIteration, ValueError) as error:
+            run["nsys"] = {"error": str(error)}
     return run
 
 
@@ -281,6 +324,32 @@ def seconds_by_arm(runs):
             for arm, phases in timed.items()}
 
 
+def gpu_time_by_arm(runs, key):
+    """Mean GPU ms per name for each arm, over its profiled runs."""
+    sums = collections.defaultdict(lambda: collections.defaultdict(float))
+    counts = collections.Counter()
+    for run in runs:
+        table = run.get("nsys", {}).get(key)
+        if not table:
+            continue
+        counts[run["arm"]] += 1
+        for name, (total_ms, _) in table.items():
+            sums[run["arm"]][name] += total_ms
+    return {arm: {name: total / counts[arm] for name, total in names.items()} for arm, names in sums.items()}
+
+
+def gpu_time_deltas(runs, key, slow="on", fast="on-device", top=15):
+    """The names whose GPU ms grew most from the fast arm to the slow one."""
+    by_arm = gpu_time_by_arm(runs, key)
+    if slow not in by_arm or fast not in by_arm:
+        return []
+    names = set(by_arm[slow]) | set(by_arm[fast])
+    rows = [{"name": name, slow: round(by_arm[slow].get(name, 0.0), 2), fast: round(by_arm[fast].get(name, 0.0), 2),
+             "off": round(by_arm.get("off", {}).get(name, 0.0), 2)} for name in names]
+    rows.sort(key=lambda row: row[fast] - row[slow])
+    return rows[:top]
+
+
 def report(name, runs):
     print(f"== {name}")
     reference = next((run for run in runs if run["arm"] == "off" and "alone" in run), None)
@@ -310,6 +379,10 @@ def report(name, runs):
         print(f"  {run['label']} state buffers: {run.get('state_buffers') or 'not in the log'}")
     for arm, phases in seconds_by_arm(runs).items():
         print(f"  {arm:16} count alone {phases['alone']}s, counts together {phases['together']}s")
+    for key in ("kernels", "memops"):
+        for row in gpu_time_deltas(runs, key):
+            print(f"  {key} on {row['on']:9.1f} ms, on-device {row['on-device']:9.1f} ms, off {row['off']:9.1f} ms: "
+                  f"{row['name'][:110]}")
     print(f"  verdict: {verdict(runs)}", flush=True)
 
 
@@ -336,6 +409,7 @@ def main():
     parser.add_argument("--model", action="append", required=True, metavar="NAME=PATH")
     parser.add_argument("--out", required=True)
     parser.add_argument("--arms", default=DEFAULT_ARMS, help="comma-separated runs, in order, repeats allowed")
+    parser.add_argument("--profile", metavar="NSYS", help="run each server under this nsys and compare kernel GPU time")
     parser.add_argument("--progress", type=progress_span, default=(0, 100), metavar="START,END",
                         help="the share of the job's progress these runs cover")
     args = parser.parse_args()
@@ -357,10 +431,12 @@ def main():
         for index, arm in enumerate(order, start=1):
             label = f"{arm}#{index}"
             print(f"-- {name} {label}", flush=True)
-            runs.append(run_arm(label, arm, args.skippy, path, out / f"{name}-{arm}-{index}"))
+            runs.append(run_arm(label, arm, args.skippy, path, out / f"{name}-{arm}-{index}", args.profile))
             report_progress(args.progress, position * len(order) + index, total, f"{name} {arm} {index}")
         report(name, runs)
-        summary[name] = {"model": path, "verdict": verdict(runs), "seconds": seconds_by_arm(runs), "runs": runs}
+        summary[name] = {"model": path, "verdict": verdict(runs), "seconds": seconds_by_arm(runs),
+                         "kernel_deltas": gpu_time_deltas(runs, "kernels", top=40),
+                         "memop_deltas": gpu_time_deltas(runs, "memops", top=40), "runs": runs}
         (out / "summary.json").write_text(json.dumps(summary, indent=2))
     print(f"summary: {out / 'summary.json'}")
     ran = all(any("alone" in run for run in entry["runs"]) for entry in summary.values())
