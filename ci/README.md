@@ -665,8 +665,8 @@ Sparks. Protected dispatch code verifies trust before sending a pinned source
 SHA. Jobs use the standard JY account and its existing host permissions without publisher credentials,
 fresh workspaces, read-only admitted models, exclusive machine reservations and
 bounded leases. Clean up job processes and workspaces after every outcome;
-quarantine an allocation whose cleanup fails. Fork and other untrusted PRs still
-require isolated ephemeral execution. The `unconfined` capability is not itself
+quarantine an allocation whose cleanup fails. Fork PRs enter native execution only through the protected approved-fork
+controller after maintainer workflow approval; other untrusted work stays isolated. The `unconfined` capability is not itself
 an admission failure; no separate job-account migration is required. Actions
 only orchestrates these jobs, so the 6 GiB runner-container limit does not bound
 model execution. Split jobs reserve both Sparks atomically. This policy does not

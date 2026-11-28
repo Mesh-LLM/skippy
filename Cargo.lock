@@ -7834,11 +7834,11 @@ name = "xtask"
 version = "0.80.0"
 dependencies = [
  "hex",
- "process-supervision",
  "serde",
  "serde_json",
  "sha2 0.11.1",
  "skippy-model-artifact",
+ "skippy-subprocess",
  "tar",
  "tempfile",
 ]
