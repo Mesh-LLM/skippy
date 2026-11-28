@@ -2,11 +2,11 @@
 name = "skippy-model-resolver"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Model reference resolution helpers for Skippy"
-repository = "https://github.com/general-inference/skippy"
-homepage = "https://github.com/general-inference/skippy"
+repository = "https://github.com/Mesh-LLM/skippy"
+homepage = "https://github.com/Mesh-LLM/skippy"
 readme = "README.md"
 
 [dependencies]

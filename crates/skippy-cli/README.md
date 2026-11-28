@@ -13,7 +13,7 @@ The executable automatically discovers the verified `native-runtimes/` directory
 beside it, including `target/debug/native-runtimes` from that build. Use
 `just skippy-cli-build` only when a compatible runtime is already available.
 Private release assets require an authorized GitHub login; download them with
-`gh release download --repo general-inference/skippy`, verify and extract them.
+`gh release download --repo Mesh-LLM/skippy`, verify and extract them.
 Source builds can have a newer ABI than a published release. Use
 `--runtime-bundle /path/to/bundle` to select another local bundle explicitly.
 
@@ -204,11 +204,10 @@ the topology rather than editing stage files by hand. The direct-GGUF planner
 defaults to one lane, a 512-token context, and CPU execution
 (`--n-gpu-layers 0`).
 
-To test a native recipe that has not been release-certified, add
-`--allow-uncertified-split` explicitly. The planner still validates every stage
-and frontier, and reports `uncertified_override` in `admissions.json` and its
-console output when the release roster does not match. Default planning keeps
-requiring the exact certified recipe. This option does not renew certificates.
+Split planning validates the loaded model's native stage graphs, resident tensor
+closures and activation frontiers. The planner writes these descriptors in
+`admissions.json` with schema version 2. Every model uses the same admission path.
+Qualification reports identify the exact configurations that passed inference.
 
 ## Run stages on different machines
 

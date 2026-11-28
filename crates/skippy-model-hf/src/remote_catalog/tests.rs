@@ -3,9 +3,66 @@ use std::collections::HashMap;
 
 use serial_test::serial;
 
+struct CatalogEnvGuard {
+    prev_hf_home: Option<std::ffi::OsString>,
+    prev_hf_endpoint: Option<std::ffi::OsString>,
+    temp_dir: PathBuf,
+}
+
+impl CatalogEnvGuard {
+    fn new(prefix: &str, endpoint: Option<&str>) -> Self {
+        let prev_hf_home = std::env::var_os("HF_HOME");
+        let prev_hf_endpoint = std::env::var_os("HF_ENDPOINT");
+        let temp_dir = std::env::temp_dir().join(format!(
+            "{prefix}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        // SAFETY: callers are `#[serial]` tests, so process environment
+        // mutations cannot race another test.
+        unsafe {
+            std::env::set_var("HF_HOME", &temp_dir);
+            if let Some(endpoint) = endpoint {
+                std::env::set_var("HF_ENDPOINT", endpoint);
+            }
+        }
+        Self {
+            prev_hf_home,
+            prev_hf_endpoint,
+            temp_dir,
+        }
+    }
+}
+
+impl Drop for CatalogEnvGuard {
+    fn drop(&mut self) {
+        clear_refresh_backoff();
+        if let Ok(mut lock) = CATALOG_ENTRIES.write() {
+            *lock = None;
+        }
+        let _ = fs::remove_dir_all(&self.temp_dir);
+        match self.prev_hf_home.take() {
+            // SAFETY: callers are `#[serial]` tests.
+            Some(val) => unsafe { std::env::set_var("HF_HOME", val) },
+            // SAFETY: callers are `#[serial]` tests.
+            None => unsafe { std::env::remove_var("HF_HOME") },
+        }
+        match self.prev_hf_endpoint.take() {
+            // SAFETY: callers are `#[serial]` tests.
+            Some(val) => unsafe { std::env::set_var("HF_ENDPOINT", val) },
+            // SAFETY: callers are `#[serial]` tests.
+            None => unsafe { std::env::remove_var("HF_ENDPOINT") },
+        }
+    }
+}
+
 #[test]
 #[serial]
 fn refresh_backoff_suppresses_then_clears() {
+    let _guard = CatalogEnvGuard::new("skippy-catalog-backoff-suppress", None);
+
     clear_refresh_backoff();
     assert!(!refresh_in_backoff(), "no backoff initially");
 
@@ -546,6 +603,76 @@ fn stale_check_uses_last_refresh_marker() {
         // environment mutation cannot race another test.
         None => unsafe { std::env::remove_var("HF_HOME") },
     }
+}
+
+#[test]
+#[serial]
+fn disk_refresh_backoff_marker_roundtrips() {
+    let _guard = CatalogEnvGuard::new("skippy-catalog-backoff-marker", None);
+
+    clear_refresh_backoff();
+    assert!(!disk_refresh_in_backoff());
+
+    set_refresh_backoff();
+    if let Ok(mut guard) = CATALOG_REFRESH_BACKOFF_UNTIL.lock() {
+        *guard = None;
+    }
+    assert!(disk_refresh_in_backoff());
+    assert!(refresh_in_backoff());
+
+    clear_refresh_backoff();
+    assert!(!disk_refresh_in_backoff());
+}
+
+#[test]
+#[serial]
+fn ensure_catalog_respects_disk_backoff_without_network() {
+    let _guard = CatalogEnvGuard::new("skippy-catalog-ensure-backoff", Some("http://127.0.0.1:1"));
+
+    if let Ok(mut lock) = CATALOG_ENTRIES.write() {
+        *lock = None;
+    }
+    let entries_dir = catalog_cache_dir().join("entries");
+    fs::create_dir_all(&entries_dir).unwrap();
+    fs::write(
+        entries_dir.join("test-model.json"),
+        r#"{"schema_version":1,"source_repo":"org/model","variants":{"TestModel-Q4_K_M":{"source":{"repo":"org/model","revision":"main","file":"test-Q4_K_M.gguf"},"curated":{"name":"TestModel","size":"1GB","description":"test"}}}}"#,
+    )
+    .unwrap();
+    assert!(is_catalog_stale());
+
+    set_refresh_backoff();
+    // Clear in-memory backoff so ensure_catalog() must rely on the on-disk marker.
+    if let Ok(mut guard) = CATALOG_REFRESH_BACKOFF_UNTIL.lock() {
+        *guard = None;
+    }
+
+    // With a stale on-disk cache, ensure_catalog loads it and returns Ok(()) without refreshing.
+    ensure_catalog().expect("stale cache should load during disk backoff");
+    assert!(find_loaded_model_exact("TestModel").is_some());
+}
+
+#[test]
+#[serial]
+fn find_cached_model_exact_reads_stale_disk_cache_without_network() {
+    let _guard = CatalogEnvGuard::new("skippy-catalog-find-cached", Some("http://127.0.0.1:1"));
+
+    if let Ok(mut lock) = CATALOG_ENTRIES.write() {
+        *lock = None;
+    }
+    clear_refresh_backoff();
+    let entries_dir = catalog_cache_dir().join("entries");
+    fs::create_dir_all(&entries_dir).unwrap();
+    fs::write(
+        entries_dir.join("test-model.json"),
+        r#"{"schema_version":1,"source_repo":"org/model","variants":{"TestModel-Q4_K_M":{"source":{"repo":"org/model","revision":"main","file":"test-Q4_K_M.gguf"},"curated":{"name":"TestModel","size":"1GB","description":"test"}}}}"#,
+    )
+    .unwrap();
+    assert!(is_catalog_stale());
+
+    let model = find_cached_model_exact("TestModel")
+        .expect("cached lookup should load stale on-disk catalog without network");
+    assert_eq!(model.file, "test-Q4_K_M.gguf");
 }
 
 #[test]

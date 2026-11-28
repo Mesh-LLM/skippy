@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .ci_artifacts import digest
 from .native_binary import inspect
-from .native_policy import admit_cuda, host_owned
+from .native_policy import admit_cuda, admit_windows_cuda, host_owned
 
 
 def files(root, recursive):
@@ -103,6 +103,8 @@ class Dependencies:
             raise ValueError(f"invalid dependency filename: {dependency}")
         if self.kind == "elf":
             admit_cuda(dependency, self.cuda_major)
+        elif self.cuda_major:
+            admit_windows_cuda(dependency, self.cuda_major)
         selected = None
         for path in candidates:
             image = inspect(path)

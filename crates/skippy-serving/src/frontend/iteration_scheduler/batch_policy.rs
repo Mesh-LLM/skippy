@@ -191,6 +191,14 @@ pub(super) trait BatchPolicy: Send {
     fn tuning(&self) -> BatchTuning;
     fn gather(&self, view: &BatchView<'_>) -> Gather;
     fn select(&self, view: &BatchView<'_>) -> Selection;
+    /// Speculative lanes use the same configurable decode wait, capped so
+    /// drafting/verification cannot each add a full direct decode window.
+    fn gather_speculative(&self, active: usize, queued: usize, lanes: usize) -> Gather {
+        Gather {
+            target: direct_coalesce_target(active, queued, lanes),
+            window: self.tuning().decode_window.min(Duration::from_micros(300)),
+        }
+    }
 }
 
 /// The policy a stage gets when it configures nothing, on an unnamed backend.

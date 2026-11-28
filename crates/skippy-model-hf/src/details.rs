@@ -38,6 +38,12 @@ pub enum ShowVariantsProgress {
 pub fn find_remote_catalog_model_exact(query: &str) -> Option<remote_catalog::RemoteCatalogModel> {
     remote_catalog::find_model_exact(query)
 }
+
+pub fn find_cached_remote_catalog_model_exact(
+    query: &str,
+) -> Option<remote_catalog::RemoteCatalogModel> {
+    remote_catalog::find_cached_model_exact(query)
+}
 pub fn find_loaded_remote_catalog_model_exact(
     query: &str,
 ) -> Option<remote_catalog::RemoteCatalogModel> {

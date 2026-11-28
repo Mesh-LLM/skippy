@@ -1,35 +1,61 @@
-"""Summarize complete scored smoke receipts for the inference report."""
+"""Summarize warmed fixed-length probes after successful scored qualification."""
 
 import math
 import re
+import time
 from pathlib import Path
 
 from .ci_artifacts import read_json, write_json
+from .jy_qualification import PilotHTTPError
+from .inference_inputs import fixture
+from .inference_probe import WORKLOAD, validate_evidence
+
+ARTIFACT_RETRIES = 6
+ARTIFACT_RETRY_DELAY = 5
 
 
-def collect(pilot, job, row, sha, output, key):
+def fetch_artifact(pilot, run_id, filename):
+    path = f"/v1/artifacts/{run_id}/raw/{filename}"
+    # JY can report a successful run before its artifacts are available.
+    for remaining in range(ARTIFACT_RETRIES, -1, -1):
+        try:
+            return pilot.api("GET", path)
+        except PilotHTTPError as error:
+            if error.status != 404 or error.path != path or remaining == 0:
+                raise RuntimeError(f"{run_id}/{filename}: {error}") from error
+            time.sleep(ARTIFACT_RETRY_DELAY)
+
+
+def successful_run(job, sha):
     runs = job.get("runs") or []
     run = runs[-1] if runs else {}
     run_id = run.get("id") or ""
-    if run.get("status") != "succeeded" or not re.fullmatch(r"run_[A-Za-z0-9_]+", run_id):
+    if (job.get("repo_rev") != sha or job.get("status") != "succeeded"
+            or run.get("status") != "succeeded" or not re.fullmatch(r"run_[A-Za-z0-9_]+", run_id)):
         raise ValueError("missing successful native attempt")
-    prefix = f"/v1/artifacts/{run_id}/raw/"
-    qualification = pilot.api("GET", prefix + "qualification.json")
-    samples = pilot.api("GET", prefix + "quality.json")
+    return run_id
+
+
+def collect(pilot, job, row, sha, output, key):
+    run_id = successful_run(job, sha)
+    qualification = fetch_artifact(pilot, run_id, "qualification.json")
+    samples = fetch_artifact(pilot, run_id, "quality.json")
     identity = {"source_sha": sha, "model": key, "mode": row["mode"],
                 "profile": "pr", "status": "passed"}
-    if job.get("repo_rev") != sha or job.get("status") != "succeeded" or any(
-        qualification.get(field) != expected for field, expected in identity.items()
-    ):
+    if any(qualification.get(field) != expected for field, expected in identity.items()):
         raise ValueError("throughput evidence identity mismatch")
     cases = read_json(Path("ci/inference-quality.json"))
     if not isinstance(samples, list) or len(samples) != len(cases):
         raise ValueError("incomplete scored throughput evidence")
-    prefill, decode = [], []
     for sample, case in zip(samples, cases):
         if sample.get("passed") is not True or sample.get("case") != case:
             raise ValueError("unscored or mismatched throughput sample")
-        response = sample["response"]
+    inputs = fixture(key)
+    model = f'{inputs["repo"]}@{inputs["revision"]}'
+    evidence = fetch_artifact(pilot, run_id, "throughput-probe.json")
+    responses = validate_evidence(evidence, model)
+    prefill, decode = [], []
+    for response in responses:
         timing = response.get("timings") or {}
         cached = ((response.get("usage") or {}).get("prompt_tokens_details") or {}).get("cached_tokens")
         prompt = timing.get("prompt_n")
@@ -38,11 +64,14 @@ def collect(pilot, job, row, sha, output, key):
         decode.append((timing.get("predicted_n"), timing.get("predicted_ms")))
     p_tokens, p_ms = totals(prefill)
     d_tokens, d_ms = totals(decode)
-    write_json(output / f'{row["id"]}-throughput.json', {
+    receipt = {
         "source_sha": sha, "configuration": row["id"], "job_id": job["id"], "run_id": run_id,
-        "requests": len(samples), "prefill_tokens": p_tokens, "prefill_ms": p_ms,
+        "workload": WORKLOAD,
+        "requests": len(responses), "prefill_tokens": p_tokens, "prefill_ms": p_ms,
         "decode_tokens": d_tokens, "decode_ms": d_ms,
-    })
+    }
+    write_json(output / f'{row["id"]}-throughput.json', receipt)
+    return qualification, receipt
 
 
 def totals(rows):

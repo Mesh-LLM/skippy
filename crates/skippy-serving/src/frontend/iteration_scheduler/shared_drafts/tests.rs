@@ -70,6 +70,7 @@ fn mutations_respect_draft_session_barriers_and_shutdown_returns_errors() {
     worker.handle_command(SchedulerCommand::ExecuteLaneRuntime(
         "b".to_string(),
         RuntimeOperation {
+            kind: RuntimeOperationKind::Mutation,
             label: "repair-b",
             control: None,
             run: Box::new(move |_| {
@@ -81,6 +82,7 @@ fn mutations_respect_draft_session_barriers_and_shutdown_returns_errors() {
     assert_eq!(receive.recv().unwrap(), "b");
     assert_eq!(worker.drafts.len(), 1);
     worker.handle_command(SchedulerCommand::ExecuteRuntime(RuntimeOperation {
+        kind: RuntimeOperationKind::Mutation,
         label: "mutation",
         control: None,
         run: Box::new(move |_| {
@@ -95,4 +97,24 @@ fn mutations_respect_draft_session_barriers_and_shutdown_returns_errors() {
     worker.drafts.push_back(waiting);
     worker.fail_all(InferenceError::backend("stopped"));
     assert!(result.recv().unwrap().is_err());
+}
+
+#[test]
+fn ready_verification_prevents_another_draft_gather_wait() {
+    let mut worker = worker();
+    let (send, receive) = std_mpsc::channel();
+    worker.commands = receive;
+    worker.active_runtime_sessions = 2;
+    worker.drafts.push_back(operation("draft", 4).0);
+    worker
+        .verifications
+        .push_back(super::super::shared_verification::tests::operation(
+            "verify", 4,
+        ));
+    send.send(SchedulerCommand::Shutdown).unwrap();
+    assert!(worker.coalesce_drafts());
+    assert!(matches!(
+        worker.commands.try_recv(),
+        Ok(SchedulerCommand::Shutdown)
+    ));
 }

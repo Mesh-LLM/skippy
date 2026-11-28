@@ -2,11 +2,11 @@
 name = "skippy-commands"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Shared Skippy model commands and standalone command output"
 readme = "README.md"
-repository = "https://github.com/general-inference/skippy"
+repository = "https://github.com/Mesh-LLM/skippy"
 
 [features]
 dynamic-native-runtime = ["skippy-api/dynamic-native-runtime"]

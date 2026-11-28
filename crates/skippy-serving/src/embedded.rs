@@ -579,9 +579,14 @@ fn openai_backend_router_with_lifecycle_observer(
     backend: Arc<dyn InferenceBackend>,
     lifecycle_observer: Option<Arc<dyn InferenceLifecycleObserver>>,
 ) -> Router {
-    let config = lifecycle_observer.map_or_else(InferenceFrontendConfig::default, |observer| {
-        InferenceFrontendConfig::default().with_lifecycle_observer(observer)
-    });
+    // The embedder is the trusted upstream: it strips client-supplied request
+    // class headers at its own ingress and stamps its classification before
+    // it forwards a request to this in-process server.
+    let config = InferenceFrontendConfig::default().with_trusted_request_class_headers();
+    let config = match lifecycle_observer {
+        Some(observer) => config.with_lifecycle_observer(observer),
+        None => config,
+    };
     skippy_inference_api::router_for_with_config(backend, config)
 }
 
@@ -770,6 +775,89 @@ mod tests {
         fn reset_after_panic(&mut self) {
             *self = 0;
         }
+    }
+
+    #[derive(Default)]
+    struct ClassCaptureBackend {
+        classes: Mutex<Vec<skippy_inference_api::InferenceRequestClass>>,
+    }
+
+    #[async_trait::async_trait]
+    impl InferenceBackend for ClassCaptureBackend {
+        async fn models(
+            &self,
+        ) -> skippy_inference_api::InferenceResult<Vec<skippy_inference_api::ModelObject>> {
+            Ok(vec![skippy_inference_api::ModelObject::new("class-model")])
+        }
+
+        async fn chat_completion(
+            &self,
+            request: skippy_inference_api::generation::GenerationRequest,
+        ) -> skippy_inference_api::InferenceResult<
+            skippy_inference_api::generation::GenerationResponse,
+        > {
+            Ok(skippy_inference_api::generation::GenerationResponse::new(
+                request.model,
+                "ok",
+                skippy_inference_api::Usage::new(1, 1),
+            ))
+        }
+
+        async fn chat_completion_with_context(
+            &self,
+            request: skippy_inference_api::generation::GenerationRequest,
+            context: skippy_inference_api::InferenceRequestContext,
+        ) -> skippy_inference_api::InferenceResult<
+            skippy_inference_api::generation::GenerationResponse,
+        > {
+            self.classes.lock().unwrap().push(context.request_class());
+            self.chat_completion(request).await
+        }
+
+        async fn chat_completion_stream(
+            &self,
+            _request: skippy_inference_api::generation::GenerationRequest,
+            _context: skippy_inference_api::InferenceRequestContext,
+        ) -> skippy_inference_api::InferenceResult<
+            skippy_inference_api::generation::GenerationEventStream,
+        > {
+            Ok(Box::pin(futures_util::stream::empty()))
+        }
+    }
+
+    /// An embedder such as MeshLLM classifies a request at its own ingress and
+    /// forwards it to this server with the class in headers.
+    #[tokio::test]
+    async fn embedded_openai_backend_keeps_the_embedders_request_class() {
+        use axum::{body::Body, http::Request};
+        use skippy_inference_api::{
+            CACHE_PARTITION_HEADER, InferenceRequestClass, InferenceRequestTier,
+            REQUEST_TIER_HEADER,
+        };
+        use tower::ServiceExt;
+
+        let backend = Arc::new(ClassCaptureBackend::default());
+        let response = openai_backend_router_with_lifecycle_observer(backend.clone(), None)
+            .oneshot(
+                Request::post("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header(REQUEST_TIER_HEADER, "trusted")
+                    .header(CACHE_PARTITION_HEADER, "private")
+                    .body(Body::from(
+                        r#"{"model":"class-model","messages":[{"role":"user","content":"test"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(response.status().is_success());
+        assert_eq!(
+            *backend.classes.lock().unwrap(),
+            [InferenceRequestClass::new(
+                InferenceRequestTier::Trusted,
+                true
+            )],
+        );
     }
 
     #[tokio::test]

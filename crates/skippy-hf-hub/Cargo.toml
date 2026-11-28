@@ -4,9 +4,9 @@ version.workspace = true
 edition = "2024"
 description = "Rust client for the Hugging Face Hub API"
 license = "Apache-2.0"
-publish = false
-repository = "https://github.com/general-inference/skippy"
-homepage = "https://github.com/general-inference/skippy"
+publish = ["crates-io"]
+repository = "https://github.com/Mesh-LLM/skippy"
+homepage = "https://github.com/Mesh-LLM/skippy"
 readme = "README.md"
 
 [lib]

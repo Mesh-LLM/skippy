@@ -14,7 +14,7 @@ from lib.ci_artifacts import archive_path, digest, extract_archive, read_json, w
 from lib.ci_process import cancel_on_signal, command
 from lib.native_binary import inspect
 from lib.native_dependencies import Dependencies
-from lib.native_policy import HOST_TARGETS, NATIVE_TARGETS, basename, forbidden, host_owned
+from lib.native_policy import HOST_TARGETS, NATIVE_TARGETS, basename, forbidden, host_owned, rocm_host_library
 
 
 def check_glibc(path, floor):
@@ -84,7 +84,7 @@ def contained_file(root, name):
     return path
 
 
-def verify_directory(root):
+def verify_directory(root, resolve_rocm):
     root = root.resolve(strict=True)
     manifest = read_json(root / "manifest.json")
     runtime, build = manifest["runtime"], manifest["build"]
@@ -119,26 +119,35 @@ def verify_directory(root):
         image = inspect(contained_file(root, name))
         if image.arch != platform["arch"]:
             raise ValueError(f"runtime architecture mismatch: {name}")
+        external_rocm = False
         for imported in image.imports:
             if host_owned(imported, image.kind):
+                continue
+            if (platform["os"] == "linux" and runtime["backend"]["kind"] == "rocm"
+                    and rocm_host_library(imported, image.kind)):
+                external_rocm = True
                 continue
             if basename(imported).lower() not in names:
                 raise ValueError(f"unpackaged native dependency: {name} -> {imported}")
             if image.kind == "macho" and not imported.startswith(("@rpath/", "@loader_path/")):
                 raise ValueError(f"nonrelocatable native import: {imported}")
+        if external_rocm and resolve_rocm:
+            resolved = command(["ldd", str(root / name)], overrides={"LC_ALL": "C"}, capture_stdout=True)
+            if "=> not found" in resolved:
+                raise ValueError(f"ROCm dependencies for {name} do not resolve:\n{resolved}")
     print(f'verified runtime {runtime["id"]}')
 
 
 def verify_runtime(args):
     if args.input.is_dir():
-        verify_directory(args.input)
+        verify_directory(args.input, args.resolve_rocm)
         return
     with tempfile.TemporaryDirectory() as tmp:
         extract_archive(args.input, Path(tmp), allow_symlinks=False)
         roots = list(Path(tmp).iterdir())
         if len(roots) != 1 or not roots[0].is_dir():
             raise ValueError("runtime archive must contain one root directory")
-        verify_directory(roots[0])
+        verify_directory(roots[0], args.resolve_rocm)
 
 
 def dependency_command(args):
@@ -164,6 +173,7 @@ def main():
     cli.set_defaults(run=cli_input)
     runtime = actions.add_parser("verify-runtime-package")
     runtime.add_argument("--portable", action="store_true")
+    runtime.add_argument("--resolve-rocm", action="store_true", help="check host ROCm library resolution on Linux")
     runtime.add_argument("input", type=Path)
     runtime.set_defaults(run=verify_runtime)
     for name in ("linux-runtime-deps", "windows-runtime-deps"):

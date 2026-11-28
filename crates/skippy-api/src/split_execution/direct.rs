@@ -11,9 +11,7 @@ use skippy_topology::{
 };
 
 use super::{AdmittedSplit, SplitPlacement, SplitRequest, validate_workers};
-use crate::{
-    package::SkippyPackageIdentity, source, split_certification, stage_admission, stage_load,
-};
+use crate::{package::SkippyPackageIdentity, source, stage_admission, stage_load};
 
 /// Plan a direct GGUF execution and realize every native stage admission before
 /// returning a plan that can be started. Run on a blocking thread.
@@ -52,17 +50,6 @@ pub fn plan_direct_gguf(args: &SplitRequest) -> Result<AdmittedSplit> {
     );
     let (manifest, _) =
         source::planning::direct_gguf_planning_manifest_from_identity(&model_id, &identity)?;
-    let architecture = manifest
-        .model_metadata
-        .get("general.architecture")
-        .and_then(|v| v.as_str())
-        .context("model architecture missing")?;
-    // Standalone enforces the same release-bound certification roster as Mesh.
-    let certification = split_certification::require_split_certification(
-        &identity,
-        architecture,
-        args.allow_uncertified_split,
-    )?;
     let topology = topology_for(args, &model_id, &identity)?;
     let (configs, admissions) = realize_configs(args, &model_id, &identity, &manifest, &topology)?;
     Ok(AdmittedSplit {
@@ -70,7 +57,6 @@ pub fn plan_direct_gguf(args: &SplitRequest) -> Result<AdmittedSplit> {
         topology,
         configs,
         admissions,
-        certification,
     })
 }
 

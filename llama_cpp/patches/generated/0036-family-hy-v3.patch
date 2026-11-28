@@ -9,7 +9,7 @@ separately and remain outside the primary decoder stage interval.
 
 ---
 diff --git a/src/models/hy-v3.cpp b/src/models/hy-v3.cpp
-index c47c373f89ea7bb4af831ec0a521d792df5bee8b..f83f45bdb512fa2d493bc9ec8900cf7dbdf6af95 100644
+index f53d94827ee753e8965304941440b50995fe0b41..c4aac4a910ffe5c38323d7824332002619bc46fa 100644
 --- a/src/models/hy-v3.cpp
 +++ b/src/models/hy-v3.cpp
 @@ -112,6 +112,8 @@ llama_model_hy_v3::graph::graph(const llm_graph_params & params) : llm_graph_con
@@ -21,7 +21,7 @@ index c47c373f89ea7bb4af831ec0a521d792df5bee8b..f83f45bdb512fa2d493bc9ec8900cf7d
          ggml_tensor * inpSA = inpL;
  
          cur = build_norm(inpL, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, il);
-@@ -192,6 +194,7 @@ llama_model_hy_v3::graph::graph(const llm_graph_params & params) : llm_graph_con
+@@ -189,6 +191,7 @@ llama_model_hy_v3::graph::graph(const llm_graph_params & params) : llm_graph_con
          cb(cur, "l_out", il);
  
          inpL = cur;

@@ -179,3 +179,23 @@ fn a_later_request_may_not_overtake_its_own_session() {
     );
     assert_eq!(check_selection(&view, &Selection(vec![0, 1])), Ok(()));
 }
+
+#[test]
+fn speculative_gather_uses_the_configured_decode_wait_with_a_short_cap() {
+    for (configured, expected) in [(0, 0), (50, 50), (300, 300), (2000, 300)] {
+        let policy = ArrivalOrder {
+            tuning: BatchTuning {
+                decode_window: Duration::from_micros(configured),
+                ..default_tuning()
+            },
+        };
+        assert_eq!(
+            policy.gather_speculative(4, 1, 2),
+            Gather {
+                target: 2,
+                window: Duration::from_micros(expected),
+            }
+        );
+        assert_eq!(policy.gather_speculative(4, 0, 2).target, 0);
+    }
+}

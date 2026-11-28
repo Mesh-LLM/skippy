@@ -1,8 +1,8 @@
-From 054fb8ca66283302bee704b8f3d114ec17a75b6f Mon Sep 17 00:00:00 2001
+From 541192d5cd2381a4c38bc2e522e462bb5c848ee5 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Wed, 18 Nov 2026 20:05:54 +1100
-Subject: [PATCH 39/39] skippy: apply the KV memory options to every attention
- cache a memory owns
+Subject: [PATCH] skippy: apply the KV memory options to every attention cache
+ a memory owns
 
 kv_lazy_clear=false and kv_release_pages=false reached plain, ISWA, hybrid
 and DSA memories only. MSA, DSA-ISWA and DeepSeek V4 memories derive from
@@ -56,5 +56,5 @@ index c62b1e629..a8a3757ca 100644
          return { iswa->get_base(), iswa->get_swa() };
      }
 -- 
-2.43.0
+2.56.1
 

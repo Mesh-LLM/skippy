@@ -66,7 +66,7 @@ Generation 16 raised the stage frame budget from 8 MiB to 64 MiB, so a
 prefill chunk of a wide boundary crosses as one frame; a chunk whose output
 still exceeds the budget is sent as consecutive prefill frames.
 
-Current generation 17 (wire header version 18) carries each request's tier
+Generation 17 also removes the obsolete family-certification fields from load and status messages. Current generation 17 (wire header version 18) carries each request's tier
 and private cache partition in the state header flags of every
 cache-bearing message (bits 17-18: how many tiers below `local`; bit 19:
 private). A stage lowers that claim to the highest tier its host assigned

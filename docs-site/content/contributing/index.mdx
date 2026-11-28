@@ -18,7 +18,7 @@ pull request flow so the change remains reviewable and attributable.
 
 - Start by opening a GitHub issue to discuss the proposed change. Once the
   approach is agreed, submit a pull request linked to that issue.
-- Submit pull requests from a fork unless you are a core contributor.
+- Use a fork or an upstream branch if you have permission to push one.
 - AI-assisted and AI-generated pull requests are welcome. Contributors remain
   responsible for understanding, testing, and explaining the submitted
   changes.
@@ -30,19 +30,12 @@ pull request flow so the change remains reviewable and attributable.
 
 ## Why pull requests need approval
 
-Skippy tests inference on real hardware. [General Inference](https://generalinference.xyz)
-donates time on its lab machines, which include Mac Studios, Mac minis, NVIDIA
-DGX Sparks, and AMD Ryzen Halo 395 development systems. The lab also supports
-commercial development of General Inference’s products.
-
-General Inference has an established trust relationship with members of the
-Mesh-LLM GitHub organization. A Mesh-LLM organization member must approve a
-pull request before its inference tests can run in the shared lab.
-
-Test jobs run in isolated environments. The Mesh LLM team is improving that
-isolation so more contributors can test their pull requests. The team is also
-exploring dedicated infrastructure for Skippy, with potential donations from
-General Inference and other contributing organizations.
+Skippy tests inference on real hardware, including Mac Studios, Mac minis,
+NVIDIA DGX Sparks, and AMD Ryzen Halo 395 development systems. A Mesh-LLM
+organization member with repository write access approves workflow runs for
+external fork pull requests. Fork builds require isolated runners. Shared lab
+qualification requires a trusted contributor and a branch in the upstream
+repository.
 
 If you’re interested in sponsoring cloud-based inference hardware for Skippy,
 please reach out to the Mesh LLM team on Discord or Buzz.
@@ -96,6 +89,55 @@ including integration and documentation tests.
 The pull request should explain the user-visible behavior, relevant contracts,
 test coverage, and benchmark comparison. A missing required fixture or device
 cannot count as successful qualification.
+
+## Investigate inference performance with InferenceKit
+
+[InferenceKit](https://github.com/KittenML/inferencekit) helps investigate
+latency, throughput, quality, and profiling on a specific model and device.
+The repository's Bash wrapper pins `inferencekit-cli==0.1.1`; use it to inspect
+your machine before starting an experiment:
+
+```console
+scripts/inferencekit.sh doctor
+```
+
+Install [uv](https://docs.astral.sh/uv/) and Python 3.10 or newer first. The
+first invocation may download the pinned CLI. To probe a running Skippy server
+through its default OpenAI-compatible address, run these commands from the
+repository root:
+
+```console
+just build
+./target/debug/skippy serve --model /path/to/model.gguf
+# In a second terminal, after the server is ready:
+scripts/inferencekit.sh gates run --base-url http://127.0.0.1:9337
+```
+
+The wrapper invokes the pinned CLI through `uvx` and stores evidence under the
+Git-ignored `target/inferencekit/` directory. Set `INFERENCEKIT_RUNS_DIR` to
+choose another location. On Windows, run the wrapper in a Bash shell or invoke
+`uvx --from 'inferencekit-cli==0.1.1' inferencekit` directly in PowerShell.
+If `doctor` cannot find a profiler or the gates cannot reach a ready server,
+inspect the reported limitation before drawing a performance conclusion.
+
+For agent-guided experiments in Codex, install the
+[InferenceKit plugin](https://github.com/KittenML/inferencekit/blob/main/docs/install.md)
+in your Codex environment:
+
+```console
+codex plugin marketplace add KittenML/inferencekit
+codex plugin add inferencekit@inferencekit
+```
+
+Then select an InferenceKit skill such as `$inferencekit:benchmarking` or
+`$inferencekit:optimizing-inference`. The CLI wrapper also works without the
+agent plugin. Record the exact model artifact, workload, hardware/backend,
+baseline, changed result, and quality evidence when reporting a speedup.
+Profiles and logs can contain credentials and host details, so review them
+before sharing. Local InferenceKit probes are exploratory; Skippy's existing
+model and hardware qualification remains the release gate. See the
+[upstream CLI reference](https://github.com/KittenML/inferencekit#cli-and-mcp-server)
+for commands and options.
 
 ## How changes are evaluated
 

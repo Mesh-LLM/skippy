@@ -1,8 +1,8 @@
-From 79422cd665d31cec86fcc9d6bbd69b308a87d83f Mon Sep 17 00:00:00 2001
+From 9a53d20e49ef3eced0b7f4bf5c723e553d5b22ee Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Sun, 8 Nov 2026 13:07:18 +1100
-Subject: [PATCH 28/32] ggml-metal: GGML_METAL_ROWS_DEBUG counts the
- row-attention variant choices
+Subject: [PATCH] ggml-metal: GGML_METAL_ROWS_DEBUG counts the row-attention
+ variant choices
 
 At exit, how many dispatches took the gather-free variant, the general
 kernel, or found their lists not host-visible; the first blocks that
@@ -15,7 +15,7 @@ Claude-Session: https://claude.ai/code/session_01QA3dWey3RBtBgDz1Tery9Y
  1 file changed, 26 insertions(+), 2 deletions(-)
 
 diff --git a/ggml/src/ggml-metal/ggml-metal-ops.cpp b/ggml/src/ggml-metal/ggml-metal-ops.cpp
-index a18d41ad8..e2319db33 100644
+index 52c76d7c2..56235817a 100644
 --- a/ggml/src/ggml-metal/ggml-metal-ops.cpp
 +++ b/ggml/src/ggml-metal/ggml-metal-ops.cpp
 @@ -12,6 +12,8 @@
@@ -73,5 +73,5 @@ index a18d41ad8..e2319db33 100644
      float scale;
      float max_bias;
 -- 
-2.43.0
+2.56.1
 
