@@ -45,6 +45,7 @@ pub struct Sequence {
     pub cache_affinity: CacheAffinity,
     pub admitted_at: Option<Instant>,
     pub(crate) prefill_cursor: usize,
+    pub(crate) last_prefill_turn: u64,
     pub(crate) enqueued_turn: u64,
     pub(crate) enqueue_order: u64,
 }
@@ -73,6 +74,7 @@ impl Sequence {
             cache_affinity: CacheAffinity::default(),
             admitted_at: None,
             prefill_cursor: 0,
+            last_prefill_turn: 0,
             enqueued_turn: 0,
             enqueue_order: 0,
         }

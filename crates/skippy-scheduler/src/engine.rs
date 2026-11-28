@@ -118,178 +118,64 @@ impl Scheduler {
             self.plan_mixed_iteration(&mut plan);
             return plan;
         }
-        let mut budget = self.config.max_tokens_per_iteration;
-        let mut prefill_sequences = 0usize;
-        let ids = self.active.keys().cloned().collect::<Vec<_>>();
-        // llama's mixed-token ABI can batch many prefills or many decode rows,
-        // but combining a long prefill with live decode rows changes dense
-        // model outputs. Give chunked prefill/recompute one iteration, then
-        // resume decode for all active sequences on the next iteration.
-        let has_prefill = ids.iter().any(|id| {
-            self.active
-                .get(id)
-                .is_some_and(|sequence| sequence.prefill_cursor < sequence.recompute_token_count())
-        });
-        let has_live_decode = ids.iter().any(|id| {
-            self.active.get(id).is_some_and(|sequence| {
-                sequence.prefill_cursor >= sequence.recompute_token_count()
-                    && sequence.pending_decode_token().is_some()
-            })
-        });
-        let run_prefill_phase = has_prefill
-            && (!has_live_decode
-                || self.consecutive_prefill_iterations
-                    < self.config.max_consecutive_prefill_iterations);
+        self.plan_phase_iteration(&mut plan, calibrated_decode_rows > 0);
+        plan
+    }
 
-        for id in ids {
-            if budget == 0 {
-                break;
-            }
-            let Some(sequence) = self.active.get_mut(&id) else {
-                continue;
-            };
-            let replay = sequence.recompute_tokens();
-            if sequence.prefill_cursor < replay.len() {
-                if !run_prefill_phase {
-                    continue;
-                }
-                if prefill_sequences >= self.config.max_prefill_sequences_per_iteration {
-                    continue;
-                }
-                let count = self
-                    .config
-                    .prefill_chunk_tokens
-                    .min(replay.len() - sequence.prefill_cursor)
-                    .min(budget);
-                let start = sequence.prefill_cursor;
-                let end = start + count;
-                let phase = if sequence.generated_tokens.is_empty() {
-                    IterationPhase::Prefill
-                } else {
-                    IterationPhase::Recompute
-                };
-                let sample_last = end == replay.len() && sequence.generated_tokens.is_empty();
-                plan.work.push(IterationWork {
-                    sequence_id: id,
-                    tokens: replay[start..end].to_vec(),
-                    positions: contiguous_positions(start, count),
-                    sample_last,
-                    phase,
-                    sampling: sequence.sampling.clone(),
-                });
-                sequence.prefill_cursor = end;
-                prefill_sequences += 1;
-                plan.token_count += count;
-                budget -= count;
-                continue;
-            }
-
-            if run_prefill_phase {
-                continue;
-            }
-
-            if let Some(token) = sequence.pending_decode_token() {
-                plan.work.push(IterationWork {
-                    sequence_id: id,
-                    tokens: vec![token],
-                    positions: contiguous_positions(replay.len(), 1),
-                    sample_last: true,
-                    phase: IterationPhase::Decode,
-                    sampling: sequence.sampling.clone(),
-                });
-                // The token scheduled for decode occupies the next position.
-                // Keep the replay cursor aligned so uninterrupted sequences do
-                // not replay that token as recompute work on the next step.
-                sequence.prefill_cursor = replay.len().saturating_add(1);
-                plan.token_count += 1;
-                budget -= 1;
-            }
-        }
-
-        if plan
-            .work
-            .iter()
-            .any(|work| work.phase != IterationPhase::Decode)
-        {
+    fn plan_phase_iteration(&mut self, plan: &mut IterationPlan, has_live_decode: bool) {
+        // Alternate phase-homogeneous prefill and decode when mixing is unavailable.
+        let can_prefill = !has_live_decode
+            || self.consecutive_prefill_iterations < self.config.max_consecutive_prefill_iterations;
+        if can_prefill && self.plan_prefill(plan) {
             self.consecutive_prefill_iterations = if has_live_decode {
                 self.consecutive_prefill_iterations.saturating_add(1)
             } else {
                 0
             };
-        } else if plan
-            .work
-            .iter()
-            .any(|work| work.phase == IterationPhase::Decode)
-        {
-            self.consecutive_prefill_iterations = 0;
+            return;
         }
 
-        plan
+        for (id, sequence) in &mut self.active {
+            if plan.token_count == self.config.max_tokens_per_iteration {
+                break;
+            }
+            Self::plan_decode_row(id, sequence, plan);
+        }
+        if !plan.work.is_empty() {
+            self.consecutive_prefill_iterations = 0;
+        }
     }
 
-    fn plan_mixed_iteration(&mut self, plan: &mut IterationPlan) {
-        let mut budget = self.config.max_tokens_per_iteration;
-        let ids = self.active.keys().cloned().collect::<Vec<_>>();
-
-        // Decode is latency-sensitive and consumes exactly one token per live
-        // sequence. Reserve those rows first so prompt traffic cannot starve
-        // active generation.
-        let decode_start = if ids.is_empty() {
-            0
-        } else {
-            self.mixed_decode_cursor % ids.len()
-        };
-        let mut decode_examined = 0usize;
-        for offset in 0..ids.len() {
+    fn plan_prefill(&mut self, plan: &mut IterationPlan) -> bool {
+        let mut budget = self.config.max_tokens_per_iteration - plan.token_count;
+        if budget == 0 {
+            return false;
+        }
+        let mut ready = self
+            .active
+            .iter()
+            .filter(|(_, sequence)| sequence.prefill_cursor < sequence.recompute_token_count())
+            .map(|(id, sequence)| (sequence.last_prefill_turn, id.clone()))
+            .collect::<Vec<_>>();
+        // Give each runnable prefill a turn before returning to the same
+        // long prompt. Initial admission counts as a turn for ordering.
+        ready.sort_unstable();
+        let first = plan.work.len();
+        for (_, id) in ready
+            .into_iter()
+            .take(self.config.max_prefill_sequences_per_iteration)
+        {
             if budget == 0 {
                 break;
             }
-            decode_examined = offset + 1;
-            let id = &ids[(decode_start + offset) % ids.len()];
-            let Some(sequence) = self.active.get_mut(id) else {
-                continue;
-            };
-            let replay_len = sequence.recompute_token_count();
-            if sequence.prefill_cursor < replay_len {
-                continue;
-            }
-            let Some(token) = sequence.pending_decode_token() else {
-                continue;
-            };
-            plan.work.push(IterationWork {
-                sequence_id: id.clone(),
-                tokens: vec![token],
-                positions: contiguous_positions(replay_len, 1),
-                sample_last: true,
-                phase: IterationPhase::Decode,
-                sampling: sequence.sampling.clone(),
-            });
-            sequence.prefill_cursor = replay_len.saturating_add(1);
-            plan.token_count += 1;
-            budget -= 1;
-        }
-        if !ids.is_empty() {
-            self.mixed_decode_cursor = (decode_start + decode_examined) % ids.len();
-        }
-
-        let mut prefill_sequences = 0usize;
-        for id in ids {
-            if budget == 0 || prefill_sequences >= self.config.max_prefill_sequences_per_iteration {
-                break;
-            }
-            let Some(sequence) = self.active.get_mut(&id) else {
-                continue;
-            };
+            let sequence = self.active.get_mut(&id).expect("active prefill");
             let replay = sequence.recompute_tokens();
-            if sequence.prefill_cursor >= replay.len() {
-                continue;
-            }
+            let start = sequence.prefill_cursor;
             let count = self
                 .config
                 .prefill_chunk_tokens
-                .min(replay.len() - sequence.prefill_cursor)
+                .min(replay.len() - start)
                 .min(budget);
-            let start = sequence.prefill_cursor;
             let end = start + count;
             let phase = if sequence.generated_tokens.is_empty() {
                 IterationPhase::Prefill
@@ -305,11 +191,52 @@ impl Scheduler {
                 sampling: sequence.sampling.clone(),
             });
             sequence.prefill_cursor = end;
-            prefill_sequences += 1;
+            sequence.last_prefill_turn = self.waiting_turn;
             plan.token_count += count;
             budget -= count;
         }
+        // Retain the canonical native row order for the selected prefills.
+        plan.work[first..].sort_unstable_by(|left, right| left.sequence_id.cmp(&right.sequence_id));
+        plan.work.len() > first
+    }
 
+    fn plan_decode_row(id: &str, sequence: &mut Sequence, plan: &mut IterationPlan) {
+        let replay_len = sequence.recompute_token_count();
+        if sequence.prefill_cursor < replay_len {
+            return;
+        }
+        let Some(token) = sequence.pending_decode_token() else {
+            return;
+        };
+        plan.work.push(IterationWork {
+            sequence_id: id.to_owned(),
+            tokens: vec![token],
+            positions: contiguous_positions(replay_len, 1),
+            sample_last: true,
+            phase: IterationPhase::Decode,
+            sampling: sequence.sampling.clone(),
+        });
+        // The scheduled token occupies the next position in the replay.
+        sequence.prefill_cursor = replay_len.saturating_add(1);
+        plan.token_count += 1;
+    }
+
+    fn plan_mixed_iteration(&mut self, plan: &mut IterationPlan) {
+        let ids = self.active.keys().cloned().collect::<Vec<_>>();
+        // Reserve one row for each live decode before spending budget on prefill.
+        let decode_start = self.mixed_decode_cursor % ids.len();
+        let mut decode_examined = 0;
+        for offset in 0..ids.len() {
+            if plan.token_count == self.config.max_tokens_per_iteration {
+                break;
+            }
+            decode_examined = offset + 1;
+            let id = &ids[(decode_start + offset) % ids.len()];
+            let sequence = self.active.get_mut(id).expect("active decode");
+            Self::plan_decode_row(id, sequence, plan);
+        }
+        self.mixed_decode_cursor = (decode_start + decode_examined) % ids.len();
+        self.plan_prefill(plan);
         self.consecutive_prefill_iterations = 0;
     }
 
@@ -571,6 +498,7 @@ impl Scheduler {
             self.reserve_memory(&sequence);
             sequence.status = SequenceStatus::Running;
             sequence.admitted_at = Some(Instant::now());
+            sequence.last_prefill_turn = self.waiting_turn.saturating_sub(1);
             self.active.insert(sequence.id.clone(), sequence);
             admitted += 1;
         }
@@ -1149,6 +1077,35 @@ mod tests {
         let second = scheduler.plan_iteration();
         assert_eq!(second.work.len(), 1);
         assert_eq!(second.work[0].sequence_id, "b");
+    }
+
+    #[test]
+    fn long_prefills_share_turns_with_a_late_short_prompt() {
+        let mut scheduler = Scheduler::new(SchedulerConfig {
+            max_active_sequences: 3,
+            max_tokens_per_iteration: 2,
+            prefill_chunk_tokens: 2,
+            max_prefill_sequences_per_iteration: 1,
+            ..SchedulerConfig::default()
+        });
+        scheduler.submit(sequence("a-long", 16, 2)).unwrap();
+        scheduler.submit(sequence("b-long", 16, 2)).unwrap();
+        let first = scheduler.plan_iteration();
+        assert_eq!(first.work[0].sequence_id, "a-long");
+        scheduler.complete_iteration(&first, &[]);
+        scheduler.submit(sequence("z-short", 2, 1)).unwrap();
+
+        for expected in ["b-long", "a-long"] {
+            let plan = scheduler.plan_iteration();
+            assert_eq!(plan.work.len(), 1);
+            assert_eq!(plan.work[0].sequence_id, expected);
+            assert!(!plan.work[0].sample_last);
+            scheduler.complete_iteration(&plan, &[]);
+        }
+        let short = scheduler.plan_iteration();
+        assert_eq!(short.work[0].sequence_id, "z-short");
+        assert!(short.work[0].sample_last);
+        assert_eq!(short.work[0].positions, [0, 1]);
     }
 
     #[test]

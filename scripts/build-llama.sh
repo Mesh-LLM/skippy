@@ -581,9 +581,19 @@ if [[ "$LLAMA_STAGE_FULL_REPLAY" == "ON" ]]; then
     test-skippy-tracing
     test-skippy-verify-checkpoint-retirement
   )
+  # CTest registers this executable on non-Windows builds and on static
+  # Windows builds; it must be built before the full replay selects it.
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      if [[ "$LLAMA_LINK_MODE" == "static" ]]; then
+        BUILD_TARGETS+=(test-skippy-chat)
+      fi
+      ;;
+    *) BUILD_TARGETS+=(test-skippy-chat) ;;
+  esac
   if [[ "$LLAMA_BACKEND" == "metal" ]]; then
     # test-backend-ops runs as the ctest skippy_backend_ops_kv_rows
-    BUILD_TARGETS+=(test-skippy-cachegen-metal test-skippy-tracing-metal test-backend-ops)
+    BUILD_TARGETS+=(test-skippy-cachegen-metal test-skippy-tracing-metal test-skippy-q4-scale-metal test-backend-ops)
   fi
 fi
 

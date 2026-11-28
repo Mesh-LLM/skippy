@@ -100,6 +100,7 @@ mod tests {
             direct_wave_full: true,
             telemetry: None,
             last_served_direct: true,
+            next_direct_batch_order: DirectBatchOrder::Arrival,
             last_served_cache_runtime: false,
             last_emitted_lifecycle_counters: (0, 0, 0, 0),
         }

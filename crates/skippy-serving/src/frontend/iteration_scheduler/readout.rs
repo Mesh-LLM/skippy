@@ -15,6 +15,11 @@ pub(crate) struct ReadoutIteration<'a> {
 }
 
 impl IterationScheduler {
+    /// Use the built-in driver's exact chunk bound for sampled feature prefill.
+    pub(crate) fn prefill_chunk_limit(&self) -> std::num::NonZeroUsize {
+        self.shared.prefill_chunk_tokens
+    }
+
     /// Return the prefill chunk bound used by readout scheduling.
     pub(crate) fn readout_chunk_limit(&self) -> usize {
         self.shared.max_direct_iteration_tokens.max(1)

@@ -4,7 +4,9 @@ use super::DIRECT_ITERATION_COALESCE_WINDOW;
 use super::DirectIteration;
 use super::MAX_NATIVE_ITERATION_TOKENS;
 #[cfg(test)]
-use super::batch_policy::{BatchPlatform, BatchTuning, default_policy, take_batch};
+use super::batch_policy::{
+    BatchPlatform, BatchTuning, DirectBatchOrder, default_policy, take_batch,
+};
 use skippy_inference_api::{InferenceError, InferenceResult};
 #[cfg(test)]
 use skippy_protocol::BatchConfig;
@@ -141,6 +143,7 @@ pub(super) fn take_direct_iteration_batch(
         0,
         max_batch_size,
         token_budget,
+        DirectBatchOrder::Arrival,
     )
     .0
 }

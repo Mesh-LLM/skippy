@@ -25,6 +25,7 @@ impl SchedulerWorker {
             self.active_runtime_sessions,
             self.direct_group_batch_size,
             self.max_direct_iteration_tokens,
+            self.next_direct_batch_order,
         );
         if let (Some(rejection), Some(telemetry)) = (rejection, self.telemetry.as_ref()) {
             telemetry.emit(
@@ -102,12 +103,20 @@ impl SchedulerWorker {
         let result = runtime
             .iteration_batch_scored(&requests, &selections)
             .map_err(openai_backend_error);
+        let prefill_only = requests
+            .iter()
+            .all(|request| request.phase == IterationBatchPhase::Prefill);
         let hold = hold_started.elapsed();
         let kv_used_cells = runnable.first().and_then(|(request, _)| {
             sample_kv_used_cells(self.telemetry.as_ref(), &mut runtime, &request.session_id)
         });
         drop(runtime);
         drop(entered);
+        self.next_direct_batch_order = if prefill_only && result.is_ok() {
+            DirectBatchOrder::DecodeTurn
+        } else {
+            DirectBatchOrder::Arrival
+        };
         self.record_compute(hold);
         let timing = BatchTiming {
             wait,

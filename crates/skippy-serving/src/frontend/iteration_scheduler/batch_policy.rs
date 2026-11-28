@@ -4,8 +4,8 @@
 //! batch waits for more requests ([`BatchPolicy::gather`]), and which queued
 //! requests it takes ([`BatchPolicy::select`]). The scheduler checks every
 //! selection before it runs ([`take_batch`]), so a policy can reorder and
-//! hold back work but cannot break a session's ordering, starve the head of
-//! the queue, or overfill an iteration.
+//! hold back work but cannot break a session's ordering or overfill an
+//! iteration. Consecutive prefill-only waves can yield a turn to ready decodes.
 //!
 //! A new algorithm is a new [`BatchPolicyKind`] and an implementation here;
 //! [`BatchTuning::resolve`] is the one place a backend gets different values.
@@ -181,6 +181,13 @@ pub(super) struct Gather {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Selection(pub(super) Vec<usize>);
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum DirectBatchOrder {
+    #[default]
+    Arrival,
+    DecodeTurn,
+}
+
 pub(super) trait BatchPolicy: Send {
     fn kind(&self) -> BatchPolicyKind;
     fn tuning(&self) -> BatchTuning;
@@ -239,28 +246,30 @@ impl BatchPolicy for ArrivalOrder {
     }
 
     fn select(&self, view: &BatchView<'_>) -> Selection {
-        let mut budget = view.token_budget;
-        // Sessions with a request taken or passed over: a later request from
-        // one must wait, so it cannot overtake the earlier one.
-        let mut claimed = BTreeSet::new();
-        let mut selected = Vec::new();
-        for (position, request) in view.queued.iter().enumerate() {
-            if selected.len() >= view.lanes || budget == 0 {
-                break;
-            }
-            if !claimed.insert(request.session) {
-                continue;
-            }
-            // Keep scanning past a chunk that does not fit, so smaller decode
-            // rows queued behind a large prefill chunk still join this wave.
-            if request.tokens > budget {
-                continue;
-            }
-            budget -= request.tokens;
-            selected.push(position);
-        }
-        Selection(selected)
+        select_in_arrival_order(view, DirectBatchOrder::Arrival)
     }
+}
+
+fn select_in_arrival_order(view: &BatchView<'_>, order: DirectBatchOrder) -> Selection {
+    let mut budget = view.token_budget;
+    // Claim even skipped sessions so no later request can overtake its own head.
+    let mut claimed = BTreeSet::new();
+    let mut selected = Vec::new();
+    for (position, request) in view.queued.iter().enumerate() {
+        if selected.len() >= view.lanes || budget == 0 {
+            break;
+        }
+        if !claimed.insert(request.session)
+            || (order == DirectBatchOrder::DecodeTurn
+                && request.phase != IterationBatchPhase::Decode)
+            || request.tokens > budget
+        {
+            continue;
+        }
+        budget -= request.tokens;
+        selected.push(position);
+    }
+    Selection(selected)
 }
 
 /// Why a policy's selection was not run as given.
@@ -293,11 +302,12 @@ impl BatchRejection {
 
 /// The rules every batch keeps, whichever policy chose it.
 ///
-/// The head of the queue always fits a fresh budget (iterations are validated
-/// against it when queued), so requiring it keeps every request moving.
+/// Arrival order requires the queue head. A decode turn can bypass a prefill
+/// from another session. The next turn returns to arrival order.
 pub(super) fn check_selection(
     view: &BatchView<'_>,
     selection: &Selection,
+    order: DirectBatchOrder,
 ) -> Result<(), BatchRejection> {
     let positions = &selection.0;
     if positions.is_empty() {
@@ -312,7 +322,7 @@ pub(super) fn check_selection(
     {
         return Err(BatchRejection::OutOfRange);
     }
-    if positions[0] != 0 {
+    if order == DirectBatchOrder::Arrival && positions[0] != 0 {
         return Err(BatchRejection::SkipsQueueHead);
     }
     if positions.len() > view.lanes {
@@ -358,14 +368,32 @@ pub(super) fn take_batch(
     active_sessions: usize,
     lanes: usize,
     token_budget: usize,
+    order: DirectBatchOrder,
 ) -> (Vec<DirectIteration>, Option<BatchRejection>) {
     if queue.is_empty() {
         return (Vec::new(), None);
     }
     let (positions, rejection) = {
         let view = BatchView::of(queue, active_sessions, lanes, token_budget);
-        let selection = policy.select(&view);
-        match check_selection(&view, &selection) {
+        let arrival = policy.select(&view);
+        let yield_to_decode = order == DirectBatchOrder::DecodeTurn
+            && !arrival.0.is_empty()
+            && arrival.0.iter().all(|&position| {
+                view.queued
+                    .get(position)
+                    .is_some_and(|request| request.phase == IterationBatchPhase::Prefill)
+            });
+        let decode = if yield_to_decode {
+            select_in_arrival_order(&view, order)
+        } else {
+            Selection(Vec::new())
+        };
+        let (selection, order) = if decode.0.is_empty() {
+            (arrival, DirectBatchOrder::Arrival)
+        } else {
+            (decode, DirectBatchOrder::DecodeTurn)
+        };
+        match check_selection(&view, &selection, order) {
             Ok(()) => (selection.0, None),
             Err(rejection) => {
                 let fallback = ArrivalOrder {

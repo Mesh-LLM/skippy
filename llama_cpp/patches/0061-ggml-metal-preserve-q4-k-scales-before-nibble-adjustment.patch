@@ -1,0 +1,80 @@
+From: Skippy CI <ci@skippy.local>
+Date: Wed, 25 Nov 2026 15:50:00 +0000
+Subject: [PATCH] ggml-metal: preserve Q4_K scales before nibble adjustment
+
+Half division by 16 rounds or underflows scales before float assignment.
+Promote the division and cover exact one-term projections across dispatch widths.
+
+---
+diff --git a/ggml/src/ggml-metal/kernels/dequantize.h b/ggml/src/ggml-metal/kernels/dequantize.h
+index 54e00faf6..a56196dca 100644
+--- a/ggml/src/ggml-metal/kernels/dequantize.h
++++ b/ggml/src/ggml-metal/kernels/dequantize.h
+@@ -439,7 +439,8 @@ void dequantize_q4_K(device const block_q4_K * xb, short il, thread type4x4 & re
+     q = q + (il/4) * 32 + 16 * (il&1);
+     il = il & 3;
+     const uchar2 sc = get_scale_min_k4_just2(is, il/2, xb->scales);
+-    const float d   = il < 2 ? xb->d : xb->d / 16.h;
++    // Promote before dividing: a half intermediate rounds or loses small scales.
++    const float d   = il < 2 ? xb->d : xb->d / 16.f;
+     const float min = xb->dmin;
+     const float dl = d * sc[0];
+     const float ml = min * sc[1];
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 0d5df5901..a87c7f898 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -358,6 +358,7 @@ endif()
+ if (GGML_METAL)
+     llama_build_and_test(test-skippy-cachegen-metal.cpp)
+     llama_build_and_test(test-skippy-tracing-metal.cpp)
++    llama_build_and_test(test-skippy-q4-scale-metal.cpp)
+ endif()
+ # debug tool for chat template differential analysis (not registered as a test, run it manually)
+ llama_build(test-chat-analysis.cpp)
+diff --git a/tests/test-skippy-q4-scale-metal.cpp b/tests/test-skippy-q4-scale-metal.cpp
+new file mode 100644
+index 000000000..1ef03f2e4
+--- /dev/null
++++ b/tests/test-skippy-q4-scale-metal.cpp
+@@ -0,0 +1,40 @@
++// Exact one-term Q4_K projection regression; no model weights or quality tolerance.
++#include "ggml.h"
++#include "ggml-alloc.h"
++#include "ggml-backend.h"
++#include "ggml-metal.h"
++#include <cstring>
++#include <iostream>
++#include <stdexcept>
++#include <vector>
++int main() {
++ try {
++    auto backend=ggml_backend_metal_init();if(!backend || !ggml_backend_is_metal(backend))throw std::runtime_error("Metal required");
++    bool pass=true;
++    for(int width:{1,2,3,8,16,17,32}) {
++        auto ctx=ggml_init({16*ggml_tensor_overhead()+ggml_graph_overhead_custom(16,false),nullptr,true});
++        if(!ctx)throw std::runtime_error("context");
++        auto w=ggml_new_tensor_2d(ctx,GGML_TYPE_Q4_K,2560,8);auto x=ggml_new_tensor_2d(ctx,GGML_TYPE_F32,2560,width);auto y=ggml_mul_mat(ctx,w,x);
++        auto graph=ggml_new_graph_custom(ctx,16,false);ggml_build_forward_expand(graph,y);
++        auto buffer=ggml_backend_alloc_ctx_tensors(ctx,backend);if(!buffer)throw std::runtime_error("buffer");
++        std::vector<unsigned char> packed(8*10*144,0);std::vector<float> expected(8);
++        // Half subnormals may be flushed by Metal arithmetic; exercise the
++        // smallest normal range without depending on device denormal mode.
++        const ggml_fp16_t scales[]={0x0401,0x040f,0x0801,0x1fff,0x2401,0x37ff,0x3c00,0x4000};
++        for(int row=0;row<8;++row) {
++            auto p=packed.data()+row*10*144;std::memcpy(p,&scales[row],2);p[4+1]=1;p[16]=0x10;
++            expected[row]=ggml_fp16_to_fp32(scales[row]);
++        }
++        std::vector<float> input(2560*width,0),actual(8*width);
++        for(int lane=0;lane<width;++lane)input[lane*2560+32]=1;
++        ggml_backend_tensor_set(w,packed.data(),0,packed.size());ggml_backend_tensor_set(x,input.data(),0,input.size()*4);
++        if(ggml_backend_graph_compute(backend,graph)!=GGML_STATUS_SUCCESS)throw std::runtime_error("compute");
++        ggml_backend_synchronize(backend);ggml_backend_tensor_get(y,actual.data(),0,actual.size()*4);
++        size_t mismatches=0;
++        for(int lane=0;lane<width;++lane)for(int row=0;row<8;++row)if(std::memcmp(&expected[row],&actual[lane*8+row],4)!=0)
++            ++mismatches;
++        pass=pass && mismatches==0;std::cout<<"width="<<width<<" mismatches="<<mismatches<<'\n';ggml_backend_buffer_free(buffer);ggml_free(ctx);
++    }
++    std::cout<<"backend="<<ggml_backend_name(backend)<<" pass="<<pass<<'\n';ggml_backend_free(backend);return pass?0:2;
++ }catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}
++}
