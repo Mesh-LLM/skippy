@@ -1,4 +1,6 @@
 use super::*;
+use anyhow::Context;
+use std::{collections::VecDeque, num::NonZeroU64};
 
 #[derive(Clone, Copy)]
 pub(in crate::kv_integration) struct DurableRecordTarget<'a> {
@@ -18,6 +20,21 @@ pub(in crate::kv_integration) struct PendingDurableSpill {
     pub(in crate::kv_integration) token_ids: Vec<i32>,
     pub(in crate::kv_integration) native_raw: bool,
     pub(in crate::kv_integration) l3_cost: Option<skippy_cache::policy::CostSample>,
+    pub(in crate::kv_integration) extension: Option<NativeSpillExtension>,
+}
+
+#[derive(Debug)]
+pub(in crate::kv_integration) struct NativeSpillExtension {
+    pub(in crate::kv_integration) base: skippy_cache::L3Location,
+    pub(in crate::kv_integration) reused_rows: NonZeroU64,
+    pub(in crate::kv_integration) geometry: PayloadGeometry,
+}
+
+#[derive(Debug)]
+struct NativeCheckpoint {
+    namespace: String,
+    tokens: Vec<i32>,
+    location: skippy_cache::L3Location,
 }
 
 pub(in crate::kv_integration) struct DurableSpillReservation {
@@ -43,15 +60,83 @@ pub(in crate::kv_integration) struct DurableSpillSender {
     tx: std::sync::mpsc::SyncSender<QueuedDurableSpill>,
     held_bytes: Arc<std::sync::atomic::AtomicU64>,
     byte_cap: u64,
+    recent_checkpoints: Arc<Mutex<VecDeque<NativeCheckpoint>>>,
 }
 
 impl DurableSpillSender {
+    pub(in crate::kv_integration) fn has_native_checkpoint(
+        &self,
+        namespace: &str,
+        tokens: &[i32],
+    ) -> bool {
+        self.recent_checkpoints
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .any(|entry| entry.namespace == namespace && entry.tokens == tokens)
+    }
+
     fn new(tx: std::sync::mpsc::SyncSender<QueuedDurableSpill>, byte_cap: u64) -> Self {
         Self {
             tx,
             held_bytes: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             byte_cap,
+            recent_checkpoints: Arc::default(),
         }
+    }
+
+    pub(in crate::kv_integration) fn native_base(
+        &self,
+        namespace: &str,
+        tokens: &[i32],
+    ) -> Option<skippy_cache::L3Location> {
+        self.recent_checkpoints
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|entry| {
+                entry.namespace == namespace
+                    && entry.tokens.len() < tokens.len()
+                    && tokens.starts_with(&entry.tokens)
+            })
+            .max_by_key(|entry| entry.tokens.len())
+            .map(|entry| entry.location.clone())
+    }
+
+    pub(in crate::kv_integration) fn remember_loaded(
+        &self,
+        namespace: &str,
+        tokens: &[i32],
+        location: &skippy_cache::L3Location,
+    ) {
+        if location.native_kv_passthrough
+            && let Ok(len) = usize::try_from(location.token_count)
+            && let Some(prefix) = tokens.get(..len)
+        {
+            Self::remember_native_checkpoint(
+                &self.recent_checkpoints,
+                NativeCheckpoint {
+                    namespace: namespace.to_owned(),
+                    tokens: prefix.to_vec(),
+                    location: location.clone(),
+                },
+            );
+        }
+    }
+
+    fn remember_native_checkpoint(
+        recent: &Mutex<VecDeque<NativeCheckpoint>>,
+        checkpoint: NativeCheckpoint,
+    ) {
+        const RECENT_NATIVE_CHECKPOINTS: usize = 16;
+        let mut recent = recent
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        recent.retain(|entry| entry.location.manifest_key != checkpoint.location.manifest_key);
+        if recent.len() >= RECENT_NATIVE_CHECKPOINTS {
+            recent.pop_front();
+        }
+        recent.push_back(checkpoint);
     }
 
     /// Reserve bounded host bytes before materializing a native cold prefix.
@@ -146,6 +231,7 @@ pub(in crate::kv_integration) fn start_durable_spill_worker(
     };
     let (tx, rx) = std::sync::mpsc::sync_channel::<QueuedDurableSpill>(EXACT_STATE_RECORD_CAPACITY);
     let sender = DurableSpillSender::new(tx, byte_cap);
+    let recent_checkpoints = Arc::clone(&sender.recent_checkpoints);
     let task = std::thread::Builder::new()
         .name(format!("skippy-l3-spill-{stage_id}"))
         .spawn(move || {
@@ -161,7 +247,33 @@ pub(in crate::kv_integration) fn start_durable_spill_worker(
                 while pause.load(std::sync::atomic::Ordering::Acquire) {
                     std::thread::sleep(std::time::Duration::from_millis(2));
                 }
+                let prefix = pending
+                    .native_raw
+                    .then(|| (pending.namespace.clone(), pending.token_ids.clone()));
+                let reused_base = pending
+                    .extension
+                    .as_ref()
+                    .map(|extension| extension.base.manifest_key.clone());
                 spill_exact_record_to_l3(&l3, cachegen_enabled, pending);
+                if let Some((namespace, tokens)) = prefix
+                    && let Ok(Some(location)) = l3.locate_longest(&namespace, &tokens, 1)
+                    && location.token_count == tokens.len() as u64
+                    && location.native_kv_passthrough
+                {
+                    DurableSpillSender::remember_native_checkpoint(
+                        &recent_checkpoints,
+                        NativeCheckpoint {
+                            namespace,
+                            tokens,
+                            location,
+                        },
+                    );
+                } else if let Some(base) = reused_base {
+                    recent_checkpoints
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .retain(|entry| entry.location.manifest_key != base);
+                }
             }
         })?;
     Ok((Some(sender), Some(task)))
@@ -181,6 +293,7 @@ pub(in crate::kv_integration) fn spill_exact_record_to_l3(
         token_ids,
         l3_cost,
         native_raw,
+        extension,
     } = pending;
     // Native eviction already owns the runtime and resident index. Resolve
     // committed disk entries here on the durable worker, never under either
@@ -243,16 +356,27 @@ pub(in crate::kv_integration) fn spill_exact_record_to_l3(
     } else {
         None
     };
-    let spill = cachegen_spill.unwrap_or_else(|| {
-        l3.spill_with_cost(
+    let spill = if let Some(extension) = extension {
+        spill_native_extension(
+            l3,
             &namespace,
             &token_ids,
             &payload,
             kv_desc_json,
-            geometry.as_ref(),
-            l3_cost,
+            &extension,
         )
-    });
+    } else {
+        cachegen_spill.unwrap_or_else(|| {
+            l3.spill_with_cost(
+                &namespace,
+                &token_ids,
+                &payload,
+                kv_desc_json,
+                geometry.as_ref(),
+                l3_cost,
+            )
+        })
+    };
     emit_l3_state_transitions(l3);
     if let Err(error) = spill {
         static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -265,6 +389,33 @@ pub(in crate::kv_integration) fn spill_exact_record_to_l3(
             );
         }
     }
+}
+
+fn spill_native_extension(
+    l3: &L3Tier,
+    namespace: &str,
+    tokens: &[i32],
+    payload: &skippy_cache::ExactStatePayload,
+    descriptor: Option<String>,
+    extension: &NativeSpillExtension,
+) -> Result<Option<String>> {
+    let descriptor = descriptor.context("native extension has no full checkpoint descriptor")?;
+    let kv = payload
+        .kv_bytes()?
+        .context("native extension has no KV suffix")?;
+    let recurrent = payload.recurrent_state_bytes()?;
+    l3.spill_native_extension(
+        namespace,
+        tokens,
+        skippy_cache::NativeKvExtension {
+            base: &extension.base,
+            reused_rows: extension.reused_rows,
+            geometry: &extension.geometry,
+            kv_desc_json: descriptor,
+            kv_tail: &kv,
+            recurrent: &recurrent,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -280,6 +431,7 @@ mod tests {
             token_ids: vec![1, 2],
             l3_cost: None,
             native_raw: false,
+            extension: None,
         }
     }
 

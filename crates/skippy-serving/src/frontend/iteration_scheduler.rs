@@ -1013,6 +1013,7 @@ impl SchedulerWorker {
             {
                 break;
             }
+            let mut commands_drained = false;
             for _ in 0..self.max_commands_per_turn {
                 match self.commands.try_recv() {
                     Ok(SchedulerCommand::Shutdown) => {
@@ -1020,7 +1021,10 @@ impl SchedulerWorker {
                         return;
                     }
                     Ok(command) => self.handle_command(command),
-                    Err(std_mpsc::TryRecvError::Empty) => break,
+                    Err(std_mpsc::TryRecvError::Empty) => {
+                        commands_drained = true;
+                        break;
+                    }
                     Err(std_mpsc::TryRecvError::Disconnected) => return,
                 }
             }
@@ -1038,6 +1042,9 @@ impl SchedulerWorker {
                 && self.drafts.is_empty()
                 && self.cache_runtime_queue.is_empty()
             {
+                if commands_drained && !self.capture_prefix_during_idle() {
+                    return;
+                }
                 continue;
             }
             self.refresh_cache_wave_sessions();

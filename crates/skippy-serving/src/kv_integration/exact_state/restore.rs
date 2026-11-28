@@ -2,6 +2,37 @@
 use super::*;
 
 impl KvStageIntegration {
+    /// Exact prefix import materializes KV cells before suffix admission.
+    /// Make room in the same runtime operation as the import. Protect a
+    /// matching resident prefix so it can still serve a failed durable fill.
+    pub(in crate::kv_integration) fn admit_native_prefix_import(
+        &self,
+        runtime: &mut RuntimeState,
+        session_id: &str,
+        identity: &PrefillKvIdentity,
+        token_count: u64,
+    ) -> Result<bool> {
+        if self.payload != StagePrefixCachePayload::ResidentKv
+            || runtime.session_token_count(session_id).unwrap_or_default() != 0
+        {
+            // In-place imports own an existing range and can replace its cells.
+            return Ok(true);
+        }
+        let capacity = u64::from(runtime.kv_pool_tokens());
+        if token_count > capacity {
+            return Ok(false);
+        }
+        runtime.ensure_session_active(session_id)?;
+        let free_cells = capacity.saturating_sub(runtime.memory_used_cells(session_id)?);
+        if free_cells >= token_count {
+            return Ok(true);
+        }
+        let protected = self.probe_resident_prefix(identity).map(|hit| hit.seq_id);
+        Ok(self
+            .admit_resident_capacity(runtime, session_id, token_count, 0, 0, protected)?
+            .admitted)
+    }
+
     /// Synchronously locate and restore an exact prefix. Scheduled callers use
     /// prepared metadata so this lookup does not hold the shared runtime lock.
     pub fn restore_exact_state(

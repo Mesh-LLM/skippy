@@ -301,7 +301,7 @@ fn native_checkpoint_ram_budget_works_without_disk() {
         .kv_cache
         .as_mut()
         .expect("enabled cache config")
-        .l2_max_bytes = 64 * 1024 * 1024;
+        .l1_checkpoint_max_bytes = std::num::NonZeroU64::new(64 * 1024 * 1024);
 
     let kv = KvStageIntegration::from_loaded_model_with_l3_manager(
         &config,

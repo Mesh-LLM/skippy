@@ -85,10 +85,11 @@ working set grows.
 Recurrent checkpoints consume host RAM independently of the attention pool.
 Their budget is bounded and does not require a disk cache. An entry that cannot
 fit the checkpoint budget is not retained; it cannot remain indefinitely over
-budget merely because it is the last entry. Standalone
-`--prefix-cache-ram SIZE` supplies this
-budget. A zero/unset value selects the bounded 1 GiB native-cache default;
-disable prefix caching itself to retain no entries.
+budget merely because it is the last entry. Set
+`--prefix-cache-checkpoint-ram SIZE` to override the 1 GiB default.
+`--prefix-cache-ram` controls the separate L2 host-RAM tier. Move an
+existing native checkpoint override to the new flag to preserve its size.
+Disable prefix caching itself to retain no entries.
 
 ## Admission
 
@@ -113,11 +114,11 @@ prompt chunks with decode rows is visible per native batch on the
 
 ## Persistence boundary
 
-The resident path does not eagerly export complete KV state into a blob store
-or mirror every new prefix to disk. When persistent L3 is enabled, eviction is
-the cold offload boundary: serving exports the retained attention cells and
-their recurrent checkpoint, then queues a bounded durable write before
-releasing native cache ownership. Disk payload integrity remains verified.
+The resident path reclaims cells immediately when it evicts a prefix.
+With L3 enabled, the scheduler can capture one retained prefix while the
+runtime is idle and hand its owned payload to the disk writer. A prefix can
+be evicted before capture or skipped when the export or writer queue exceeds
+its byte limit. L3 verifies payload integrity on restore.
 
 An L3 fill restores the complete state after a resident miss and can warm the
 native radix cache again. Completed durable records survive a process restart.

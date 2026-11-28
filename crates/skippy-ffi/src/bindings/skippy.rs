@@ -6,7 +6,7 @@
 
 pub const SKIPPY_ABI_VERSION_MAJOR: u32 = 0;
 pub const SKIPPY_ABI_VERSION_MINOR: u32 = 1;
-pub const SKIPPY_ABI_VERSION_PATCH: u32 = 90;
+pub const SKIPPY_ABI_VERSION_PATCH: u32 = 92;
 pub const SKIPPY_ACTIVATION_FRAME_VERSION: u32 = 2;
 pub const SKIPPY_ACTIVATION_BOUNDARY_DESC_VERSION: u32 = 2;
 pub const SKIPPY_ACTIVATION_IDENTITY_BYTES: u32 = 32;
@@ -1635,6 +1635,23 @@ unsafe extern "C" {
         desc: *const skippy_kv_page_desc,
         input: *const ::std::os::raw::c_void,
         input_bytes: usize,
+        out_error: *mut *mut skippy_error,
+    ) -> skippy_status;
+}
+#[doc = " @brief A borrowed range of raw KV page bytes."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct skippy_kv_page_chunk {
+    pub data: *const ::std::os::raw::c_void,
+    pub bytes: usize,
+}
+unsafe extern "C" {
+    #[doc = " @brief Imports a single raw KV page from non-empty chunks in wire order.\n The ranges must remain readable until return and together cover exactly\n desc->payload_bytes. Unsupported layouts or backends leave the session\n untouched, so the caller can retry with a contiguous payload."]
+    pub fn skippy_import_kv_page_chunks(
+        session: *mut skippy_session,
+        desc: *const skippy_kv_page_desc,
+        chunks: *const skippy_kv_page_chunk,
+        chunk_count: usize,
         out_error: *mut *mut skippy_error,
     ) -> skippy_status;
 }

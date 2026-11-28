@@ -914,7 +914,7 @@ fn future_version_raw_manifest_is_refused_at_commit_and_leaves_no_manifest() {
     let (mut manifest, held) = manifest_for(&store, &payload, 4096);
     // A supported (raw) codec but an unknown future version: commit must refuse
     // it, or it would persist a manifest load_manifest immediately rejects.
-    manifest.version = MANIFEST_VERSION + 1;
+    manifest.version = CHECKPOINT_MANIFEST_VERSION + 1;
     let error = store
         .commit(&manifest)
         .expect_err("a future manifest version must not commit");
@@ -938,7 +938,7 @@ fn future_version_raw_manifest_is_refused_before_assembly() {
     let mut loaded = store
         .load_manifest(&manifest.payload_digest)
         .expect("load manifest");
-    loaded.version = MANIFEST_VERSION + 1;
+    loaded.version = CHECKPOINT_MANIFEST_VERSION + 1;
     let error = store
         .assemble(&loaded)
         .expect_err("a future manifest version must not assemble");

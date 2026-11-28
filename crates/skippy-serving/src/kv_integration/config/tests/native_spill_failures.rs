@@ -14,6 +14,7 @@ fn pending(token: i32, bytes: usize) -> PendingDurableSpill {
         namespace: "native-test".into(),
         token_ids: vec![token],
         native_raw: true,
+        extension: None,
         l3_cost: None,
     }
 }

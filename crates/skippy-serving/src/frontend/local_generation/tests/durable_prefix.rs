@@ -110,6 +110,65 @@ struct CheckpointPreferenceCase {
 
 #[test]
 #[ignore = "requires SKIPPY_RECURRENT_CACHE_TEST_MODEL and _LAYERS; run explicitly with --ignored"]
+fn native_exact_prefix_import_admits_capacity_first() -> Result<()> {
+    for expected_source in ["l3", "l2"] {
+        let root = tempfile::tempdir()?;
+        let CheckpointPreferenceCase {
+            backend,
+            tokens,
+            attention,
+            recurrent,
+            ..
+        } = checkpoint_preference_case(root.path())?;
+        let kv = backend.kv.as_ref().unwrap();
+        let target = identity(&backend, &tokens);
+        if expected_source == "l2" {
+            let fill = kv
+                .l3
+                .as_ref()
+                .unwrap()
+                .fill_longest(&target.namespace, &tokens, 64)?
+                .unwrap();
+            assert!(kv.l2.as_ref().unwrap().promote(
+                &target.namespace,
+                &tokens,
+                &fill.manifest,
+                &fill.payload,
+            ));
+        }
+
+        let mut runtime = backend.runtime.lock().unwrap();
+        runtime.ensure_session_active("pressure")?;
+        let capacity = u64::from(runtime.kv_pool_tokens());
+        let occupied = runtime.memory_used_cells("pressure")?;
+        let pressure_tokens = vec![9; usize::try_from(capacity - occupied)?];
+        let unrelated = identity(&backend, &pressure_tokens);
+        runtime.prefill("pressure", &pressure_tokens)?;
+        kv.record_resident_prefix(&mut runtime, "pressure", &unrelated, &pressure_tokens)?
+            .unwrap();
+        runtime.drop_session_timed("pressure")?;
+        runtime.ensure_session_active("target")?;
+        assert!(capacity - runtime.memory_used_cells("target")? < tokens.len() as u64);
+
+        let restored = kv
+            .restore_exact_state(&mut runtime, "target", std::slice::from_ref(&target))?
+            .expect("exact restore should reclaim cells before importing");
+        assert_eq!(restored.source, expected_source);
+        assert_eq!(restored.token_count, tokens.len());
+        assert!(kv.probe_resident_prefix(&unrelated).is_none());
+        assert_eq!(
+            runtime
+                .export_kv_page("target", 0, tokens.len() as u64)?
+                .payload,
+            attention
+        );
+        assert_eq!(runtime.export_recurrent_state("target")?, recurrent);
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires SKIPPY_RECURRENT_CACHE_TEST_MODEL and _LAYERS; run explicitly with --ignored"]
 fn failed_long_l3_import_rolls_back_then_reuses_the_short_native_owner() -> Result<()> {
     let root = tempfile::tempdir()?;
     let case = checkpoint_preference_case(root.path())?;
@@ -205,6 +264,7 @@ fn checkpoint_preference_case(root: &Path) -> Result<CheckpointPreferenceCase> {
         kv.record_resident_prefix(&mut rt, "long-source", &long, &tokens)?
             .unwrap();
         rt.drop_session_timed("long-source")?;
+        assert!(kv.capture_resident_prefix_for_l3(&mut rt, &long)?);
         rt.ensure_session_active("eviction")?;
         assert_eq!(
             kv.evict_resident_prefix_for_tokens(&mut rt, "eviction", u64::MAX)?
@@ -277,7 +337,7 @@ fn capture_and_commit(root: &Path) -> Result<PrefixReference> {
             assert!(!attention.is_empty());
             assert!(!recurrent.is_empty());
             let record = kv
-                .record_resident_prefix(&mut runtime, "source", &stored, &tokens)?
+                .record_resident_prefix_for_idle_capture(&mut runtime, "source", &stored, &tokens)?
                 .expect("native checkpoint captured");
             assert!(record.stored);
             assert!(kv.probe_resident_prefix(&stored).is_some());
@@ -293,13 +353,15 @@ fn capture_and_commit(root: &Path) -> Result<PrefixReference> {
                 .iter()
                 .map(|&token| runtime.decode("source", token))
                 .collect::<Result<Vec<_>>>()?;
-            runtime.drop_session_timed("source")?;
-            runtime.ensure_session_active("eviction")?;
-            let evicted =
-                kv.evict_resident_prefix_for_tokens(&mut runtime, "eviction", u64::MAX)?;
-            assert_eq!(evicted.evicted_entries, 1);
             (attention, recurrent, output)
         };
+        backend
+            .iteration_scheduler
+            .execute_runtime("finish-source", |runtime| {
+                runtime
+                    .drop_session_timed("source")
+                    .map_err(crate::frontend::util::openai_backend_error)
+            })?;
         let l3 = kv.l3.as_ref().expect("persistent tier enabled");
         let deadline = Instant::now() + Duration::from_secs(30);
         loop {
@@ -312,6 +374,14 @@ fn capture_and_commit(root: &Path) -> Result<PrefixReference> {
                 "cold offload did not commit to L3"
             );
             thread::sleep(Duration::from_millis(2));
+        }
+        {
+            let mut runtime = backend.runtime.lock().unwrap();
+            runtime.ensure_session_active("eviction")?;
+            let evicted =
+                kv.evict_resident_prefix_for_tokens(&mut runtime, "eviction", u64::MAX)?;
+            assert_eq!(evicted.evicted_entries, 1);
+            assert_eq!(runtime.memory_used_cells("eviction")?, 0);
         }
         PrefixReference {
             seed_process_id: std::process::id(),
@@ -442,7 +512,9 @@ fn native_cold_offload_refusal_keeps_inference_usable() -> Result<()> {
             .map(|&token| runtime.decode("source", token))
             .collect::<Result<Vec<_>>>()?;
         runtime.drop_session_timed("source")?;
+        assert!(kv.capture_resident_prefix_for_l3(&mut runtime, &stored)?);
         runtime.ensure_session_active("reuse")?;
+        assert!(!kv.capture_resident_prefix_for_l3(&mut runtime, &stored)?);
         assert_eq!(
             kv.evict_resident_prefix_for_tokens(&mut runtime, "reuse", u64::MAX)?
                 .evicted_entries,

@@ -851,7 +851,7 @@ mod tests {
         fs::write(root.join("manifests/corrupt.json"), b"{").unwrap();
         let mut incompatible =
             crate::HandoffManifest::new("state".to_string(), "full-state".to_string());
-        incompatible.version = crate::MANIFEST_VERSION + 1;
+        incompatible.version = crate::CHECKPOINT_MANIFEST_VERSION + 1;
         incompatible.payload_digest = "incompatible".to_string();
         fs::write(
             root.join("manifests/incompatible.json"),

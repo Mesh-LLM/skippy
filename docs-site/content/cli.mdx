@@ -88,6 +88,8 @@ run its full path, such as `skippy models download --help`.
 | `--n-gpu-layers N` | Set the number of local model layers to offload. Use `-1` to offload all supported layers. |
 | `--gpu-id ID` | Pin an offloaded local model to a stable GPU ID. Use `doctor --device-inventory` to inspect IDs and visibility. |
 | `--generation-concurrency N` | Set the maximum active generation requests. Automatic local planning defaults to four lanes sharing a KV pool. |
+| `--prefix-cache-checkpoint-ram SIZE` | Set the native L1 recurrent-checkpoint budget. The default is 1 GiB. |
+| `--prefix-cache-ram SIZE` | Set the separate L2 host-RAM budget for disk fills. Use `off` to disable L2. |
 | `--mmproj PATH` | Select a multimodal projector GGUF. By default, Skippy looks for a matching installed projector. |
 | `--on-demand` | Defer an unsplit model's native load until the first inference request. Eager loading is the default. |
 | `--idle-evict-secs N` | Release an unsplit model after 1–86,400 idle seconds. Omit to disable idle eviction. |

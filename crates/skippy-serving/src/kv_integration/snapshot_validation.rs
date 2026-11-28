@@ -63,6 +63,7 @@ mod tests {
                 max_entries: 4,
                 max_bytes: 0,
                 l2_max_bytes: 0,
+                l1_checkpoint_max_bytes: None,
                 exact_max_bytes: None,
                 codec: skippy_protocol::StageKvCacheCodec::Native,
                 min_tokens: 1,

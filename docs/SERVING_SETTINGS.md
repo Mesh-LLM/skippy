@@ -376,7 +376,8 @@ known size. Use them without `--prompt` or `--stage-transport`.
 | `--prefix-cache` | `prefix_cache` | Prompt reuse: auto, on, off, record |
 | `--prefix-cache-codec` | `prefix_cache_codec` | Durable representation: native or experimental cachegen |
 | `--prefix-cache-budget` | `prefix_cache_budget` | Retention target: auto, unbounded, or IEC size; exact snapshots may exceed it |
-| `--prefix-cache-ram` | `prefix_cache_ram` | Native recurrent-checkpoint RAM budget, independent of disk; off/unset selects the bounded default. Serialized runtimes use an optional host-RAM tier requiring disk caching |
+| `--prefix-cache-ram` | `prefix_cache_ram` | L2 host-RAM tier for disk fills. Use off or a fixed IEC size. |
+| `--prefix-cache-checkpoint-ram` | `prefix_cache_checkpoint_ram` | L1 recurrent-checkpoint RAM. Use auto for 1 GiB or a positive IEC size. |
 | `--prefix-cache-max-entries` | `prefix_cache_max_entries` | Maximum retained prefix entries |
 | `--prefix-cache-min-tokens` | `prefix_cache_min_tokens` | Minimum prefix length to record or reuse |
 | `--prefix-cache-stride-tokens` | `prefix_cache_stride_tokens` | Shared-prefix checkpoint spacing in tokens |

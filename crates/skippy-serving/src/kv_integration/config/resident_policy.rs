@@ -1,16 +1,13 @@
 //! Native radix prefixes own shared KV references and bounded recurrent host state.
 use skippy_protocol::StageKvCacheConfig;
+use std::num::NonZeroU64;
 
-/// Zero RAM mirrors means use the native checkpoint default, not disable prefix reuse.
-/// Disabling the stage cache itself remains the explicit off switch.
 const DEFAULT_CHECKPOINT_BYTES: u64 = 1024 * 1024 * 1024;
 
 pub(super) fn checkpoint_budget(cache: &StageKvCacheConfig) -> u64 {
-    if cache.l2_max_bytes > 0 {
-        cache.l2_max_bytes
-    } else {
-        DEFAULT_CHECKPOINT_BYTES
-    }
+    cache
+        .l1_checkpoint_max_bytes
+        .map_or(DEFAULT_CHECKPOINT_BYTES, NonZeroU64::get)
 }
 
 #[cfg(test)]
@@ -18,11 +15,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn checkpoint_ram_budget_is_independent_of_disk_and_attention_estimates() {
+    fn checkpoint_ram_budget_is_independent_of_l2_and_attention_estimates() {
         let cache = StageKvCacheConfig {
             max_bytes: 32,
             exact_max_bytes: Some(64),
             l2_max_bytes: 256,
+            l1_checkpoint_max_bytes: None,
             mode: skippy_protocol::StageKvCacheMode::LookupRecord,
             max_entries: 64,
             codec: Default::default(),
@@ -32,13 +30,13 @@ mod tests {
             prefill_admission: Default::default(),
             retention: Default::default(),
         };
-        assert_eq!(checkpoint_budget(&cache), 256);
+        assert_eq!(checkpoint_budget(&cache), DEFAULT_CHECKPOINT_BYTES);
         assert_eq!(
             checkpoint_budget(&StageKvCacheConfig {
-                l2_max_bytes: 0,
+                l1_checkpoint_max_bytes: NonZeroU64::new(512),
                 ..cache
             }),
-            DEFAULT_CHECKPOINT_BYTES
+            512
         );
     }
 }

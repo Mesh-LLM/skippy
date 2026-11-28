@@ -132,8 +132,8 @@ fn observe(
     let manager = tiers::open_store(directory)?;
     let cache = runner.enable_cache(Some(manager.clone()))?;
     let seed = observation.seed.insert(runner.generate(original)?);
-    tiers::evict_l1(&runner, &cache)?;
     observation.checkpoint = Some(tiers::published_checkpoint(runner.family, &manager, seed)?);
+    tiers::evict_l1(&runner, &cache)?;
     for attempt in 0..3 {
         if attempt > 0 {
             tiers::evict_l1(&runner, &cache)?;

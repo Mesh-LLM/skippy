@@ -143,10 +143,12 @@ impl StageOpenAiBackend {
         {
             return Err(InferenceError::backend("request cancelled"));
         }
-        let prepared_restore = self
-            .kv
-            .as_ref()
-            .map(|kv| kv.prepare_exact_state_restore(lookup_identities.as_ref(), false));
+        let prepared_restore = self.kv.as_ref().map(|kv| {
+            kv.prepare_standalone_restore(&lookup_identities, cache_operation_deadline, |tokens| {
+                self.generation_service_estimator
+                    .estimated_prefill_ms(tokens)
+            })
+        });
         let outcome = self.iteration_scheduler.execute_cache_aware_runtime_timed(
             "feature-kv-restore-prefill-record",
             crate::frontend::iteration_scheduler::cache_runtime::CacheAwareRuntimeRequest {

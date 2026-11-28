@@ -440,7 +440,7 @@ impl StageOpenAiBackend {
                                 .unwrap_or(usize::MAX)
                                 .min(scheduler_token_ids.len());
                             scheduler_kv
-                                .record_resident_prefix(
+                                .record_resident_prefix_for_idle_capture(
                                     runtime,
                                     &scheduler_session_id,
                                     identity,
@@ -553,7 +553,7 @@ impl StageOpenAiBackend {
                             .unwrap_or(usize::MAX)
                             .min(scheduler_token_ids.len());
                         scheduler_kv
-                            .record_resident_prefix(
+                            .record_resident_prefix_for_idle_capture(
                                 runtime,
                                 &scheduler_session_id,
                                 identity,
@@ -1306,6 +1306,7 @@ mod tests {
                 max_entries: 8,
                 max_bytes: 0,
                 l2_max_bytes: 0,
+                l1_checkpoint_max_bytes: None,
                 codec: skippy_protocol::StageKvCacheCodec::Native,
                 min_tokens: 1,
                 shared_prefix_stride_tokens: 1,
@@ -1396,6 +1397,7 @@ mod tests {
                 max_entries: 8,
                 max_bytes: 0,
                 l2_max_bytes: 0,
+                l1_checkpoint_max_bytes: None,
                 codec: skippy_protocol::StageKvCacheCodec::Native,
                 min_tokens: 1,
                 shared_prefix_stride_tokens: 1,

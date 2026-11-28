@@ -15,8 +15,8 @@ use super::{
 const MAX_PREFIX_PROBES: usize = 64;
 
 mod resident_preference;
-use resident_preference::DurableRestoreLookup;
 pub(crate) use resident_preference::PreparedExactStateRestore;
+use resident_preference::{DurableFill, DurableRestoreLookup};
 mod restore;
 mod snapshot_headroom;
 
@@ -255,6 +255,7 @@ impl KvStageIntegration {
                     DurableRestoreLookup {
                         started: lookup_started,
                         location,
+                        fill: candidate.fill,
                     },
                     cold_prefill_cost,
                 )? {
@@ -329,6 +330,14 @@ impl KvStageIntegration {
                                     return Err(anyhow::anyhow!(
                                         "cached KV page token range mismatch for exact-state checkpoint"
                                     ));
+                                }
+                                if !self.admit_native_prefix_import(
+                                    runtime,
+                                    session_id,
+                                    identity,
+                                    token_count,
+                                )? {
+                                    return Ok(false);
                                 }
                                 let import_started = Instant::now();
                                 runtime.import_kv_page(session_id, desc, kv.as_ref())?;
@@ -440,7 +449,7 @@ impl KvStageIntegration {
                         token_ids: stored_tokens,
                         l3_fill_claim: None,
                         write_through_l3: true,
-                        l2_promotion_digest: None,
+                        l2_promotion_manifest: None,
                         l3_cost: None,
                         admission_credit,
                     }),
@@ -881,7 +890,7 @@ impl KvStageIntegration {
             token_ids: identity.token_ids.clone(),
             l3_fill_claim: None,
             write_through_l3,
-            l2_promotion_digest: None,
+            l2_promotion_manifest: None,
             l3_cost,
             admission_credit,
         }) {
@@ -951,6 +960,9 @@ impl KvStageIntegration {
         {
             return Ok(Some(restored));
         }
+        if matches!(lookup.fill, DurableFill::Skip) {
+            return Ok(None);
+        }
         // Segment and manifest digests intentionally deduplicate bytes across
         // numerical states. A fill claim must not: one state's fill cannot
         // warm another state's radix namespace, even when their payload bytes
@@ -965,15 +977,8 @@ impl KvStageIntegration {
                 return Ok(None);
             }
         }
-        let outcome = self.fill_and_import(
-            runtime,
-            session_id,
-            identity,
-            lookup.started,
-            l3,
-            location,
-            cold_prefill_cost,
-        );
+        let outcome =
+            self.fill_and_import(runtime, session_id, identity, l3, lookup, cold_prefill_cost);
         // On success the claim travels with the re-warm record and the worker
         // releases it once the entry is radix-resident. On any other outcome
         // release it here.
@@ -993,11 +998,12 @@ impl KvStageIntegration {
         runtime: &mut RuntimeState,
         session_id: &str,
         identity: &PrefillKvIdentity,
-        lookup_started: Instant,
         l3: &std::sync::Arc<skippy_cache::L3Tier>,
-        location: &skippy_cache::L3Location,
+        lookup: DurableRestoreLookup<'_>,
         cold_prefill_cost: Option<f64>,
     ) -> Result<Option<ExactStateRestore>> {
+        let location = lookup.location;
+        let lookup_started = lookup.started;
         // Native page capability is checked from manifest metadata before the
         // tier reads any segment bytes. Runtime ABI, platform and numerical
         // mode are already bound by the tier's exact-state identity; the page
@@ -1005,18 +1011,24 @@ impl KvStageIntegration {
         let Ok(native_kv_desc) = preflight_l3_kv_location(location) else {
             return Ok(None);
         };
-        let fill_started = Instant::now();
         // A load failure (corrupt segment, now quarantined) is a miss, not a
         // request failure. Import failures below do propagate: the transaction
         // rolls the lane back and the caller falls back to cold prefill.
-        let fill = match l3.load(location) {
-            Ok(fill) => fill,
-            Err(_) => {
-                if let Some(l2) = &self.l2 {
-                    l2.invalidate_digest(&location.manifest_key);
+        let (fill, fill_elapsed, prior_fill_elapsed) = match lookup.fill {
+            DurableFill::Staged(staged) => (staged.fill.clone(), staged.elapsed, staged.elapsed),
+            DurableFill::Inline => {
+                let started = Instant::now();
+                match l3.load(location) {
+                    Ok(fill) => (fill, started.elapsed(), std::time::Duration::ZERO),
+                    Err(_) => {
+                        if let Some(l2) = &self.l2 {
+                            l2.invalidate_digest(&location.manifest_key);
+                        }
+                        return Ok(None);
+                    }
                 }
-                return Ok(None);
             }
+            DurableFill::Skip => return Ok(None),
         };
         if fill.payload.byte_len() == 0 {
             return Ok(None);
@@ -1032,7 +1044,7 @@ impl KvStageIntegration {
         if !self.native_payload_is_complete(fill.payload.kind()) {
             return Ok(None);
         }
-        let fill_ms = fill_started.elapsed().as_secs_f64() * 1000.0;
+        let fill_ms = fill_elapsed.as_secs_f64() * 1000.0;
         let token_count = fill.token_count;
         let kv_desc: Option<skippy_runtime::RuntimeKvPageDesc> = native_kv_desc.or_else(|| {
             fill.kv_desc_json
@@ -1117,6 +1129,14 @@ impl KvStageIntegration {
                     return Ok(None);
                 }
                 if let Some((kv, desc)) = kv_page {
+                    if !self.admit_native_prefix_import(
+                        runtime,
+                        session_id,
+                        identity,
+                        token_count,
+                    )? {
+                        return Ok(None);
+                    }
                     let import_started = Instant::now();
                     if fill.cachegen_kv {
                         runtime.import_cachegen_kv_page(session_id, desc, kv.as_ref())?;
@@ -1150,11 +1170,11 @@ impl KvStageIntegration {
             fill.payload.byte_len()
         };
         let payload_kind = fill.payload.kind();
-        let restore_cost = lookup_started.elapsed().as_secs_f64() * 1_000.0;
+        let restore_cost = (prior_fill_elapsed + lookup_started.elapsed()).as_secs_f64() * 1_000.0;
         l3.benefit_observe_l3_restore(
             &identity.namespace,
             &identity.token_ids[..token_count as usize],
-            location,
+            &fill.manifest,
             cold_prefill_cost,
             restore_cost,
         );
@@ -1163,15 +1183,15 @@ impl KvStageIntegration {
         if resident {
             self.rewarm_resident_prefix(runtime, session_id, identity, tokens)?;
         }
-        let l2_promotion_digest = if fill.cachegen_kv {
+        let l2_promotion_manifest = if fill.cachegen_kv {
             None
         } else {
             self.l2.as_ref().and_then(|l2| {
                 l2.consider_l3_fill(&location.manifest_key, token_count, fill.payload.byte_len())
-                    .then(|| location.manifest_key.clone())
+                    .then(|| Box::new(fill.manifest))
             })
         };
-        if fill.cachegen_kv || (resident && l2_promotion_digest.is_none()) {
+        if fill.cachegen_kv || (resident && l2_promotion_manifest.is_none()) {
             return Ok(Some(ExactStateRestore {
                 page_id: identity.page_id.clone(),
                 token_count: token_count as usize,
@@ -1210,7 +1230,7 @@ impl KvStageIntegration {
                     token_ids: identity.token_ids[..token_count as usize].to_vec(),
                     l3_fill_claim: Some(l3_fill_claim_key(l3, location)),
                     write_through_l3: false,
-                    l2_promotion_digest,
+                    l2_promotion_manifest,
                     l3_cost: None,
                     admission_credit,
                 }),

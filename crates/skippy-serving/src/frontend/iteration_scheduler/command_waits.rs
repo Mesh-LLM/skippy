@@ -4,8 +4,34 @@
 //! so time the runtime sits unused between native calls has a name.
 
 use super::*;
+use crate::runtime_state::panic_recovery::try_lock_runtime;
+
+const IDLE_CAPTURE_GRACE: Duration = Duration::from_millis(25);
 
 impl SchedulerWorker {
+    pub(super) fn capture_prefix_during_idle(&mut self) -> bool {
+        if !try_lock_runtime(&self.runtime)
+            .is_some_and(|runtime| runtime.can_run_idle_prefix_capture())
+        {
+            return true;
+        }
+        // Back-to-back requests often enqueue immediately after a session
+        // ends. Let them take the runtime before starting a native copy.
+        match self.commands.recv_timeout(IDLE_CAPTURE_GRACE) {
+            Ok(SchedulerCommand::Shutdown) | Err(std_mpsc::RecvTimeoutError::Disconnected) => false,
+            Ok(command) => {
+                self.handle_command(command);
+                true
+            }
+            Err(std_mpsc::RecvTimeoutError::Timeout) => {
+                if let Some(mut runtime) = try_lock_runtime(&self.runtime) {
+                    runtime.run_idle_prefix_capture();
+                }
+                true
+            }
+        }
+    }
+
     /// Block for the next command while no work is queued; false once the
     /// worker should stop.
     pub(super) fn wait_idle(&mut self) -> bool {

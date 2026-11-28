@@ -53,6 +53,7 @@ impl FamilyPolicy {
             max_entries: bounded_entries,
             max_bytes,
             l2_max_bytes: 0,
+            l1_checkpoint_max_bytes: None,
             codec: skippy_protocol::StageKvCacheCodec::Native,
             min_tokens,
             shared_prefix_stride_tokens: 128,

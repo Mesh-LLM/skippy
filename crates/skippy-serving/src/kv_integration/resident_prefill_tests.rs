@@ -16,6 +16,7 @@ fn config(capacity: u32) -> StageConfig {
             max_entries: 32,
             max_bytes: 0,
             l2_max_bytes: 0,
+            l1_checkpoint_max_bytes: None,
             min_tokens: 1,
             shared_prefix_stride_tokens: 32,
             shared_prefix_record_limit: 32,

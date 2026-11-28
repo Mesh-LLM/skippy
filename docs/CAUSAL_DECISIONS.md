@@ -112,7 +112,7 @@ fallback.
 In split execution, the terminal worker computes scores and returns only a
 bounded selected-token vector. Full vocabulary logits remain inside the native
 runtime. All workers must support stage protocol generation 17, wire header
-version 18 and Skippy ABI 0.1.90. Upgrade the whole chain together; older stage
+version 18 and Skippy ABI 0.1.92. Upgrade the whole chain together; older stage
 peers fail negotiation. Additive `system_one` discovery does not grant this
 ability to an older runtime. No persisted-data migration is required.
 

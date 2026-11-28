@@ -71,13 +71,6 @@ impl<'a> SpillPayload<'a> {
         self.recurrent.len() as u64
     }
 
-    pub(super) fn digest(&self) -> String {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(&self.kv);
-        hasher.update(&self.recurrent);
-        hasher.finalize().to_hex().to_string()
-    }
-
     /// Ordinary segments borrow one immutable component. Only a cut spanning
     /// their boundary needs scratch storage, bounded by the configured segment.
     pub(super) fn segment(
@@ -133,21 +126,6 @@ fn validate_cachegen(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::l3::segment_digest;
-
-    #[test]
-    fn component_stream_digest_matches_concatenation_for_every_boundary() {
-        let bytes: Vec<u8> = (0..8195).map(|n| (n % 251) as u8).collect();
-        for split in [0, 1, 63, 64, 1023, 1024, 4096, 8194, 8195] {
-            let view = SpillPayload {
-                kv: Cow::Borrowed(&bytes[..split]),
-                recurrent: Cow::Borrowed(&bytes[split..]),
-                total_bytes: bytes.len(),
-                decoded_kv_bytes: split as u64,
-            };
-            assert_eq!(view.digest(), segment_digest(&bytes));
-        }
-    }
 
     #[test]
     fn native_components_and_boundary_aligned_segments_borrow_original_storage() {
@@ -185,7 +163,6 @@ mod tests {
             ExactStatePayload::kv_recurrent(vec![7, 8, 9], Vec::new()),
         ] {
             let view = SpillPayload::new(&payload, None, None).unwrap();
-            assert_eq!(view.digest(), segment_digest(&[7, 8, 9]));
             assert_eq!(view.len(), 3);
             assert!(matches!(view.segment(0, 3, 1).unwrap(), Cow::Borrowed(_)));
             assert!(matches!(view.segment(3, 0, 1).unwrap(), Cow::Borrowed(_)));

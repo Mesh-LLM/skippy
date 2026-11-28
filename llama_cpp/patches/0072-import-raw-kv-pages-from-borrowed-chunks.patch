@@ -1,0 +1,341 @@
+From de42cb4d3632d3e287b77d5e48817b1d69bfb6cb Mon Sep 17 00:00:00 2001
+From: Skippy contributors <ci@skippy.local>
+Date: Mon, 23 Nov 2026 14:44:16 +1100
+Subject: [PATCH] skippy: import raw KV pages from borrowed chunks
+
+---
+ include/skippy/state.h           | 18 +++++++
+ src/llama-kv-cache.cpp           | 83 ++++++++++++++++++++++++++------
+ src/llama-kv-cache.h             | 11 +++++
+ src/skippy/state.cpp             | 63 +++++++++++++++++++++---
+ src/skippy/tests/async_state.cpp | 24 ++++++++-
+ 5 files changed, 177 insertions(+), 22 deletions(-)
+
+diff --git a/include/skippy/state.h b/include/skippy/state.h
+index fc5dcd389..8dbf42c99 100644
+--- a/include/skippy/state.h
++++ b/include/skippy/state.h
+@@ -216,6 +216,24 @@ LLAMA_API enum skippy_status skippy_import_kv_page(
+         size_t input_bytes,
+         struct skippy_error ** out_error);
+ 
++/** @brief A borrowed range of raw KV page bytes. */
++struct skippy_kv_page_chunk {
++    const void * data;
++    size_t bytes;
++};
++
++/** @brief Imports a single raw KV page from non-empty chunks in wire order.
++ * The ranges must remain readable until return and together cover exactly
++ * desc->payload_bytes. Unsupported layouts or backends leave the session
++ * untouched, so the caller can retry with a contiguous payload.
++ */
++LLAMA_API enum skippy_status skippy_import_kv_page_chunks(
++        struct skippy_session * session,
++        const struct skippy_kv_page_desc * desc,
++        const struct skippy_kv_page_chunk * chunks,
++        size_t chunk_count,
++        struct skippy_error ** out_error);
++
+ /** @brief Imports validated CacheGen records directly into resident KV storage. */
+ LLAMA_API enum skippy_status skippy_import_cachegen_kv_page_v1(
+         struct skippy_session * session,
+diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
+index 7d7901d8e..652457368 100644
+--- a/src/llama-kv-cache.cpp
++++ b/src/llama-kv-cache.cpp
+@@ -2183,11 +2183,54 @@ bool llama_kv_cache::stage_import_kv_page(
+         size_t input_bytes,
+         std::string & error,
+         bool validate_only) {
+-    skippy_trace::scope trace("llama.kv_page_import", "bytes", (int64_t) input_bytes);
+     if (input == nullptr) {
+         error = "input payload is required";
+         return false;
+     }
++    const skippy_kv_page_chunk chunk{input, input_bytes};
++    bool unsupported = false;
++    return stage_import_kv_page_chunks(seq_id, desc, &chunk, 1, input_bytes, error, unsupported, validate_only);
++}
++
++namespace {
++
++class kv_page_reader {
++public:
++    explicit kv_page_reader(const skippy_kv_page_chunk * chunks) : chunk(chunks) {}
++
++    void write(ggml_tensor * tensor, size_t offset, size_t bytes) {
++        while (bytes != 0) {
++            const size_t count = std::min(bytes, chunk->bytes - consumed);
++            const auto * source = static_cast<const char *>(chunk->data);
++            ggml_backend_tensor_set(tensor, source + consumed, offset, count);
++            consumed += count;
++            if (consumed == chunk->bytes) {
++                ++chunk;
++                consumed = 0;
++            }
++            offset += count;
++            bytes -= count;
++        }
++    }
++
++private:
++    const skippy_kv_page_chunk * chunk;
++    size_t consumed = 0;
++};
++
++} // namespace
++
++bool llama_kv_cache::stage_import_kv_page_chunks(
++        llama_seq_id seq_id,
++        const skippy_kv_page_desc & desc,
++        const skippy_kv_page_chunk * chunks,
++        size_t chunk_count,
++        size_t input_bytes,
++        std::string & error,
++        bool & unsupported,
++        bool validate_only) {
++    skippy_trace::scope trace("llama.kv_page_import", "bytes", (int64_t) input_bytes);
++    unsupported = false;
+     if (desc.version != 1) {
+         error = "unsupported native KV page descriptor version";
+         return false;
+@@ -2287,6 +2330,21 @@ bool llama_kv_cache::stage_import_kv_page(
+         return true;
+     }
+ 
++    // Fragmented writes are cheap on host and shared Metal buffers. A device
++    // buffer could turn every input chunk into a synchronous upload.
++    if (chunk_count > 1 && !std::all_of(selected.begin(), selected.end(), [strm](const kv_layer * layer) {
++            const auto host = [](const std::vector<ggml_tensor *> & streams, uint32_t index) {
++                return index >= streams.size() || streams[index] == nullptr ||
++                       skippy_kv_buffer_pages_are_host(streams[index]->view_src ?
++                           streams[index]->view_src->buffer : streams[index]->buffer);
++            };
++            return host(layer->k_stream, strm) && host(layer->v_stream, strm) && host(layer->k_idx_stream, strm);
++        })) {
++        unsupported = true;
++        error = "chunked KV page import requires host-visible cache buffers";
++        return false;
++    }
++
+     llama_ubatch ubatch = {};
+     auto udata = std::make_shared<llama_ubatch::data_t>();
+     const uint32_t n_tokens = static_cast<uint32_t>(desc.token_count);
+@@ -2364,13 +2422,12 @@ bool llama_kv_cache::stage_import_kv_page(
+     apply_ubatch(sinfo, ubatch, overwrites_full_rows);
+ 
+     const auto cell_runs = llama_kv_cache_cell_runs(sinfo.idxs[0]);
+-    const char * src = static_cast<const char *>(input);
++    kv_page_reader reader(chunks);
+     for (const auto * layer : selected) {
+         auto * k = layer->k_stream[strm];
+         for (const auto & run : cell_runs) {
+-            const size_t run_bytes = static_cast<size_t>(run.count) * desc.k_row_bytes;
+-            ggml_backend_tensor_set(k, src, static_cast<size_t>(run.first) * desc.k_row_bytes, run_bytes);
+-            src += run_bytes;
++            reader.write(k, static_cast<size_t>(run.first) * desc.k_row_bytes,
++                         static_cast<size_t>(run.count) * desc.k_row_bytes);
+         }
+     }
+ 
+@@ -2382,9 +2439,8 @@ bool llama_kv_cache::stage_import_kv_page(
+             }
+             auto * v = layer->v_stream[strm];
+             for (const auto & run : cell_runs) {
+-                const size_t run_bytes = static_cast<size_t>(run.count) * desc.v_row_bytes;
+-                ggml_backend_tensor_set(v, src, static_cast<size_t>(run.first) * desc.v_row_bytes, run_bytes);
+-                src += run_bytes;
++                reader.write(v, static_cast<size_t>(run.first) * desc.v_row_bytes,
++                             static_cast<size_t>(run.count) * desc.v_row_bytes);
+             }
+         }
+     } else {
+@@ -2396,10 +2452,8 @@ bool llama_kv_cache::stage_import_kv_page(
+             const uint32_t n_embd_v_gqa = hparams.n_embd_v_gqa(layer->il);
+             for (uint32_t j = 0; j < n_embd_v_gqa; ++j) {
+                 for (const auto & run : cell_runs) {
+-                    const size_t run_bytes = static_cast<size_t>(run.count) * desc.v_element_bytes;
+                     const size_t dst_offset = (static_cast<size_t>(run.first) + static_cast<size_t>(j) * cells.size()) * desc.v_element_bytes;
+-                    ggml_backend_tensor_set(v, src, dst_offset, run_bytes);
+-                    src += run_bytes;
++                    reader.write(v, dst_offset, static_cast<size_t>(run.count) * desc.v_element_bytes);
+                 }
+             }
+         }
+@@ -2410,14 +2464,13 @@ bool llama_kv_cache::stage_import_kv_page(
+         for (const auto * layer : selected) {
+             auto * k_idx = layer->k_idx_stream[strm];
+             for (const auto & run : cell_runs) {
+-                const size_t run_bytes = static_cast<size_t>(run.count) * desc.k_idx_row_bytes;
+-                ggml_backend_tensor_set(k_idx, src, static_cast<size_t>(run.first) * desc.k_idx_row_bytes, run_bytes);
+-                src += run_bytes;
++                reader.write(k_idx, static_cast<size_t>(run.first) * desc.k_idx_row_bytes,
++                             static_cast<size_t>(run.count) * desc.k_idx_row_bytes);
+             }
+         }
+     }
+ 
+-    return src == static_cast<const char *>(input) + input_bytes;
++    return true;
+ }
+ 
+ static uint16_t skippy_cachegen_read_u16(const uint8_t * bytes) {
+diff --git a/src/llama-kv-cache.h b/src/llama-kv-cache.h
+index f77e14586..a886ac793 100644
+--- a/src/llama-kv-cache.h
++++ b/src/llama-kv-cache.h
+@@ -15,6 +15,7 @@ struct llama_hparams;
+ struct llama_model;
+ struct llama_context;
+ struct skippy_kv_page_desc;
++struct skippy_kv_page_chunk;
+ struct skippy_cachegen_record_v1;
+ 
+ //
+@@ -220,6 +221,16 @@ public:
+             std::string & error,
+             bool validate_only = false);
+ 
++    bool stage_import_kv_page_chunks(
++            llama_seq_id seq_id,
++            const skippy_kv_page_desc & desc,
++            const skippy_kv_page_chunk * chunks,
++            size_t chunk_count,
++            size_t input_bytes,
++            std::string & error,
++            bool & unsupported,
++            bool validate_only = false);
++
+     bool stage_import_cachegen_kv_page(
+             llama_seq_id seq_id,
+             const skippy_kv_page_desc & desc,
+diff --git a/src/skippy/state.cpp b/src/skippy/state.cpp
+index bab58a50f..bc842ee9e 100644
+--- a/src/skippy/state.cpp
++++ b/src/skippy/state.cpp
+@@ -479,6 +479,18 @@ static bool skippy_validate_composite_desc(const skippy_kv_page_desc & desc, siz
+     return true;
+ }
+ 
++static skippy_status skippy_finish_kv_page_import(
++        skippy_session * session, const skippy_kv_page_desc & desc, skippy_error ** out_error) {
++    if (llm_graph_result * graph = session->ctx->get_gf_res_prev_active()) {
++        graph->reset();
++    }
++    session->n_past = std::max<int32_t>(session->n_past, static_cast<int32_t>(std::min<uint64_t>(desc.token_start + desc.token_count, std::numeric_limits<int32_t>::max())));
++    skippy_mtp_clear_session_state(session);
++    skippy_clear_verify_windows(session);
++    session->ctx->synchronize();
++    return skippy_success(out_error);
++}
++
+ enum skippy_status skippy_import_kv_page(
+         struct skippy_session * session,
+         const struct skippy_kv_page_desc * desc,
+@@ -530,14 +542,53 @@ enum skippy_status skippy_import_kv_page(
+         skippy_set_error(out_error, status, error.c_str());
+         return status;
+     }
+-    if (llm_graph_result * graph = session->ctx->get_gf_res_prev_active()) {
+-        graph->reset();
++    return skippy_finish_kv_page_import(session, *desc, out_error);
++}
++
++enum skippy_status skippy_import_kv_page_chunks(
++        skippy_session * session,
++        const skippy_kv_page_desc * desc,
++        const skippy_kv_page_chunk * chunks,
++        size_t chunk_count,
++        skippy_error ** out_error) {
++    if (session == nullptr || session->ctx == nullptr || desc == nullptr || chunks == nullptr || chunk_count == 0 ||
++            chunk_count > desc->payload_bytes) {
++        skippy_set_error(out_error, SKIPPY_STATUS_INVALID_ARGUMENT, "session, descriptor, and KV chunks are required");
++        return SKIPPY_STATUS_INVALID_ARGUMENT;
++    }
++    size_t bytes = 0;
++    for (size_t i = 0; i < chunk_count; ++i) {
++        if (chunks[i].data == nullptr || chunks[i].bytes == 0 ||
++                chunks[i].bytes > std::numeric_limits<size_t>::max() - bytes ||
++                chunks[i].bytes > desc->payload_bytes - bytes) {
++            skippy_set_error(out_error, SKIPPY_STATUS_INVALID_ARGUMENT, "invalid KV page chunk");
++            return SKIPPY_STATUS_INVALID_ARGUMENT;
++        }
++        bytes += chunks[i].bytes;
++    }
++    if (bytes != desc->payload_bytes) {
++        skippy_set_error(out_error, SKIPPY_STATUS_INVALID_ARGUMENT, "KV chunks do not cover the page");
++        return SKIPPY_STATUS_INVALID_ARGUMENT;
++    }
++    if (desc->codec != 0 && desc->codec != SKIPPY_KV_PAGE_CODEC_SINGLE_V1) {
++        skippy_set_error(out_error, SKIPPY_STATUS_UNSUPPORTED, "chunked KV import requires a single raw page");
++        return SKIPPY_STATUS_UNSUPPORTED;
++    }
++    auto * kv = skippy_get_kv_cache(session, nullptr);
++    if (kv == nullptr) {
++        skippy_set_error(out_error, SKIPPY_STATUS_UNSUPPORTED, "runtime memory does not support single raw KV pages");
++        return SKIPPY_STATUS_UNSUPPORTED;
+     }
+-    session->n_past = std::max<int32_t>(session->n_past, static_cast<int32_t>(std::min<uint64_t>(desc->token_start + desc->token_count, std::numeric_limits<int32_t>::max())));
+-    skippy_mtp_clear_session_state(session);
+-    skippy_clear_verify_windows(session);
+     session->ctx->synchronize();
+-    return skippy_success(out_error);
++    skippy_mark_context_synchronized(session->stage_model);
++    std::string error;
++    bool unsupported = false;
++    if (!kv->stage_import_kv_page_chunks(session->seq_id, *desc, chunks, chunk_count, bytes, error, unsupported)) {
++        const auto status = unsupported ? SKIPPY_STATUS_UNSUPPORTED : SKIPPY_STATUS_RUNTIME_ERROR;
++        skippy_set_error(out_error, status, error.c_str());
++        return status;
++    }
++    return skippy_finish_kv_page_import(session, *desc, out_error);
+ }
+ 
+ enum skippy_status skippy_import_cachegen_kv_page_v1(struct skippy_session *                  session,
+diff --git a/src/skippy/tests/async_state.cpp b/src/skippy/tests/async_state.cpp
+index efe8d28ba..ba1de093b 100644
+--- a/src/skippy/tests/async_state.cpp
++++ b/src/skippy/tests/async_state.cpp
+@@ -71,6 +71,13 @@ void test_plain_restore_parity(skippy_session * source, skippy_session * target)
+     CHECK(skippy_export_kv_page(source, 0, layers, 0, 2, &page, payload.data(), payload.size(), &bytes, &error) ==
+           SKIPPY_STATUS_OK);
+ 
++    std::vector<skippy_kv_page_chunk> chunks;
++    for (size_t offset = 0; offset < payload.size();) {
++        const size_t count = std::min<size_t>(17, payload.size() - offset);
++        chunks.push_back({payload.data() + offset, count});
++        offset += count;
++    }
++    CHECK(chunks.size() > 1);
+     const int                vocab    = llama_vocab_n_tokens(llama_model_get_vocab(source->stage_model->model));
+     const int                selected = std::min(vocab, static_cast<int>(SKIPPY_MAX_SELECTED_TOKENS));
+     std::vector<llama_token> ids(selected);
+@@ -86,8 +93,23 @@ void test_plain_restore_parity(skippy_session * source, skippy_session * target)
+             source->ctx->synchronize();
+             skippy_mark_context_synchronized(source->stage_model);
+         }
+-        CHECK(skippy_import_kv_page(target, &page, payload.data(), payload.size(), &error) == SKIPPY_STATUS_OK);
++        if (attempt % 2 == 0) {
++            CHECK(skippy_import_kv_page(target, &page, payload.data(), payload.size(), &error) == SKIPPY_STATUS_OK);
++            CHECK(skippy_import_kv_page_chunks(target, &page, chunks.data(), chunks.size() - 1, &error) ==
++                  SKIPPY_STATUS_INVALID_ARGUMENT);
++            skippy_error_free(error);
++            error = nullptr;
++            CHECK(target->n_past == 2);
++        } else {
++            CHECK(skippy_import_kv_page_chunks(target, &page, chunks.data(), chunks.size(), &error) == SKIPPY_STATUS_OK);
++        }
+         CHECK(!source->stage_model->context_work_pending.load());
++        std::vector<uint8_t> restored(bytes);
++        size_t restored_bytes = 0;
++        skippy_kv_page_desc restored_page{};
++        CHECK(skippy_export_kv_page(target, 0, layers, 0, 2,
++              &restored_page, restored.data(), restored.size(), &restored_bytes, &error) == SKIPPY_STATUS_OK);
++        CHECK(restored_bytes == bytes && restored == payload);
+         std::vector<float>         scores(selected);
+         skippy_token_score_request readout{ ids.data(), ids.size(), scores.data() };
+         const llama_token          token = 2;
+-- 
+2.56.0
+

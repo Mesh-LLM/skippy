@@ -41,10 +41,11 @@ honors the minimum free-space reserve. Use `off` to disable the tier.
 ## How the tiers interact
 
 Skippy compares compatible resident and committed disk prefixes and restores
-the longest valid checkpoint. A resident prefix wins a tie. Resident native
-state is exported when it is cold-evicted, rather than serializing every warm
-record. Restored disk entries are verified before use. A refused or failed
-cold offload can lose reuse and require cold prefill on a later request.
+the longest valid checkpoint. A resident prefix wins a tie. Eviction releases
+native KV cells immediately. While the runtime is idle, Skippy can export a
+retained checkpoint and queue a bounded write. A prefix evicted before capture
+may require cold prefill on a later request. Skippy verifies restored disk
+entries before use.
 
 ## Failure policy
 
@@ -53,13 +54,14 @@ operator's retention policy. Once a valid configuration is running, storage
 unavailability fails open for inference: Skippy logs the problem and serves
 with cold prefill rather than making the model unavailable.
 
-Native resident runtimes use `prefix_cache_ram` for recurrent checkpoints,
-independently of disk. Serialized runtimes use it for an optional host-RAM tier
-above an active disk tier:
+`prefix_cache_ram` sets the optional L2 host-RAM tier above an active disk
+tier. `prefix_cache_checkpoint_ram` sets the separate L1 recurrent-checkpoint
+budget:
 
 ```toml
 [cache]
 prefix_cache_ram = "4GiB"
+prefix_cache_checkpoint_ram = "1GiB"
 kv_cache_disk = "32GiB"
 ```
 
@@ -78,7 +80,8 @@ kill switches. Unset them before explicitly enabling prefix caching.
 | `kv_cache_disk` | `off` (default), `auto`, or IEC size | Enable and bound durable storage |
 | `kv_cache_disk_dir` | Local directory | Choose the cache root. Defaults to `$SKIPPY_HOME/kv-cache` or `~/.skippy/kv-cache`. |
 | `kv_cache_min_free` | IEC size of at least `1GiB` | Reserve free space on the volume. Defaults to `16GiB`. |
-| `prefix_cache_ram` | `off` or IEC size | Bound native checkpoint RAM; serialized runtimes can add a RAM tier above disk |
+| `prefix_cache_ram` | `off` or IEC size | Set the L2 host-RAM budget for disk fills. |
+| `prefix_cache_checkpoint_ram` | `auto` or positive IEC size | Set the L1 checkpoint budget. Defaults to 1 GiB. |
 
 Invalid startup configuration is fatal. Runtime storage failure is not:
 inference continues with cold prefill and Skippy reports the cache error.

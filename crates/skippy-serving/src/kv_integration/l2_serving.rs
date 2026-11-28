@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use skippy_cache::{L2Hit, L2Origin, L2Stats, L2Tier, l2_cache_key};
+use skippy_cache::{ExactStatePayload, L2Hit, L2Stats, L2Tier, l2_cache_key};
 use skippy_runtime::RuntimeKvPageDesc;
 
 use crate::runtime_state::RuntimeState;
@@ -74,6 +74,25 @@ impl StageL2 {
         let _ = self.tier.remove(key);
     }
 
+    pub(super) fn contains_location(
+        &self,
+        identity: &PrefillKvIdentity,
+        location: &skippy_cache::L3Location,
+    ) -> bool {
+        let Ok(token_count) = usize::try_from(location.token_count) else {
+            return false;
+        };
+        let Some(tokens) = identity.token_ids.get(..token_count) else {
+            return false;
+        };
+        self.tier
+            .peek(&self.cache_key(&identity.namespace, tokens))
+            .is_some_and(|hit| {
+                hit.token_count == location.token_count
+                    && hit.payload_digest == location.manifest_key
+            })
+    }
+
     pub(crate) fn invalidate_digest(&self, payload_digest: &str) {
         let _ = self.tier.remove_by_digest(payload_digest);
     }
@@ -91,31 +110,19 @@ impl StageL2 {
         &self,
         namespace: &str,
         tokens: &[i32],
-        expected_payload_digest: &str,
+        manifest: &skippy_cache::HandoffManifest,
         payload: &skippy_cache::ExactStatePayload,
-        extra: &ExactStateExtra,
     ) -> bool {
         let key = self.cache_key(namespace, tokens);
-        let kv_desc_json = extra
-            .kv_desc
-            .as_ref()
-            .and_then(|desc| serde_json::to_string(desc).ok());
         let admitted = self
             .tier
-            .admit_payload(
-                key,
-                tokens.len() as u64,
-                expected_payload_digest,
-                payload,
-                kv_desc_json,
-                L2Origin::FromL3,
-            )
+            .admit_manifest_payload(key, manifest, payload)
             .is_ok();
         if let Some(observation) = self
             .promotions
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get_mut(expected_payload_digest)
+            .get_mut(&manifest.payload_digest)
         {
             observation.terminal = true;
         }
@@ -248,37 +255,6 @@ impl KvStageIntegration {
                     kv_import_ms = started.elapsed().as_secs_f64() * 1000.0;
                 }
                 StagePrefixCachePayload::KvRecurrent => {
-                    if let Some((kv, stats)) = payload
-                        .kv_bytes_timed()
-                        .context("reconstruct L2 KV payload")
-                        .map_err(|error| mark_failure(&mut deterministic_failure, error))?
-                    {
-                        add_reconstruct_stats(
-                            &mut reconstruct_ms,
-                            &mut reconstruct_bytes,
-                            &mut reconstruct_blocks,
-                            stats,
-                        );
-                        match kv_desc.as_ref() {
-                            Some(desc) => {
-                                desc.validate_payload(kv.len()).map_err(|error| {
-                                    mark_failure(&mut deterministic_failure, error)
-                                })?;
-                                if desc.token_start != 0 || desc.token_count != token_count {
-                                    deterministic_failure = true;
-                                    anyhow::bail!("L2 KV page token range mismatch");
-                                }
-                                let started = Instant::now();
-                                runtime.import_kv_page(session_id, desc, kv.as_ref())?;
-                                kv_import_ms = started.elapsed().as_secs_f64() * 1000.0;
-                            }
-                            None if !kv.is_empty() => {
-                                deterministic_failure = true;
-                                anyhow::bail!("L2 KV payload is missing its descriptor");
-                            }
-                            None => {}
-                        }
-                    }
                     let (recurrent, stats) = payload
                         .recurrent_state_bytes_timed()
                         .context("reconstruct L2 recurrent payload")
@@ -293,6 +269,62 @@ impl KvStageIntegration {
                         &mut reconstruct_blocks,
                         stats,
                     );
+                    if let ExactStatePayload::KvRecurrent { kv, .. } = &payload {
+                        match kv_desc.as_ref() {
+                            Some(desc) => {
+                                let kv_len = usize::try_from(kv.len())
+                                    .context("L2 KV payload exceeds addressable memory")
+                                    .map_err(|error| {
+                                        mark_failure(&mut deterministic_failure, error)
+                                    })?;
+                                desc.validate_payload(kv_len).map_err(|error| {
+                                    mark_failure(&mut deterministic_failure, error)
+                                })?;
+                                if desc.token_start != 0 || desc.token_count != token_count {
+                                    deterministic_failure = true;
+                                    anyhow::bail!("L2 KV page token range mismatch");
+                                }
+                                if !self.admit_native_prefix_import(
+                                    runtime,
+                                    session_id,
+                                    identity,
+                                    token_count,
+                                )? {
+                                    return Ok(false);
+                                }
+                                let started = Instant::now();
+                                let imported = match hit.kv_chunks() {
+                                    Some(chunks) => runtime
+                                        .try_import_kv_page_chunks(session_id, desc, chunks)?,
+                                    None => false,
+                                };
+                                if imported {
+                                    kv_import_ms = started.elapsed().as_secs_f64() * 1000.0;
+                                } else {
+                                    let (bytes, stats) = kv
+                                        .as_cow_timed()
+                                        .context("reconstruct L2 KV payload")
+                                        .map_err(|error| {
+                                            mark_failure(&mut deterministic_failure, error)
+                                        })?;
+                                    add_reconstruct_stats(
+                                        &mut reconstruct_ms,
+                                        &mut reconstruct_bytes,
+                                        &mut reconstruct_blocks,
+                                        stats,
+                                    );
+                                    let started = Instant::now();
+                                    runtime.import_kv_page(session_id, desc, bytes.as_ref())?;
+                                    kv_import_ms = started.elapsed().as_secs_f64() * 1000.0;
+                                }
+                            }
+                            None if !kv.is_empty() => {
+                                deterministic_failure = true;
+                                anyhow::bail!("L2 KV payload is missing its descriptor");
+                            }
+                            None => {}
+                        }
+                    }
                     let started = Instant::now();
                     if recurrent.is_empty() {
                         runtime.set_session_position(session_id, token_count)?;
@@ -348,7 +380,7 @@ impl KvStageIntegration {
                             token_ids: tokens.to_vec(),
                             l3_fill_claim: None,
                             write_through_l3: false,
-                            l2_promotion_digest: None,
+                            l2_promotion_manifest: None,
                             l3_cost: None,
                             admission_credit,
                         }),
@@ -378,6 +410,30 @@ impl KvStageIntegration {
 fn mark_failure(deterministic: &mut bool, error: anyhow::Error) -> anyhow::Error {
     *deterministic = true;
     error
+}
+
+#[cfg(test)]
+pub(super) fn legacy_test_manifest(
+    token_count: u64,
+    bytes: &[u8],
+) -> skippy_cache::HandoffManifest {
+    let mut manifest =
+        skippy_cache::HandoffManifest::new("test".to_owned(), "full-state".to_owned());
+    manifest.token_count = token_count;
+    manifest.total_bytes = bytes.len() as u64;
+    manifest.kv_bytes = manifest.total_bytes;
+    manifest.payload_digest = skippy_cache::segment_digest(bytes);
+    manifest.segments.push(skippy_cache::HandoffSegmentRef {
+        index: 0,
+        offset: 0,
+        bytes: manifest.total_bytes,
+        digest: manifest.payload_digest.clone(),
+        codec_identity: Some(skippy_cache::SegmentCodecIdentity::raw(
+            manifest.total_bytes,
+        )),
+        meta_json: None,
+    });
+    manifest
 }
 
 #[cfg(test)]
@@ -421,9 +477,8 @@ mod tests {
         assert!(l2.promote(
             &identity.namespace,
             &identity.token_ids[..3],
-            &digest,
+            &legacy_test_manifest(3, &[7; 128]),
             &payload,
-            &ExactStateExtra { kv_desc: None },
         ));
         assert!(!l2.consider_l3_fill(&digest, 3, payload.byte_len()));
 
@@ -449,15 +504,13 @@ mod tests {
     fn a_changed_durable_digest_invalidates_the_mirror() {
         let l2 = StageL2::new(1 << 20, "model".to_string(), "state".to_string());
         let bytes = vec![7; 128];
-        let digest = skippy_cache::segment_digest(&bytes);
         let payload = skippy_cache::ExactStatePayload::full_state(bytes);
         let identity = identity(vec![1, 2, 3]);
         assert!(l2.promote(
             &identity.namespace,
             &identity.token_ids,
-            &digest,
+            &legacy_test_manifest(3, &[7; 128]),
             &payload,
-            &ExactStateExtra { kv_desc: None },
         ));
 
         let changed = location(3, skippy_cache::segment_digest(b"changed"));

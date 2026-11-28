@@ -158,8 +158,6 @@ fn capture_large_owner(
     kv.record_resident_prefix(&mut runtime, "source", &large, tokens)?
         .expect("large native checkpoint captured");
     runtime.drop_session_timed("source")?;
-    runtime.prefill("continuing-decode", &[21, 22, 23])?;
-    runtime.ensure_session_active("eviction")?;
     Ok((proof, pin))
 }
 
@@ -183,12 +181,18 @@ fn offload_while_disk_is_paused(
 ) -> Result<()> {
     let kv = backend.kv.as_ref().unwrap();
     let stored = identity(backend, tokens);
-    proof.baseline_decode_ms = next_decode(backend, 24)?.as_secs_f64() * 1000.0;
     kv.l3_spill_worker_pause.store(true, Ordering::Release);
     let mut paused = DiskPause {
         pause: kv.l3_spill_worker_pause.clone(),
         worker: None,
     };
+    {
+        let mut runtime = backend.runtime.lock().unwrap();
+        assert!(kv.capture_resident_prefix_for_l3(&mut runtime, &stored)?);
+        runtime.prefill("continuing-decode", &[21, 22, 23])?;
+        runtime.ensure_session_active("eviction")?;
+    }
+    proof.baseline_decode_ms = next_decode(backend, 24)?.as_secs_f64() * 1000.0;
     let scheduler = backend.iteration_scheduler.clone();
     let worker_kv = kv.clone();
     let (started_tx, started_rx) = mpsc::channel();
@@ -205,8 +209,8 @@ fn offload_while_disk_is_paused(
         })
     }));
     started_rx.recv_timeout(Duration::from_secs(30))?;
-    // Enqueue while eviction owns the runtime. Waiting for synchronous export
-    // is expected and measured; progress DURING D2H is deliberately not asserted.
+    // Enqueue while eviction owns the runtime. The owned payload is already
+    // with the paused writer, so neither cell release nor decode needs it.
     proof.concurrent_decode_wait_ms = next_decode(backend, 25)?.as_secs_f64() * 1000.0;
     proof.eviction_runtime_ms = paused
         .worker

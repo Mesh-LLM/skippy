@@ -22,6 +22,7 @@ fn fixture(root: &Path) -> (KvStageIntegration, PrefillKvIdentity) {
             max_entries: 8,
             max_bytes: 0,
             l2_max_bytes: 1024,
+            l1_checkpoint_max_bytes: None,
             exact_max_bytes: None,
             codec: Default::default(),
             shared_prefix_stride_tokens: 1,

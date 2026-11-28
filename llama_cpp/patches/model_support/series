@@ -23,3 +23,4 @@
 0023-muse-glimmer-retain-token-aware-turn-boundaries.patch
 0024-models-preserve-checkpoint-layouts-and-head-scales.patch
 0025-skippy-bump-the-native-abi-for-shared-verification.patch
+0026-skippy-bump-native-abi-for-chunked-kv-import.patch
