@@ -16,6 +16,9 @@ inputs:
   smoke:
     description: Select inference or artifact smoke.
     default: inference
+  kv-profile:
+    description: Run short or full KV qualification against the packaged runtime.
+    default: ''
   windows-cuda:
     description: Pinned CUDA toolkit version to provision on the hosted Windows builder.
     default: ''
@@ -175,6 +178,7 @@ runs:
       if: inputs.smoke == 'inference'
       with:
         runtime_id: ${{ inputs.runtime-id }}
+        kv-profile: ${{ inputs.kv-profile }}
     - name: Upload tested package
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:

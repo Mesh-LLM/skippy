@@ -1,0 +1,33 @@
+name: KV cache correctness
+description: Qualify the exact native runtime in a Skippy package on its matching GPU.
+inputs:
+  runtime-id:
+    description: Packaged runtime from ci/targets.json.
+    required: true
+  profile:
+    description: Short dense fixture or full four-fixture qualification.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-hf
+    - name: Test KV reuse against the shipped runtime
+      shell: bash
+      env:
+        RUNTIME_ID: ${{ inputs.runtime-id }}
+        KV_PROFILE: ${{ inputs.profile }}
+      run: |
+        just cache-correctness-package "$RUNTIME_ID" "$KV_PROFILE" "dist/products/$RUNTIME_ID" "target/cache-qualification-$RUNTIME_ID"
+    - name: Retain reports and native logs
+      if: always()
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-cache-correctness-${{ inputs.runtime-id }}
+        path: |
+          target/cache-qualification-${{ inputs.runtime-id }}/*.json
+          target/cache-qualification-${{ inputs.runtime-id }}/*/*.json
+          target/cache-qualification-${{ inputs.runtime-id }}/*/*.log
+          target/cache-qualification-${{ inputs.runtime-id }}/*/template-identity/*.log
+        if-no-files-found: ignore
+        overwrite: true
+        retention-days: 14

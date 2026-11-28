@@ -525,6 +525,11 @@ impl StoreLimits {
             minimum_free_bytes,
         }
     }
+
+    pub fn low_water_bytes(self) -> Option<u64> {
+        (self.budget_bytes > 0)
+            .then(|| self.budget_bytes.saturating_mul(EVICTION_LOW_WATER_PERCENT) / 100)
+    }
 }
 
 /// Why a write was not admitted. Every refusal is a miss with a stable reason,
@@ -632,7 +637,7 @@ impl Drop for ManifestPin<'_> {
 }
 
 /// What the store currently holds, for the status contract.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoreUsage {
     pub budget_bytes: u64,
     pub used_bytes: u64,
@@ -646,7 +651,7 @@ pub struct StoreUsage {
 }
 
 /// Repairs performed before a node starts serving a cache root.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoreReconciliation {
     pub removed_temporary_files: u64,
     pub quarantined_manifests: u64,
@@ -702,8 +707,25 @@ pub fn segment_digest(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
 }
 
+/// Another process has the exclusive lock for this cache directory.
+#[derive(Debug)]
+pub struct CacheRootInUse(PathBuf);
+
+impl std::fmt::Display for CacheRootInUse {
+    fn fmt(&self, output: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            output,
+            "cache root {} is already owned by another manager",
+            self.0.display()
+        )
+    }
+}
+
+impl std::error::Error for CacheRootInUse {}
+
 fn acquire_root_lock(root: &Path) -> Result<fs::File> {
     let path = root.join(ROOT_LOCK_FILE);
+    fsinfo::refuse_symlink(&path)?;
     let file = fs::OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -711,18 +733,14 @@ fn acquire_root_lock(root: &Path) -> Result<fs::File> {
         .write(true)
         .open(&path)
         .with_context(|| format!("failed to open cache root lock {}", path.display()))?;
-    fsinfo::restrict_to_owner(&path, 0o600)?;
-
     if let Err(error) = fs2::FileExt::try_lock_exclusive(&file) {
         if fsinfo::is_lock_contended(&error) {
-            bail!(
-                "cache root {} is already owned by another manager",
-                root.display()
-            );
+            return Err(CacheRootInUse(root.to_path_buf()).into());
         }
         return Err(error).with_context(|| format!("failed to lock cache root {}", root.display()));
     }
 
+    fsinfo::restrict_to_owner(&path, 0o600)?;
     Ok(file)
 }
 
@@ -750,6 +768,14 @@ impl HandoffSegmentStore {
         root: impl Into<PathBuf>,
         limits: StoreLimits,
     ) -> Result<Self> {
+        Ok(Self::open_unreconciled(root, |_| Ok(Some(limits)))?
+            .expect("a fixed limit always opens the cache or returns an error"))
+    }
+
+    pub(crate) fn open_unreconciled(
+        root: impl Into<PathBuf>,
+        select_limits: impl FnOnce(&Path) -> Result<Option<StoreLimits>>,
+    ) -> Result<Option<Self>> {
         let root = root.into();
         if !root.is_absolute() {
             bail!("cache root must be absolute: {}", root.display());
@@ -767,6 +793,11 @@ impl HandoffSegmentStore {
                 root.display()
             );
         }
+        let root_lock = acquire_root_lock(&root)?;
+        fsinfo::restrict_to_owner(&root, 0o700)?;
+        let Some(limits) = select_limits(&root)? else {
+            return Ok(None);
+        };
         for directory in [
             SEGMENT_DIR,
             MANIFEST_DIR,
@@ -781,10 +812,8 @@ impl HandoffSegmentStore {
             })?;
             fsinfo::restrict_to_owner(&path, 0o700)?;
         }
-        fsinfo::restrict_to_owner(&root, 0o700)?;
-        let root_lock = acquire_root_lock(&root)?;
         let packed = PackedSegmentStore::open(&root)?;
-        Ok(Self {
+        Ok(Some(Self {
             root,
             limits: RwLock::new(limits),
             _root_lock: root_lock,
@@ -799,7 +828,7 @@ impl HandoffSegmentStore {
             quarantined_objects: AtomicU64::new(0),
             inflight_segments: Mutex::new(std::collections::BTreeMap::new()),
             packed,
-        })
+        }))
     }
 
     pub fn root(&self) -> &Path {
@@ -1721,10 +1750,7 @@ impl HandoffSegmentStore {
 
     /// The level eviction drops to once it runs.
     fn low_water_bytes(&self) -> u64 {
-        self.limits()
-            .budget_bytes
-            .saturating_mul(EVICTION_LOW_WATER_PERCENT)
-            / 100
+        self.limits().low_water_bytes().unwrap_or_default()
     }
 
     /// Evict until managed usage is at or below `target_bytes`.

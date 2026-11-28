@@ -6,6 +6,8 @@ use anyhow::{Context, Result, bail};
 use skippy_api::serving::LocalDiskCacheOptions;
 use skippy_cache::disk_policy::{DiskCacheBudget, parse_disk_budget};
 
+pub(crate) const DEFAULT_HOST_CACHE_BYTES: u64 = 256 * 1024 * 1024;
+
 pub(crate) fn from_public_settings(
     mode: Option<&str>,
     directory: Option<PathBuf>,
@@ -26,7 +28,7 @@ pub(crate) fn from_public_settings(
                 .unwrap_or(32 * 1024 * 1024 * 1024);
             DiskCacheBudget::Fixed(bytes)
         }
-        None => DiskCacheBudget::Off,
+        None => DiskCacheBudget::Auto,
     };
     if budget == DiskCacheBudget::Off {
         return Ok(None);

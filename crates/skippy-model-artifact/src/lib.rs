@@ -3,6 +3,7 @@ pub mod sizes;
 
 pub mod checkpoint;
 pub mod gguf;
+pub mod kv_fixtures;
 pub mod selection;
 
 use std::path::Path;

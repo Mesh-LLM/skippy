@@ -586,6 +586,8 @@ where
                 .detokenize_bytes(&[token])
                 .map_err(openai_backend_error)?;
             Ok(GeneratedLogprobCandidate {
+                #[cfg(test)]
+                token_id: token,
                 text: String::from_utf8_lossy(&bytes).into_owned(),
                 bytes,
                 logprob: logprob.is_finite().then_some(logprob),

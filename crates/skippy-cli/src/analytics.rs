@@ -32,6 +32,7 @@ pub fn init(command: &Command) {
 pub fn family(command: &Command) -> &'static str {
     match command {
         Command::Doctor { .. } => "doctor",
+        Command::KvCache(_) => "kv_cache",
         Command::GpuBenchmark { .. } => "gpu_benchmark",
         Command::Prompt(_) => "prompt",
         Command::Serve(_) => "serve",

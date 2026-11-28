@@ -129,12 +129,13 @@ async fn serve_public(args: ServeCommandArgs) -> Result<()> {
         tokio::select! { _ = shutdown => {}, _ = stopped => {} }
     });
     let server = async move {
-        skippy_api::serving::serve_local_openai_with_default_draft(
-            options,
-            draft.as_ref(),
-            shutdown,
-        )
-        .await
+        let (bind_addr, request) = options.into_request()?;
+        let _admin = crate::kv_cache::start_admin(request.l3_manager.as_ref()).await?;
+        let loaded = match draft.as_ref() {
+            Some(draft) => request.load_with_default_draft(draft),
+            None => request.load(),
+        }?;
+        loaded.serve_http_with_shutdown(bind_addr, shutdown).await
     };
     serve_with_readiness(
         ReadinessServer {
@@ -219,6 +220,7 @@ async fn serve_binary_stage(mut args: ServeCommandArgs) -> Result<()> {
         ));
     }
     options.l3_manager = disk_cache.and_then(skippy_api::serving::LocalDiskCacheOptions::acquire);
+    let _admin = crate::kv_cache::start_admin(options.l3_manager.as_ref()).await?;
     let Some(openai) = options.openai.as_ref() else {
         if args.prompt {
             bail!("--prompt requires stage 0 to expose the public inference API");

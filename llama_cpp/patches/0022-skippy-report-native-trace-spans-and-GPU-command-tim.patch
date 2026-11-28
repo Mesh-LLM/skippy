@@ -1744,7 +1744,7 @@ index 997d63026..f66544a4a 100644
      // TODO: refactor [TAG_KV_CACHE_SHARE_CELLS]
      if (other) {
          return;
-@@ -1636,6 +1642,7 @@ bool llama_kv_cache::stage_export_kv_page(
+@@ -1651,6 +1657,7 @@ bool llama_kv_cache::stage_export_kv_page(
          size_t output_capacity,
          size_t * out_bytes,
          std::string & error) const {
@@ -1752,7 +1752,7 @@ index 997d63026..f66544a4a 100644
      if (out_desc == nullptr || out_bytes == nullptr) {
          error = "out_desc and out_bytes are required";
          return false;
-@@ -1878,6 +1885,7 @@ bool llama_kv_cache::stage_import_kv_page(
+@@ -1893,6 +1900,7 @@ bool llama_kv_cache::stage_import_kv_page(
          size_t input_bytes,
          std::string & error,
          bool validate_only) {
@@ -2020,7 +2020,7 @@ index 7167e5f7a..885b602e9 100644
      int32_t rc = 0;
      const bool decoded = skippy_contain_native_failure(
 diff --git a/src/skippy/execution-batch.cpp b/src/skippy/execution-batch.cpp
-index 40faff815..a31540652 100644
+index 7d7973520..2d34652b9 100644
 --- a/src/skippy/execution-batch.cpp
 +++ b/src/skippy/execution-batch.cpp
 @@ -6,6 +6,7 @@
@@ -2048,15 +2048,15 @@ index 40faff815..a31540652 100644
      int32_t decode_rc = 0;
      if (!skippy_contain_native_failure(
                  out_error, [&] { decode_rc = first->ctx->decode(batch, graph_inputs); })) {
-@@ -461,6 +465,8 @@ enum skippy_status skippy_iteration_batch_sampled(
+@@ -460,6 +464,8 @@ enum skippy_status skippy_iteration_batch_sampled(
+     }
      skippy_mark_context_work_pending(first->stage_model);
-     skippy_synchronize_context_if_pending(first->stage_model);
  
 +    // exports, readouts and sampling, request by request
 +    skippy_trace::scope outputs_trace("skippy.batch_outputs", "requests", static_cast<int64_t>(request_count));
      size_t sampled_index = 0;
-     for (size_t request_index = 0; request_index < request_count; ++request_index) {
-         const auto & request = requests[request_index];
+     // Synchronize only when this iteration consumes GPU results: a sampled
+     // last token, a causal readout, or a batched activation export. Prefill
 diff --git a/src/skippy/model_loading.cpp b/src/skippy/model_loading.cpp
 index bbc1c2d42..a4bf2a475 100644
 --- a/src/skippy/model_loading.cpp

@@ -1,8 +1,11 @@
 use crate::frontend::NativeMtpStats;
 use crate::frontend::util::now_unix_millis;
 use crate::frontend::util::stable_wire_id;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use skippy_inference_api::CompletionRequest;
 use skippy_inference_api::InferenceExecutionScope;
+use skippy_inference_api::InferenceRequestClass;
+use skippy_inference_api::InferenceRequestTier;
 use skippy_inference_api::generation::GenerationRequest;
 use skippy_protocol::binary::StageReplyStats;
 use std::sync::OnceLock;
@@ -118,8 +121,54 @@ impl InferenceGenerationIds {
         self
     }
 
+    /// Partition native sessions and every cache identity by the request's
+    /// tier and private flag. The default class (local, not private) keeps
+    /// identities unchanged, so standalone Skippy behaves as before.
+    pub(in crate::frontend) fn with_request_class(mut self, class: InferenceRequestClass) -> Self {
+        if let Some(partition) = class.cache_partition() {
+            self.session_id = stable_wire_id(&[
+                b"tiered-inference-session",
+                partition.as_bytes(),
+                &self.session_id.to_le_bytes(),
+            ]);
+            self.session_label = format!("{partition}-{}", self.session_label);
+            self.request_id = stable_wire_id(&[
+                b"tiered-inference-request",
+                partition.as_bytes(),
+                &self.request_id.to_le_bytes(),
+            ]);
+        }
+        self.cache.request_class = class;
+        self
+    }
+
+    /// The tier this request is served at.
+    pub(in crate::frontend) fn request_tier(&self) -> InferenceRequestTier {
+        self.cache.request_class.tier()
+    }
+
+    /// The tier and cache partition this request is served in.
+    pub(in crate::frontend) fn request_class(&self) -> InferenceRequestClass {
+        self.cache.request_class
+    }
+
     pub(in crate::frontend) fn request_id_string(&self) -> String {
         self.request_id.to_string()
+    }
+
+    /// Separate native session reuse and prefix lookups for explicit renderers.
+    pub(in crate::frontend) fn with_chat_template(mut self, digest: Option<[u8; 32]>) -> Self {
+        if let Some(digest) = digest {
+            self.session_id = stable_wire_id(&[
+                b"chat-template-session-v1",
+                &digest,
+                &self.session_id.to_le_bytes(),
+            ]);
+            self.session_label =
+                format!("chat-template-{}-{}", self.session_id, self.session_label);
+            self.cache.chat_template_digest = Some(digest);
+        }
+        self
     }
 }
 
@@ -188,6 +237,81 @@ mod tests {
         assert_eq!(
             legacy.namespace().as_deref(),
             Some("openai:prompt_cache_key:x")
+        );
+    }
+
+    #[test]
+    fn explicit_chat_templates_stay_inside_the_request_class_partition() {
+        let class = InferenceRequestClass::new(InferenceRequestTier::Trusted, true);
+        let make = |digest| InferenceCacheHints {
+            request_class: class,
+            chat_template_digest: Some(digest),
+            ..Default::default()
+        };
+        let first = make([1; 32]).namespace().expect("template namespace");
+        let second = make([2; 32]).namespace().expect("template namespace");
+        assert_ne!(first, second);
+        assert_eq!(
+            InferenceRequestClass::from_cache_namespace(Some(&first)),
+            class
+        );
+        assert_eq!(
+            InferenceRequestClass::from_cache_namespace(Some(&second)),
+            class
+        );
+    }
+
+    #[test]
+    /// Each tier and the private partition get their own sessions and cache
+    /// namespace; the default local class keeps the unpartitioned identities.
+    fn request_classes_partition_sessions_and_cache() {
+        let make = |class| {
+            InferenceGenerationIds::new_with_trust(
+                InferenceCacheHints {
+                    prompt_cache_key: Some("same-key".into()),
+                    ..Default::default()
+                },
+                Some("same-agent"),
+                true,
+                None,
+            )
+            .with_request_class(class)
+        };
+        let local = make(InferenceRequestClass::default());
+        let unclassed = InferenceGenerationIds::new_with_trust(
+            InferenceCacheHints {
+                prompt_cache_key: Some("same-key".into()),
+                ..Default::default()
+            },
+            Some("same-agent"),
+            true,
+            None,
+        );
+        assert_eq!(local.session_id, unclassed.session_id);
+        assert_eq!(local.cache.namespace(), unclassed.cache.namespace());
+
+        let classes = InferenceRequestTier::ALL.into_iter().flat_map(|tier| {
+            [false, true].map(|private| make(InferenceRequestClass::new(tier, private)))
+        });
+        let ids = classes.collect::<Vec<_>>();
+        let sessions = ids
+            .iter()
+            .map(|ids| ids.session_id)
+            .collect::<std::collections::BTreeSet<_>>();
+        let namespaces = ids
+            .iter()
+            .map(|ids| ids.cache.namespace())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(sessions.len(), ids.len());
+        assert_eq!(namespaces.len(), ids.len());
+        let mesh = make(InferenceRequestClass::new(
+            InferenceRequestTier::Mesh,
+            false,
+        ));
+        assert_eq!(mesh.request_tier(), InferenceRequestTier::Mesh);
+        assert_eq!(
+            mesh.cache.namespace().as_deref(),
+            Some("tier:mesh:openai:prompt_cache_key:same-key")
         );
     }
 
@@ -271,6 +395,8 @@ pub(in crate::frontend) struct InferenceCacheHints {
     pub(in crate::frontend) prompt_cache_key: Option<String>,
     pub(in crate::frontend) prompt_cache_retention: Option<String>,
     execution_scope: Option<InferenceExecutionScope>,
+    chat_template_digest: Option<[u8; 32]>,
+    request_class: InferenceRequestClass,
 }
 
 impl InferenceCacheHints {
@@ -287,7 +413,7 @@ impl InferenceCacheHints {
                 .prompt_cache_retention
                 .map(prompt_cache_retention_label)
                 .map(ToString::to_string),
-            execution_scope: None,
+            ..Self::default()
         }
     }
 
@@ -304,24 +430,33 @@ impl InferenceCacheHints {
                 .prompt_cache_retention
                 .map(prompt_cache_retention_label)
                 .map(ToString::to_string),
-            execution_scope: None,
+            ..Self::default()
         }
     }
 
-    /// Derive a cache namespace from the trusted scope and optional client cache key.
+    /// Derive a cache namespace from the renderer, trusted scope and client cache key.
     /// A scoped request always has a namespace, even when the client supplies no key.
     pub(in crate::frontend) fn namespace(&self) -> Option<String> {
         let namespace = self
             .prompt_cache_key
             .as_ref()
             .map(|key| format!("openai:prompt_cache_key:{key}"));
-        match self.execution_scope {
+        let namespace = match self.execution_scope {
             Some(scope) => Some(format!(
                 "execution:{scope}:{}",
                 namespace.unwrap_or_default()
             )),
             None => namespace,
-        }
+        };
+        let namespace = match self.chat_template_digest {
+            Some(digest) => Some(format!(
+                "chat-template-v1:{}:{}",
+                URL_SAFE_NO_PAD.encode(digest),
+                namespace.unwrap_or_default()
+            )),
+            None => namespace,
+        };
+        self.request_class.cache_namespace(namespace)
     }
 }
 

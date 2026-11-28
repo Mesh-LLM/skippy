@@ -384,7 +384,7 @@ known size. Use them without `--prompt` or `--stage-transport`.
 | `--prefix-cache-retention-tokens` | `prefix_cache_retention_tokens` | KV cells finished requests keep resident for reuse: a token count or unbounded |
 | `--prefill-admission` | `prefill_admission` | How a prompt's uncached suffix is prefilled: cooperative or serialized |
 | `--prefix-cache-exact-budget` | `prefix_cache_exact_budget` | Exact-state retention ceiling: auto, unbounded, or IEC size; one snapshot may exceed it |
-| `--kv-cache-disk` | `kv_cache_disk` | `off` (default), `auto` (up to 64 GiB), or a fixed IEC size. |
+| `--kv-cache-disk` | `kv_cache_disk` | Disk cache budget. Defaults to `auto` with a 64 GiB cap. Use `off` or an IEC size to override. |
 | `--kv-cache-disk-dir` | `kv_cache_disk_dir` | See `skippy serve --help` for values and defaults. |
 | `--kv-cache-min-free` | `kv_cache_min_free` | See `skippy serve --help` for values and defaults. |
 

@@ -51,7 +51,12 @@ contract; no downstream product's workflow topology applies here.
   runs Graph Contracts in parallel with fifteen build, package and smoke jobs.
   Each CPU job supplies a shared platform CLI to its backend jobs. Routine CI
   uses two device jobs and checks the three remaining CUDA archives on hosted
-  compiler-image runners.
+  compiler-image runners. A dedicated KV path filter selects short cache checks
+  in the Metal and ARM64 CUDA 13 device jobs. Full CI qualifies all four KV
+  fixtures in those same device jobs using their exact packaged runtimes.
+  KV qualification gates known answers, identity/isolation and observed reuse;
+  token/score traces and optional upstream observations are diagnostics. It does
+  not require a separately built upstream server or numerical equivalence.
   Tagged releases add device smoke on those exact archives, including x64 CUDA 13.
   Windows x64 CPU retains archive verification. Full CI additionally requires
   two native Windows VM smoke jobs: CUDA 12 and 13 share one guest; ROCm has one.
@@ -261,3 +266,5 @@ target matrix and `ci/README.md`. Validate syntax, matrix consistency, relevant
 Rust tests and the actual Just commands. Report unexecuted hardware checks and
 unverified external runner/repository configuration explicitly. Never describe
 workflow syntax validation as a successful build or hardware qualification.
+
+KV cache qualification in this branch runs after exact-package device smoke in the Metal and ARM64 CUDA 13 package jobs: short on selected PR packages, full on full CI. Harness and action inputs select those packages through the shared package filter.

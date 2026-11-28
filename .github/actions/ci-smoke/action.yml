@@ -7,6 +7,9 @@ inputs:
   download-package:
     description: Restore the archived package for a separate release device smoke.
     default: 'false'
+  kv-profile:
+    description: Run short or full KV qualification after device smoke.
+    default: ''
   evidence-suffix:
     description: Driver vendor suffix for independent Vulkan device evidence.
     default: ''
@@ -58,6 +61,11 @@ runs:
           export TMPDIR="$RUNNER_TEMP"
         fi
         just ci-smoke "$RUNTIME_ID" "dist/products/$RUNTIME_ID"
+    - uses: ./.github/actions/ci-cache-correctness
+      if: inputs.kv-profile != ''
+      with:
+        runtime-id: ${{ inputs.runtime_id }}
+        profile: ${{ inputs.kv-profile }}
     - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       if: inputs.download-package == 'true'
       with:

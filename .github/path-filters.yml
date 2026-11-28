@@ -58,6 +58,8 @@ code:
 
 packages:
   - 'crates/**'
+  - 'tools/xtask/**'
+  - '.github/actions/ci-cache-correctness/**'
   - 'skippy_api/src/**'
   - 'skippy_api/include/**'
   - 'skippy_api/CMakeLists.txt'

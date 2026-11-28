@@ -4,6 +4,7 @@ mod conversion;
 mod disk_cache;
 mod draft;
 mod gpu_benchmark;
+mod kv_cache;
 mod local_model;
 mod local_resource_planning;
 #[cfg(unix)]
@@ -154,6 +155,7 @@ async fn run_command(cli: Cli, native_logs: Arc<native_logging::NativeDiagnostic
         Command::GpuBenchmark { timeout_secs } => {
             gpu_benchmark::run(&native_options, timeout_secs).await
         }
+        Command::KvCache(args) => kv_cache::run(args).await,
         Command::Prompt(args) => {
             tokio::task::spawn_blocking(move || {
                 skippy_commands::prompt::run(skippy_commands::prompt::PromptCommand {

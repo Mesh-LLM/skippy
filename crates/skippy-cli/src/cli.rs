@@ -62,6 +62,8 @@ pub enum Command {
         #[arg(long, default_value_t = 120)]
         timeout_secs: u64,
     },
+    /// Inspect or maintain the local disk KV cache.
+    KvCache(crate::kv_cache::CacheArgs),
     /// Prompt a running Skippy OpenAI endpoint interactively.
     Prompt(PromptArgs),
     /// Serve OpenAI and Anthropic APIs, or an explicitly selected stage transport.
@@ -374,7 +376,7 @@ pub struct ServeOpenAiArgs {
     pub openai_guardrails: OpenAiGuardrailsCliMode,
     #[arg(
         long,
-        help = "Disk prompt cache: off, auto, or an IEC budget such as 32GiB"
+        help = "Disk prompt cache: auto (default), off, or an IEC budget such as 32GiB"
     )]
     pub kv_cache_disk: Option<String>,
     #[arg(long, help = "Absolute directory for the disk prompt cache")]

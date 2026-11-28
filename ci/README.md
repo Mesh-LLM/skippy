@@ -110,6 +110,16 @@ documentation and image builds use their ordinary workflows, not Depot wrappers.
 The existing inference PR comment is target-event-only; fork qualification links
 and artifacts are available in **Approved fork CI** and the aggregate status.
 
+The `kv` filter also selects the Metal and Linux ARM64 CUDA 13 package jobs.
+Each selected short run checks one dense fixture for known JSON answers,
+L1 reuse, and L3 restoration in a fresh process. Numerical traces are diagnostic; the gate
+requires correct answers, identity/isolation and actual reuse. Full profiles run all four
+fixtures in those same jobs after device smoke, against the exact packaged
+runtime. PRs read base-revision filters, falling back conservatively to code
+selection before the KV filter lands. Main uses its last verified covered
+commit and forces KV qualification when prior coverage cannot be verified.
+See the [KV correctness gate](../docs/CACHE_CORRECTNESS_GATE.md).
+
 On PRs, runtime source and package/build/smoke inputs select device package smoke.
 Qualification planning, dispatch, scoring, baselines and publication select
 qualification and offline automation without rebuilding packages. Renderers,
@@ -242,7 +252,7 @@ compares verified measurements directly with its saved baselines, and uploads
 aggregate Parquet results, the baseline manifest, and the generated card in
 one revision-checked commit to
 [the public qualification dataset](https://huggingface.co/datasets/meshllm/skippy-inference-qualification).
-The initial tolerance and promotion threshold are 5% per performance metric.
+The tolerance and promotion threshold are 1% per performance metric.
 A changed benchmark recipe seeds its own reference. Passing measurements are
 recorded while the saved reference remains in force until a new source exceeds
 the improvement threshold. Regressions and incomplete evidence fail nightly
@@ -655,8 +665,8 @@ Sparks. Protected dispatch code verifies trust before sending a pinned source
 SHA. Jobs use the standard JY account and its existing host permissions without publisher credentials,
 fresh workspaces, read-only admitted models, exclusive machine reservations and
 bounded leases. Clean up job processes and workspaces after every outcome;
-quarantine an allocation whose cleanup fails. Fork and other untrusted PRs still
-require isolated ephemeral execution. The `unconfined` capability is not itself
+quarantine an allocation whose cleanup fails. Fork PRs enter native execution only through the protected approved-fork
+controller after maintainer workflow approval; other untrusted work stays isolated. The `unconfined` capability is not itself
 an admission failure; no separate job-account migration is required. Actions
 only orchestrates these jobs, so the 6 GiB runner-container limit does not bound
 model execution. Split jobs reserve both Sparks atomically. This policy does not
@@ -682,6 +692,18 @@ runtime metadata and native dependency closure, then check CLI startup. This
 artifact smoke is recorded separately from inference evidence.
 
 ## Artifact flow
+
+```mermaid
+flowchart LR
+    path["Independent path selection and build plan"] --> automation["Offline automation"]
+    automation --> quality["Source checks when selected"]
+    quality --> metal["Metal package and device smoke"]
+    quality --> arm["ARM64 CUDA 13 package and device smoke"]
+    metal --> metalKv["KV in the same job<br/>Selected short: one fixture; full: four"]
+    arm --> armKv["KV in the same job<br/>Selected short: one fixture; full: four"]
+    metalKv --> gate["CI result gate"]
+    armKv --> gate
+```
 
 `just ci-plan` validates the target matrix with `jq`. The package and
 smoke commands use Python 3.9 or later. Release inventory uses Python
@@ -998,3 +1020,5 @@ Enable the llama schedule only after source regeneration, full candidate CI,
 bounded repair and exact-commit PR publication work in acceptance pilots.
 
 No hosted/hardware capacity or secret configuration is implied by these files.
+
+KV qualification remains attached to both native package jobs (Metal and ARM64 CUDA 13): short checks on selected PR packages and the full four-fixture checks on full CI. Both use the exact packaged runtime after device smoke and retain independent KV evidence. The shared packages filter includes the KV harness and action inputs. CUDA archives use the shared product handoff; no separate duplicate ARM64 package/device job is required.

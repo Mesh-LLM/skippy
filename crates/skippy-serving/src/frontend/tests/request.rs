@@ -18,6 +18,64 @@ fn chat_runtime_feature_guard_allows_noop_parity_fields() {
     ensure_chat_runtime_features_supported(&request).unwrap();
 }
 
+#[test]
+fn public_response_format_reaches_native_template_options() {
+    let schema =
+        json!({"type":"object", "properties":{"code":{"const":1729}}, "required":["code"]});
+    let request = chat_request_with(&json!({"response_format": {
+        "type":"json_schema", "json_schema":{"name":"answer", "strict":true, "schema":schema}
+    }}));
+    let options = chat_template_options(&request, &Default::default()).unwrap();
+    assert!(options.grammar.is_none());
+    assert_eq!(
+        serde_json::from_str::<Value>(&options.json_schema.unwrap()).unwrap(),
+        schema
+    );
+
+    let request = chat_request_with(&json!({"response_format":{"type":"json_object"}}));
+    let options = chat_template_options(&request, &Default::default()).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&options.json_schema.unwrap()).unwrap(),
+        json!({"type":"object"})
+    );
+}
+
+#[test]
+fn public_response_format_overrides_default_native_constraints() {
+    let defaults = EmbeddedOpenAiRequestDefaults {
+        json_schema: Some(json!({"type":"object", "required":["default_only"]})),
+        ..Default::default()
+    };
+    for format in [json!({"type":"text"}), json!({"type":"json_object"})] {
+        let mut request = chat_request_with(&json!({"response_format":format}));
+        apply_chat_request_defaults(&mut request, &defaults).unwrap();
+        assert!(!request.extra.contains_key("json_schema"));
+        let options = chat_template_options(&request, &defaults).unwrap();
+        assert_eq!(
+            options.json_schema.is_some(),
+            format["type"] == "json_object"
+        );
+    }
+}
+
+#[test]
+fn malformed_or_conflicting_response_formats_are_rejected() {
+    for extra in [
+        json!({"response_format":{"type":"unknown"}}),
+        json!({"response_format":{"type":"json_schema"}}),
+        json!({"response_format":{"type":"json_schema", "json_schema":{"schema":null}}}),
+        json!({"response_format":{"type":"json_schema", "json_schema":{"schema":{}, "strict":"yes"}}}),
+        json!({"response_format":{"type":"json_object"}, "grammar":"root ::= \"x\""}),
+        json!({"response_format":{"type":"json_object"}, "json_schema":{"type":"object"}}),
+    ] {
+        let request = chat_request_with(&extra);
+        assert!(
+            chat_template_options(&request, &Default::default()).is_err(),
+            "{extra}"
+        );
+    }
+}
+
 /// A one-message chat request with `extra` fields merged in.
 fn chat_request_with(extra: &serde_json::Value) -> GenerationRequest {
     let mut payload = json!({

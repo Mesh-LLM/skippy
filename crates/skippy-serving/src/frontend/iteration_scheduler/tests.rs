@@ -89,6 +89,9 @@ fn expired_direct_iteration_behind_blocked_worker_never_reaches_native_runtime()
             scheduler: Scheduler::new(build_scheduler_config(1, 64, 0, Some(8), Some(8), 8, false)),
             requests: BTreeMap::new(),
             direct_iterations: VecDeque::new(),
+            verifications: VecDeque::new(),
+            drafts: VecDeque::new(),
+            max_verify_iteration_tokens: 512,
             cache_runtime_queue: CacheRuntimeQueue::new(CACHE_AGING_COST_PER_TURN, true),
             commands: receiver,
             kv_capacity_tokens: 64,
@@ -112,6 +115,7 @@ fn expired_direct_iteration_behind_blocked_worker_never_reaches_native_runtime()
     let (release_worker, release_worker_rx) = std_mpsc::sync_channel(0);
     commands
         .send(SchedulerCommand::ExecuteRuntime(RuntimeOperation {
+            kind: RuntimeOperationKind::Mutation,
             label: "deadline-test-gate",
             control: None,
             run: Box::new(move |_| {
@@ -265,6 +269,9 @@ fn server_scheduler_worker_batches_and_completes_default_generations() {
         scheduler: Scheduler::new(build_scheduler_config(2, 64, 0, Some(8), Some(8), 8, false)),
         requests: BTreeMap::new(),
         direct_iterations: VecDeque::new(),
+        verifications: VecDeque::new(),
+        drafts: VecDeque::new(),
+        max_verify_iteration_tokens: 512,
         cache_runtime_queue: CacheRuntimeQueue::new(CACHE_AGING_COST_PER_TURN, true),
         commands: receiver,
         kv_capacity_tokens: 64,
@@ -286,6 +293,7 @@ fn server_scheduler_worker_batches_and_completes_default_generations() {
     let (reply_b, events_b) = std_mpsc::channel();
     worker.submit(ScheduledRequest {
         id: "a".into(),
+        priority: 0,
         prompt_tokens: vec![1, 2],
         max_tokens: 1,
         sampling: None,
@@ -297,6 +305,7 @@ fn server_scheduler_worker_batches_and_completes_default_generations() {
     });
     worker.submit(ScheduledRequest {
         id: "b".into(),
+        priority: 0,
         prompt_tokens: vec![3, 4],
         max_tokens: 1,
         sampling: None,
@@ -375,6 +384,9 @@ fn token_control_is_applied_without_blocking_the_scheduler_iteration() {
         scheduler: Scheduler::new(build_scheduler_config(1, 64, 0, Some(8), Some(8), 8, false)),
         requests: BTreeMap::new(),
         direct_iterations: VecDeque::new(),
+        verifications: VecDeque::new(),
+        drafts: VecDeque::new(),
+        max_verify_iteration_tokens: 512,
         cache_runtime_queue: CacheRuntimeQueue::new(CACHE_AGING_COST_PER_TURN, true),
         commands: receiver,
         kv_capacity_tokens: 64,
@@ -395,6 +407,7 @@ fn token_control_is_applied_without_blocking_the_scheduler_iteration() {
     let (reply, events) = std_mpsc::channel();
     worker.submit(ScheduledRequest {
         id: "slow-consumer".into(),
+        priority: 0,
         prompt_tokens: vec![1],
         max_tokens: 2,
         sampling: None,
@@ -488,6 +501,9 @@ fn resumed_request_cancellation_leaves_runtime_for_caller_cleanup() {
         scheduler: Scheduler::new(build_scheduler_config(1, 64, 0, Some(8), Some(8), 8, false)),
         requests: BTreeMap::new(),
         direct_iterations: VecDeque::new(),
+        verifications: VecDeque::new(),
+        drafts: VecDeque::new(),
+        max_verify_iteration_tokens: 512,
         cache_runtime_queue: CacheRuntimeQueue::new(CACHE_AGING_COST_PER_TURN, true),
         commands: receiver,
         kv_capacity_tokens: 64,
@@ -547,6 +563,9 @@ fn feature_runtime_operations_execute_on_the_scheduler_worker() {
             scheduler: Scheduler::new(build_scheduler_config(3, 64, 0, Some(8), Some(8), 8, false)),
             requests: BTreeMap::new(),
             direct_iterations: VecDeque::new(),
+            verifications: VecDeque::new(),
+            drafts: VecDeque::new(),
+            max_verify_iteration_tokens: 512,
             cache_runtime_queue: CacheRuntimeQueue::new(CACHE_AGING_COST_PER_TURN, true),
             commands: receiver,
             kv_capacity_tokens: 64,
@@ -595,6 +614,9 @@ fn detached_runtime_operation_returns_before_work_completes() {
             scheduler: Scheduler::new(build_scheduler_config(3, 64, 0, Some(8), Some(8), 8, false)),
             requests: BTreeMap::new(),
             direct_iterations: VecDeque::new(),
+            verifications: VecDeque::new(),
+            drafts: VecDeque::new(),
+            max_verify_iteration_tokens: 512,
             cache_runtime_queue: CacheRuntimeQueue::new(CACHE_AGING_COST_PER_TURN, true),
             commands: receiver,
             kv_capacity_tokens: 64,
@@ -740,6 +762,9 @@ fn full_direct_wave_suppresses_cache_runtime_while_direct_queue_is_temporarily_e
         scheduler: Scheduler::new(build_scheduler_config(1, 64, 0, Some(8), Some(8), 8, false)),
         requests: BTreeMap::new(),
         direct_iterations: VecDeque::new(),
+        verifications: VecDeque::new(),
+        drafts: VecDeque::new(),
+        max_verify_iteration_tokens: 512,
         cache_runtime_queue: CacheRuntimeQueue::new(CACHE_AGING_COST_PER_TURN, true),
         commands: receiver,
         kv_capacity_tokens: 64,
@@ -759,6 +784,7 @@ fn full_direct_wave_suppresses_cache_runtime_while_direct_queue_is_temporarily_e
     };
     worker.cache_runtime_queue.enqueue_with_policy(
         RuntimeOperation {
+            kind: RuntimeOperationKind::Mutation,
             label: "full-wave-cache",
             control: None,
             run: Box::new(move |_| {
@@ -790,6 +816,9 @@ fn resident_kv_does_not_engage_direct_wave_gate() {
         scheduler: Scheduler::new(build_scheduler_config(1, 64, 0, Some(8), Some(8), 8, false)),
         requests: BTreeMap::new(),
         direct_iterations: VecDeque::new(),
+        verifications: VecDeque::new(),
+        drafts: VecDeque::new(),
+        max_verify_iteration_tokens: 512,
         cache_runtime_queue: CacheRuntimeQueue::new(CACHE_AGING_COST_PER_TURN, true),
         commands: receiver,
         kv_capacity_tokens: 64,
@@ -809,6 +838,7 @@ fn resident_kv_does_not_engage_direct_wave_gate() {
     };
     worker.cache_runtime_queue.enqueue(
         RuntimeOperation {
+            kind: RuntimeOperationKind::Mutation,
             label: "resident-cache",
             control: None,
             run: Box::new(move |_| {
@@ -887,6 +917,9 @@ fn worker_panic_is_contained_and_fails_active_requests() {
             scheduler: Scheduler::new(build_scheduler_config(1, 64, 0, Some(8), Some(8), 8, false)),
             requests: BTreeMap::new(),
             direct_iterations: VecDeque::new(),
+            verifications: VecDeque::new(),
+            drafts: VecDeque::new(),
+            max_verify_iteration_tokens: 512,
             cache_runtime_queue: CacheRuntimeQueue::new(CACHE_AGING_COST_PER_TURN, true),
             commands: receiver,
             kv_capacity_tokens: 64,
@@ -910,6 +943,7 @@ fn worker_panic_is_contained_and_fails_active_requests() {
     let (release_worker, release_worker_rx) = std_mpsc::sync_channel(0);
     commands
         .send(SchedulerCommand::ExecuteRuntime(RuntimeOperation {
+            kind: RuntimeOperationKind::Mutation,
             label: "panic-test-gate",
             control: None,
             run: Box::new(move |_| {
@@ -925,6 +959,7 @@ fn worker_panic_is_contained_and_fails_active_requests() {
     commands
         .send(SchedulerCommand::Submit(ScheduledRequest {
             id: "panic-contained".into(),
+            priority: 0,
             prompt_tokens: vec![1],
             max_tokens: 1,
             sampling: None,
@@ -937,6 +972,7 @@ fn worker_panic_is_contained_and_fails_active_requests() {
         .unwrap();
     commands
         .send(SchedulerCommand::ExecuteRuntime(RuntimeOperation {
+            kind: RuntimeOperationKind::Mutation,
             label: "panic-test",
             control: None,
             run: Box::new(|_| -> Duration { panic!("injected scheduler worker panic") }),
@@ -1009,6 +1045,9 @@ fn detached_capture_unit_releases_on_completion_rejection_and_shutdown_drop() {
             scheduler: Scheduler::new(build_scheduler_config(1, 64, 0, Some(8), Some(8), 8, false)),
             requests: BTreeMap::new(),
             direct_iterations: VecDeque::new(),
+            verifications: VecDeque::new(),
+            drafts: VecDeque::new(),
+            max_verify_iteration_tokens: 512,
             cache_runtime_queue: CacheRuntimeQueue::new(CACHE_AGING_COST_PER_TURN, true),
             commands: receiver,
             kv_capacity_tokens: 64,
@@ -1033,6 +1072,7 @@ fn detached_capture_unit_releases_on_completion_rejection_and_shutdown_drop() {
     let run_guard = CaptureTaskOutstandingGuard::new(run_counter);
     commands
         .send(SchedulerCommand::ExecuteRuntime(RuntimeOperation {
+            kind: RuntimeOperationKind::Mutation,
             label: "capture-unit-run",
             control: None,
             run: Box::new(move |_| {
@@ -1055,6 +1095,7 @@ fn detached_capture_unit_releases_on_completion_rejection_and_shutdown_drop() {
 fn capture_operation(counter: &Arc<AtomicUsize>, label: &'static str) -> RuntimeOperation {
     let guard = CaptureTaskOutstandingGuard::new(counter.clone());
     RuntimeOperation {
+        kind: RuntimeOperationKind::Mutation,
         label,
         control: None,
         run: Box::new(move |_| {
@@ -1105,6 +1146,9 @@ fn scheduler_worker_keeps_serving_after_an_operation_panics() {
             scheduler: Scheduler::new(build_scheduler_config(1, 64, 0, Some(8), Some(8), 8, false)),
             requests: BTreeMap::new(),
             direct_iterations: VecDeque::new(),
+            verifications: VecDeque::new(),
+            drafts: VecDeque::new(),
+            max_verify_iteration_tokens: 512,
             cache_runtime_queue: CacheRuntimeQueue::new(CACHE_AGING_COST_PER_TURN, true),
             commands: receiver,
             kv_capacity_tokens: 64,
@@ -1169,6 +1213,9 @@ fn direct_iterations_in_a_panicking_batch_get_an_error() {
             scheduler: Scheduler::new(build_scheduler_config(1, 64, 0, Some(8), Some(8), 8, false)),
             requests: BTreeMap::new(),
             direct_iterations: VecDeque::new(),
+            verifications: VecDeque::new(),
+            drafts: VecDeque::new(),
+            max_verify_iteration_tokens: 512,
             cache_runtime_queue: CacheRuntimeQueue::new(CACHE_AGING_COST_PER_TURN, true),
             commands: receiver,
             kv_capacity_tokens: 64,

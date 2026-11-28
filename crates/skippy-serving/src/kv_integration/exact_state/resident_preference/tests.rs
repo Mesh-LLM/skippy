@@ -31,7 +31,7 @@ fn fixture(root: &Path) -> (KvStageIntegration, PrefillKvIdentity) {
         }),
         ..StageConfig::default()
     };
-    let kv = KvStageIntegration::from_test_model_with_l3_manager(
+    let kv = KvStageIntegration::from_loaded_model_with_l3_manager(
         &config,
         Some(ModelStateKind::Dense),
         Some(MemoryCacheCapabilities {
@@ -83,6 +83,7 @@ fn resident(kv: &KvStageIntegration, identity: &PrefillKvIdentity, count: usize,
                 seq_id: seq,
                 token_count: count as u64,
                 recompute_cost: 1,
+                retention_priority: 0,
             },
         )
         .unwrap();

@@ -546,17 +546,18 @@ index 11e837caf..d01c83436 100644
      // TODO: this clear of the buffer can easily be forgotten - need something better
      // sync first so any in-flight async copies into embd_seq complete before it is freed
      if (!embd_seq.empty()) {
-@@ -1932,11 +2045,7 @@ int llama_context::encode(const llama_batch_ext & batch_inp) {
+@@ -1932,11 +2045,10 @@ int llama_context::encode(const llama_batch_ext & batch_inp) {
      }
      embd_seq.clear();
  
--    if (t_compute_start_us == 0) {
--        t_compute_start_us = ggml_time_us();
--    }
++    sched_reserve(graph_build_inputs);
++
+     if (t_compute_start_us == 0) {
+         t_compute_start_us = ggml_time_us();
+     }
 -
 -    sched_reserve();
-+    sched_reserve(graph_build_inputs);
- 
+-
      n_queued_tokens += n_tokens;
  
 @@ -1963,7 +2072,7 @@ int llama_context::encode(const llama_batch_ext & batch_inp) {
@@ -630,7 +631,7 @@ index 11e837caf..d01c83436 100644
                      return -1;
                  }
              }
-@@ -2228,27 +2362,26 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
+@@ -2228,27 +2362,31 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
  
      GGML_ASSERT((cparams.causal_attn || cparams.n_ubatch >= n_tokens_all) && "non-causal attention requires n_ubatch >= n_tokens");
  
@@ -645,18 +646,21 @@ index 11e837caf..d01c83436 100644
          synchronize();
      }
      embd_seq.clear();
--
--    if (t_compute_start_us == 0) {
--        t_compute_start_us = ggml_time_us();
--    }
--    n_queued_tokens += n_tokens_all;
--
-     output_swaps.clear();
-     embd_batch_idxs.clear();
- 
--    sched_reserve();
++    output_swaps.clear();
++    embd_batch_idxs.clear();
++
 +    sched_reserve(graph_build_inputs);
  
+     if (t_compute_start_us == 0) {
+         t_compute_start_us = ggml_time_us();
+     }
+     n_queued_tokens += n_tokens_all;
+ 
+-    output_swaps.clear();
+-    embd_batch_idxs.clear();
+-
+-    sched_reserve();
+-
      bool did_optimize = false;
  
      // handle any pending shifts/copies

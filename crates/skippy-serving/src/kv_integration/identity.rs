@@ -31,7 +31,7 @@ impl KvStageIntegration {
             stage_index: config.stage_index,
             layer_start: config.layer_start,
             layer_end: config.layer_end,
-            prefix_hash: self.bind_model_content(prefix.prefix_hash.clone()),
+            prefix_hash: prefix.prefix_hash,
             session_id: base.session_id.clone(),
             token_start,
             token_count: prefix.token_count,
@@ -46,22 +46,18 @@ impl KvStageIntegration {
             position_config_hash: format!("ctx:{}", config.ctx_size),
             kv_dtype: NATIVE_KV_DTYPE.to_string(),
         };
+        let namespace =
+            prefix_namespace_hash(config, token_start, base.chat_template_id.as_deref());
+        let namespace = self
+            .l3
+            .as_ref()
+            .map(|tier| durable_namespace(&namespace, tier.state_identity()))
+            .unwrap_or(namespace);
         PrefillKvIdentity {
             identity,
-            page_id: self.bind_model_content(prefix.page_id),
-            namespace: self.bind_model_content(prefix_namespace_hash(
-                config,
-                token_start,
-                base.chat_template_id.as_deref(),
-            )),
+            page_id: prefix.page_id,
+            namespace,
             token_ids: token_ids.to_vec(),
-        }
-    }
-
-    fn bind_model_content(&self, identity: String) -> String {
-        match self.loaded_model_content.as_ref() {
-            Some(proof) => proof.bind(&identity),
-            None => identity,
         }
     }
 
@@ -201,6 +197,17 @@ impl KvStageIntegration {
             .min(token_ids.len());
         &token_ids[..checkpoint]
     }
+}
+
+/// Extend the serving radix namespace without changing the public page ID.
+/// Distinct native identities must have separate durable prefix indexes even
+/// when they use byte-identical user prompts and cache scopes.
+pub(super) fn durable_namespace(prefix_namespace: &str, state_identity: &str) -> String {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"skippy-durable-prefix-v1");
+    hash.update(prefix_namespace.as_bytes());
+    hash.update(state_identity.as_bytes());
+    format!("blake3:{}", hash.finalize().to_hex())
 }
 
 #[cfg(test)]

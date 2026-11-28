@@ -18,18 +18,20 @@ use skippy_runtime::{
 };
 
 mod context_capacity;
+pub(crate) mod draft_batch;
 mod expert_placement;
 mod frame_operations;
 pub(crate) use frame_operations::slice_activation_frame;
 pub(crate) mod lane_admission;
 mod lane_lifecycle;
 pub mod lifecycle;
-pub(crate) mod model_content;
 pub mod panic_recovery;
 mod resident_prefix;
 mod restore_transaction;
 mod session_end_exports;
 mod state_transfer;
+mod verification_batch;
+pub(crate) use verification_batch::RuntimeVerificationRequest;
 
 #[cfg(test)]
 use context_capacity::lane_count_for_workload;
@@ -51,7 +53,6 @@ pub struct RuntimeLaunchOverrides {
 pub struct RuntimeState {
     pub model: StageModel,
     runtime_lane_admission: Arc<lane_admission::RuntimeLaneAdmission>,
-    pub(crate) verified_model_content: Option<Arc<model_content::VerifiedModelContent>>,
     pub(crate) generation_token_budget:
         Option<Arc<crate::frontend::admission::GenerationTokenBudget>>,
     compute_meter: Arc<crate::compute_meter::StageComputeMeter>,
@@ -281,7 +282,6 @@ impl RuntimeState {
         Self {
             model: StageModel::new_dummy(),
             runtime_lane_admission: lane_admission::RuntimeLaneAdmission::new(lane_count),
-            verified_model_content: None,
             generation_token_budget: None,
             layer_start: 0,
             layer_end: 1,
@@ -405,42 +405,22 @@ pub fn load_runtime_with_overrides(
         .iter()
         .map(std::path::PathBuf::from)
         .collect::<Vec<_>>();
-    let (model, content) = model_content::VerifiedModelContent::verify_during_load(config, || {
-        let model = match config.load_mode {
-            _ if !admitted_model_parts.is_empty() => {
-                open_stage_model_from_parts(&admitted_model_parts, &runtime_config)?
-            }
-            _ => {
-                let Some(model_path) = config.model_path.as_ref().map(std::path::Path::new) else {
-                    return Ok(None);
-                };
-                open_stage_model(model_path, &runtime_config)?
-            }
-        };
-        Ok(Some(model))
-    })?;
-    let Some(model) = model else {
-        return Ok(None);
+    let model = match config.load_mode {
+        _ if !admitted_model_parts.is_empty() => {
+            open_stage_model_from_parts(&admitted_model_parts, &runtime_config)?
+        }
+        _ => {
+            let Some(model_path) = config.model_path.as_ref().map(std::path::Path::new) else {
+                return Ok(None);
+            };
+            open_stage_model(model_path, &runtime_config)?
+        }
     };
-    Ok(Some(runtime_from_verified_model(
+    Ok(Some(runtime_from_loaded_model(
         config,
         model,
         session_lifecycle_observer,
-        content,
     )?))
-}
-
-fn runtime_from_verified_model(
-    config: &StageConfig,
-    model: StageModel,
-    observer: Option<Arc<dyn SessionLifecycleObserver>>,
-    content: Option<model_content::VerifiedModelContent>,
-) -> Result<Arc<Mutex<RuntimeState>>> {
-    // Verification and its post-open file checks finished outside this lock.
-    let content = content.map(Arc::new);
-    let runtime = runtime_from_loaded_model(config, model, observer)?;
-    panic_recovery::lock_runtime(&runtime).verified_model_content = content;
-    Ok(runtime)
 }
 
 /// Apply workload admission and retain the host's session-lifecycle observer.
@@ -459,7 +439,6 @@ fn runtime_from_loaded_model(
     Ok(Arc::new(Mutex::new(RuntimeState {
         model,
         runtime_lane_admission: lane_admission::RuntimeLaneAdmission::new(lane_count),
-        verified_model_content: None,
         generation_token_budget: None,
         layer_start: config.layer_start,
         layer_end: config.layer_end,
@@ -501,30 +480,23 @@ pub fn load_runtime_with_overrides_and_open_events(
         .iter()
         .map(std::path::PathBuf::from)
         .collect::<Vec<_>>();
-    let (model, content) = model_content::VerifiedModelContent::verify_during_load(config, || {
-        let model = match config.load_mode {
-            _ if !admitted_model_parts.is_empty() => open_stage_model_from_parts_with_events(
-                &admitted_model_parts,
-                &runtime_config,
-                model_open_events,
-            )?,
-            _ => {
-                let Some(model_path) = config.model_path.as_ref().map(std::path::Path::new) else {
-                    return Ok(None);
-                };
-                open_stage_model_with_events(model_path, &runtime_config, model_open_events)?
-            }
-        };
-        Ok(Some(model))
-    })?;
-    let Some(model) = model else {
-        return Ok(None);
+    let model = match config.load_mode {
+        _ if !admitted_model_parts.is_empty() => open_stage_model_from_parts_with_events(
+            &admitted_model_parts,
+            &runtime_config,
+            model_open_events,
+        )?,
+        _ => {
+            let Some(model_path) = config.model_path.as_ref().map(std::path::Path::new) else {
+                return Ok(None);
+            };
+            open_stage_model_with_events(model_path, &runtime_config, model_open_events)?
+        }
     };
-    Ok(Some(runtime_from_verified_model(
+    Ok(Some(runtime_from_loaded_model(
         config,
         model,
         session_lifecycle_observer,
-        content,
     )?))
 }
 

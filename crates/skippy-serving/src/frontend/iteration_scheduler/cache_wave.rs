@@ -86,6 +86,9 @@ mod tests {
             )),
             requests: BTreeMap::new(),
             direct_iterations: VecDeque::new(),
+            verifications: VecDeque::new(),
+            drafts: VecDeque::new(),
+            max_verify_iteration_tokens: 512,
             cache_runtime_queue: CacheRuntimeQueue::new(CACHE_AGING_COST_PER_TURN, true),
             commands: receiver,
             kv_capacity_tokens: 8192,
@@ -132,6 +135,7 @@ mod tests {
         queue_restore(
             &mut worker,
             RuntimeOperation {
+                kind: RuntimeOperationKind::Mutation,
                 label: "fourth-required-restore",
                 control: None,
                 run: Box::new(move |_| {
@@ -163,6 +167,7 @@ mod tests {
         queue_restore(
             &mut worker,
             RuntimeOperation {
+                kind: RuntimeOperationKind::Mutation,
                 label: "next-wave-restore",
                 control: None,
                 run: Box::new(move |_| {
@@ -192,6 +197,7 @@ mod tests {
         let observed = next_restore.clone();
         worker.cache_runtime_queue.enqueue_with_policy(
             RuntimeOperation {
+                kind: RuntimeOperationKind::Mutation,
                 label: "next-wave-required-restore",
                 control: None,
                 run: Box::new(move |_| {

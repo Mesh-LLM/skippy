@@ -612,6 +612,8 @@ pub(in crate::frontend) struct GeneratedTokenLogprob {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::frontend) struct GeneratedLogprobCandidate {
+    #[cfg(test)]
+    pub(in crate::frontend) token_id: i32,
     pub(in crate::frontend) text: String,
     pub(in crate::frontend) bytes: Vec<u8>,
     /// `None` when the runtime could not read the logits row.

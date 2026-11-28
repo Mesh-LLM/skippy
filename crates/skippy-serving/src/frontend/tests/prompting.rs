@@ -784,6 +784,7 @@ fn chat_message_generation_value_preserves_omitted_content() {
 /// Two generated tokens with recorded logprobs; the second one's row was unreadable.
 fn generated_text_with_logprobs() -> GeneratedText {
     let candidate = |text: &str, logprob: Option<f32>| GeneratedLogprobCandidate {
+        token_id: 0,
         text: text.to_string(),
         bytes: text.as_bytes().to_vec(),
         logprob,

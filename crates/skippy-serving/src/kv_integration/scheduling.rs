@@ -82,7 +82,7 @@ mod tests {
             }),
             ..StageConfig::default()
         };
-        KvStageIntegration::from_test_model_with_l3_manager(
+        KvStageIntegration::from_loaded_model_with_l3_manager(
             &config,
             Some(ModelStateKind::Dense),
             Some(MemoryCacheCapabilities {

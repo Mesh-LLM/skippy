@@ -1,0 +1,364 @@
+From 1a0005ecf541afff81aefe5655cb33df822792b7 Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Mon, 23 Nov 2026 09:41:37 +1100
+Subject: [PATCH] memory: avoid redundant recurrent staging and admit Metal
+ diagnostics by capability
+
+---
+ ggml/src/ggml-metal/ggml-metal-device.cpp     |  2 +-
+ .../ggml-metal/ggml-metal-routed-offsets.h    |  4 +-
+ .../src/ggml-metal/ggml-metal-routed-tuning.h | 13 +++-
+ ggml/src/ggml-metal/ggml-metal-tuning.cpp     |  6 +-
+ ggml/src/ggml-metal/ggml-metal-tuning.h       |  2 +-
+ ggml/src/ggml-metal/ggml-metal.cpp            |  2 +-
+ src/CMakeLists.txt                            |  6 ++
+ src/llama-memory-recurrent-copy.cpp           | 68 ++++++++++++++++---
+ src/llama-memory-recurrent-copy.h             |  8 ++-
+ src/skippy/tests/recurrent_copy.cpp           | 52 ++++++++++++++
+ tests/test-metal-graph-optimize.cpp           |  7 ++
+ tests/test-metal-routed-u32.cpp               |  3 +-
+ 12 files changed, 152 insertions(+), 21 deletions(-)
+ create mode 100644 src/skippy/tests/recurrent_copy.cpp
+
+diff --git a/ggml/src/ggml-metal/ggml-metal-device.cpp b/ggml/src/ggml-metal/ggml-metal-device.cpp
+index 2e5413e07..433974243 100644
+--- a/ggml/src/ggml-metal/ggml-metal-device.cpp
++++ b/ggml/src/ggml-metal/ggml-metal-device.cpp
+@@ -1546,7 +1546,7 @@ ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_mul_mv_id(ggml_m
+ 
+     const auto * props = ggml_metal_device_get_props(ggml_metal_library_get_device(lib));
+     const int tuned_rows = ggml_metal_routed_tuning::rows(
+-            props->device_id, props->use_shared_buffers, tsrc0, ne00, ne01, op->src[2]->ne[1], nsg, nr0, op->src[2]->ne[0]);
++            props->device_id, props->use_shared_buffers, tsrc0, ne00, ne01, op->src[2]->ne[1], nsg, nr0, op->src[2]->ne[0], props->gpu_family, std::getenv("GGML_METAL_ROUTED_ROWS"));
+     if (tuned_rows != nr0) {
+         nr0 = tuned_rows;
+         suffix = tsrc0 == GGML_TYPE_Q4_K ? "_r4" : tsrc0 == GGML_TYPE_Q4_1 ? "_r8" : "_r2";
+diff --git a/ggml/src/ggml-metal/ggml-metal-routed-offsets.h b/ggml/src/ggml-metal/ggml-metal-routed-offsets.h
+index 30fc69a5d..d9aa8aeda 100644
+--- a/ggml/src/ggml-metal/ggml-metal-routed-offsets.h
++++ b/ggml/src/ggml-metal/ggml-metal-routed-offsets.h
+@@ -38,8 +38,8 @@ inline bool eligible_geometry(const ggml_tensor * op, ggml_metal_device_id devic
+                               bool shared, int rows, int simdgroups, int required_rows,
+                               int64_t min_tokens, int64_t max_tokens) {
+     if (!op || op->op != GGML_OP_MUL_MAT_ID || !shared || rows != required_rows || simdgroups != 2) return false;
+-    if (device != GGML_METAL_DEVICE_M1_ULTRA && device != GGML_METAL_DEVICE_M4 &&
+-            device != GGML_METAL_DEVICE_M5_MAX) return false;
++    // Eligibility is bounded by geometry and offset range, not the chip SKU.
++    GGML_UNUSED(device);
+     const auto * weights = op->src[0];
+     const auto * input = op->src[1];
+     const auto * ids = op->src[2];
+diff --git a/ggml/src/ggml-metal/ggml-metal-routed-tuning.h b/ggml/src/ggml-metal/ggml-metal-routed-tuning.h
+index d65eb01aa..6c30b5b11 100644
+--- a/ggml/src/ggml-metal/ggml-metal-routed-tuning.h
++++ b/ggml/src/ggml-metal/ggml-metal-routed-tuning.h
+@@ -1,21 +1,28 @@
+ #pragma once
+ 
+ #include "ggml-metal-device.h"
++#include <cstring>
+ 
+ namespace ggml_metal_routed_tuning {
+ 
+ // Reuse the per-lane activation registers across more output rows. Preserve
+ // complete SIMDgroup row tiles: the vector bodies load every unrolled row.
+ inline int rows(ggml_metal_device_id device, bool shared_buffers, ggml_type type, int64_t inner,
+-                int64_t output, int64_t tokens, int nsg, int fallback, int64_t selections = 8) {
++                int64_t output, int64_t tokens, int nsg, int fallback, int64_t selections = 8,
++                int gpu_family = 0, const char * setting = nullptr) {
++    if (setting && std::strcmp(setting, "0") == 0) return fallback;
++    const bool diagnostic = setting && std::strcmp(setting, "1") == 0;
++    const bool older_family = diagnostic ? gpu_family >= 7 && gpu_family <= 9 :
++            device == GGML_METAL_DEVICE_M1_ULTRA || device == GGML_METAL_DEVICE_M4;
++    const bool newer_family = diagnostic ? gpu_family >= 10 : device == GGML_METAL_DEVICE_M5_MAX;
+     // Portable screen supports this down-projection shape only. Gate/up
+     // remains faster at the existing width on these two measured devices.
+-    if ((device == GGML_METAL_DEVICE_M1_ULTRA || device == GGML_METAL_DEVICE_M4) &&
++    if (older_family &&
+             shared_buffers && type == GGML_TYPE_Q4_1 && inner == 512 && output == 2048 &&
+             tokens == 16 && selections == 8 && nsg == 2) {
+         return 8;
+     }
+-    if (device != GGML_METAL_DEVICE_M5_MAX || !shared_buffers || tokens < 3 || inner < 512 || inner > 4096 ||
++    if (!newer_family || !shared_buffers || tokens < 3 || inner < 512 || inner > 4096 ||
+             output < 512 || tokens > 31 || nsg <= 0) {
+         return fallback;
+     }
+diff --git a/ggml/src/ggml-metal/ggml-metal-tuning.cpp b/ggml/src/ggml-metal/ggml-metal-tuning.cpp
+index f8ff94114..5cc94f3e5 100644
+--- a/ggml/src/ggml-metal/ggml-metal-tuning.cpp
++++ b/ggml/src/ggml-metal/ggml-metal-tuning.cpp
+@@ -6,8 +6,10 @@
+ 
+ namespace ggml_metal_tuning {
+ 
+-bool prefer_host_greedy(ggml_metal_device_id device, bool shared_buffers) {
+-    return device == GGML_METAL_DEVICE_M5_MAX && shared_buffers;
++bool prefer_host_greedy(ggml_metal_device_id device, bool shared_buffers, const char * setting) {
++    // Shared buffers make the host read legal. Only the measured M5 default
++    // is promoted; explicit diagnostics can exercise other shared devices.
++    return shared_buffers && (setting ? std::strcmp(setting, "1") == 0 : device == GGML_METAL_DEVICE_M5_MAX);
+ }
+ 
+ int fa_vec_ne11_bucket(int64_t ne11) {
+diff --git a/ggml/src/ggml-metal/ggml-metal-tuning.h b/ggml/src/ggml-metal/ggml-metal-tuning.h
+index 3d858b56f..183cb0666 100644
+--- a/ggml/src/ggml-metal/ggml-metal-tuning.h
++++ b/ggml/src/ggml-metal/ggml-metal-tuning.h
+@@ -10,7 +10,7 @@ namespace ggml_metal_tuning {
+ 
+ // Qualified on M5 Max with shared graph buffers; leave other devices and
+ // private-buffer configurations on their existing sampling path.
+-bool prefer_host_greedy(ggml_metal_device_id device, bool shared_buffers);
++bool prefer_host_greedy(ggml_metal_device_id device, bool shared_buffers, const char * setting = nullptr);
+ 
+ // FA vec selection buckets. ne01 (query rows) splits decode (==1) from batch (>=2), the
+ // batch side refined into {2,3,4,5}: Q>1 reuses one K/V load across rows, so it only pays
+diff --git a/ggml/src/ggml-metal/ggml-metal.cpp b/ggml/src/ggml-metal/ggml-metal.cpp
+index 8dc54b26a..d4261b6b7 100644
+--- a/ggml/src/ggml-metal/ggml-metal.cpp
++++ b/ggml/src/ggml-metal/ggml-metal.cpp
+@@ -1015,7 +1015,7 @@ static void ggml_backend_metal_fusion_set_enabled(ggml_backend_fusion_t finfo, b
+ 
+ static bool ggml_backend_metal_prefers_host_greedy(ggml_backend_dev_t dev) {
+     const auto * props = ggml_metal_device_get_props((ggml_metal_device_t) dev->context);
+-    return ggml_metal_tuning::prefer_host_greedy(props->device_id, props->use_shared_buffers);
++    return ggml_metal_tuning::prefer_host_greedy(props->device_id, props->use_shared_buffers, std::getenv("GGML_METAL_HOST_GREEDY"));
+ }
+ 
+ static void * ggml_backend_metal_get_proc_address(ggml_backend_reg_t reg, const char * name) {
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 4aeb1b11e..e4ed468c7 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -500,6 +500,12 @@ if (LLAMA_STAGE_BUILD_TESTS)
+     set_tests_properties(skippy_generate_gemma_fixture PROPERTIES
+         FIXTURES_SETUP skippy-model-loader-fixtures)
+ 
++    add_executable(skippy-recurrent-copy skippy/tests/recurrent_copy.cpp)
++    target_include_directories(skippy-recurrent-copy PRIVATE .)
++    target_compile_features(skippy-recurrent-copy PRIVATE cxx_std_17)
++    target_link_libraries(skippy-recurrent-copy PRIVATE llama)
++    add_test(NAME skippy_recurrent_copy COMMAND skippy-recurrent-copy)
++
+     add_executable(skippy-verify-rollback skippy/tests/verify_rollback.cpp)
+     target_include_directories(skippy-verify-rollback PRIVATE .)
+     target_compile_features(skippy-verify-rollback PRIVATE cxx_std_17)
+diff --git a/src/llama-memory-recurrent-copy.cpp b/src/llama-memory-recurrent-copy.cpp
+index 9c269200b..e92039d4b 100644
+--- a/src/llama-memory-recurrent-copy.cpp
++++ b/src/llama-memory-recurrent-copy.cpp
+@@ -3,37 +3,87 @@
+ #include "ggml-backend.h"
+ 
+ #include <cstring>
++#include <set>
++#include "skippy/trace_scope.h"
+ 
+-void llama_recurrent_copy_rows(
++// A row view lets shared-memory and device backends copy in their own memory
++// domain. The caller has already synchronized recurrent state before relocation.
++static ggml_tensor recurrent_row_view(ggml_tensor * tensor, uint32_t row, size_t bytes) {
++    ggml_tensor view = *tensor;
++    view.data = static_cast<uint8_t *>(tensor->data) + row * tensor->nb[1];
++    view.view_src = nullptr;
++    view.view_offs = 0;
++    for (int dim = 1; dim < GGML_MAX_DIMS; ++dim) {
++        view.ne[dim] = 1;
++        view.nb[dim] = bytes;
++    }
++    return view;
++}
++
++llama_recurrent_copy_stats llama_recurrent_copy_rows(
+         const std::vector<ggml_tensor *> & tensors,
+         const std::vector<std::vector<llama_recurrent_copy_row>> & groups,
+         std::vector<uint8_t> & scratch) {
+-    for (auto * tensor : tensors) {
+-        if (!tensor || !tensor->buffer) {
+-            continue;
++    skippy_trace::scope trace("native.recurrent_rollback_copy");
++    llama_recurrent_copy_stats stats;
++    for (const auto & group : groups) {
++        std::vector<llama_recurrent_copy_row> rows;
++        std::set<uint32_t> destinations;
++        for (const auto & row : group) {
++            if (!row.zero && row.source == row.destination) {
++                ++stats.skipped_rows;
++                continue;
++            }
++            GGML_ASSERT(destinations.insert(row.destination).second);
++            rows.push_back(row);
++        }
++        // No destination may destroy a source another row still needs. If
++        // there is an alias (including cycles/fan-out), retain gather-before-write.
++        bool aliases = false;
++        for (const auto & row : rows) {
++            aliases |= !row.zero && destinations.count(row.source) != 0;
+         }
+-        const size_t row_bytes = ggml_row_size(tensor->type, tensor->ne[0]);
+-        for (const auto & rows : groups) {
+-            if (rows.empty()) continue;
++        for (auto * tensor : tensors) {
++            if (!tensor || !tensor->buffer || rows.empty()) continue;
++            const size_t row_bytes = ggml_row_size(tensor->type, tensor->ne[0]);
++            for (const auto & row : rows) {
++                GGML_ASSERT(row.destination < tensor->ne[1]);
++                GGML_ASSERT(row.zero || row.source < tensor->ne[1]);
++            }
++            if (!aliases) {
++                for (const auto & row : rows) {
++                    auto destination = recurrent_row_view(tensor, row.destination, row_bytes);
++                    if (row.zero) {
++                        ggml_backend_tensor_memset(&destination, 0, 0, row_bytes);
++                    } else {
++                        auto source = recurrent_row_view(tensor, row.source, row_bytes);
++                        ggml_backend_tensor_copy(&source, &destination);
++                    }
++                    stats.direct_bytes += row_bytes;
++                }
++                continue;
++            }
+             const size_t needed = rows.size() * row_bytes;
+             if (scratch.size() < needed) scratch.resize(needed);
+             for (size_t i = 0; i < rows.size(); ++i) {
+                 const auto & row = rows[i];
+-                GGML_ASSERT(row.destination < tensor->ne[1]);
+                 auto * output = scratch.data() + i * row_bytes;
+                 if (row.zero) {
+                     std::memset(output, 0, row_bytes);
+                 } else {
+-                    GGML_ASSERT(row.source < tensor->ne[1]);
+                     ggml_backend_tensor_get(tensor, output, row.source * tensor->nb[1], row_bytes);
++                    stats.staged_bytes += row_bytes;
+                 }
+             }
+             for (size_t i = 0; i < rows.size(); ++i) {
+                 ggml_backend_tensor_set(tensor, scratch.data() + i * row_bytes,
+                         rows[i].destination * tensor->nb[1], row_bytes);
++                stats.staged_bytes += row_bytes;
+             }
+         }
+     }
++    trace.set_value("host_staging_bytes", stats.staged_bytes);
++    return stats;
+ }
+ 
+ void llama_memory_recurrent::preserve_peer_rollback(uint32_t first, uint32_t last, uint32_t n_seqs) {
+diff --git a/src/llama-memory-recurrent-copy.h b/src/llama-memory-recurrent-copy.h
+index 6577e206d..7ed33ed71 100644
+--- a/src/llama-memory-recurrent-copy.h
++++ b/src/llama-memory-recurrent-copy.h
+@@ -12,9 +12,15 @@ struct llama_recurrent_copy_row {
+     bool zero = false;
+ };
+ 
++struct llama_recurrent_copy_stats {
++    size_t staged_bytes = 0;
++    size_t direct_bytes = 0;
++    size_t skipped_rows = 0;
++};
++
+ // Groups must be ordered by destination snapshot plane. Sources are from the
+ // same or a later plane; gather each group before writing to preserve aliases.
+-void llama_recurrent_copy_rows(
++llama_recurrent_copy_stats llama_recurrent_copy_rows(
+         const std::vector<ggml_tensor *> & tensors,
+         const std::vector<std::vector<llama_recurrent_copy_row>> & groups,
+         std::vector<uint8_t> & scratch);
+diff --git a/src/skippy/tests/recurrent_copy.cpp b/src/skippy/tests/recurrent_copy.cpp
+new file mode 100644
+index 000000000..ca9641b9a
+--- /dev/null
++++ b/src/skippy/tests/recurrent_copy.cpp
+@@ -0,0 +1,52 @@
++#include "llama-memory-recurrent-copy.h"
++#include "ggml.h"
++#include "ggml-alloc.h"
++#include "ggml-backend.h"
++#include <algorithm>
++#include <cstdio>
++#include <cstdlib>
++#include <vector>
++#define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "CHECK failed: %s:%d %s\n", __FILE__, __LINE__, #x); std::exit(1); } } while (0)
++
++static void check(ggml_backend_buffer_type_t buft,
++                  const std::vector<std::vector<llama_recurrent_copy_row>> & groups,
++                  bool direct) {
++    auto * ctx = ggml_init({1024*1024, nullptr, true});
++    auto * tensor = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 1024, 8);
++    auto buffer = ggml_backend_alloc_ctx_tensors_from_buft(ctx, buft);
++    CHECK(buffer);
++    std::vector<float> expected(8192), actual(8192);
++    for (size_t i = 0; i < expected.size(); ++i) expected[i] = float(i + 1);
++    ggml_backend_tensor_set(tensor, expected.data(), 0, ggml_nbytes(tensor));
++    for (const auto & rows : groups) {
++        const auto before = expected;
++        for (const auto & row : rows) {
++            for (size_t i = 0; i < 1024; ++i) {
++                expected[row.destination * 1024 + i] = row.zero ? 0 : before[row.source * 1024 + i];
++            }
++        }
++    }
++    std::vector<uint8_t> scratch;
++    const auto stats = llama_recurrent_copy_rows({tensor}, groups, scratch);
++    ggml_backend_tensor_get(tensor, actual.data(), 0, ggml_nbytes(tensor));
++    CHECK(actual == expected);
++    if (direct) CHECK(scratch.empty() && stats.staged_bytes == 0);
++    else CHECK(!scratch.empty() && stats.staged_bytes > 0);
++    std::printf("staged=%zu direct=%zu skipped=%zu scratch=%zu\n",
++                stats.staged_bytes, stats.direct_bytes, stats.skipped_rows, scratch.size());
++    ggml_backend_buffer_free(buffer);
++    ggml_free(ctx);
++}
++
++int main(int argc, char ** argv) {
++    ggml_backend_load_all();
++    auto * device = ggml_backend_dev_by_name(argc > 1 ? argv[1] : "CPU");
++    CHECK(device);
++    auto buft = ggml_backend_dev_buffer_type(device);
++    check(buft, {{{0, 0}, {1, 1}, {2, 5}, {2, 6}, {0, 7, true}}}, true);
++    check(buft, {{{0, 1}, {1, 0}, {2, 2}}}, false); // swap
++    check(buft, {{{0, 1}, {1, 2}, {2, 0}, {0, 3}}}, false); // cycle and fan-out
++    check(buft, {{{0, 1}, {0, 0, true}}}, false); // zeroing must not destroy a source
++    check(buft, {{{4, 0}, {5, 1}}, {{6, 4}, {7, 5}}}, true); // ascending snapshot planes
++    check(buft, {{{0, 0}, {1, 1}}}, true); // identity-only: no allocation/copy
++}
+diff --git a/tests/test-metal-graph-optimize.cpp b/tests/test-metal-graph-optimize.cpp
+index b65d1d8bf..75d4dd856 100644
+--- a/tests/test-metal-graph-optimize.cpp
++++ b/tests/test-metal-graph-optimize.cpp
+@@ -396,6 +396,13 @@ int main() {
+             preference_failures += !ok;
+         }
+     }
++    preference_failures += !ggml_metal_tuning::prefer_host_greedy(GGML_METAL_DEVICE_M3_ULTRA, true, "1");
++    preference_failures += ggml_metal_tuning::prefer_host_greedy(GGML_METAL_DEVICE_M3_ULTRA, false, "1");
++    preference_failures += ggml_metal_tuning::prefer_host_greedy(GGML_METAL_DEVICE_M5_MAX, true, "0");
++    preference_failures += rows(GGML_METAL_DEVICE_M3_ULTRA, true, GGML_TYPE_Q4_1, 512, 2048, 16, 2, 4, 8, 9, "1") != 8;
++    preference_failures += rows(GGML_METAL_DEVICE_M5_PRO, true, GGML_TYPE_Q4_K, 2048, 512, 8, 2, 2, 8, 10, "1") != 4;
++    preference_failures += rows(GGML_METAL_DEVICE_M3_ULTRA, true, GGML_TYPE_Q4_K, 2048, 512, 8, 2, 2, 8, 9, "1") != 2;
++    preference_failures += rows(GGML_METAL_DEVICE_M5_MAX, true, GGML_TYPE_Q4_K, 2048, 512, 8, 2, 2, 8, 10, "0") != 2;
+     const std::vector<device_case> devices = {
+         { "native simdgroup matrices",       true,  true },
+         { "probed or no simdgroup matrices", false, true },
+diff --git a/tests/test-metal-routed-u32.cpp b/tests/test-metal-routed-u32.cpp
+index 341ce6ca4..d15a76355 100644
+--- a/tests/test-metal-routed-u32.cpp
++++ b/tests/test-metal-routed-u32.cpp
+@@ -50,10 +50,11 @@ static int policy_checks() {
+     }
+ 
+     require(admitted(), "good geometry rejected"); ++checks;
++    require(eligible(out, GGML_METAL_DEVICE_M3_ULTRA, true, 8, 2), "M3 diagnostic geometry rejected"); ++checks;
+     require(!eligible(out, GGML_METAL_DEVICE_M1_ULTRA, true, 4, 2), "NR4 must remain NR4"); ++checks;
+     require(!eligible(out, GGML_METAL_DEVICE_M1_ULTRA, false, 8, 2), "private mode admitted"); ++checks;
+     require(!eligible(out, GGML_METAL_DEVICE_M1_ULTRA, true, 8, 1), "wrong SIMD groups"); ++checks;
+-    require(!eligible(out, GGML_METAL_DEVICE_M3_ULTRA, true, 8, 2), "unqualified device"); ++checks;
++    require(eligible(out, GGML_METAL_DEVICE_M3_ULTRA, true, 8, 2), "capable device diagnostic"); ++checks;
+     for (auto * tensor : {w, x, ids, out}) {
+         auto saved = *tensor;
+         tensor->nb[1] = UINT64_MAX;
+-- 
+2.54.0 (Apple Git-157)
+

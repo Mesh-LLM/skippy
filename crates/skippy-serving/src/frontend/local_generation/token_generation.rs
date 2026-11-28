@@ -41,8 +41,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use super::LocalGenerationReceiptFinalization;
 use super::receipt_lifecycle::begin_generation_receipt;
-use super::{LocalGenerationReceiptFinalization, prompt_fits_single_prefill_sample};
 use crate::frontend::generation_commit_batcher::GenerationCommitBatcher;
 
 mod exact_state_recording;
@@ -576,6 +576,7 @@ impl StageOpenAiBackend {
         let stats = self.iteration_scheduler.generate(
             ScheduledGenerationRequest {
                 id: session_id,
+                priority: request.ids.request_tier().priority(),
                 prompt_tokens: request.prompt_token_ids,
                 max_tokens: request.max_tokens,
                 sampling: request.sampling.enabled.then_some(request.sampling),
@@ -615,32 +616,6 @@ impl StageOpenAiBackend {
         ))
     }
 
-    fn can_sample_whole_prompt_in_prefill(
-        &self,
-        request: &LocalGeneration<'_>,
-        session_id: &str,
-    ) -> InferenceResult<bool> {
-        if request.max_tokens == 0 || request.prompt_token_ids.len() <= 1 || self.kv.is_some() {
-            return Ok(false);
-        }
-        let scheduler_session_id = session_id.to_string();
-        let batch_size = self.iteration_scheduler.execute_runtime(
-            "feature-prefill-admission",
-            move |runtime| {
-                runtime
-                    .ensure_session_active(&scheduler_session_id)
-                    .map_err(openai_backend_error)?;
-                runtime
-                    .admit_session_batch_size(&scheduler_session_id)
-                    .map_err(openai_backend_error)
-            },
-        )?;
-        Ok(prompt_fits_single_prefill_sample(
-            request.prompt_token_ids.len(),
-            batch_size,
-        ))
-    }
-
     fn prefill_prompt(
         &self,
         request: &LocalGeneration<'_>,
@@ -660,7 +635,9 @@ impl StageOpenAiBackend {
                 request.sampling.enabled.then_some(request.sampling),
             )?;
         }
-        if self.can_sample_whole_prompt_in_prefill(request, session_id)? {
+        // Uncached and cooperative cached requests both sample the final
+        // prompt token in the last prefill chunk, even above n_batch.
+        if self.kv.is_none() && request.max_tokens > 0 && request.prompt_token_ids.len() > 1 {
             let chat_sampling_configured = if let Some(metadata) = request.chat_sampling_metadata {
                 self.configure_chat_sampling(
                     session_id,
@@ -673,7 +650,7 @@ impl StageOpenAiBackend {
                 false
             };
             return Ok(PromptPrefillResult {
-                prompt_prefill_sample: self.prefill_whole_prompt(
+                prompt_prefill_sample: self.prefill_uncached_prompt(
                     request,
                     session_id,
                     cache_stats,
@@ -714,71 +691,6 @@ impl StageOpenAiBackend {
             prompt_prefill_sample: None,
             chat_sampling_configured: false,
         })
-    }
-
-    fn prefill_whole_prompt(
-        &self,
-        request: &LocalGeneration<'_>,
-        session_id: &str,
-        cache_stats: &mut GenerationCacheStats,
-    ) -> InferenceResult<Option<i32>> {
-        let prefill_timer = PhaseTimer::start();
-        let _prefill = self.enter_openai_phase(&prefill_timer);
-        let runtime_sessions_before = self
-            .iteration_scheduler
-            .execute_runtime("feature-prefill-stats-before", |runtime| {
-                Ok(runtime.session_stats())
-            })?;
-        let outcome = self.iteration_scheduler.execute_iteration(
-            session_id,
-            request.prompt_token_ids,
-            &[],
-            request.sampling.enabled.then_some(request.sampling),
-            true,
-            skippy_runtime::IterationBatchPhase::Prefill,
-        )?;
-        let prompt_prefill_sample = Some(outcome.predicted);
-        cache_stats.suffix_prefill_tokens = saturating_u32(request.prompt_token_ids.len());
-        let runtime_sessions_after = self
-            .iteration_scheduler
-            .execute_runtime("feature-prefill-stats-after", |runtime| {
-                Ok(runtime.session_stats())
-            })?;
-        let mut attrs = self.openai_attrs(request.ids);
-        attrs.insert(
-            "llama_stage.prefill_token_count".to_string(),
-            json!(request.prompt_token_ids.len()),
-        );
-        attrs.insert("llama_stage.prefill_chunk_count".to_string(), json!(1));
-        attrs.insert("skippy.kv.restored_prefill".to_string(), json!(false));
-        attrs.insert("skippy.kv.restored_prefill_tokens".to_string(), json!(0));
-        attrs.insert(
-            "skippy.kv.prefill_suffix_tokens".to_string(),
-            json!(request.prompt_token_ids.len()),
-        );
-        attrs.insert("skippy.kv.recorded_pages".to_string(), json!(0));
-        attrs.insert(
-            "llama_stage.runtime_lock_wait_ms".to_string(),
-            json!(outcome.runtime_lock_wait_ms),
-        );
-        attrs.insert(
-            "llama_stage.runtime_lock_hold_ms".to_string(),
-            json!(outcome.runtime_lock_hold_ms),
-        );
-        attrs.insert("llama_stage.runtime_lock_acquires".to_string(), json!(1));
-        Self::insert_runtime_session_stats(
-            &mut attrs,
-            "llama_stage.runtime_sessions_before",
-            &runtime_sessions_before,
-        );
-        Self::insert_runtime_session_stats(
-            &mut attrs,
-            "llama_stage.runtime_sessions_after",
-            &runtime_sessions_after,
-        );
-        cache_stats.prompt_ms = prefill_timer.elapsed_ms();
-        self.emit_openai_phase("stage.openai_prefill", prefill_timer, attrs);
-        Ok(prompt_prefill_sample)
     }
 
     fn configure_chat_sampling(
@@ -967,6 +879,7 @@ impl StageOpenAiBackend {
             let stats = self.iteration_scheduler.resume_generation(
                 ScheduledResumeRequest {
                     id: session_id,
+                    priority: request.ids.request_tier().priority(),
                     prompt_tokens: request.prompt_token_ids,
                     generated_tokens: &initial_generated_tokens,
                     max_tokens: request.max_tokens,

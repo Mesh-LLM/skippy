@@ -127,10 +127,11 @@ class NightlyTests(unittest.TestCase):
             matrix("release", SOURCE, include_smoke=True)
 
     def test_metric_direction_and_exact_tolerance(self):
-        self.assertEqual(classify("decode_tok_s", 95, 100), "passed")
-        self.assertEqual(classify("decode_tok_s", 94.99, 100), "regressed")
-        self.assertEqual(classify("ttft_p95_ms", 105.01, 100), "regressed")
-        self.assertEqual(classify("ttft_p95_ms", 94, 100), "improved")
+        self.assertEqual(classify("decode_tok_s", 99, 100), "passed")
+        self.assertEqual(classify("decode_tok_s", 98.99, 100), "regressed")
+        self.assertEqual(classify("ttft_p95_ms", 101, 100), "passed")
+        self.assertEqual(classify("ttft_p95_ms", 101.01, 100), "regressed")
+        self.assertEqual(classify("ttft_p95_ms", 98.99, 100), "improved")
 
     def test_promotes_independent_improvement_and_never_walks_baseline_down(self):
         metrics = [
@@ -146,9 +147,9 @@ class NightlyTests(unittest.TestCase):
                                     "configurations": [config]}, saved)
 
         _, seeded = run(1, SOURCE, [100, 100], [])
-        _, passing = run(2, "b" * 40, [97, 97], seeded)
+        _, passing = run(2, "b" * 40, [99.5, 99.5], seeded)
         self.assertEqual(passing[0]["value"], 100)
-        self.assertEqual(passing[0]["latest_passing"]["value"], 97)
+        self.assertEqual(passing[0]["latest_passing"]["value"], 99.5)
         failed, next_baselines = run(3, "d" * 40, [94, 110], passing)
         self.assertEqual(failed["outcome"], "failed")
         self.assertEqual({item["metric"]: item["value"] for item in next_baselines},

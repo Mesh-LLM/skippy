@@ -70,22 +70,18 @@ fn acquire_with_budget(root: &Path, budget: AcquisitionBudget) -> Result<Option<
         return Ok(Some(L3CacheManager { inner }));
     }
 
-    // Estimate automatic capacity only after excluding a live owner, and keep
-    // the registry locked through creation so concurrent callers join it.
-    let Some(limits) = budget.new_owner_limits(&root)? else {
+    // Keep the registry locked through creation so concurrent callers join
+    // the same manager. Compute automatic limits under the physical root lock.
+    let Some(store) = open_store_for_acquire(&root, budget, expiring_owner)? else {
         return Ok(None);
     };
-    let manager = create_manager(&root, limits, expiring_owner)?;
+    let manager = create_manager(store)?;
     managers.insert(root, Arc::downgrade(&manager.inner));
     Ok(Some(manager))
 }
 
-fn create_manager(
-    root: &Path,
-    limits: StoreLimits,
-    expiring_owner: bool,
-) -> Result<L3CacheManager> {
-    let store = Arc::new(open_store_for_acquire(root, limits, expiring_owner)?);
+fn create_manager(store: HandoffSegmentStore) -> Result<L3CacheManager> {
+    let store = Arc::new(store);
     let reconciliation = store.reconcile_startup()?;
     let inner = Arc::new(L3ManagerInner {
         store,
@@ -104,16 +100,16 @@ fn create_manager(
 /// Retry briefly while the previous in-process owner releases its root lock.
 fn open_store_for_acquire(
     root: &Path,
-    limits: StoreLimits,
+    budget: AcquisitionBudget,
     expiring_owner: bool,
-) -> Result<HandoffSegmentStore> {
+) -> Result<Option<HandoffSegmentStore>> {
     const HANDOFF_ATTEMPTS: u32 = 20;
     const HANDOFF_BACKOFF: std::time::Duration = std::time::Duration::from_millis(5);
 
     let attempts = if expiring_owner { HANDOFF_ATTEMPTS } else { 1 };
     let mut last = None;
     for attempt in 0..attempts {
-        match HandoffSegmentStore::open_unreconciled_with_limits(root, limits) {
+        match HandoffSegmentStore::open_unreconciled(root, |root| budget.new_owner_limits(root)) {
             Ok(store) => return Ok(store),
             Err(error) => {
                 last = Some(error);

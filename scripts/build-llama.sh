@@ -546,6 +546,7 @@ if [[ "$LLAMA_STAGE_WORKLOAD_ORACLE" == "ON" ]]; then
 fi
 if [[ "$LLAMA_STAGE_BUILD_TESTS" == "ON" ]]; then
   BUILD_TARGETS+=(
+    skippy-async-state-test
     skippy-backend-sample-capacity
     skippy-graph-build-inputs
     skippy-hardware-application-probe
@@ -557,6 +558,7 @@ if [[ "$LLAMA_STAGE_BUILD_TESTS" == "ON" ]]; then
     skippy-selected-logits
     skippy-noalloc-graph-planning
     skippy-recurrent-retention
+    skippy-recurrent-copy
     skippy-renamed-multishard-planning
     skippy-stage-slice-plan
     skippy-verify-rollback

@@ -552,3 +552,14 @@ test('full CI requires both Windows GPU results and PR checks skip them', () => 
   pr.smoke_windows_cuda.result = 'success';
   assert.throws(() => gate(pr), /smoke_windows_cuda must be skipped/);
 });
+
+test('native package smoke retains exact-archive KV qualification in both device jobs', () => {
+  for (const key of ['package_darwin_aarch64_metal', 'package_linux_aarch64_cuda13']) {
+    const body = workflow.split(`\n  ${key}:\n`)[1].split(/\n  \w+:\n/)[0];
+    assert.match(body, /kv-profile:.*needs.plan.outputs.profile == 'full'.*'full'.*'short'/);
+  }
+  const packageAction = readFileSync(join(__dirname, '../actions/ci-package/action.yml'), 'utf8');
+  assert.match(packageAction, /kv-profile: \$\{\{ inputs.kv-profile \}\}/);
+  const smoke = readFileSync(join(__dirname, '../actions/ci-smoke/action.yml'), 'utf8');
+  assert.ok(smoke.indexOf('just ci-smoke') < smoke.indexOf('uses: ./.github/actions/ci-cache-correctness'));
+});

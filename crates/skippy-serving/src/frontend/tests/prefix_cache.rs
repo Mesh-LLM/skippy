@@ -293,6 +293,47 @@ fn shared_execution_scopes_isolate_resident_and_content_addressed_cache() {
 }
 
 #[test]
+fn explicit_chat_templates_partition_the_native_session_and_cache_namespace() {
+    let config = prefix_cache_test_config();
+    let kv = KvStageIntegration::from_test_state(&config, skippy_runtime::ModelStateKind::Dense)
+        .unwrap()
+        .unwrap();
+    let scope = skippy_inference_api::InferenceExecutionScope::new();
+    let ids = || {
+        let mut cache = InferenceCacheHints::default();
+        cache.prompt_cache_key = Some("same-key".into());
+        InferenceGenerationIds::new_with_trust(cache, Some("same-agent"), true, None)
+            .with_execution_scope(Some(scope))
+    };
+    let default = ids();
+    let unchanged = default.clone().with_chat_template(None);
+    let first = default.clone().with_chat_template(Some([1; 32]));
+    let repeat = ids().with_chat_template(Some([1; 32]));
+    let other = ids().with_chat_template(Some([2; 32]));
+    assert_eq!(unchanged.session_id, default.session_id);
+    assert_eq!(unchanged.cache.namespace(), default.cache.namespace());
+    assert_eq!(first.session_id, repeat.session_id);
+    assert_eq!(first.request_id, default.request_id);
+    assert_ne!(first.session_id, other.session_id);
+    assert_ne!(first.session_id, default.session_id);
+    let tokens = (0..1024).collect::<Vec<_>>();
+    let identity = |ids: &InferenceGenerationIds| {
+        let mut base = prefix_cache_test_base();
+        base.chat_template_id = ids.cache.namespace();
+        kv.prefill_identity(&config, &base, 0, &tokens)
+    };
+    let original = identity(&first);
+    seed_resident_prefix(&kv, &original);
+    assert!(kv.probe_resident_prefix(&identity(&repeat)).is_some());
+    for changed in [&default, &other] {
+        let lookup = identity(changed);
+        assert_ne!(lookup.page_id, original.page_id);
+        assert_ne!(lookup.namespace, original.namespace);
+        assert!(kv.probe_resident_prefix(&lookup).is_none());
+    }
+}
+
+#[test]
 fn disabled_cache_config_has_no_stage_integration() {
     let config = StageConfig {
         kv_cache: Some(StageKvCacheConfig {

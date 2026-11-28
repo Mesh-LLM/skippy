@@ -18,7 +18,6 @@ use super::{
     records::add_reconstruct_stats,
 };
 
-const PROMOTION_MAX_BYTES: u64 = 64 * 1024 * 1024;
 const RESTORE_WORTH_TOKENS: u64 = 4_096;
 const SECOND_HIT_WINDOW: Duration = Duration::from_secs(10 * 60);
 const MAX_PROMOTION_OBSERVATIONS: usize = 4_096;
@@ -137,6 +136,11 @@ impl StageL2 {
     }
 
     fn should_promote(&self, manifest_key: &str, token_count: u64, payload_bytes: u64) -> bool {
+        // A complete hybrid snapshot may be large even for a short prefix.
+        // The configured host budget bounds admission for every state layout.
+        if payload_bytes > self.tier.budget_bytes() {
+            return false;
+        }
         let now = Instant::now();
         let mut observations = self
             .promotions
@@ -171,10 +175,6 @@ impl StageL2 {
             return false;
         }
         observation.hits = observation.hits.saturating_add(1);
-        if payload_bytes > PROMOTION_MAX_BYTES {
-            observation.terminal = true;
-            return false;
-        }
         // Keep the observation eligible until the worker has attempted the
         // promotion. If the bounded worker queue drops this fill, the next L3
         // restore may retry instead of suppressing the entry for ten minutes.
@@ -325,29 +325,37 @@ impl KvStageIntegration {
         }
         let logical_bytes = payload.byte_len();
         let payload_kind = payload.kind();
-        let rewarm_enqueued = ExactStateAdmissionCredit::acquire(
-            &self.admission_outstanding,
-            &self.admission_best_effort_outstanding,
-            CaptureAdmission::BestEffort,
-        )
-        .is_some_and(|admission_credit| {
-            self.try_begin_record(&identity.page_id)
-                && matches!(
-                    self.enqueue_exact_state_record(PendingExactStateRecord {
-                        page_id: identity.page_id.clone(),
-                        payload,
-                        extra: ExactStateExtra { kv_desc },
-                        namespace: identity.namespace.clone(),
-                        token_ids: identity.token_ids[..token_count as usize].to_vec(),
-                        l3_fill_claim: None,
-                        write_through_l3: false,
-                        l2_promotion_digest: None,
-                        l3_cost: None,
-                        admission_credit,
-                    }),
-                    ExactStateRecordAdmission::Queued
-                )
-        });
+        let tokens = &identity.token_ids[..token_count as usize];
+        let rewarm_enqueued = if self.records_resident_prefixes() {
+            self.rewarm_resident_prefix(runtime, session_id, identity, tokens)?;
+            false
+        } else {
+            ExactStateAdmissionCredit::acquire(
+                &self.admission_outstanding,
+                &self.admission_best_effort_outstanding,
+                self.admission_total_cap,
+                CaptureAdmission::BestEffort,
+            )
+            .is_some_and(|admission_credit| {
+                self.try_begin_record(&identity.page_id)
+                    && matches!(
+                        self.enqueue_exact_state_record(PendingExactStateRecord {
+                            page_id: identity.page_id.clone(),
+                            payload,
+                            extra: ExactStateExtra { kv_desc },
+                            namespace: identity.namespace.clone(),
+                            retention_priority: identity.retention_priority(),
+                            token_ids: tokens.to_vec(),
+                            l3_fill_claim: None,
+                            write_through_l3: false,
+                            l2_promotion_digest: None,
+                            l3_cost: None,
+                            admission_credit,
+                        }),
+                        ExactStateRecordAdmission::Queued
+                    )
+            })
+        };
         Ok(Some(ExactStateRestore {
             page_id: identity.page_id.clone(),
             token_count: token_count as usize,
@@ -428,10 +436,13 @@ mod tests {
 
     #[test]
     fn restart_class_prefix_promotes_on_first_fill_but_oversized_payload_does_not() {
-        let l2 = StageL2::new(1 << 20, "model".to_string(), "state".to_string());
-        assert!(l2.consider_l3_fill("restart", RESTORE_WORTH_TOKENS, 1 << 20));
-        assert!(!l2.consider_l3_fill("oversized", RESTORE_WORTH_TOKENS, PROMOTION_MAX_BYTES + 1,));
-        assert!(!l2.consider_l3_fill("oversized", RESTORE_WORTH_TOKENS, PROMOTION_MAX_BYTES,));
+        let budget = 128 * 1024 * 1024;
+        let l2 = StageL2::new(budget, "model".to_string(), "state".to_string());
+        assert!(l2.consider_l3_fill("restart", RESTORE_WORTH_TOKENS, budget));
+        assert!(!l2.consider_l3_fill("oversized", RESTORE_WORTH_TOKENS, budget + 1));
+        let hybrid_bytes = 84 * 1024 * 1024;
+        assert!(!l2.consider_l3_fill("hybrid", 532, hybrid_bytes));
+        assert!(l2.consider_l3_fill("hybrid", 532, hybrid_bytes));
     }
 
     #[test]

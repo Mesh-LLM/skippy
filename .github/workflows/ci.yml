@@ -605,6 +605,7 @@ jobs:
         with:
           runtime-id: darwin-aarch64-metal
           host-id: darwin-aarch64
+          kv-profile: ${{ needs.plan.outputs.profile == 'full' && 'full' || 'short' }}
           build-cli: ${{ needs.plan.outputs.profile == 'pr' }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
@@ -862,6 +863,7 @@ jobs:
         with:
           runtime-id: linux-aarch64-cuda13
           host-id: linux-aarch64
+          kv-profile: ${{ needs.plan.outputs.profile == 'full' && 'full' || 'short' }}
           build-cli: ${{ needs.plan.outputs.profile == 'pr' }}
           candidate-artifact: ${{ inputs.candidate_artifact }}
           candidate-sha: ${{ inputs.candidate_sha }}
