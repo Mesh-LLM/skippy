@@ -1,6 +1,7 @@
 """Offline guards for the registered diagnostic; no hardware qualification."""
 
 import json
+import os
 import unittest
 from contextlib import nullcontext
 from pathlib import Path
@@ -105,6 +106,33 @@ class NoiseTests(unittest.TestCase):
                                        ("qwen3-coder-30b-a3b", "split", "legacy")):
             with self.assertRaisesRegex(ValueError, "registered configuration"):
                 execute(model, mode, baseline, "noise-pilot")
+
+    def test_phase_profile_has_its_own_registration_and_output(self):
+        design = noise.registration("profile")
+        self.assertNotEqual(design["protocol"], noise.registration()["protocol"])
+        with TemporaryDirectory() as temporary, patch.object(noise, "send", side_effect=reply) as send:
+            output = Path(temporary)
+            noise.measure(MODEL, output, 0, "profile")
+            saved = json.loads((output / "noise-profile.json").read_text())
+            self.assertFalse((output / "noise-pilot.json").exists())
+        self.assertEqual(send.call_count, 36)
+        self.assertEqual(saved["registration"], design)
+        self.assertEqual(saved["status"], "passed")
+
+    def test_phase_profile_restores_environment_and_stops_sampler_on_failure(self):
+        trace = "SKIPPY_TELEMETRY_OTLP_FILE"
+        gpu, stop, command = Mock(), Mock(), Mock(return_value="doctor")
+        with TemporaryDirectory() as temporary, patch.dict(os.environ, {trace: "original"}), \
+                patch.object(noise, "command", command), patch.object(noise, "start", return_value=gpu), \
+                patch.object(noise, "stop", stop), patch.object(noise.threading, "Thread"):
+            output = Path(temporary)
+            with self.assertRaisesRegex(RuntimeError, "injected"):
+                with noise.diagnostics(output, "profile"):
+                    self.assertEqual(os.environ[trace], str(output / "phases.jsonl"))
+                    raise RuntimeError("injected")
+            self.assertEqual(os.environ[trace], "original")
+            self.assertEqual((output / "doctor.log").read_text(), "doctor")
+            stop.assert_called_once_with(gpu)
 
 
 if __name__ == "__main__":

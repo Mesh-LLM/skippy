@@ -922,6 +922,10 @@
             {
               "value": "noise-pilot",
               "label": "noise-pilot"
+            },
+            {
+              "value": "noise-profile",
+              "label": "noise-profile"
             }
           ],
           "default": "paired"

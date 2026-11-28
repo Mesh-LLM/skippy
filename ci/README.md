@@ -262,6 +262,12 @@ telemetry, raw responses, quality checks and mutual peer identities are archived
 for both roles. Default boost clocks remain in effect. This instrumented pilot
 writes `noise-pilot.json`, never a paired qualification receipt or speed verdict.
 Its requests are nested observations for diagnosing noise, not independent rounds.
+The separately registered `noise-profile` experiment in
+`ci/inference-noise-profile.json` uses three repetitions per condition and
+enables existing native OTLP phase spans on both roles. It retains
+`noise-profile.json` and per-arm `phases.jsonl` for correlating chunk counts,
+runtime locks, compute, writes and downstream waits. Instrumentation changes
+timing; this experiment likewise cannot produce performance qualification.
 For example, on an already admitted exclusive split allocation:
 
 ```sh

@@ -14,18 +14,18 @@ from .ci_process import command, start, stop
 from .inference_probe import PARAGRAPHS, payload, send, validate_response
 
 ROOT = Path(__file__).resolve().parents[2]
-REGISTRATION = ROOT / "ci/inference-noise-pilot.json"
+REGISTRATIONS = {kind: ROOT / f"ci/inference-noise-{kind}.json" for kind in ("pilot", "profile")}
 
 
-def registration():
-    return read_json(REGISTRATION)
+def registration(kind="pilot"):
+    return read_json(REGISTRATIONS[kind])
 
 
-def schedule(baseline):
-    if baseline != registration()["baseline_sha"]:
+def schedule(baseline, kind="pilot"):
+    if baseline != registration(kind)["baseline_sha"]:
         raise ValueError("noise pilot baseline differs from registration")
-    return [{"experiment": "noise", "round": index, "arm": "a", "source_sha": baseline}
-            for index in range(len(registration()["arms"]))]
+    return [{"experiment": "noise", "round": index, "arm": "a", "source_sha": baseline,
+             "diagnostic": kind} for index in range(len(registration(kind)["arms"]))]
 
 
 def requests(condition, repetitions):
@@ -47,10 +47,10 @@ def request(model, position, shape, repeat, warmup):
     return result
 
 
-def measure(model, output, arm):
-    design = registration()
+def measure(model, output, arm, kind="pilot"):
+    design = registration(kind)
     evidence = {"protocol": design["protocol"], "registration": design,
-                "registration_sha256": digest(REGISTRATION), "arm": arm,
+                "registration_sha256": digest(REGISTRATIONS[kind]), "arm": arm,
                 "status": "incomplete", "samples": []}
     counts = {}
     try:
@@ -72,21 +72,23 @@ def measure(model, output, arm):
         evidence.update(status="failed", error=str(error))
         raise
     finally:
-        write_json(output / "noise-pilot.json", evidence)
+        write_json(output / f"noise-{kind}.json", evidence)
 
 
-def probe(arm):
-    return partial(measure, arm=arm)
+def probe(arm, kind="pilot"):
+    return partial(measure, arm=arm, kind=kind)
 
 
 @contextmanager
-def diagnostics(output):
+def diagnostics(output, kind="pilot"):
     # Run the pinned wrapper outside measured requests. Its records and any
     # unsupported profiler capabilities remain in each uploaded arm archive.
     doctor = command([str(ROOT / "scripts/inferencekit.sh"), "doctor"], timeout=180, capture_stdout=True,
                      overrides={"INFERENCEKIT_RUNS_DIR": str(output / "inferencekit")})
     (output / "doctor.log").write_text(doctor)
     done = threading.Event()
+    trace = "SKIPPY_TELEMETRY_OTLP_FILE"
+    previous_trace = os.environ.get(trace)
 
     def host_samples():
         with (output / "host.jsonl").open("w") as stream:
@@ -100,14 +102,22 @@ def diagnostics(output):
     with (output / "gpu.csv").open("wb") as stream:
         gpu = start(["nvidia-smi", "--query-gpu=timestamp,temperature.gpu,power.draw,clocks.sm,clocks.mem,"
                      "utilization.gpu,utilization.memory,pstate", "--format=csv", "--loop-ms=1000"],
-                    stdout=stream, stderr=subprocess.STDOUT)
+                    overrides={"TZ": "UTC"}, stdout=stream, stderr=subprocess.STDOUT)
         thread = threading.Thread(target=host_samples, daemon=True)
         thread.start()
         try:
+            if kind == "profile":
+                os.environ[trace] = str(output / "phases.jsonl")
             yield
             if gpu.poll() is not None:
                 raise RuntimeError("noise pilot GPU telemetry stopped; inspect gpu.csv")
+            if kind == "profile" and not (output / "phases.jsonl").stat().st_size:
+                raise RuntimeError("noise phase profile is empty")
         finally:
+            if previous_trace is None:
+                os.environ.pop(trace, None)
+            else:
+                os.environ[trace] = previous_trace
             done.set()
             thread.join(timeout=5)
             stop(gpu)

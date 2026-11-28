@@ -102,8 +102,9 @@ def run_arm(design, main, baseline, key, mode, output):
     try:
         with revision(source, design["source_sha"], directory):
             if design["experiment"] == "noise":
-                with noise.diagnostics(directory):
-                    EXECUTE("pr", key, mode, probe=noise.probe(design["round"]))
+                kind = design.get("diagnostic", "pilot")
+                with noise.diagnostics(directory, kind):
+                    EXECUTE("pr", key, mode, probe=noise.probe(design["round"], kind))
             else:
                 EXECUTE("pr", key, mode, REPETITIONS)
     finally:
@@ -135,8 +136,9 @@ def worker(origin, designs, main, baseline, key, output, identity):
 
 
 def execute(key, mode, baseline, experiment="paired"):
-    diagnostic = experiment == "noise-pilot"
-    if diagnostic and (f"{key}-{mode}" != noise.registration()["configuration"] or baseline == "legacy"):
+    diagnostic = experiment in {"noise-pilot", "noise-profile"}
+    kind = experiment.removeprefix("noise-") if diagnostic else None
+    if diagnostic and (f"{key}-{mode}" != noise.registration(kind)["configuration"] or baseline == "legacy"):
         raise ValueError("noise pilot requires its registered configuration and main commit")
     # Old protected controllers can encounter a PR's provisional template before
     # this controller reaches main. Preserve their original smoke protocol.
@@ -154,7 +156,7 @@ def execute(key, mode, baseline, experiment="paired"):
     with baseline_tree(baseline) as main:
         identities = prepare(main, baseline, candidate, output)
         local = host(role, node)
-        designs = noise.schedule(baseline) if diagnostic else schedule(baseline, candidate)
+        designs = noise.schedule(baseline, kind) if diagnostic else schedule(baseline, candidate)
         if role == "worker":
             leader = next(p["host"] for p in peers if p["role"] == "leader")
             origin = f"http://[{leader}]:9913" if ":" in leader else f"http://{leader}:9913"
@@ -173,8 +175,10 @@ def execute(key, mode, baseline, experiment="paired"):
                         "baseline_sha": baseline, "configuration": f"{key}-{mode}", "rounds": ROUNDS,
                         "repetitions": REPETITIONS, "placements": placements, "builds": builds, "runs": []}
             if diagnostic:
-                evidence.update(protocol=noise.registration()["protocol"], rounds=2,
-                                repetitions=12, diagnostic_only=True, registration=noise.registration())
+                registered = noise.registration(kind)
+                evidence.update(protocol=registered["protocol"], rounds=len(registered["arms"]),
+                                repetitions=registered["repetitions_per_condition_shape"],
+                                diagnostic_only=True, registration=registered)
             try:
                 for index, design in enumerate(designs):
                     if coordinator:
@@ -185,7 +189,7 @@ def execute(key, mode, baseline, experiment="paired"):
                     coordinate = read_json(ROOT / "ci/inference-artifacts.json")[key]
                     coordinate = f'{coordinate["repo"]}@{coordinate["revision"]}'
                     evidence["runs"].append({**design, "placements": placements, "quality": "passed",
-                                             "samples": (read_json(directory / "noise-pilot.json") if diagnostic
+                                             "samples": (read_json(directory / f"noise-{kind}.json") if diagnostic
                                                          else samples(directory, coordinate))})
                     # Preserve the existing standalone nightly smoke receipts too.
                     if design["experiment"] == "ab" and design["arm"] == "b":
@@ -198,7 +202,7 @@ def execute(key, mode, baseline, experiment="paired"):
                 else:
                     evidence["status"] = "diagnostic-complete"
             finally:
-                write_json(output / ("noise-pilot.json" if diagnostic else "paired-probe.json"), evidence)
+                write_json(output / (f"noise-{kind}.json" if diagnostic else "paired-probe.json"), evidence)
 
 
 if __name__ == "__main__":
@@ -206,7 +210,7 @@ if __name__ == "__main__":
     parser.add_argument("model")
     parser.add_argument("mode", choices=("standalone", "split"))
     parser.add_argument("baseline")
-    parser.add_argument("experiment", nargs="?", choices=("paired", "noise-pilot"), default="paired")
+    parser.add_argument("experiment", nargs="?", choices=("paired", "noise-pilot", "noise-profile"), default="paired")
     args = parser.parse_args()
     try:
         with cancel_on_signal(), time_budget(14400):
