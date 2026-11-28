@@ -21,10 +21,10 @@ index 54e00faf6..a56196dca 100644
      const float dl = d * sc[0];
      const float ml = min * sc[1];
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 077620687..4d2cc60d6 100644
+index 0d5df5901..a87c7f898 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
-@@ -353,6 +353,7 @@ llama_build_and_test(test-chat-template.cpp  LABEL behavior)
+@@ -358,6 +358,7 @@ endif()
  if (GGML_METAL)
      llama_build_and_test(test-skippy-cachegen-metal.cpp)
      llama_build_and_test(test-skippy-tracing-metal.cpp)
@@ -34,10 +34,10 @@ index 077620687..4d2cc60d6 100644
  llama_build(test-chat-analysis.cpp)
 diff --git a/tests/test-skippy-q4-scale-metal.cpp b/tests/test-skippy-q4-scale-metal.cpp
 new file mode 100644
-index 000000000..c0b5476d5
+index 000000000..1ef03f2e4
 --- /dev/null
 +++ b/tests/test-skippy-q4-scale-metal.cpp
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,40 @@
 +// Exact one-term Q4_K projection regression; no model weights or quality tolerance.
 +#include "ggml.h"
 +#include "ggml-alloc.h"
@@ -58,7 +58,9 @@ index 000000000..c0b5476d5
 +        auto graph=ggml_new_graph_custom(ctx,16,false);ggml_build_forward_expand(graph,y);
 +        auto buffer=ggml_backend_alloc_ctx_tensors(ctx,backend);if(!buffer)throw std::runtime_error("buffer");
 +        std::vector<unsigned char> packed(8*10*144,0);std::vector<float> expected(8);
-+        const ggml_fp16_t scales[]={0x0401,0x040f,0x0001,0x1fff,0x2401,0x37ff,0x3c00,0x4000};
++        // Half subnormals may be flushed by Metal arithmetic; exercise the
++        // smallest normal range without depending on device denormal mode.
++        const ggml_fp16_t scales[]={0x0401,0x040f,0x0801,0x1fff,0x2401,0x37ff,0x3c00,0x4000};
 +        for(int row=0;row<8;++row) {
 +            auto p=packed.data()+row*10*144;std::memcpy(p,&scales[row],2);p[4+1]=1;p[16]=0x10;
 +            expected[row]=ggml_fp16_to_fp32(scales[row]);

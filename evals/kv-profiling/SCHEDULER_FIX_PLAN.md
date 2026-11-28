@@ -18,6 +18,12 @@ are kept in the ignored local campaign ledger at `target/scheduler-fixes/campaig
 This local path is not a link to a file in the reviewed PR. The PR description
 and [status](SCHEDULER_FIX_PROGRESS.md) summarize completed evidence.
 
+The registered protocol names the product source used for its first timing
+jobs. Review cleanup at `478f44ed` removed the resident-prefix policy from
+the PR and changed Rust source inputs. Earlier timing jobs remain diagnostic;
+qualifying the resulting PR requires a new sealed source identity and matched
+runs with the same decision thresholds.
+
 Do not submit duplicate jobs, substitute models or native inputs, or edit
 runtime code without a measured mechanism. Builds use Just and required Rust
 checks run serially.
