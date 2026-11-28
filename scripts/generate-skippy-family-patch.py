@@ -38,11 +38,7 @@ DIFF_HEADER = re.compile(r"^diff --git a/(src/models/[^ ]+) b/[^\n]+$", re.MULTI
 def run(args, argv, *, cwd, capture=False, rewriter=False):
     if len(argv) > 16384 or sum(len(os.fsencode(arg)) for arg in argv) > 4 * 1024 * 1024:
         raise ValueError("generator argv exceeds safety limit")
-    environment = {key: os.environ[key] for key in (
-        "PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "WINDIR", "TMPDIR", "TEMP", "TMP",
-        "LANG", "LC_ALL",
-    ) if key in os.environ}
-    return command(argv, cwd=cwd, capture_stdout=capture, clean_env=False, overrides=environment,
+    return command(argv, cwd=cwd, capture_stdout=capture,
                    timeout=args.timeout or (600 if rewriter else 60), limit=args.max_diff_bytes)
 
 

@@ -510,8 +510,11 @@ pub(crate) fn llama_model_meta_val_str_fn() -> Option<LlamaModelMetaValStrFn> {
 
 /// A `src/llama-ext.h` entry point. These keep C++ linkage, so they resolve by
 /// their decorated name: Itanium for GCC, Clang and MinGW builds, MSVC for
-/// MSVC-ABI Windows builds. Both decorations encode the parameter types, so an
-/// upstream signature change fails lookup instead of miscalling.
+/// MSVC-ABI Windows builds. Both decorations encode the parameter types, so a
+/// parameter change fails lookup. Itanium names omit the return type, so check
+/// it against the upstream declaration separately. Entry points
+/// that upstream promotes into `include/llama.h` gain C linkage and resolve by
+/// their undecorated names, like the rest of the surface above.
 struct CppEntryPoint {
     itanium: &'static [u8],
     msvc: &'static [u8],
@@ -537,23 +540,16 @@ pub(crate) fn llama_draft_api() -> Option<&'static LlamaDraftApi> {
             Some(LlamaDraftApi {
                 device_features: (|| {
                     Some(crate::llama_draft::LlamaDraftDeviceApi {
-                        set_capture: symbols.lookup_cpp(CppEntryPoint {
-                            itanium: b"_Z34llama_set_embeddings_layer_inp_devP13llama_contextb\0",
-                            msvc: b"?llama_set_embeddings_layer_inp_dev@@YAXPEAUllama_context@@_N@Z\0",
-                        })?,
-                        supports_rows: symbols.lookup_cpp(CppEntryPoint {
-                            itanium: b"_Z23llama_supports_embd_rowPK13llama_context\0",
-                            msvc: b"?llama_supports_embd_row@@YA_NPEBUllama_context@@@Z\0",
-                        })?,
-                        add_row: symbols.lookup_cpp(CppEntryPoint {
-                            itanium: b"_Z28llama_batch_ext_add_embd_rowP15llama_batch_extii\0",
-                            msvc: b"?llama_batch_ext_add_embd_row@@YAHPEAUllama_batch_ext@@HH@Z\0",
-                        })?,
+                        set_capture: symbols
+                            .lookup_optional(b"llama_set_embeddings_layer_inp_dev\0")?,
+                        supports_rows: symbols.lookup_optional(b"llama_supports_embd_row\0")?,
+                        add_row: symbols.lookup_optional(b"llama_batch_ext_add_embd_row\0")?,
                         batch_init: symbols.lookup_optional(b"llama_batch_ext_init\0")?,
                         batch_free: symbols.lookup_optional(b"llama_batch_ext_free\0")?,
                         batch_clear: symbols.lookup_optional(b"llama_batch_ext_clear\0")?,
                         set_pos: symbols.lookup_optional(b"llama_batch_ext_set_pos\0")?,
-                        set_output: symbols.lookup_optional(b"llama_batch_ext_set_output_logits\0")?,
+                        set_output: symbols
+                            .lookup_optional(b"llama_batch_ext_set_output_logits\0")?,
                         process: symbols.lookup_optional(b"llama_process\0")?,
                         synchronize: symbols.lookup_optional(b"llama_synchronize\0")?,
                     })
@@ -592,38 +588,22 @@ pub(crate) fn llama_draft_api() -> Option<&'static LlamaDraftApi> {
                 vocab_n_tokens: symbols.lookup_optional(b"llama_vocab_n_tokens\0")?,
                 vocab_mask: symbols.lookup_optional(b"llama_vocab_mask\0")?,
                 set_causal_attn: symbols.lookup_optional(b"llama_set_causal_attn\0")?,
-                set_embeddings_nextn: symbols.lookup_cpp(CppEntryPoint {
-                    itanium: b"_Z26llama_set_embeddings_nextnP13llama_contextbb\0",
-                    msvc: b"?llama_set_embeddings_nextn@@YAXPEAUllama_context@@_N1@Z\0",
-                })?,
-                get_embeddings_nextn: symbols.lookup_cpp(CppEntryPoint {
-                    itanium: b"_Z26llama_get_embeddings_nextnP13llama_context\0",
-                    msvc: b"?llama_get_embeddings_nextn@@YAPEAMPEAUllama_context@@@Z\0",
-                })?,
-                set_embeddings_layer_inp: symbols.lookup_cpp(CppEntryPoint {
-                    itanium: b"_Z30llama_set_embeddings_layer_inpP13llama_contextjb\0",
-                    msvc: b"?llama_set_embeddings_layer_inp@@YAXPEAUllama_context@@I_N@Z\0",
-                })?,
-                get_embeddings_layer_inp: symbols.lookup_cpp(CppEntryPoint {
-                    itanium: b"_Z30llama_get_embeddings_layer_inpP13llama_contextj\0",
-                    msvc: b"?llama_get_embeddings_layer_inp@@YAPEAMPEAUllama_context@@I@Z\0",
-                })?,
+                set_embeddings_nextn: symbols.lookup_optional(b"llama_set_embeddings_nextn\0")?,
+                get_embeddings_nextn: symbols.lookup_optional(b"llama_get_embeddings_nextn\0")?,
+                set_embeddings_layer_inp: symbols
+                    .lookup_optional(b"llama_set_embeddings_layer_inp\0")?,
+                get_embeddings_layer_inp: symbols
+                    .lookup_optional(b"llama_get_embeddings_layer_inp\0")?,
                 layer_inp_published: symbols.lookup_cpp(CppEntryPoint {
                     itanium: b"_Z25llama_layer_inp_publishedP13llama_contextj\0",
                     msvc: b"?llama_layer_inp_published@@YA_NPEAUllama_context@@I@Z\0",
                 })?,
-                model_target_layer_ids: symbols.lookup_cpp(CppEntryPoint {
-                    itanium: b"_Z28llama_model_target_layer_idsPK11llama_model\0",
-                    msvc: b"?llama_model_target_layer_ids@@YAPEBHPEBUllama_model@@@Z\0",
-                })?,
-                model_target_layer_ids_n: symbols.lookup_cpp(CppEntryPoint {
-                    itanium: b"_Z30llama_model_target_layer_ids_nPK11llama_model\0",
-                    msvc: b"?llama_model_target_layer_ids_n@@YAIPEBUllama_model@@@Z\0",
-                })?,
-                model_dflash_selector_top_k: symbols.lookup_cpp(CppEntryPoint {
-                    itanium: b"_Z33llama_model_dflash_selector_top_kPK11llama_model\0",
-                    msvc: b"?llama_model_dflash_selector_top_k@@YAHPEBUllama_model@@@Z\0",
-                })?,
+                model_target_layer_ids: symbols
+                    .lookup_optional(b"llama_model_target_layer_ids\0")?,
+                model_target_layer_ids_n: symbols
+                    .lookup_optional(b"llama_model_target_layer_ids_n\0")?,
+                model_dflash_selector_top_k: symbols
+                    .lookup_optional(b"llama_model_dflash_selector_top_k\0")?,
                 backend_dev_by_name: symbols.lookup_optional(b"ggml_backend_dev_by_name\0")?,
             })
         })

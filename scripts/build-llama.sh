@@ -20,7 +20,7 @@ LLAMA_STAGE_WORKLOAD_ORACLE="${LLAMA_STAGE_WORKLOAD_ORACLE:-OFF}"
 # Speech recognition folds pinned whisper.cpp into libllama on this tree's
 # ggml. OFF builds a runtime whose skippy_asr_* calls report UNSUPPORTED.
 SKIPPY_SPEECH_RECOGNITION="${SKIPPY_SPEECH_RECOGNITION:-ON}"
-WHISPER_WORKDIR="${WHISPER_WORKDIR:-$ROOT/.deps/whisper.cpp}"
+WHISPER_SOURCE_DIR="${WHISPER_WORKDIR:-$ROOT/.deps/whisper.cpp}"
 LLAMA_BUILD_TESTS=OFF
 LLAMA_BUILD_SERVER=OFF
 if [[ "$LLAMA_STAGE_FULL_REPLAY" == "ON" || "$LLAMA_STAGE_UPSTREAM_TESTS" == "ON" ]]; then
@@ -294,7 +294,13 @@ case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
     CMAKE_ARGS+=(-DCMAKE_OBJECT_PATH_MAX=180 -DGGML_AVX512=OFF -DGGML_BMI2=OFF)
     if [[ "${CXX:-}" == cl || "${CXX:-}" == *cl.exe ]]; then
-      CMAKE_ARGS+=("-DCMAKE_CXX_FLAGS_INIT=/DPATH_MAX=4096")
+      # Git Bash treats the slash form as a path when invoking native CMake.
+      CMAKE_ARGS+=("-DCMAKE_CXX_FLAGS_INIT=-DPATH_MAX=4096")
+    fi
+    if [[ ( "$LLAMA_BACKEND" == rocm || "$LLAMA_BACKEND" == hip ) && -n "${HIPCXX:-}" ]]; then
+      # ggml builds Windows HIP sources as CXX. CMake also needs Clang for C
+      # because its Windows toolchain rejects mixing the GNU and MSVC drivers.
+      CMAKE_ARGS+=("-DCMAKE_C_COMPILER=${HIPCC:-clang}" "-DCMAKE_CXX_COMPILER=$HIPCXX")
     fi
     ;;
 esac
@@ -385,6 +391,9 @@ case "$LLAMA_BACKEND" in
     ;;
   rocm|hip)
     CMAKE_ARGS+=(-DGGML_HIP=ON)
+    if [[ -n "${ROCM_PATH:-}" ]]; then
+      CMAKE_ARGS+=("-DCMAKE_PREFIX_PATH=$ROCM_PATH")
+    fi
     AMDGPU_TARGETS="${LLAMA_STAGE_AMDGPU_TARGETS:-${SKIPPY_AMDGPU_TARGETS:-}}"
     if [[ -n "$AMDGPU_TARGETS" ]]; then
       CMAKE_ARGS+=(-DAMDGPU_TARGETS="$AMDGPU_TARGETS")
@@ -446,7 +455,7 @@ fi
 WHISPER_PIN=""
 if [[ "$SKIPPY_SPEECH_RECOGNITION" == "ON" ]]; then
   WHISPER_PIN="$(tr -d '[:space:]' < "$ROOT/llama_cpp/whisper-upstream.txt")"
-  CMAKE_ARGS+=(-DSKIPPY_WHISPER_SOURCE_DIR="$WHISPER_WORKDIR")
+  CMAKE_ARGS+=(-DSKIPPY_WHISPER_SOURCE_DIR="$WHISPER_SOURCE_DIR")
 fi
 
 if [[ "$#" -gt 0 ]]; then
@@ -525,7 +534,7 @@ if [[ -f "$LLAMA_BUILD_DIR/CMakeCache.txt" ]]; then
 fi
 
 if [[ "$SKIPPY_SPEECH_RECOGNITION" == "ON" ]]; then
-  WHISPER_WORKDIR="$WHISPER_WORKDIR" "$ROOT/scripts/prepare-whisper.sh"
+  "$ROOT/scripts/prepare-whisper.sh"
 fi
 
 cmake "${CMAKE_ARGS[@]}"
@@ -549,6 +558,7 @@ if [[ "$LLAMA_STAGE_BUILD_TESTS" == "ON" ]]; then
     skippy-selected-logits
     skippy-noalloc-graph-planning
     skippy-recurrent-retention
+    skippy-recurrent-copy
     skippy-renamed-multishard-planning
     skippy-stage-slice-plan
     skippy-verify-rollback

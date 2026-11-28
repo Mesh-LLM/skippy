@@ -427,7 +427,7 @@ impl StageOpenAiBackend {
                 .value
         } else {
             self.iteration_scheduler
-                .execute_runtime("dflash-propose", move |runtime| {
+                .execute_independent_draft(move |runtime| {
                     runtime
                         .dflash_propose(&owned_session_id, anchor, limit)
                         .map_err(openai_backend_error)

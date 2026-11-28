@@ -102,36 +102,6 @@ is_partial_llama_workdir() {
     [[ -n "$(git -C "$LLAMA_WORKDIR" config --get extensions.partialClone 2>/dev/null || true)" ]]
 }
 
-# Re-clone unless $LLAMA_WORKDIR is genuinely its own complete git repository.
-# A bare `[[ ! -d "$LLAMA_WORKDIR/.git" ]]` check passes a partial/corrupt
-# checkout (dir present, .git missing or incomplete) straight through to the
-# `git -C` operations below; combined with discovery walking upward, that is
-# what lets this script escape into an enclosing repo. A blobless checkout is
-# also unsuitable: `git am --3way` must read both older upstream preimages and
-# patch-result object IDs, which a promisor remote can incorrectly try to
-# fetch from upstream. `rev-parse --git-dir` only succeeds for a real repo
-# rooted at the workdir (discovery cannot escape past GIT_CEILING_DIRECTORIES
-# set above). clone_llama_workdir rm -rf's first, so re-cloning this generated
-# dependency worktree is safe.
-if ! git -C "$LLAMA_WORKDIR" rev-parse --git-dir >/dev/null 2>&1 ||
-    is_partial_llama_workdir; then
-  clone_llama_workdir
-fi
-
-case "$MODE" in
-  pinned)
-    TARGET_SHA="$(tr -d '[:space:]' < "$PIN_FILE")"
-    ;;
-  latest)
-    git -C "$LLAMA_WORKDIR" remote set-url origin "$LLAMA_UPSTREAM_URL"
-    git_retry git -C "$LLAMA_WORKDIR" fetch origin master --tags
-    TARGET_SHA="$(git -C "$LLAMA_WORKDIR" rev-parse origin/master)"
-    ;;
-  *)
-    TARGET_SHA="$MODE"
-    ;;
-esac
-
 PATCHES=()
 while IFS= read -r patch; do
   PATCHES+=("$patch")
@@ -272,6 +242,52 @@ compute_patch_digest() {
 }
 
 PATCH_DIGEST="$(compute_patch_digest)"
+
+if [[ "$MODE" == --patch-digest ]]; then
+  printf '%s\n' "$PATCH_DIGEST"
+  exit 0
+fi
+
+# Re-clone unless $LLAMA_WORKDIR is genuinely its own complete git repository.
+# A bare `[[ ! -d "$LLAMA_WORKDIR/.git" ]]` check passes a partial/corrupt
+# checkout (dir present, .git missing or incomplete) straight through to the
+# `git -C` operations below; combined with discovery walking upward, that is
+# what lets this script escape into an enclosing repo. A blobless checkout is
+# also unsuitable: `git am --3way` must read both older upstream preimages and
+# patch-result object IDs, which a promisor remote can incorrectly try to
+# fetch from upstream. `rev-parse --git-dir` only succeeds for a real repo
+# rooted at the workdir (discovery cannot escape past GIT_CEILING_DIRECTORIES
+# set above). clone_llama_workdir rm -rf's first, so re-cloning this generated
+# dependency worktree is safe.
+if ! git -C "$LLAMA_WORKDIR" rev-parse --git-dir >/dev/null 2>&1 ||
+    is_partial_llama_workdir; then
+  clone_llama_workdir
+fi
+
+case "$MODE" in
+  pinned)
+    TARGET_SHA="$(tr -d '[:space:]' < "$PIN_FILE")"
+    ;;
+  latest)
+    git -C "$LLAMA_WORKDIR" remote set-url origin "$LLAMA_UPSTREAM_URL"
+    git_retry git -C "$LLAMA_WORKDIR" fetch origin master --tags
+    TARGET_SHA="$(git -C "$LLAMA_WORKDIR" rev-parse origin/master)"
+    ;;
+  *)
+    TARGET_SHA="$MODE"
+    ;;
+esac
+
+
+# Runtime identity files must never enter a repair commit via git add -A.
+exclude_file="$(git -C "$LLAMA_WORKDIR" rev-parse --git-path info/exclude)"
+if [[ "$exclude_file" != /* ]]; then
+  exclude_file="$LLAMA_WORKDIR/$exclude_file"
+fi
+mkdir -p "$(dirname "$exclude_file")"
+if ! grep -qxF '/.skippy-*' "$exclude_file" 2>/dev/null; then
+  printf '\n/.skippy-*\n' >> "$exclude_file"
+fi
 
 if [[ -f "$LLAMA_WORKDIR/.skippy-upstream-sha" &&
       -f "$LLAMA_WORKDIR/.skippy-patched-sha" &&

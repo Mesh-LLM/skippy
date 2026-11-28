@@ -5,7 +5,7 @@ use crate::models::storage::{
 };
 use anyhow::Result;
 use skippy_model_hf::details::{
-    find_remote_catalog_model_exact, installed_model_capabilities, installed_model_display_name,
+    find_cached_remote_catalog_model_exact, installed_model_capabilities,
     installed_model_huggingface_ref, remote_catalog_model_ref,
 };
 use std::path::Path;
@@ -22,8 +22,11 @@ fn build_installed_rows(cache_root: &Path) -> Vec<InstalledRow> {
         .map(|artifact| {
             let name = artifact.model_ref;
             let path = artifact.path;
-            let display_name = installed_model_display_name(&name);
-            let catalog_model = find_remote_catalog_model_exact(&name);
+            let catalog_model = find_cached_remote_catalog_model_exact(&name);
+            let display_name = catalog_model
+                .as_ref()
+                .map(|model| model.name.clone())
+                .unwrap_or_else(|| name.clone());
             let layer_count =
                 installed_layer_package_count(&name, layered_package_layer_count_for_path(&path));
             let model_ref = if layer_count.is_some() {

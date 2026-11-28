@@ -1,0 +1,129 @@
+From 6637989576fe454545fb1ff9d67514133a23c378 Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Wed, 25 Nov 2026 07:49:52 +1100
+Subject: [PATCH] cachegen: import only into empty KV cells
+
+---
+ src/llama-kv-cache.cpp                |  8 +++---
+ src/llama-kv-cache.h                  |  2 +-
+ tests/test-skippy-cachegen-import.cpp | 37 ++++++++++++++++++++++++---
+ 3 files changed, 40 insertions(+), 7 deletions(-)
+
+diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
+index 90d93fdf4..023eedcc4 100644
+--- a/src/llama-kv-cache.cpp
++++ b/src/llama-kv-cache.cpp
+@@ -1298,7 +1298,7 @@ std::vector<uint32_t> llama_kv_cache::find_chunked_cells(
+     return cells.place_together(token_seqs, head_cur, kv_chunk_cells);
+ }
+ 
+-llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch, bool cont) const {
++llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch, bool cont, bool empty_only) const {
+ 
+     if (debug > 0) {
+         for (uint32_t s = 0; s < ubatch.n_seqs_unq; ++s) {
+@@ -1485,7 +1485,7 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
+                 //                always insert in the cell with minimum pos
+                 bool can_use = cells.is_empty(idx);
+ 
+-                if (!can_use && cells.seq_count(idx) == 1) {
++                if (!empty_only && !can_use && cells.seq_count(idx) == 1) {
+                     const llama_pos pos_cell = cells.pos_get(idx);
+ 
+                     // (disabled) causal mask
+@@ -2775,7 +2775,9 @@ bool llama_kv_cache::stage_import_cachegen_kv_page(llama_seq_id
+     ubatch.data         = std::move(udata);
+ 
+     const uint32_t  head_before = v_heads[strm];
+-    const slot_info sinfo       = find_slot(ubatch, false);
++    // Import rollback removes only this session's new cells. Never displace
++    // another owner's SWA cells or overwrite their payload during decode.
++    const slot_info sinfo       = find_slot(ubatch, false, true);
+     if (sinfo.empty()) {
+         error = "failed to allocate KV cache cells for CacheGen page";
+         return false;
+diff --git a/src/llama-kv-cache.h b/src/llama-kv-cache.h
+index fcff5365b..c2535892d 100644
+--- a/src/llama-kv-cache.h
++++ b/src/llama-kv-cache.h
+@@ -274,7 +274,7 @@ public:
+     // find a slot of kv cells that can hold the ubatch
+     // if cont == true, then the slot must be continuous
+     // return empty slot_info on failure
+-    slot_info find_slot(const llama_ubatch & ubatch, bool cont) const;
++    slot_info find_slot(const llama_ubatch & ubatch, bool cont, bool empty_only = false) const;
+ 
+     // cells a sequence claims at a time in the unified pool; a multiple of the
+     // row-attention kernels' 32-row block
+diff --git a/tests/test-skippy-cachegen-import.cpp b/tests/test-skippy-cachegen-import.cpp
+index 43cc3f7d6..f0d28e15c 100644
+--- a/tests/test-skippy-cachegen-import.cpp
++++ b/tests/test-skippy-cachegen-import.cpp
+@@ -121,7 +121,7 @@ llama_hparams make_hparams(bool mla) {
+     return hparams;
+ }
+ 
+-std::unique_ptr<llama_kv_cache> make_cache(const llama_model & model, const llama_hparams & hparams) {
++std::unique_ptr<llama_kv_cache> make_cache(const llama_model & model, const llama_hparams & hparams, uint32_t n_swa = 0) {
+     return std::unique_ptr<llama_kv_cache>(new llama_kv_cache(
+             model,
+             false,
+@@ -133,8 +133,8 @@ std::unique_ptr<llama_kv_cache> make_cache(const llama_model & model, const llam
+             true,
+             kv_capacity,
+             1,
+-            0,
+-            LLAMA_SWA_TYPE_NONE,
++            n_swa,
++            n_swa ? LLAMA_SWA_TYPE_STANDARD : LLAMA_SWA_TYPE_NONE,
+             nullptr,
+             [](int32_t il) { return il == 0; },
+             {},
+@@ -181,6 +181,34 @@ bool populate(llama_kv_cache & kv, uint32_t n_tokens) {
+     return kv.seq_pos_min(0) == 0 && kv.seq_pos_max(0) == static_cast<llama_pos>(n_tokens) - 1;
+ }
+ 
++
++// A CacheGen decoder can fail after allocation. Only empty cells are safe:
++// an SWA-reusable cell still belongs to another sequence until overwritten.
++bool cachegen_slots_preserve_other_sequences(const llama_model & model) {
++    auto kv = make_cache(model, make_hparams(false), 16);
++    if (!populate(*kv, kv_capacity)) { return false; }
++    llama_pos pos = kv_capacity;
++    llama_seq_id seq = 1;
++    llama_seq_id * seq_ptr = &seq;
++    int32_t n_seq_id = 1;
++    llama_ubatch ubatch = {};
++    ubatch.b_equal_seqs = true;
++    ubatch.n_tokens = ubatch.n_seq_tokens = ubatch.n_seqs = ubatch.n_seqs_unq = ubatch.n_pos = 1;
++    ubatch.pos = &pos;
++    ubatch.n_seq_id = &n_seq_id;
++    ubatch.seq_id = &seq_ptr;
++    ubatch.seq_id_unq = &seq;
++    if (kv->find_slot(ubatch, false).empty() || !kv->find_slot(ubatch, false, true).empty() ||
++            kv->seq_pos_min(0) != 0 || kv->seq_pos_max(0) != kv_capacity - 1) {
++        return false;
++    }
++    // A genuinely free cell remains admissible without disturbing its owner.
++    if (!kv->seq_rm(0, 0, 1)) { return false; }
++    const auto slot = kv->find_slot(ubatch, false, true);
++    return !slot.empty() && slot.idxs[0].size() == 1 && slot.idxs[0][0] == 0 &&
++            kv->seq_pos_min(0) == 1 && kv->seq_pos_max(0) == kv_capacity - 1;
++}
++
+ bool export_page(llama_kv_cache & kv, uint32_t tokens, skippy_kv_page_desc & desc,
+         std::vector<uint8_t> & payload, std::string & error) {
+     size_t bytes = 0;
+@@ -224,6 +252,9 @@ int main() {
+         return fail("failed to create test model");
+     }
+ 
++    if (!cachegen_slots_preserve_other_sequences(*model)) {
++        return fail("CacheGen allocation can displace another sequence's SWA cells");
++    }
+     const llama_hparams mla_hparams = make_hparams(true);
+     std::unique_ptr<llama_kv_cache> mla_kv = make_cache(*model, mla_hparams);
+     if (!populate(*mla_kv, page_token_count)) {
+-- 
+2.56.0
+

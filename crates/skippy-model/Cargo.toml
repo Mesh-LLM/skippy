@@ -2,7 +2,7 @@
 name = "skippy-model"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Validated source checkpoint metadata and tensor access for Skippy"
 repository = "https://github.com/Mesh-LLM/skippy"

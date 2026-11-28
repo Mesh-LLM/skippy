@@ -9,7 +9,7 @@ separately and remain outside the primary decoder stage interval.
 
 ---
 diff --git a/src/models/inkling.cpp b/src/models/inkling.cpp
-index c6c9e223a66a7fde6cb8a3e24890ec4eaaad70ea..6784be9eea547ab91ad1c1d78e514e5dd6698679 100644
+index b8cc55734d615aef6cf94f8e7b2440221719783b..6be9814fabfada405a6cf55af9fd0c368aa05386 100644
 --- a/src/models/inkling.cpp
 +++ b/src/models/inkling.cpp
 @@ -649,8 +649,11 @@ llama_model_inkling::graph::graph(const llama_model & model, const llm_graph_par

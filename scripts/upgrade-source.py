@@ -11,9 +11,13 @@ import tempfile
 from pathlib import Path
 
 from lib.ci_artifacts import digest, write_json
-from lib.ci_process import cancel_on_signal, command
+from lib.ci_process import cancel_on_signal, command, time_budget
 from lib.upgrade_regeneration import regenerate
+from lib.upgrade_verification import verify_offline
 from lib.upgrade_repair import repair
+from lib.upgrade_lifecycle import verify_or_repair
+from lib.upgrade_recovery import retain
+from lib.upgrade_preimages import seed_patch_preimages
 from lib.native_recipe import write_native_recipe
 from lib.graph_contracts import check_upgrade_coverage
 from lib.upgrade_resolution import latest, open_upgrade
@@ -34,10 +38,11 @@ def resolve(upstream, force):
 def save_preparation_diagnostics(checkout, destination):
     """Keep patch failures inspectable after the disposable checkout is removed."""
     source = checkout / ".deps/llama.cpp"
-    coverage = checkout / "target/llama-regeneration/graph-coverage.json"
-    if coverage.is_file():
-        destination.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(coverage, destination / coverage.name)
+    for name in ("graph-coverage.json", "abi-compatibility.json"):
+        report = checkout / "target/llama-regeneration" / name
+        if report.is_file():
+            destination.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(report, destination / name)
     if not (source / ".git").is_dir():
         return
     destination.mkdir(parents=True, exist_ok=True)
@@ -68,54 +73,51 @@ def prepare(upstream, repair_bundle=None, diagnostics=None):
         checkout = Path(scratch) / "source"
         command(["git", "clone", "--no-hardlinks", "--no-checkout", str(root), str(checkout)], timeout=600)
         git(checkout, "checkout", "--detach", base)
-        if repair_bundle:
-            metadata = json.loads(repair_bundle.with_name("candidate.json").read_text())
-            if (metadata["base_sha"] != base or metadata["upstream_sha"] != upstream
-                    or digest(repair_bundle) != metadata["bundle_sha256"]):
-                raise ValueError("repair bundle does not match the protected base")
-            restore_at(checkout, repair_bundle.resolve(), metadata["candidate_sha"])
-            repair(checkout, diagnostics.resolve())
-            git(checkout, "reset", "--soft", base)
-        base_pin = git(root, "show", f"{base}:{PIN}")
-        (checkout / PIN).write_text(upstream + "\n", encoding="utf-8")
         try:
-            try:
-                regenerate(checkout)
-                check_upgrade_coverage(checkout, base_pin)
-            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
-                save_preparation_diagnostics(checkout, directory / "diagnostics")
-                if not os.environ.get("SKIPPY_UPGRADE_REPAIR_COMMAND"):
-                    raise
-                repair(checkout, directory / "diagnostics")
-                regenerate(checkout)
-                check_upgrade_coverage(checkout, base_pin)
-            env = {"LLAMA_WORKDIR": str(checkout / ".deps/llama.cpp"),
-                   "LLAMA_PIN_FILE": str(checkout / PIN), "LLAMA_PATCH_DIR": str(checkout / "llama_cpp/patches")}
-            command(["just", "--justfile", str(checkout / "Justfile"), "llama-prepare"],
-                    overrides=env, timeout=3600)
-            write_native_recipe(checkout)
-        except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt):
-            try:
-                save_preparation_diagnostics(checkout, directory / "diagnostics")
-            except OSError as diagnostic_error:
-                print(f"could not retain preparation diagnostics: {diagnostic_error}", file=sys.stderr)
-            raise
-        check_changes(checkout, "HEAD")
-        git(checkout, "add", "--", *(path for path in ALLOWED if (checkout / path).exists()))
-        timestamp = int(git(checkout, "show", "-s", "--format=%ct", base)) + 1
-        env = {f"GIT_{role}_{key}": value for role in ("AUTHOR", "COMMITTER") for key, value in {
-            "NAME": "Skippy llama updater", "EMAIL": "ci@skippy.local", "DATE": f"@{timestamp} +0000",
-        }.items()}
-        git(checkout, "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m",
-            f"Update llama.cpp to {upstream}", overrides=env, timeout=120)
-        candidate = git(checkout, "rev-parse", "HEAD")
-        bundle = Path(scratch) / "candidate.bundle"
-        git(checkout, "bundle", "create", str(bundle), f"{base}..HEAD")
-        metadata = Path(scratch) / "candidate.json"
-        write_json(metadata, {"schema_version": 1, "base_sha": base, "candidate_sha": candidate,
-                              "upstream_sha": upstream, "bundle_sha256": digest(bundle)})
-        bundle.replace(directory / bundle.name)
-        metadata.replace(directory / metadata.name)
+            with time_budget(41400 + 43200 + 600):
+                if repair_bundle:
+                    metadata = json.loads(repair_bundle.with_name("candidate.json").read_text())
+                    if (metadata["base_sha"] != base or metadata["upstream_sha"] != upstream
+                            or digest(repair_bundle) != metadata["bundle_sha256"]):
+                        raise ValueError("repair bundle does not match the protected base")
+                    restore_at(checkout, repair_bundle.resolve(), metadata["candidate_sha"])
+                    if diagnostics.is_dir():
+                        shutil.copytree(diagnostics, directory / "diagnostics/previous-ci", dirs_exist_ok=True)
+                    # Keep the restored candidate as dirty changes on its protected base.
+                    git(checkout, "reset", "--soft", base)
+                base_pin = git(root, "show", f"{base}:{PIN}")
+                (checkout / PIN).write_text(upstream + "\n", encoding="utf-8")
+                def verify():
+                    seed_patch_preimages(checkout, base_pin, root / "llama_cpp/patches")
+                    regenerate(checkout)
+                    check_upgrade_coverage(checkout, base_pin)
+                    env = {"LLAMA_WORKDIR": str(checkout / ".deps/llama.cpp"),
+                           "LLAMA_PIN_FILE": str(checkout / PIN), "LLAMA_PATCH_DIR": str(checkout / "llama_cpp/patches")}
+                    command(["just", "--justfile", str(checkout / "Justfile"), "llama-prepare"],
+                            overrides=env, timeout=3600)
+                    write_native_recipe(checkout)
+                    verify_offline(checkout)
+
+                verify_or_repair(checkout, directory / "diagnostics", verify, repair, save_preparation_diagnostics,
+                                 initial_repair=bool(repair_bundle))
+                check_changes(checkout, "HEAD")
+                git(checkout, "add", "--", *(path for path in ALLOWED if (checkout / path).exists()))
+                timestamp = int(git(checkout, "show", "-s", "--format=%ct", base)) + 1
+                env = {f"GIT_{role}_{key}": value for role in ("AUTHOR", "COMMITTER") for key, value in {
+                    "NAME": "Skippy llama updater", "EMAIL": "ci@skippy.local", "DATE": f"@{timestamp} +0000",
+                }.items()}
+                git(checkout, "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m",
+                    f"Update llama.cpp to {upstream}", overrides=env, timeout=120)
+                candidate = git(checkout, "rev-parse", "HEAD")
+                bundle = Path(scratch) / "candidate.bundle"
+                git(checkout, "bundle", "create", str(bundle), f"{base}..HEAD")
+                metadata = Path(scratch) / "candidate.json"
+                write_json(metadata, {"schema_version": 1, "base_sha": base, "candidate_sha": candidate,
+                                      "upstream_sha": upstream, "bundle_sha256": digest(bundle)})
+                bundle.replace(directory / bundle.name)
+                metadata.replace(directory / metadata.name)
+        finally:
+            retain(checkout, directory / "diagnostics/recovery", "preparation-exit", base=base)
     output("candidate_sha", candidate)
 
 
