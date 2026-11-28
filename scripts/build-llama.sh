@@ -20,7 +20,7 @@ LLAMA_STAGE_WORKLOAD_ORACLE="${LLAMA_STAGE_WORKLOAD_ORACLE:-OFF}"
 # Speech recognition folds pinned whisper.cpp into libllama on this tree's
 # ggml. OFF builds a runtime whose skippy_asr_* calls report UNSUPPORTED.
 SKIPPY_SPEECH_RECOGNITION="${SKIPPY_SPEECH_RECOGNITION:-ON}"
-WHISPER_WORKDIR="${WHISPER_WORKDIR:-$ROOT/.deps/whisper.cpp}"
+WHISPER_SOURCE_DIR="${WHISPER_WORKDIR:-$ROOT/.deps/whisper.cpp}"
 LLAMA_BUILD_TESTS=OFF
 LLAMA_BUILD_SERVER=OFF
 if [[ "$LLAMA_STAGE_FULL_REPLAY" == "ON" || "$LLAMA_STAGE_UPSTREAM_TESTS" == "ON" ]]; then
@@ -509,7 +509,7 @@ fi
 WHISPER_PIN=""
 if [[ "$SKIPPY_SPEECH_RECOGNITION" == "ON" ]]; then
   WHISPER_PIN="$(tr -d '[:space:]' < "$ROOT/llama_cpp/whisper-upstream.txt")"
-  CMAKE_ARGS+=(-DSKIPPY_WHISPER_SOURCE_DIR="$WHISPER_WORKDIR")
+  CMAKE_ARGS+=(-DSKIPPY_WHISPER_SOURCE_DIR="$WHISPER_SOURCE_DIR")
 fi
 
 if [[ "$#" -gt 0 ]]; then
@@ -588,7 +588,7 @@ if [[ -f "$LLAMA_BUILD_DIR/CMakeCache.txt" ]]; then
 fi
 
 if [[ "$SKIPPY_SPEECH_RECOGNITION" == "ON" ]]; then
-  WHISPER_WORKDIR="$WHISPER_WORKDIR" "$ROOT/scripts/prepare-whisper.sh"
+  "$ROOT/scripts/prepare-whisper.sh"
 fi
 
 cmake "${CMAKE_ARGS[@]}"

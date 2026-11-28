@@ -143,8 +143,22 @@ contract; no downstream product's workflow topology applies here.
   download failures and pass available CI evidence to repair. Preserve that
   evidence on failure even before preparation starts. Repair may update the
   exact handwritten FFI adapters static_bindings.rs, dynamic.rs and
-  llama_draft.rs for upstream signature/linkage changes; other Rust sources
-  and qualification policy stay outside the update allowlist.
+  llama_draft.rs for upstream signature/linkage changes. Assess consumed
+  upstream C layouts, by-value returns, callbacks and signatures as well as
+  Skippy-owned exports. Changed generated FFI declarations require a distinct
+  ABI identity before freezing, even when compilation passes. Verification
+  compares the protected base's generated declarations with the regenerated
+  candidate, ignoring docs/comments/spacing and the ABI constants themselves;
+  its conservative guard reports changed files in abi-compatibility.json and
+  returns missing bumps to the same repair session. It is not a complete
+  binary ABI analysis; retain the native/Rust checks and review handwritten
+  adapters too. The agent may change only the ABI_VERSION_PATCH literal in
+  crates/skippy-ffi/src/lib.rs, alongside the native version header in the
+  ordered queue and crates/skippy-ffi/README.md. Other edits to lib.rs are
+  rejected for dirty repairs and frozen bundles. Keep an existing candidate's
+  bump across repair turns; don't increment it on every turn. Recipe identity
+  is not a substitute for runtime ABI checking. Other Rust sources and
+  qualification policy stay outside the update allowlist.
   Resolve the immutable upstream revision in a read-only hosted job. Before
   changed-pin candidate preparation, a separate hosted preflight checks publisher
   settings and authenticates the repository-scoped App with Contents and Pull
@@ -176,6 +190,10 @@ contract; no downstream product's workflow topology applies here.
 - Ordinary tests are offline. Model admission is explicit and digest-bound.
   GPU qualification requires a real matching device; missing fixtures, devices,
   capacity, or evidence fail or queue, never become passing skips.
+  Split qualification must bind readiness and acknowledged completion to its
+  own JY formation/source/model/profile/role/attempt identities. Require both
+  members' receipts and overlapping successful execution on the distinct
+  reserved nodes; a listening port or a leader-only pass is insufficient.
 - Split admission is established by actual native stage plans, tensor closures,
   activation frontiers, artifact identities and backend compatibility. Qualification
   records exact tested configurations. There is no architecture certification
