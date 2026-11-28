@@ -1,0 +1,103 @@
+{
+  "schema": "skippy-pr233-relative-performance-v2",
+  "registered_before_first_result": true,
+  "claim": "At the four listed model and offered-load points, the current Skippy Metal product has no more than a 2% regression in aggregate output tokens per second or client-measured p95 TTFT, E2E, and TPOT against each of the two pinned vanilla llama.cpp layouts.",
+  "scope": "Performance only. This does not claim answer equivalence, absolute latency SLO compliance, other load points, or other models. Preserve all observed output differences and failed quality checks separately. V1 timing results predate this source and remain diagnostic, not qualifying.",
+  "source_equivalence": {
+    "product_build_head": "79523f8b1bd27e924748a0902f84adea87e72d2a",
+    "pr_head_at_registration": "79523f8b1bd27e924748a0902f84adea87e72d2a",
+    "product_build_spec_sha256": "4eba7aba7ad15adeab16470b71ae517b345240d94704f243437acda66e9fc310",
+    "require": "Build and attest the exact source at product_build_head through Just on macstudio-2l0352. Verify the runtime binary and all native files against the resulting manifest before every timing cell. Later PR commits may change docs/evidence only; any Rust/native/ABI/model/build-recipe change requires new build and protocol."
+  },
+  "models": [
+    {
+      "key": "qwen35-4b",
+      "load": "c128",
+      "requests_per_arm_per_round": 128,
+      "fixture_sha256": "422555f06141441de540134ed889458c290b9114dfe557c034463fa33fbfbd5e",
+      "frozen_ref_e2e_ms": 791.173594
+    },
+    {
+      "key": "qwen3-coder-30b-a3b",
+      "load": "c256",
+      "requests_per_arm_per_round": 256,
+      "fixture_sha256": "cfdb255ba1b2848f97a4a5ec10808de398bab60c38736f396e933d0a81c967e6",
+      "frozen_ref_e2e_ms": 749.4787085,
+      "skippy_waiting_request_capacity": 256
+    },
+    {
+      "key": "qwen36-35b-a3b",
+      "load": "c1",
+      "requests_per_arm_per_round": 32,
+      "fixture_sha256": "422555f06141441de540134ed889458c290b9114dfe557c034463fa33fbfbd5e"
+    },
+    {
+      "key": "qwen38-flash-next",
+      "load": "c1",
+      "requests_per_arm_per_round": 32,
+      "fixture_sha256": "422555f06141441de540134ed889458c290b9114dfe557c034463fa33fbfbd5e"
+    }
+  ],
+  "arms": [
+    "current-skippy",
+    "vanilla-separate",
+    "vanilla-unified",
+    "original-skippy-diagnostic"
+  ],
+  "rounds_per_model": 8,
+  "round_orders": [
+    [
+      "current-skippy",
+      "vanilla-separate",
+      "vanilla-unified",
+      "original-skippy-diagnostic"
+    ],
+    [
+      "vanilla-separate",
+      "original-skippy-diagnostic",
+      "current-skippy",
+      "vanilla-unified"
+    ],
+    [
+      "vanilla-unified",
+      "current-skippy",
+      "original-skippy-diagnostic",
+      "vanilla-separate"
+    ],
+    [
+      "original-skippy-diagnostic",
+      "vanilla-unified",
+      "vanilla-separate",
+      "current-skippy"
+    ],
+    [
+      "original-skippy-diagnostic",
+      "vanilla-unified",
+      "vanilla-separate",
+      "current-skippy"
+    ],
+    [
+      "vanilla-unified",
+      "current-skippy",
+      "original-skippy-diagnostic",
+      "vanilla-separate"
+    ],
+    [
+      "vanilla-separate",
+      "original-skippy-diagnostic",
+      "current-skippy",
+      "vanilla-unified"
+    ],
+    [
+      "current-skippy",
+      "vanilla-separate",
+      "vanilla-unified",
+      "original-skippy-diagnostic"
+    ]
+  ],
+  "hardware": "macstudio-2l0352 Apple M1 Ultra, $0, full Metal, exact four CI model pins and shards, 16 lanes x 8192 context, F16 K/V, batch/microbatch 512, prefix and disk caches off, no model or runtime downloads or substitutions",
+  "requests": "Archive the existing 256-item 512-input/32-output fixture per model. Use the same request bodies and prompt IDs in every arm of a round. For c1 use 32 sequential IDs per round, covering all 256 IDs across eight rounds. For c128 and c256 use the original inferencekit 0.1.1 bounded Poisson load schedule and frozen single-user reference, with 128/256 offered requests per round. Require exactly 32 generated tokens per request in every arm.",
+  "measurement": "Eight fresh-process balanced rounds per model; 120-second nominal-thermal cooldown before each cell. Client-measured aggregate output tokens/second and per-round p95 TTFT, E2E, TPOT. Preserve each request timestamp, token count, status and server launch, native settings, thermal and contention telemetry. Reject a cell with incomplete responses, unexpected token counts, cache use, non-Metal operation, or non-nominal thermal or contention evidence.",
+  "decision": "For each model, load point, metric and vanilla layout, calculate paired round ratios with a deterministic 100000-draw paired bootstrap (seed 20261128), two-sided percentile 95% interval. For throughput use Skippy/vanilla and require interval lower bound >0.98. For latencies use Skippy/vanilla and require interval upper bound <1.02. The four-model relative-performance claim passes only if every one of these comparisons passes. Any incomplete or invalid arm is UNPROVEN; an observed bound wholly beyond a margin is FAIL. Publish all four tables and all losses.",
+  "independent_observations": "Report absolute TTFT p95 <=30 s and TPOT p95 <=1 s separately for every arm. Report answer hashes and exact-text mismatches separately; neither is a gate for this explicitly performance-only claim. Do not reclassify the earlier quality protocol or historical failures."
+}
