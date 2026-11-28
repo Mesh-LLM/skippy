@@ -67,12 +67,13 @@ prefill chunk of a wide boundary crosses as one frame; a chunk whose output
 still exceeds the budget is sent as consecutive prefill frames.
 Generation 17 on main removed obsolete family-certification load/status fields.
 
-Current generation 18 combines that removal with wire header version 18 and
-request tier/private cache partition state flags (bits 17-18: how many tiers
-below `local`; bit 19: private). A stage lowers that claim to its assigned
-`StageConfig.max_request_tier`, then partitions and evicts caches by the
-result. All participants must advertise `stage-generation-18`; older peers
-fail closed before split planning.
+Generation 17 also removes the obsolete family-certification fields from load and status messages. Current generation 17 (wire header version 18) carries each request's tier
+and private cache partition in the state header flags of every
+cache-bearing message (bits 17-18: how many tiers below `local`; bit 19:
+private). A stage lowers that claim to the highest tier its host assigned
+the stage at load (`StageConfig.max_request_tier`), then partitions and
+evicts its caches by the result. All participants must advertise
+`stage-generation-17`; older peers fail closed.
 
 Admission requires mesh-subprotocol control, list-valued status responses,
 strict local-content identity, canonical stage-admission descriptors, and stale

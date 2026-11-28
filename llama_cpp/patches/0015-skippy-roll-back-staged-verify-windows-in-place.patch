@@ -1,7 +1,7 @@
-From 1d0abf6b3041e34db44b7bb60c4894bc27b6ebca Mon Sep 17 00:00:00 2001
+From 531ea089580a7d6cbb72f4f1c8d0d5004b8c425d Mon Sep 17 00:00:00 2001
 From: Daniel Winter <danielwinterw@gmail.com>
 Date: Thu, 29 Oct 2026 21:32:31 +1100
-Subject: [PATCH 15/32] skippy: roll back staged verify windows in place
+Subject: [PATCH] skippy: roll back staged verify windows in place
 
 A recurrent verify window of up to n_rs_seq rows rolls back through the
 rollback snapshots instead of a host checkpoint and replay, but staged
@@ -1468,3 +1468,6 @@ index d09acccb4..8d68604c3 100644
 +    if (skippy_retire_verify_checkpoint_exact(checkpoints, 30, 4, &retired)) return 10;
      return 0;
  }
+-- 
+2.56.1
+

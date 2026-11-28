@@ -1,8 +1,8 @@
-From d21f04c41831e417d9d2e805ae225500882892d7 Mon Sep 17 00:00:00 2001
+From b6bedeb040834a5df0a7d41a1417e71c3eaa09e4 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Thu, 12 Nov 2026 15:55:33 +1100
-Subject: [PATCH 35/35] tests: check row-list attention over the lists a
- unified KV pool produces
+Subject: [PATCH] tests: check row-list attention over the lists a unified KV
+ pool produces
 
 test-backend-ops compared row-list attention on a GPU backend with the CPU
 only for lists of scattered cells with padding at the tail. A pool that keeps
@@ -31,10 +31,10 @@ Claude-Session: https://claude.ai/code/session_01QA3dWey3RBtBgDz1Tery9Y
  2 files changed, 113 insertions(+), 5 deletions(-)
 
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 97e08f3ec..133ba2bf3 100644
+index 687681d2a..a80911aa4 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
-@@ -394,6 +394,11 @@ if (GGML_METAL AND NOT GGML_BACKEND_DL)
+@@ -409,6 +409,11 @@ if (GGML_METAL AND NOT GGML_BACKEND_DL)
  endif()
  
  llama_build(test-backend-ops.cpp LINK ggml Threads::Threads)
@@ -45,12 +45,12 @@ index 97e08f3ec..133ba2bf3 100644
 +endif()
  
  llama_build_and_test(test-backend-tensor.cpp LINK ggml)
- # per-call cost of ordinary vs row-list decode attention; a tool, not a test
+ llama_build_and_test(test-sleep.cpp LINK ggml)
 diff --git a/tests/test-backend-ops.cpp b/tests/test-backend-ops.cpp
-index cd9d2b894..5a052fbca 100644
+index 91ff4c86a..4b1994475 100644
 --- a/tests/test-backend-ops.cpp
 +++ b/tests/test-backend-ops.cpp
-@@ -9013,11 +9013,8 @@ struct test_flash_attn_ext_kv_rows : public test_case {
+@@ -9420,11 +9420,8 @@ struct test_flash_attn_ext_kv_rows : public test_case {
          return out;
      }
  
@@ -64,7 +64,7 @@ index cd9d2b894..5a052fbca 100644
          std::vector<int32_t> order(n_cells);
          for (int64_t s = 0; s < n_slices; ++s) {
              for (int64_t i = 0; i < n_cells; ++i) {
-@@ -9029,6 +9026,13 @@ struct test_flash_attn_ext_kv_rows : public test_case {
+@@ -9436,6 +9433,13 @@ struct test_flash_attn_ext_kv_rows : public test_case {
                  rows[s*kv + i] = order[i];
              }
          }
@@ -78,7 +78,7 @@ index cd9d2b894..5a052fbca 100644
  
          for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != NULL; t = ggml_get_next_tensor(ctx, t)) {
              if (t->view_src) {
-@@ -9058,6 +9062,91 @@ struct test_flash_attn_ext_kv_rows : public test_case {
+@@ -9465,6 +9469,91 @@ struct test_flash_attn_ext_kv_rows : public test_case {
      }
  };
  
@@ -170,7 +170,7 @@ index cd9d2b894..5a052fbca 100644
  // GGML_OP_CROSS_ENTROPY_LOSS
  struct test_cross_entropy_loss : public test_case {
      const ggml_type type;
-@@ -12671,6 +12760,20 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
+@@ -13436,6 +13525,20 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
          }
      }
  
@@ -192,5 +192,5 @@ index cd9d2b894..5a052fbca 100644
      test_cases.emplace_back(new test_flash_attn_ext(512, 512, 1, { 8, 1}, 4096, 64, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16, {0, 1, 2, 3}, true, false,  512));
      test_cases.emplace_back(new test_flash_attn_ext(512, 512, 1, { 8, 1}, 4096, 64, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16, {0, 1, 2, 3}, true, false, 2048));
 -- 
-2.43.0
+2.56.1
 

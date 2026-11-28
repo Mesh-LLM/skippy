@@ -6,7 +6,7 @@
 
 pub const SKIPPY_ABI_VERSION_MAJOR: u32 = 0;
 pub const SKIPPY_ABI_VERSION_MINOR: u32 = 1;
-pub const SKIPPY_ABI_VERSION_PATCH: u32 = 89;
+pub const SKIPPY_ABI_VERSION_PATCH: u32 = 92;
 pub const SKIPPY_ACTIVATION_FRAME_VERSION: u32 = 2;
 pub const SKIPPY_ACTIVATION_BOUNDARY_DESC_VERSION: u32 = 2;
 pub const SKIPPY_ACTIVATION_IDENTITY_BYTES: u32 = 32;
@@ -1439,6 +1439,8 @@ unsafe extern "C" {
 pub enum skippy_kv_page_flag {
     VTransposed = 1,
     HasKIdx = 2,
+    #[doc = " Secondary position axes equal token_start + row; no position sideband is needed."]
+    CanonicalPositions = 4,
 }
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]

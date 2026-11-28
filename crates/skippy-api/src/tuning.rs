@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 mod process;
 pub use process::{ProcessTrialRunner, RESULT_PREFIX};
-pub use process_supervision::Cancellation;
+pub use skippy_subprocess::Cancellation;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

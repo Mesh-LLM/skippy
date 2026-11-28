@@ -52,7 +52,10 @@ case "${1:-}:${2:-}" in
     automation:workload-tts-oracle)
         shift 2
         exec "$python" "$script_dir/skippy-tts-oracle.py" "$@" ;;
-    upgrade:publish|upgrade:diagnostics)
+    upgrade:runner-check)
+        shift 2
+        exec "$python" "$script_dir/upgrade-runner-check.py" "$@" ;;
+    upgrade:publish|upgrade:diagnostics|upgrade:result)
         action="$2"
         shift 2
         exec "$python" "$script_dir/upgrade-$action.py" "$@" ;;

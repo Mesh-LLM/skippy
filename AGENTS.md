@@ -31,8 +31,9 @@ CI implementation; tagged releases reuse it. Builds have no publication secrets.
 Trusted same-repository PRs may use standard native JY jobs on persistent
 hardware, with fresh source-pinned workspaces and no publication credentials.
 The standard JY job account is accepted; no separate account migration is required.
-Fork and other untrusted PRs require isolated
-ephemeral execution. See the CI skill for admission and cleanup requirements.
+Fork PRs may enter native execution after maintainer workflow approval through
+the protected approved-fork controller; other untrusted work remains isolated.
+See the CI skill for admission and cleanup requirements.
 
 Default tests are offline and use isolated temporary state. Model and hardware
 qualification is explicit and cannot pass through missing-fixture/device skips.
@@ -40,12 +41,23 @@ Keep all third-party licenses and preserve wire/hash compatibility deliberately.
 Never commit credentials. The extraction plan and progress ledger are under
 `docs/design/`.
 
+For opt-in inference performance investigations, use the pinned InferenceKit
+wrapper in `scripts/inferencekit.sh` and follow the public contributing guide
+at `docs-site/content/contributing/index.mdx`. Record the exact workload,
+hardware, model, baseline, quality evidence, and result before making a
+performance claim. InferenceKit experiments do not replace Skippy's model and
+hardware qualification.
+
 ## Pull requests
 
 Use `.github/PULL_REQUEST_TEMPLATE.md` for PR descriptions, including when
 creating a PR through an agent or CLI. Replace prompts with evidence from the
 final diff; do not submit an empty template or only a list of changed files.
 Keep descriptions current when the scope changes.
+The required `PR checks` gate rejects missing or incomplete acceptance criteria.
+Retain the template's standard criteria and check them only when satisfied;
+additional criteria in that section must also be complete. Editing the PR
+description re-evaluates the gate. Checkboxes do not replace CI or review.
 
 - Give the PR a clear title describing the resulting capability or fix. Lead
   the description with the original problem and what users or maintainers can
@@ -58,6 +70,11 @@ Keep descriptions current when the scope changes.
 - Describe material architecture changes separately from the opening summary.
   Explain ABI, API, wire/hash, model/runtime, or artifact compatibility and any
   required migration when those contracts change.
+- For GitHub Actions workflow changes, include before-and-after Mermaid diagrams
+  for each affected workflow in the PR description. Compare the target branch
+  with the final proposed change, and show triggers, job dependencies, artifact
+  handoffs, and qualification or publication gates that change. Include shared
+  composite action diagrams when their execution flow changes.
 - Record the exact validation commands, relevant configuration/features, and
   observed results. Distinguish completed checks from failed, pending, or
   unrun checks, and give the reason for gaps. Keep validation separate from the

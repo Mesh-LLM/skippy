@@ -99,14 +99,27 @@ impl SchedulerWorker {
         if self.verifications.is_empty() {
             return true;
         }
-        let target = self.active_runtime_sessions.min(self.max_direct_batch_size);
-        let mut idle_budget = Duration::from_micros(300);
+        let Gather { target, window } = self.batch_policy.gather_speculative(
+            self.active_runtime_sessions,
+            self.verifications.len(),
+            self.max_direct_batch_size,
+        );
+        let mut idle_budget = window;
         for _ in 0..self.max_commands_per_turn {
-            if self.verifications.len() >= target || idle_budget.is_zero() {
+            if self.verifications.is_empty()
+                || self.verifications.len() >= target
+                || idle_budget.is_zero()
+            {
                 break;
             }
             let started = Instant::now();
+            let span = ActiveSpan::start(
+                self.telemetry.as_ref(),
+                "stage.scheduler_verifications_coalesce",
+                SpanLevel::Debug,
+            );
             let received = self.commands.recv_timeout(idle_budget);
+            span.end();
             idle_budget = idle_budget.saturating_sub(started.elapsed());
             // Useful draft/repair work may execute here. Charge only idle
             // waiting to this budget, not model work on another lane.

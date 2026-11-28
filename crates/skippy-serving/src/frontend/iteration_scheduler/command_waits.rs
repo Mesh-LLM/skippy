@@ -104,7 +104,12 @@ impl SchedulerWorker {
         let deadline = Instant::now() + window;
         let mut timed_out = false;
         let mut running = true;
-        while running && self.direct_iterations.len() < target {
+        while running
+            && !self.direct_iterations.is_empty()
+            && self.drafts.is_empty()
+            && self.verifications.is_empty()
+            && self.direct_iterations.len() < target
+        {
             let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
                 timed_out = true;
                 break;
@@ -171,7 +176,10 @@ impl SchedulerWorker {
     /// The configured pause between iterations, open to commands; false once
     /// the worker should stop.
     pub(super) fn wait_iteration_interval(&mut self) -> bool {
-        if self.iteration_interval.is_zero() {
+        if self.iteration_interval.is_zero()
+            || !self.drafts.is_empty()
+            || !self.verifications.is_empty()
+        {
             return true;
         }
         self.wait_for_scheduler_command("stage.scheduler_interval", self.iteration_interval)

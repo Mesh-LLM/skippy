@@ -279,6 +279,7 @@ impl RuntimeState {
 
     #[cfg(test)]
     pub(crate) fn new_modelless_with_capacity_for_test(lane_count: u32, ctx_size: u32) -> Self {
+        skippy_runtime::test_support::require_native_runtime();
         Self {
             model: StageModel::new_dummy(),
             runtime_lane_admission: lane_admission::RuntimeLaneAdmission::new(lane_count),

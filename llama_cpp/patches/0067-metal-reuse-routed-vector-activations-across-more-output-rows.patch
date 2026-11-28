@@ -1,4 +1,4 @@
-From 8e280f057a2116b6b052a386ac25952bef8c85a9 Mon Sep 17 00:00:00 2001
+From 5b56b3f1f9a1af934fd4c5533e84dbe09bbd948f Mon Sep 17 00:00:00 2001
 From: Codex <codex@localhost>
 Date: Mon, 16 Nov 2026 05:06:29 +1100
 Subject: [PATCH] metal: tune routed vector reuse and bounded offsets
@@ -39,7 +39,7 @@ The public Skippy ABI and stored model bytes remain unchanged.
  create mode 100644 tests/test-metal-routed-u32.cpp
 
 diff --git a/ggml/src/ggml-metal/CMakeLists.txt b/ggml/src/ggml-metal/CMakeLists.txt
-index b36e3b56b4d00a7ff7e57f537873677533cf2c2f..95a6f6a97e2491e8fbe99e67c3e8baa08059cc0d 100644
+index b36e3b56b..95a6f6a97 100644
 --- a/ggml/src/ggml-metal/CMakeLists.txt
 +++ b/ggml/src/ggml-metal/CMakeLists.txt
 @@ -30,6 +30,7 @@ set(METALLIB_COMMON "${CMAKE_CURRENT_SOURCE_DIR}/../ggml-common.h")
@@ -96,7 +96,7 @@ index b36e3b56b4d00a7ff7e57f537873677533cf2c2f..95a6f6a97e2491e8fbe99e67c3e8baa0
              VERBATIM
          )
 diff --git a/ggml/src/ggml-metal/ggml-metal-device.cpp b/ggml/src/ggml-metal/ggml-metal-device.cpp
-index e6c95c3af41650bc21ca42ea83d13688a3225a95..2e5413e07f568ecdbae88fbc4739b3361d9de0d5 100644
+index c6bda5e35..7bd479caf 100644
 --- a/ggml/src/ggml-metal/ggml-metal-device.cpp
 +++ b/ggml/src/ggml-metal/ggml-metal-device.cpp
 @@ -3,6 +3,10 @@
@@ -146,7 +146,7 @@ index e6c95c3af41650bc21ca42ea83d13688a3225a95..2e5413e07f568ecdbae88fbc4739b336
          ggml_metal_cv_t cv = ggml_metal_cv_init();
  
 diff --git a/ggml/src/ggml-metal/ggml-metal-device.h b/ggml/src/ggml-metal/ggml-metal-device.h
-index 817049494f22750140e85b97dab97d80a4360a1b..fe499b3e5e85d6b5394a5f8a7c9c17183cd7f2d2 100644
+index e8738624f..ccc75e0d0 100644
 --- a/ggml/src/ggml-metal/ggml-metal-device.h
 +++ b/ggml/src/ggml-metal/ggml-metal-device.h
 @@ -104,6 +104,7 @@ ggml_metal_library_t ggml_metal_library_init_from_source(ggml_metal_device_t dev
@@ -158,7 +158,7 @@ index 817049494f22750140e85b97dab97d80a4360a1b..fe499b3e5e85d6b5394a5f8a7c9c1718
  struct ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline    (ggml_metal_library_t lib, const char * name);
  struct ggml_metal_pipeline_with_params ggml_metal_library_compile_pipeline(ggml_metal_library_t lib, const char * base, const char * name, ggml_metal_cv_t cv);
 diff --git a/ggml/src/ggml-metal/ggml-metal-device.m b/ggml/src/ggml-metal/ggml-metal-device.m
-index db9889c7955dc56fa77ed2721e6799c24b5d6b59..d5c8e05139bc815316c0f85e6ad6ff2d6016d8e4 100644
+index 77cbc4c0c..d3fd6a082 100644
 --- a/ggml/src/ggml-metal/ggml-metal-device.m
 +++ b/ggml/src/ggml-metal/ggml-metal-device.m
 @@ -131,6 +131,8 @@ int ggml_metal_pipeline_max_theads_per_threadgroup(struct ggml_metal_pipeline_wi
@@ -221,7 +221,7 @@ index db9889c7955dc56fa77ed2721e6799c24b5d6b59..d5c8e05139bc815316c0f85e6ad6ff2d
  
 diff --git a/ggml/src/ggml-metal/ggml-metal-routed-offsets.h b/ggml/src/ggml-metal/ggml-metal-routed-offsets.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..30fc69a5d28ed6c2b9dc2f22d6e9ed0bc25de34e
+index 000000000..30fc69a5d
 --- /dev/null
 +++ b/ggml/src/ggml-metal/ggml-metal-routed-offsets.h
 @@ -0,0 +1,70 @@
@@ -297,7 +297,7 @@ index 0000000000000000000000000000000000000000..30fc69a5d28ed6c2b9dc2f22d6e9ed0b
 +} // namespace ggml_metal_routed_offsets
 diff --git a/ggml/src/ggml-metal/ggml-metal-routed-tuning.h b/ggml/src/ggml-metal/ggml-metal-routed-tuning.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..d65eb01aa1439fddec00134c5816b7a9a19cbd9c
+index 000000000..d65eb01aa
 --- /dev/null
 +++ b/ggml/src/ggml-metal/ggml-metal-routed-tuning.h
 @@ -0,0 +1,27 @@
@@ -329,7 +329,7 @@ index 0000000000000000000000000000000000000000..d65eb01aa1439fddec00134c5816b7a9
 +
 +} // namespace ggml_metal_routed_tuning
 diff --git a/ggml/src/ggml-metal/kernels/mul_mv.metal b/ggml/src/ggml-metal/kernels/mul_mv.metal
-index 5d012e4849442b206a86309f95f45ddb6133d6b1..64a040c095f43e046d2bb57a7a22ed4f4bbc94d1 100644
+index de9d76ff6..64a040c09 100644
 --- a/ggml/src/ggml-metal/kernels/mul_mv.metal
 +++ b/ggml/src/ggml-metal/kernels/mul_mv.metal
 @@ -1,171 +1,5 @@
@@ -590,7 +590,7 @@ index 5d012e4849442b206a86309f95f45ddb6133d6b1..64a040c095f43e046d2bb57a7a22ed4f
 -        //yb += NSG*NQ*QK4_0;
 -    }
 -
--    device float * dst_f32 = (device float *) dst + im*args.ne0*args.ne1 + r1*args.ne0;
+-    device float * dst_f32 = (device float *) dst + (uint64_t)im*args.ne0*args.ne1 + (uint64_t)r1*args.ne0;
 -
 -    //helper_mv_reduce_and_write<NR0>(dst_f32, sumf, r0, args.ne01, tiisg, sgitg, shmem);
 -
@@ -625,7 +625,7 @@ index 5d012e4849442b206a86309f95f45ddb6133d6b1..64a040c095f43e046d2bb57a7a22ed4f
  template [[host_name("kernel_mul_mv_id_iq1_m_f32")]]   kernel kernel_mul_mv_id_t kernel_mul_mv_id<mmv_fn<kernel_mul_mv_iq1_m_f32_disp<ggml_metal_kargs_mul_mv>>>;
 diff --git a/ggml/src/ggml-metal/kernels/mul_mv_q_n.h b/ggml/src/ggml-metal/kernels/mul_mv_q_n.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..eb7dc0614af6c5eba4fa94d2b23ce553b347203f
+index 000000000..f156d5ca6
 --- /dev/null
 +++ b/ggml/src/ggml-metal/kernels/mul_mv_q_n.h
 @@ -0,0 +1,262 @@
@@ -879,7 +879,7 @@ index 0000000000000000000000000000000000000000..eb7dc0614af6c5eba4fa94d2b23ce553
 +        //yb += NSG*NQ*QK4_0;
 +    }
 +
-+    device float * dst_f32 = (device float *) dst + im*args.ne0*args.ne1 + r1*args.ne0;
++    device float * dst_f32 = (device float *) dst + (uint64_t)im*args.ne0*args.ne1 + (uint64_t)r1*args.ne0;
 +
 +    //helper_mv_reduce_and_write<NR0>(dst_f32, sumf, r0, args.ne01, tiisg, sgitg, shmem);
 +
@@ -893,7 +893,7 @@ index 0000000000000000000000000000000000000000..eb7dc0614af6c5eba4fa94d2b23ce553
 +}
 diff --git a/ggml/src/ggml-metal/kernels/routed_u32.metal b/ggml/src/ggml-metal/kernels/routed_u32.metal
 new file mode 100644
-index 0000000000000000000000000000000000000000..182e2114714c40ba23b0140c0dfeaca81d335b07
+index 000000000..182e21147
 --- /dev/null
 +++ b/ggml/src/ggml-metal/kernels/routed_u32.metal
 @@ -0,0 +1,75 @@
@@ -974,7 +974,7 @@ index 0000000000000000000000000000000000000000..182e2114714c40ba23b0140c0dfeaca8
 +}
 diff --git a/ggml/src/ggml-metal/kernels/routed_u32_r4.metal b/ggml/src/ggml-metal/kernels/routed_u32_r4.metal
 new file mode 100644
-index 0000000000000000000000000000000000000000..739da5659e341f1e311a02b936ae30996210629d
+index 000000000..739da5659
 --- /dev/null
 +++ b/ggml/src/ggml-metal/kernels/routed_u32_r4.metal
 @@ -0,0 +1,75 @@
@@ -1054,10 +1054,10 @@ index 0000000000000000000000000000000000000000..739da5659e341f1e311a02b936ae3099
 +        sgitg);
 +}
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 0776206878749aebba18f7badeaec2745f5efe38..f8b78e11bc93297f9dbc81ebe5089984a9113919 100644
+index 0d5df5901..edde624cd 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
-@@ -404,6 +404,10 @@ if (NOT LLAMA_SANITIZE_ADDRESS AND NOT GGML_SCHED_NO_REALLOC)
+@@ -409,6 +409,10 @@ if (NOT LLAMA_SANITIZE_ADDRESS AND NOT GGML_SCHED_NO_REALLOC)
    llama_build_and_test(test-opt.cpp  LABEL "main behavior backend"  LINK ggml)
  endif()
  if (GGML_METAL AND NOT GGML_BACKEND_DL)
@@ -1069,10 +1069,10 @@ index 0776206878749aebba18f7badeaec2745f5efe38..f8b78e11bc93297f9dbc81ebe5089984
      llama_build_and_test(test-metal-graph-optimize.cpp  LABEL "main behavior backend"  LINK ggml ggml-metal)
      target_include_directories(test-metal-graph-optimize PRIVATE ${PROJECT_SOURCE_DIR}/ggml/src ${PROJECT_SOURCE_DIR}/ggml/src/ggml-metal)
 diff --git a/tests/test-backend-ops.cpp b/tests/test-backend-ops.cpp
-index 380ac8cd01efc97b5d7012774076408ac5f617e5..3e85aaff081ca96eeaad8ede31666d33f5d1c24c 100644
+index c4e5bf0b5..da0a1b385 100644
 --- a/tests/test-backend-ops.cpp
 +++ b/tests/test-backend-ops.cpp
-@@ -10651,7 +10651,12 @@ static const ggml_type other_types[] = {
+@@ -10911,7 +10911,12 @@ static const ggml_type other_types[] = {
  #endif
  
  // Test cases for evaluation: should try to cover edge cases while using small input sizes to keep the runtime low
@@ -1087,7 +1087,7 @@ index 380ac8cd01efc97b5d7012774076408ac5f617e5..3e85aaff081ca96eeaad8ede31666d33
  
 diff --git a/tests/test-backend-portable-routed.h b/tests/test-backend-portable-routed.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..9df3198a1305f612e899d8ec22b73172f079f135
+index 000000000..9df3198a1
 --- /dev/null
 +++ b/tests/test-backend-portable-routed.h
 @@ -0,0 +1,43 @@
@@ -1135,7 +1135,7 @@ index 0000000000000000000000000000000000000000..9df3198a1305f612e899d8ec22b73172
 +    return cases;
 +}
 diff --git a/tests/test-metal-graph-optimize.cpp b/tests/test-metal-graph-optimize.cpp
-index e9ebdb8df79710a15458251d4f1ab5a68cbc8bf6..b65d1d8bfac8bf3822fa955d890a0b1b94603acb 100644
+index e9ebdb8df..b65d1d8bf 100644
 --- a/tests/test-metal-graph-optimize.cpp
 +++ b/tests/test-metal-graph-optimize.cpp
 @@ -8,6 +8,7 @@
@@ -1197,7 +1197,7 @@ index e9ebdb8df79710a15458251d4f1ab5a68cbc8bf6..b65d1d8bfac8bf3822fa955d890a0b1b
          for (bool shared : { false, true }) {
 diff --git a/tests/test-metal-routed-u32.cpp b/tests/test-metal-routed-u32.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..341ce6ca424f55acc1d44494930c136003158a0c
+index 000000000..341ce6ca4
 --- /dev/null
 +++ b/tests/test-metal-routed-u32.cpp
 @@ -0,0 +1,237 @@

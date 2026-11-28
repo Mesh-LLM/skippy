@@ -1,9 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } = require('node:fs');
-const { tmpdir } = require('node:os');
-const { spawnSync } = require('node:child_process');
+const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
+const { execFileSync, spawnSync } = require('node:child_process');
 
 const workflow = readFileSync(join(__dirname, '../workflows/ci.yml'), 'utf8');
 const section = workflow.split('\n  gate:\n')[1];
@@ -14,22 +13,25 @@ const targets = JSON.parse(readFileSync(join(__dirname, '../../ci/targets.json')
 const rows = targets.runtimes.filter(row => row.enabled !== false && targets.enabled_hosts.includes(row.host));
 const packageJobs = rows.map(row => `package_${row.id.replaceAll('-', '_')}`);
 const prPackages = ['package_darwin_aarch64_metal', 'package_linux_aarch64_cuda13'];
+const windowsSmokes = ['smoke_windows_cuda', 'smoke_windows_rocm'];
 const releaseSmokes = ['release_smoke_linux_x86_64_cuda12', 'release_smoke_linux_aarch64_cuda12', 'release_smoke_linux_x86_64_cuda13'];
 
-function results({ automation = true, code = true, packages = false, native = false, kv = false, full = false, release = false, hostedRequiresNative = false } = {}) {
-  packages ||= kv;
+function results({ automation = true, code = true, packages = false, native = false, full = false, release = false } = {}) {
   const selected = code || packages;
   const required = ['changes'];
   if (automation) required.push('automation');
   if (selected) required.push('plan');
   if (code) required.push('quality');
-  if (full) required.push('native_contracts', ...packageJobs);
+  if (full) required.push('native_contracts', 'smoke_linux_x86_64_vulkan_nvidia', 'smoke_linux_x86_64_vulkan_amd', ...packageJobs, ...windowsSmokes);
   else if (packages) required.push(...prPackages);
   if (native) required.push('native_contracts');
   if (release) required.push(...releaseSmokes);
   const needs = Object.fromEntries(declared.map(job => [job, { result: required.includes(job) ? 'success' : 'skipped' }]));
-  needs.changes.outputs = { automation: String(automation), code: String(code), packages: String(packages), native: String(native), kv: String(kv), hosted_requires_native: String(hostedRequiresNative) };
-  if (selected) needs.plan.outputs = { profile: full ? 'full' : 'pr', runtimes: JSON.stringify({ include: rows }) };
+  needs.changes.outputs = { automation: String(automation), code: String(code), packages: String(packages), native: String(native) };
+  if (selected) needs.plan.outputs = {
+    profile: full ? 'full' : 'pr',
+    runtimes: JSON.stringify({ include: full ? rows : rows.filter(row => !row.full_only) }),
+  };
   return needs;
 }
 
@@ -44,19 +46,139 @@ test('protected pull_request_target skips CI when trusted admission skips change
   assert.equal(shouldRun({ changes: { result: 'success' } }), true);
 });
 
-test('all eight runtime packages match the planned matrix and depend on the canary', () => {
-  assert.equal(packageJobs.length, 8);
+test('all fifteen runtime packages match the planned matrix and depend on the canary', () => {
+  assert.equal(packageJobs.length, 15);
   assert.deepEqual(declared.filter(job => job.startsWith('package_')).sort(), packageJobs.sort());
   for (const row of rows) {
     const job = `package_${row.id.replaceAll('-', '_')}`;
     const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
     assert.match(body, /^    needs: \[plan, quality[\],]/m);
     assert.ok(body.includes(`runtime-id: ${row.id}\n`));
+    assert.ok(body.includes('ref: ${{ env.SKIPPY_CI_SOURCE_REF }}\n'), job);
     if (row.backend !== 'cpu') assert.ok(body.includes(`package_${row.host.replaceAll('-', '_')}_cpu`));
     assert.equal(body.includes("needs.changes.outputs.packages == 'true'"), prPackages.includes(job));
-    assert.equal(body.includes("kv-profile:"), prPackages.includes(job));
+    const needsSeparateSmoke = releaseSmokes.includes(job.replace('package_', 'release_smoke_'));
+    assert.equal(body.includes('smoke: artifact'), row.host === 'windows-x86_64' || needsSeparateSmoke || row.id === 'linux-x86_64-vulkan');
+    if (row.validation === 'artifact') assert.ok(body.includes(row.runner[0]));
+    if (row.host === 'windows-x86_64' && row.backend === 'cuda') {
+      assert.ok(body.includes(`windows-cuda: '${row.toolkit}'\n`));
+    }
+    if (row.host === 'windows-x86_64' && row.backend === 'rocm') {
+      assert.ok(body.includes(`windows-rocm: '${row.toolkit}'\n`));
+    }
   }
   assert.doesNotThrow(() => gate(results({ full: true })));
+});
+
+test('macOS packaging checks the pinned Rust toolchain before building', () => {
+  const action = readFileSync(join(__dirname, '../actions/ci-package/action.yml'), 'utf8');
+  assert.match(action, /if: runner\.os == 'macOS'\n +shell: bash\n +run: bash scripts\/ci-macos-rust\.sh/);
+  assert.ok(action.indexOf('uses: ./.github/actions/source') < action.indexOf('ci-macos-rust.sh'));
+  assert.ok(action.indexOf('ci-macos-rust.sh') < action.indexOf('just ci-host'));
+});
+
+test('separate device smoke consumes prebuilt artifacts without restoring build caches', () => {
+  const action = readFileSync(join(__dirname, '../actions/ci-smoke/action.yml'), 'utf8');
+  assert.doesNotMatch(action, /uses: \.\/.github\/actions\/cache/);
+  assert.match(action, /inputs\.download-package != 'true'.*env\.SKIPPY_CI_MODEL/);
+  assert.ok(action.indexOf('Check release device scratch storage') < action.indexOf('actions/download-artifact'));
+  assert.match(action, /export TMPDIR="\$RUNNER_TEMP"/);
+  assert.match(action, /device-evidence-\$\{\{ inputs\.runtime_id \}\}/);
+});
+
+test('full Vulkan smoke uses literal NVIDIA and AMD pool routes and requires both results', () => {
+  for (const [vendor, group, device] of [
+    ['nvidia', 'jy-rnr_p0zx3thw895vrka', null],
+    ['amd', 'jy-rnr_gsxt2m73mgpcbbh', '--device=/dev/dri'],
+  ]) {
+    const key = `smoke_linux_x86_64_vulkan_${vendor}`;
+    const smoke = workflow.split(`\n  ${key}:\n`)[1].split(/\n  \w+:\n/)[0];
+    assert.match(smoke, /needs: \[plan, package_linux_x86_64_vulkan\]/);
+    assert.ok(smoke.includes(`group: ${group}\n`));
+    if (vendor === 'nvidia') {
+      assert.doesNotMatch(smoke, /^    container:/m);
+      assert.doesNotMatch(smoke, /rocm-workspace/);
+      assert.match(smoke, /uses: \.\/.github\/actions\/setup/);
+    } else {
+      assert.ok(smoke.includes(device));
+      assert.match(smoke, /^    container:/m);
+      assert.match(smoke, /rocm-workspace/);
+    }
+    assert.ok(smoke.includes(`SKIPPY_CI_VULKAN_VENDOR: ${vendor}\n`));
+    assert.ok(smoke.includes(`evidence-suffix: -${vendor}\n`));
+    assert.doesNotMatch(smoke, /matrix\./);
+    assert.match(smoke, /download-package: 'true'/);
+    const needs = results({ full: true });
+    for (const result of ['skipped', 'failure', 'cancelled']) {
+      needs[key].result = result;
+      assert.throws(() => gate(needs), new RegExp(`${key} must be success`));
+    }
+  }
+});
+
+test('release publication consumes prepared assets and independently verifies their receipt', () => {
+  const release = readFileSync(join(__dirname, '../workflows/release.yml'), 'utf8');
+  const verify = release.split('\n  verify:\n')[1].split('\n  publish:\n')[0];
+  const publish = release.split('\n  publish:\n')[1].split('\n  publish_crates:\n')[0];
+  assert.match(verify, /just release-prepare-candidate/);
+  assert.match(verify, /name: prepared-release-\$\{\{ needs.admission.outputs.source \}\}/);
+  const download = publish.indexOf('name: prepared-release-');
+  const verification = publish.indexOf('just release-verify dist/release');
+  assert.ok(download >= 0 && download < verification);
+  assert.match(publish.slice(download, verification), /path: dist\/release/);
+  assert.match(publish, /cmp release-receipt\/release.json dist\/release\/release.json/);
+  assert.doesNotMatch(publish, /release-prepare-candidate|release-product-/);
+  assert.match(publish, /ARTIFACT_ONLY: \$\{\{ needs.verify.outputs.artifact_only \}\}/);
+});
+
+test('crates.io publishes from the verified stable tag when enabled', () => {
+  const release = readFileSync(join(__dirname, '../workflows/release.yml'), 'utf8');
+  const verify = release.split('\n  verify:\n')[1].split('\n  publish:\n')[0];
+  const [publish, rest] = release.split('\n  publish_crates:\n');
+  const [crates, following] = rest.split('\n  documentation:\n');
+  assert.match(verify, /if: needs\.admission\.outputs\.prerelease != 'true'\n +run: just release-crates package release-artifacts\/release-product-linux-x86_64-cpu/);
+  assert.doesNotMatch(publish + following, /CARGO_REGISTRY_TOKEN|SKIPPY_CRATES_BOOTSTRAP_TOKEN|crates-io-auth-action/);
+  assert.match(crates, /needs: \[admission, publish\]/);
+  assert.match(crates, /!inputs\.canary && needs\.admission\.outputs\.prerelease != 'true' && vars\.SKIPPY_PUBLISH_CRATES == 'true'/);
+  assert.match(crates, /ref: refs\/tags\/\$\{\{ needs\.admission\.outputs\.tag \}\}/);
+  assert.match(crates, /id-token: write/);
+  assert.match(crates, /just release-crates publish "\$RELEASE_TAG" "\$SOURCE_SHA"/);
+});
+
+test('PR plans exclude full-only targets independently of their smoke evidence', () => {
+  const plan = profile => JSON.parse(execFileSync('just', ['ci-plan'], {
+    cwd: join(__dirname, '../..'), encoding: 'utf8',
+    env: { ...process.env, SKIPPY_CI_PROFILE: profile, GITHUB_OUTPUT: '' },
+  }));
+  const pr = plan('pr').runtimes.include;
+  const full = plan('full').runtimes.include;
+  assert.equal(pr.length, 8);
+  assert.equal(full.length, 15);
+  assert.ok(pr.every(row => row.validation === 'inference'));
+  assert.deepEqual(full.filter(row => !row.full_only), pr);
+  const rocm = full.find(row => row.id === 'linux-x86_64-rocm');
+  assert.equal(rocm.validation, 'inference');
+  assert.equal(rocm.full_only, true);
+  assert.equal(full.filter(row => row.validation === 'artifact').length, 2);
+  assert.ok(!pr.some(row => row.id === rocm.id));
+  const release = results({ full: true, release: true });
+  release.plan.outputs.runtimes = JSON.stringify({ include: full });
+  assert.doesNotThrow(() => gate(release, true));
+  // An eight-package controller must reject a fifteen-package candidate.
+  for (const row of full.filter(row => row.full_only)) {
+    delete release['package_' + row.id.replaceAll('-', '_')];
+  }
+  assert.throws(() => gate(release, true), /active runtime matrix/);
+  const needs = results({ packages: true });
+  assert.equal(JSON.parse(needs.plan.outputs.runtimes).include.length, 8);
+  assert.doesNotThrow(() => gate(needs));
+  for (const job of prPackages) {
+    const invalid = structuredClone(needs);
+    const include = JSON.parse(invalid.plan.outputs.runtimes).include
+      .filter(row => 'package_' + row.id.replaceAll('-', '_') !== job);
+    invalid.plan.outputs.runtimes = JSON.stringify({ include });
+    assert.throws(() => gate(invalid), /active runtime matrix/);
+  }
 });
 
 test('only package-affecting pull requests require the two package and smoke jobs', () => {
@@ -83,7 +205,7 @@ test('automation-only PRs require successful offline checks and skip all builds'
     else needs.automation.result = result;
     assert.throws(() => gate(needs), /automation/);
   }
-  for (const decision of ['automation', 'code', 'packages', 'native', 'kv', 'hosted_requires_native']) {
+  for (const decision of ['automation', 'code', 'packages', 'native']) {
     const needs = results({ code: false });
     delete needs.changes.outputs[decision];
     assert.throws(() => gate(needs), /Path selection/);
@@ -122,7 +244,7 @@ test('ARM64 owns routine CUDA device smoke and x64 retains exact release device 
   assert.match(arm, /build-cli:.*profile == 'pr'/);
   assert.doesNotMatch(arm, /smoke: artifact/);
   const x64 = workflow.split('\n  package_linux_x86_64_cuda13:\n')[1].split(/\n  \w+:\n/)[0];
-  assert.match(x64, /skippy-ci-cuda13:latest\n/);
+  assert.match(x64, /skippy-ci-cuda13@/);
   assert.match(x64, /smoke: artifact\n/);
   const release = workflow.split('\n  release_smoke_linux_x86_64_cuda13:\n')[1].split(/\n  \w+:\n/)[0];
   assert.match(release, /needs: \[package_linux_x86_64_cuda13\]/);
@@ -174,11 +296,12 @@ test('release validation requires the three other GPU smokes', () => {
   assert.throws(() => gate(results(), true), /requires full CI/);
 });
 
-test('hosted CI cannot satisfy a native package requirement', () => {
-  assert.throws(() => gate(results({ hostedRequiresNative: true })), /require native hardware qualification on an isolated runner/);
+test('hosted CI no longer fails merely because native qualification is separate', () => {
+  assert.doesNotThrow(() => gate(results()));
+  assert.doesNotMatch(workflow, /hosted_requires_native/);
 });
 
-test('the repository switch moves every hosted job to Depot', () => {
+test('the repository switch routes Windows CUDA 13 and eligible Linux and macOS jobs to Depot', () => {
   const workflows = ['ci', 'ci-images', 'ci-image-builds', 'docs', 'inference', 'llama-upgrade', 'pr-checks', 'release'];
   for (const name of workflows) {
     const yaml = readFileSync(join(__dirname, '../workflows', name + '.yml'), 'utf8');
@@ -187,30 +310,18 @@ test('the repository switch moves every hosted job to Depot', () => {
     assert.ok(labels.some(label => label.includes('SKIPPY_DEPOT_RUNNERS_ENABLED')), name);
     for (const label of labels) {
       if (name.startsWith('llama-upgrade') && label === '${{ matrix.runner }}') continue;
+      if (name === 'ci' && label === 'windows-2022') continue;
       assert.match(label, /vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true'.*depot-/, name);
     }
   }
-});
-
-test('manual branch inference bypasses the main-only Depot group in every controller job', () => {
-  const yaml = readFileSync(join(__dirname, '../workflows/inference.yml'), 'utf8');
-  const labels = [...yaml.matchAll(/^    runs-on: \$\{\{ (.+) \}\}$/gm)].map(match => match[1]);
-  assert.equal(labels.length, 5);
-  const enabled = { SKIPPY_DEPOT_RUNNERS_ENABLED: 'true' };
-  for (const expression of labels) {
-    const runner = new Function('github', 'vars', `return (${expression});`);
-    assert.equal(runner({ event_name: 'workflow_dispatch', ref: 'refs/heads/pr-branch' }, enabled), 'ubuntu-24.04');
-    for (const event_name of ['workflow_dispatch', 'schedule', 'pull_request_target']) {
-      assert.equal(runner({ event_name, ref: 'refs/heads/main' }, enabled), 'depot-ubuntu-24.04-4');
-      assert.equal(runner({ event_name, ref: 'refs/heads/main' }, {}), 'ubuntu-24.04');
-    }
+  assert.doesNotMatch(workflow, /windows_toolchain_probe/);
+  for (const job of packageJobs.filter(job => job.startsWith('package_windows_'))) {
+    const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
+    const expected = job === 'package_windows_x86_64_cuda13'
+      ? "${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-windows-2022-8' || 'windows-2022' }}"
+      : 'windows-2022';
+    assert.equal(body.match(/^    runs-on: (.+)$/m)?.[1], expected, job);
   }
-  const admission = yaml.split('      - id: admission\n')[1].split('      - id: matrix\n')[0];
-  assert.match(admission, /GITHUB_EVENT_NAME.*workflow_dispatch.*GITHUB_REF.*refs\/heads\/main/);
-  assert.match(admission, /PYTHONPATH=scripts python3 -c/);
-  assert.match(admission, /runpy\.run_path\("scripts\/inference-plan.py"\)\["admit_pr"\]\(os.environ\["GITHUB_SHA"\]\)/);
-  assert.ok(admission.indexOf('["admit_pr"]') < admission.indexOf('just inference-admit'));
-  assert.match(yaml, /ref: \$\{\{ github.event_name == 'schedule' && github.sha \|\| 'main' \}\}/);
 });
 
 test('ordinary PRs call protected workflows with scoped cache access and read-only permissions', () => {
@@ -241,11 +352,11 @@ test('the protected image PR bridge routes only the image workflow', () => {
   assert.match(bridge, /uses: \.\/\.github\/workflows\/ci-image-builds\.yml/);
 });
 
-test('host CPU packages install Just on GitHub and Depot runners', () => {
+test('host CPU and Windows backend packages install Just on their own runners', () => {
   for (const row of rows) {
     const job = `package_${row.id.replaceAll('-', '_')}`;
     const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
-    assert.equal(body.includes("setup-host: 'true'"), row.backend === 'cpu', job);
+    assert.equal(body.includes("setup-host: 'true'"), row.backend === 'cpu' || row.backend === 'vulkan' || row.host === 'windows-x86_64', job);
   }
   const action = readFileSync(join(__dirname, '../actions/ci-package/action.yml'), 'utf8');
   assert.match(action, /uses: \.\/\.github\/actions\/setup\n      if: inputs.setup-host == 'true'/);
@@ -263,6 +374,83 @@ test('manual compiler image smoke can skip publication on either runner provider
     assert.equal(publishImage({ repository, ref, event_name: 'workflow_dispatch' }, { build_only: false }), true);
     assert.equal(publishImage({ repository, ref, event_name: 'push' }, {}), true);
     assert.equal(publishImage({ repository, ref, event_name: 'pull_request' }, {}), false);
+  }
+});
+
+test('image publication builds once while build-only and PR runs remain read-only', () => {
+  const images = readFileSync(join(__dirname, '../workflows/ci-images.yml'), 'utf8');
+  const cpu = images.split('\n  cpu-build:\n')[1].split('\n  gpu-build:\n')[0];
+  const gpu = images.split('\n  gpu-build:\n')[1].split('\n  cpu-publish:\n')[0];
+  const cpuPolicy = cpu.match(/if: >-\n([\s\S]+?)\n    uses:/)[1];
+  const gpuPolicy = gpu.match(/build-images: \$\{\{ (.+) \}\}/)[1];
+  const buildsCPU = new Function('github', 'inputs', 'vars', `return (${cpuPolicy});`);
+  const buildsGPU = new Function('github', 'inputs', `return (${gpuPolicy});`);
+  const main = { repository: 'Mesh-LLM/skippy', ref: 'refs/heads/main', event_name: 'push' };
+  for (const depot of ['true', 'false']) {
+    const vars = { SKIPPY_DEPOT_RUNNERS_ENABLED: depot };
+    assert.equal(buildsCPU(main, {}, vars), false);
+    assert.equal(buildsGPU(main, {}), false);
+    const manual = { ...main, event_name: 'workflow_dispatch' };
+    assert.equal(buildsCPU(manual, { build_only: true }, vars), true);
+    assert.equal(buildsGPU(manual, { build_only: true }), true);
+    assert.equal(buildsCPU(manual, { build_only: false }, vars), false);
+    assert.equal(buildsGPU(manual, { build_only: false }), false);
+    const pr = { ...main, ref: 'refs/pull/131/merge', event_name: 'pull_request' };
+    assert.equal(buildsCPU(pr, {}, vars), depot !== 'true');
+    assert.equal(buildsGPU(pr, {}), true);
+  }
+  const builders = readFileSync(join(__dirname, '../workflows/ci-image-builds.yml'), 'utf8');
+  assert.doesNotMatch(builders, /packages: write|docker image push|upload-artifact|image-export/);
+  for (const kind of ['cpu', 'gpu']) {
+    const publish = images.split(`\n  ${kind}-publish:\n`)[1].split(/\n  [\w-]+:\n/)[0];
+    assert.match(publish, /packages: write/);
+    const build = publish.indexOf(`just --justfile ci/images.just --working-directory . ci-${kind === 'gpu' ? 'gpu-' : ''}image-build`);
+    const smoke = publish.indexOf(`time just --justfile ci/images.just --working-directory . ci-${kind === 'gpu' ? 'gpu-' : ''}image-smoke`);
+    const push = publish.indexOf('docker image push');
+    assert.ok(build >= 0 && build < smoke && smoke < push);
+    assert.doesNotMatch(publish, /download-artifact|image load/);
+  }
+});
+
+test('container consumers pin images and Cargo snapshots to the selected digest', () => {
+  const plan = workflow.split('\n  plan:\n')[1].split('\n  quality:\n')[0];
+  const native = workflow.split('\n  native_contracts:\n')[1].split('\n  package_')[0];
+  assert.match(native, /skippy-ci-cpu@\$\{\{ needs.plan.outputs.cpu_digest \}\}/);
+  assert.match(native, /scope: native-contracts-\$\{\{ needs.plan.outputs.cpu_digest \}\}/);
+  const packages = [
+    ['linux_x86_64_cuda12', 'cuda12', 'cuda12:latest'],
+    ['linux_x86_64_cuda13', 'cuda13', 'cuda13:latest'],
+    ['linux_aarch64_cuda12', 'cuda12_arm', 'cuda12:latest-arm64'],
+    ['linux_x86_64_rocm', 'rocm', 'rocm:latest'],
+  ];
+  for (const [runtime, digest, tag] of packages) {
+    const body = workflow.split(`\n  package_${runtime}:\n`)[1].split(/\n  \w+:\n/)[0];
+    const output = `\${{ needs.plan.outputs.${digest}_digest }}`;
+    assert.ok(plan.includes(`resolve ${digest} ${tag}`));
+    assert.ok(body.includes(`skippy-ci-${tag.split(':')[0]}@${output}`));
+    assert.ok(body.includes(`compiler-image-digest: ${output}`));
+  }
+});
+
+test('both image recipe files expose the compiler image build and smoke commands', () => {
+  const commands = [
+    ['ci-image-build'], ['ci-image-smoke'],
+    ['ci-gpu-image-build', 'cuda13', 'example:toolkit', '13.1.2', 'arm64'],
+    ['ci-gpu-image-smoke', 'cuda13', 'arm64'],
+  ];
+  const imageJustfile = ['--justfile', 'ci/images.just', '--working-directory', '.'];
+  for (const justfile of [[], imageJustfile]) {
+    for (const command of commands) {
+      const result = spawnSync('just', [...justfile, '--dry-run', ...command], {
+        cwd: join(__dirname, '../..'), encoding: 'utf8',
+      });
+      assert.equal(result.status, 0, result.stderr);
+      const recipe = result.stdout + result.stderr;
+      assert.match(recipe, /docker /);
+      if (command[0] === 'ci-gpu-image-smoke') {
+        assert.match(recipe, /test -s \/usr\/local\/cuda\/EULA\.txt/);
+      }
+    }
   }
 });
 
@@ -290,7 +478,7 @@ test('native CI trusts only an immutable same-repository PR from a writer', asyn
 
 test('main can reuse only a receipt for the exact release dispatch and candidate', async () => {
   const changes = workflow.split('\n  changes:\n')[1].split('\n  plan:\n')[0];
-  const receiptScript = changes.split('          script: |\n')[1].split('\n      - uses:')[0];
+  const receiptScript = changes.split('      - name: Reuse qualification')[1].split('          script: |\n')[1].split('\n      - uses:')[0];
   const evaluateReceipt = new Function('github', 'context', 'core',
     'return (async () => {\n' + receiptScript + '\n})()');
   const sha = 'a'.repeat(40);
@@ -339,68 +527,39 @@ test('main can reuse only a receipt for the exact release dispatch and candidate
   assert.equal(await checked(commit, run, { ...receipt, expired: true }), undefined);
 });
 
-test('KV selection preserves protected native admission and exact-release reuse', () => {
-  const changes = workflow.split('\n  changes:\n')[1].split('\n  plan:\n')[0];
-  const output = name => new Function('github', 'steps', 'return (' +
-    changes.match(new RegExp(`^      ${name}: \\$\\{\\{ (.+) \\}\\}$`, 'm'))[1] + ')');
-  for (const event_name of ['pull_request', 'pull_request_target', 'push']) {
-    for (const selected of ['true', 'false']) {
-      const github = { event_name, ref: 'refs/heads/main', event: { pull_request: event_name.startsWith('pull_request') ? {} : null } };
-      const steps = { main_base: { outputs: {} }, release: { outputs: {} }, paths: { outputs: { code: 'true', inference: 'false' } },
-        kv: { outputs: { selected } } };
-      const native = output('kv')(github, steps);
-      const hosted = output('hosted_requires_native')(github, steps);
-      assert.equal(native, event_name !== 'pull_request' && selected === 'true');
-      assert.equal(hosted, event_name === 'pull_request' && selected === 'true');
-      const needs = results({ kv: native, hostedRequiresNative: hosted });
-      if (hosted) assert.throws(() => gate(needs), /require native hardware qualification/);
-      else assert.doesNotThrow(() => gate(needs));
-      if (event_name === 'push') {
-        steps.release.outputs.verified = 'true';
-        assert.equal(output('code')(github, steps), false);
-        assert.equal(output('kv')(github, steps), false);
-      }
-    }
-  }
-});
-
-test('both PR event types select KV conservatively before the filter lands', () => {
-  const step = workflow.split('      - name: Read KV path selection\n')[1].split('\n      - name:')[0];
-  const script = step.split('        run: |\n')[1].replace(/^ {10}/gm, '');
-  const root = mkdtempSync(join(tmpdir(), 'skippy-kv-routing-'));
-  try {
-    mkdirSync(join(root, '.github'));
-    for (const event of ['pull_request', 'pull_request_target']) {
-      for (const [filter, kv, code, expected] of [
-        ['code:\n', '', 'true', 'true'], ['code:\n', '', 'false', 'false'],
-        ['kv:\n', 'false', 'true', 'false'], ['kv:\n', 'true', 'false', 'true'],
-        ['kv:\n', '', 'true', null], ['kv:\n', 'invalid', 'true', null],
-      ]) {
-        writeFileSync(join(root, '.github/path-filters.yml'), filter);
-        const output = join(root, 'output');
-        writeFileSync(output, '');
-        const result = spawnSync('bash', ['-euc', script], { cwd: root, encoding: 'utf8',
-          env: { ...process.env, GITHUB_EVENT_NAME: event, GITHUB_OUTPUT: output, KV: kv, CODE: code } });
-        assert.equal(result.status, expected === null ? 1 : 0, result.stderr);
-        assert.equal(readFileSync(output, 'utf8'), expected === null ? '' : `selected=${expected}\n`);
-      }
-    }
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+test('every candidate checkout opts in to fork code only for the approved-fork controller (real #222 context)', () => {
+  const refs = workflow.match(/^ +ref: \$\{\{ env\.SKIPPY_CI_SOURCE_REF \}\}\n.*$/gm);
+  assert.equal(refs.length, 26);
+  for (const ref of refs) assert.match(ref, /\n +allow-unsafe-pr-checkout: \$\{\{ inputs\.approved_fork_pr != '' \}\}$/);
+  assert.equal(workflow.match(/allow-unsafe-pr-checkout:/g).length, refs.length);
 });
 
 
-test('short KV selection requires both device jobs and full profiles run four fixtures in each', () => {
-  assert.doesNotThrow(() => gate(results({ code: false, kv: true })));
-  for (const job of prPackages) {
-    const missing = results({ code: false, kv: true });
-    missing[job].result = 'skipped';
-    assert.throws(() => gate(missing), new RegExp(job));
-    const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
-    assert.match(body, /kv-profile:.*profile == 'full' && 'full'.*outputs.kv == 'true' && 'short'/);
+test('full CI requires both Windows GPU results and PR checks skip them', () => {
+  for (const release of [false, true]) {
+    const full = results({ full: true, release });
+    assert.doesNotThrow(() => gate(full, release));
+    for (const job of windowsSmokes) {
+      for (const result of ['skipped', 'failure', 'cancelled', undefined]) {
+        const missing = structuredClone(full);
+        missing[job] = result ? { result } : undefined;
+        assert.throws(() => gate(missing, release), new RegExp(job));
+      }
+    }
   }
-  const inconsistent = results();
-  inconsistent.changes.outputs.kv = 'true';
-  assert.throws(() => gate(inconsistent), /KV selection requires/);
+  const pr = results({ packages: true });
+  assert.doesNotThrow(() => gate(pr));
+  pr.smoke_windows_cuda.result = 'success';
+  assert.throws(() => gate(pr), /smoke_windows_cuda must be skipped/);
+});
+
+test('native package smoke retains exact-archive KV qualification in both device jobs', () => {
+  for (const key of ['package_darwin_aarch64_metal', 'package_linux_aarch64_cuda13']) {
+    const body = workflow.split(`\n  ${key}:\n`)[1].split(/\n  \w+:\n/)[0];
+    assert.match(body, /kv-profile:.*needs.plan.outputs.profile == 'full'.*'full'.*'short'/);
+  }
+  const packageAction = readFileSync(join(__dirname, '../actions/ci-package/action.yml'), 'utf8');
+  assert.match(packageAction, /kv-profile: \$\{\{ inputs.kv-profile \}\}/);
+  const smoke = readFileSync(join(__dirname, '../actions/ci-smoke/action.yml'), 'utf8');
+  assert.ok(smoke.indexOf('just ci-smoke') < smoke.indexOf('uses: ./.github/actions/ci-cache-correctness'));
 });

@@ -33,6 +33,8 @@ pub const KV_PAGE_CODEC_ISWA_COMPOSITE_V1: u32 =
 pub const KV_PAGE_FLAG_V_TRANSPOSED: u64 =
     bindings::skippy::skippy_kv_page_flag::VTransposed as u64;
 pub const KV_PAGE_FLAG_HAS_K_IDX: u64 = bindings::skippy::skippy_kv_page_flag::HasKIdx as u64;
+pub const KV_PAGE_FLAG_CANONICAL_POSITIONS: u64 =
+    bindings::skippy::skippy_kv_page_flag::CanonicalPositions as u64;
 
 pub const CACHEGEN_RECORD_V1_ABI_VERSION: u32 =
     bindings::skippy::SKIPPY_CACHEGEN_RECORD_V1_ABI_VERSION;

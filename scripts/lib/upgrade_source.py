@@ -5,10 +5,14 @@ import re
 from pathlib import Path
 
 from .ci_process import command
+from .upgrade_abi import FACADE, check_version_edit
 
 PIN = "llama_cpp/upstream.txt"
 WORKFLOW = "Mesh-LLM/skippy/.github/workflows/llama-upgrade.yml@refs/heads/main"
 ALLOWED = (PIN, "llama_cpp/patches", "crates/skippy-ffi/src/bindings", "docs/native-api.md",
+           "crates/skippy-ffi/src/static_bindings.rs", "crates/skippy-ffi/src/dynamic.rs",
+           "crates/skippy-ffi/src/llama_draft.rs",
+           FACADE, "crates/skippy-ffi/README.md",
            "crates/skippy-api/src/native-recipe.json")
 
 
@@ -52,6 +56,12 @@ def check_changes(root, *revisions):
     for path in filter(None, paths):
         if not any(path == allowed or path.startswith(allowed + "/") for allowed in ALLOWED):
             raise ValueError(f"candidate modified a path outside the update allowlist: {path}")
+        if path == FACADE:
+            before = command(["git", "-C", str(root), "show", f"{revisions[0] if revisions else 'HEAD'}:{path}"],
+                             capture_stdout=True)
+            after = (command(["git", "-C", str(root), "show", f"{revisions[1]}:{path}"], capture_stdout=True)
+                     if len(revisions) > 1 else (root / path).read_text())
+            check_version_edit(before, after)
 
 
 def restore_at(root, bundle, expected):

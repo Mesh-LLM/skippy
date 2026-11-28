@@ -10,11 +10,14 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from lib import ci_artifacts, ci_smoke
 from lib.ci_process import command
+from lib.ci_targets import validate_native_identity
 from lib.graph_contracts import MANIFEST
+from lib.native_policy import host_owned, rocm_host_library
 from lib.upgrade_source import git, restore_at
 
 SCRIPTS = Path(__file__).resolve().parents[1]
@@ -75,10 +78,84 @@ class Artifacts(unittest.TestCase):
             self.assertEqual(Path(startup.args[0][0]).parent, startup.kwargs["cwd"].resolve())
             self.assertNotIn("LD_LIBRARY_PATH", startup.kwargs["overrides"])
             self.assertNotIn("DYLD_LIBRARY_PATH", startup.kwargs["overrides"])
+            self.assertFalse(startup.kwargs["inherit_env"])
             self.assertIn("verify-runtime-package", native_verify.args[0])
             self.assertEqual(ci_artifacts.read_json(report), {
                 "source": "a" * 40, "variant": variant, "backend": "cuda",
+                "archive_sha256": ci_artifacts.digest(archive),
             })
+
+    def test_release_evidence_matches_target_policy_and_archive(self):
+        release = module("ci-release")
+        variant = "linux-x86_64-rocm"
+        source, digest = "a" * 40, "b" * 64
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            evidence = root / f"release-product-{variant}" / "evidence"
+            evidence.mkdir(parents=True)
+            identity = {"source": source, "variant": variant, "backend": "rocm"}
+            artifact = evidence / "artifact-smoke.json"
+            ci_artifacts.write_json(artifact, {**identity, "archive_sha256": "c" * 64})
+            with self.assertRaisesRegex(ValueError, "archive"):
+                release.verify_smoke(root, variant, source, "rocm", digest, artifact_only=True)
+            ci_artifacts.write_json(artifact, {**identity, "archive_sha256": digest})
+            release.verify_smoke(root, variant, source, "rocm", digest, artifact_only=True)
+            with self.assertRaises(FileNotFoundError):
+                release.verify_smoke(root, variant, source, "rocm", digest)
+
+    def test_rocm_manifest_matches_toolkit_and_architectures(self):
+        host = {"os": "linux", "arch": "x86_64"}
+        runtime = {"backend": "rocm", "toolkit": "7.2.4", "gpu_architectures": "gfx942;gfx1200"}
+        rocm = {"version": "7.2.4", "gpu_arches": ["gfx942"]}
+        manifest = {"runtime": {"platform": host, "backend": {"kind": "rocm", "rocm": rocm}}}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ci_artifacts.write_json(root / "manifest.json", manifest)
+            with self.assertRaisesRegex(ValueError, "architectures differ"):
+                validate_native_identity(root, host, runtime)
+            rocm["gpu_arches"].append("gfx1200")
+            ci_artifacts.write_json(root / "manifest.json", manifest)
+            validate_native_identity(root, host, runtime)
+            with self.assertRaisesRegex(ValueError, "toolkit mismatch"):
+                validate_native_identity(root, host, {**runtime, "toolkit": "7.2.5"})
+        self.assertTrue(rocm_host_library("libamdhip64.so.7", "elf"))
+        self.assertFalse(rocm_host_library("libamdhip64.so.7", "pe"))
+        self.assertFalse(rocm_host_library("libamdhip64.so.8", "elf"))
+        self.assertFalse(host_owned("libamdhip64.so.7", "elf"))
+
+    def test_windows_rocm_manifest_matches_toolkit_and_architectures(self):
+        host = {"os": "windows", "arch": "x86_64"}
+        arches = "gfx1100;gfx1101;gfx1102;gfx1151;gfx1200;gfx1201"
+        runtime = {"backend": "rocm", "toolkit": "7.2.0", "gpu_architectures": arches}
+        rocm = {"version": "7.2.0", "gpu_arches": arches.split(";")}
+        manifest = {"runtime": {"platform": host, "backend": {"kind": "rocm", "rocm": rocm}}}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ci_artifacts.write_json(root / "manifest.json", manifest)
+            validate_native_identity(root, host, runtime)
+            with self.assertRaisesRegex(ValueError, "toolkit mismatch"):
+                validate_native_identity(root, host, {**runtime, "toolkit": "7.2.4"})
+
+    def test_rocm_toolkit_version_reads_info_and_install_root(self):
+        product = module("ci-product")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertIsNone(product.rocm_toolkit_version(root))
+            info = root / ".info"
+            info.mkdir()
+            (info / "version").write_text("7.2.4-93~24.04\n", encoding="utf-8")
+            self.assertEqual(product.rocm_toolkit_version(root), "7.2.4-93~24.04")
+        with patch.object(Path, "is_file", return_value=False):
+            self.assertEqual(product.rocm_toolkit_version(Path(r"C:\Program Files\AMD\ROCm\7.2.0")), "7.2.0")
+
+    def test_rocm_versions_match_accepts_the_windows_short_root(self):
+        product = module("ci-product")
+        self.assertTrue(product.rocm_versions_match("7.2", "7.2.0"))
+        self.assertTrue(product.rocm_versions_match("7.2.0", "7.2.0"))
+        self.assertTrue(product.rocm_versions_match("7.2.4-93~24.04", "7.2.4"))
+        self.assertFalse(product.rocm_versions_match("7.2", "7.2.4"))
+        self.assertFalse(product.rocm_versions_match("7.1", "7.2.0"))
+        self.assertFalse(product.rocm_versions_match(None, "7.2.0"))
 
     def test_archive_preserves_executable_hardlink_and_internal_library_link(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -126,6 +203,14 @@ class Artifacts(unittest.TestCase):
 
 
 class Generator(unittest.TestCase):
+    def test_generator_commands_inherit_job_environment(self):
+        generator = module("generate-skippy-family-patch")
+        args = SimpleNamespace(timeout=10, max_diff_bytes=1024)
+        with patch.dict(os.environ, ACTIONS_RUNTIME_TOKEN="fixture-cache-access"):
+            output = generator.run(args, [sys.executable, "-c",
+                "import os; print(os.environ['ACTIONS_RUNTIME_TOKEN'])"], cwd=ROOT, capture=True)
+        self.assertEqual(output.strip(), "fixture-cache-access")
+
     def test_patch_mail_bytes_match_frozen_fixture(self):
         generator = module("generate-skippy-family-patch")
         fixture = FIXTURES / "rewriter-patch"
@@ -208,8 +293,8 @@ class Upgrade(unittest.TestCase):
         cwd = os.getcwd()
         os.chdir(root)
         try:
-            with patch.object(source, "regenerate", regenerate), patch.object(source, "check_upgrade_coverage"), \
-                    patch.object(source, "write_native_recipe"), patch.object(source, "command", native), \
+            with patch.object(source, "seed_patch_preimages"), patch.object(source, "regenerate", regenerate), patch.object(source, "check_upgrade_coverage"), \
+                    patch.object(source, "write_native_recipe"), patch.object(source, "verify_offline"), patch.object(source, "command", native), \
                     patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("GITHUB_OUTPUT", None)
                 with patch("sys.stdout", io.StringIO()) as stdout:
@@ -274,7 +359,7 @@ class Upgrade(unittest.TestCase):
             stdout = self.run_prepare(root, regenerated, upstream)
             output = root / "target/llama-upgrade"
             self.assertEqual(sorted(path.name for path in output.iterdir()),
-                             ["candidate.bundle", "candidate.json"])
+                             ["candidate.bundle", "candidate.json", "diagnostics"])
             metadata = json.loads((output / "candidate.json").read_text())
             candidate = metadata["candidate_sha"]
             self.assertIn(f"candidate_sha={candidate}", stdout)
@@ -288,7 +373,7 @@ class Upgrade(unittest.TestCase):
                              ["llama_cpp/patches/generated/0001-family-fixture.patch",
                               "llama_cpp/patches/generated/series", "llama_cpp/upstream.txt"])
 
-    def test_repaired_candidate_is_fresh_and_directly_descends_from_protected_base(self):
+    def test_failed_ci_logs_reach_ffi_repair_and_a_fresh_restorable_candidate(self):
         source = module("upgrade-source")
         upstream = "b" * 40
         with tempfile.TemporaryDirectory() as tmp:
@@ -301,27 +386,46 @@ class Upgrade(unittest.TestCase):
             self.run_prepare(root, regenerate, upstream)
             output = root / "target/llama-upgrade"
             original_candidate = json.loads((output / "candidate.json").read_text())["candidate_sha"]
-            def agent(checkout, diagnostics):
-                self.assertEqual(diagnostics, (root / "target/diagnostics").resolve())
-                (checkout / "llama_cpp/patches/repair.patch").write_text("native repair\n")
+            diagnostics = root / "target/diagnostics"
+            collector = module("upgrade-diagnostics")
+            failure_log = 'undefined symbol: llama_set_embeddings_nextn(llama_context*, bool, bool)\n'
+            with patch.dict(os.environ, GITHUB_RUN_ID='45296606108'), \
+                 patch.object(collector, 'gh', side_effect=['--jq --paginate', json.dumps({'id': 138197945347, 'name': 'qualify / Quality canary', 'steps': []}), failure_log]):
+                collector.collect(diagnostics)
+            agent = Path(tmp) / 'agent.py'
+            adapters = ('static_bindings.rs', 'dynamic.rs', 'llama_draft.rs')
+            agent.write_text(
+                'import sys\nfrom pathlib import Path\n'
+                f'evidence=Path({str(output / "diagnostics/previous-ci")!r})\n'
+                f'assert (evidence/"actions-138197945347.log").read_text()=={failure_log!r}\n'
+                'assert (evidence/"actions-log-collection.json").is_file()\n'
+                f'for adapter in {adapters!r}:\n'
+                '    path=Path("crates/skippy-ffi/src")/adapter\n'
+                '    assert str(path) in sys.argv[-1]\n'
+                '    path.write_text("upstream C linkage adapter repair\\n")\n')
             real = source.command
             def native(args, **kwargs):
                 return None if args[:1] == ["just"] else real(args, **kwargs)
             cwd = Path.cwd()
             try:
                 os.chdir(root)
-                with patch.object(source, "regenerate", regenerate), \
-                     patch.object(source, "check_upgrade_coverage"), patch.object(source, "write_native_recipe"), \
-                     patch.object(source, "repair", side_effect=agent) as repair_agent, \
+                with patch.object(source, "seed_patch_preimages"), patch.object(source, "regenerate", regenerate), \
+                     patch.object(source, "check_upgrade_coverage"), patch.object(source, "write_native_recipe"), patch.object(source, "verify_offline"), \
+                     patch.object(source, "repair", wraps=source.repair) as repair_agent, \
+                     patch.dict(os.environ, SKIPPY_UPGRADE_REPAIR_COMMAND=json.dumps([sys.executable, str(agent)])), \
                      patch.object(source, "command", side_effect=native), \
                      patch("sys.stdout", io.StringIO()):
-                    source.prepare(upstream, output / "candidate.bundle", root / "target/diagnostics")
+                    source.prepare(upstream, output / "candidate.bundle", diagnostics)
                 repaired = json.loads((output / "candidate.json").read_text())["candidate_sha"]
                 self.assertNotEqual(repaired, original_candidate)
                 self.assertEqual(git(root, "bundle", "list-heads", str(output / "candidate.bundle")), f"{repaired} HEAD")
                 git(root, "fetch", str(output / "candidate.bundle"), "HEAD")
                 self.assertEqual(git(root, "rev-list", "--parents", "-n1", repaired), f"{repaired} {base}")
                 repair_agent.assert_called_once()
+                restore_at(root, output / 'candidate.bundle', repaired)
+                for adapter in adapters:
+                    self.assertEqual((root / 'crates/skippy-ffi/src' / adapter).read_text(),
+                                     'upstream C linkage adapter repair\n')
             finally:
                 os.chdir(cwd)
 
@@ -337,7 +441,7 @@ class Upgrade(unittest.TestCase):
                 output.write_text(json.dumps({"errors": errors}))
                 if errors:
                     raise ValueError(errors[0])
-            def agent(checkout, diagnostics):
+            def agent(checkout, diagnostics, **_options):
                 self.assertTrue((diagnostics / "graph-coverage.json").is_file())
                 (checkout / "llama_cpp/patches").mkdir(exist_ok=True)
                 (checkout / "llama_cpp/patches/repair.patch").write_text("existing contract fix\n")
@@ -347,9 +451,9 @@ class Upgrade(unittest.TestCase):
             cwd = Path.cwd()
             try:
                 os.chdir(root)
-                with patch.object(source, "regenerate", side_effect=regenerate), \
+                with patch.object(source, "seed_patch_preimages"), patch.object(source, "regenerate", side_effect=regenerate), \
                      patch.object(source, "check_upgrade_coverage", side_effect=coverage) as checked, \
-                     patch.object(source, "write_native_recipe"), \
+                     patch.object(source, "write_native_recipe"), patch.object(source, "verify_offline"), \
                      patch.object(source, "repair", side_effect=agent) as repaired, \
                      patch.object(source, "command", side_effect=native), \
                      patch.dict(os.environ, SKIPPY_UPGRADE_REPAIR_COMMAND='["agent"]'), \
@@ -374,6 +478,18 @@ class Upgrade(unittest.TestCase):
                     publisher.validated_candidate(root, bundle, "b" * 40)
                 with self.assertRaisesRegex(ValueError, "complete lowercase Git"):
                     publisher.validated_candidate(root, bundle, "main")
+
+    def test_generated_upgrade_description_passes_the_actual_protected_acceptance_gate(self):
+        publisher = module("upgrade-publish")
+        candidate = {'candidate_sha': 'a' * 40, 'upstream_sha': 'b' * 40}
+        with patch.dict(os.environ, GITHUB_RUN_ID='45354222627'):
+            body = publisher.description(candidate)
+        script = 'let body="";process.stdin.on("data",s=>body+=s);process.stdin.on("end",()=>require(process.argv[1])(body));'
+        checked = subprocess.run(['node', '-e', script, str(ROOT / '.github/scripts/pr-acceptance.cjs')],
+                                 input=body, text=True, capture_output=True, timeout=30)
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+        self.assertIn(candidate['candidate_sha'], body)
+        self.assertIn('/actions/runs/45354222627', body)
 
 
 class RewriterReport(unittest.TestCase):

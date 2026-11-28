@@ -1,9 +1,9 @@
 name: PR checks
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
   workflow_run:
-    workflows: [CI, CI PR, Documentation, Documentation PR, CI images, CI images PR, Inference qualification]
+    workflows: [CI, CI PR, Documentation, Documentation PR, CI images, CI images PR, Inference qualification, Approved fork CI]
     types: [in_progress, completed]
   check_run:
     types: [created, completed]
@@ -15,7 +15,7 @@ permissions:
   pull-requests: read
   statuses: write
 concurrency:
-  group: pr-checks-${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.event.check_run.head_sha || github.event.sha }}
+  group: pr-checks-${{ github.event.pull_request.head.sha || (github.event.workflow_run.path == '.github/workflows/fork-native.yml' && github.event.workflow_run.display_title) || github.event.workflow_run.head_sha || github.event.check_run.head_sha || github.event.sha }}
   # Serialize evaluations for one PR commit without replacing a pending run.
   queue: max
 jobs:
@@ -23,6 +23,7 @@ jobs:
     name: Evaluate aggregate PR checks
     if: >-
       github.event_name == 'pull_request_target' ||
+      (github.event.workflow_run.path == '.github/workflows/fork-native.yml' && github.event.workflow_run.event == 'workflow_run') ||
       github.event_name == 'check_run' || github.event_name == 'status' ||
       contains(fromJSON('["pull_request", "pull_request_target"]'), github.event.workflow_run.event)
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
@@ -38,6 +39,8 @@ jobs:
         env:
           DEPOT_RUNNERS_ENABLED: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED }}
         with:
+          # A dropped GitHub API call must not paint the PR red (real #224 context).
+          retries: 3
           script: |
             await require('./.github/scripts/pr-checks.cjs')({
               github, context, core, depot: process.env.DEPOT_RUNNERS_ENABLED === 'true'
