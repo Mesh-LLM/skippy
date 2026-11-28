@@ -1,7 +1,7 @@
-From a9d8a5cb095d461ae7281337f25f9ef660256d77 Mon Sep 17 00:00:00 2001
+From f5c4e73dd91f6395df1ed23e45658d157caadcee Mon Sep 17 00:00:00 2001
 From: Mesh-LLM CI <ci@mesh-llm.local>
 Date: Fri, 6 Nov 2026 10:38:07 -0800
-Subject: [PATCH 29/32] models: expose Metis16 delegated pass layers
+Subject: [PATCH] models: expose Metis16 delegated pass layers
 
 ---
  src/models/metis16.cpp | 167 +++++++++++++++++++++--------------------
@@ -9,7 +9,7 @@ Subject: [PATCH 29/32] models: expose Metis16 delegated pass layers
  2 files changed, 90 insertions(+), 80 deletions(-)
 
 diff --git a/src/models/metis16.cpp b/src/models/metis16.cpp
-index 8a433f3cc..6f0b32b54 100644
+index 0a57a6ab0..137cee74d 100644
 --- a/src/models/metis16.cpp
 +++ b/src/models/metis16.cpp
 @@ -258,17 +258,98 @@ ggml_tensor * llama_model_metis16::graph::route_features(const llama_model_metis
@@ -66,7 +66,7 @@ index 8a433f3cc..6f0b32b54 100644
 +
 +            ggml_tensor * moe_out = build_moe_ffn(latent, nullptr, nullptr, nullptr, layer.ffn_down_exps, nullptr,
 +                    n_exp, n_used, LLM_FFN_SILU, false, 0.0f, LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX_WEIGHT, il_p,
-+                    logits, layer.ffn_gate_up_exps, nullptr, nullptr, nullptr, selected);
++                    logits, layer.ffn_gate_up_exps, selected);
 +            ggml_tensor * shexp = build_ffn(latent,
 +                    layer.ffn_up_shexp,   NULL, NULL,
 +                    layer.ffn_gate_shexp, NULL, NULL,
@@ -161,7 +161,7 @@ index 8a433f3cc..6f0b32b54 100644
 -
 -                ggml_tensor * moe_out = build_moe_ffn(latent, nullptr, nullptr, nullptr, layer.ffn_down_exps, nullptr,
 -                        n_exp, n_used, LLM_FFN_SILU, false, 0.0f, LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX_WEIGHT, il_p,
--                        logits, layer.ffn_gate_up_exps, nullptr, nullptr, nullptr, selected);
+-                        logits, layer.ffn_gate_up_exps, selected);
 -                ggml_tensor * shexp = build_ffn(latent,
 -                        layer.ffn_up_shexp,   NULL, NULL,
 -                        layer.ffn_gate_shexp, NULL, NULL,
@@ -200,10 +200,10 @@ index 8a433f3cc..6f0b32b54 100644
          // end of the pass: one more memory read, the depth head, and an entry recording where the pass left the token
          ggml_tensor * retrieved = mem_read(model, &x);
 diff --git a/src/models/models.h b/src/models/models.h
-index 5661c2ea5..7adc95719 100644
+index 25c1e40f4..de72e8985 100644
 --- a/src/models/models.h
 +++ b/src/models/models.h
-@@ -1786,6 +1786,9 @@ struct llama_model_metis16 : public llama_model_base {
+@@ -1932,6 +1932,9 @@ struct llama_model_metis16 : public llama_model_base {
  
      struct graph : public llm_build_mamba_base {
          graph(const llm_graph_params & params);
@@ -213,3 +213,6 @@ index 5661c2ea5..7adc95719 100644
  
          // memory bank of the current forward: keys [n_mem, n_entry, n_tokens], values [n_entry, n_mem, n_tokens]
          ggml_tensor * bank_k  = nullptr;
+-- 
+2.56.1
+

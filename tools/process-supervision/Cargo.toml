@@ -1,9 +1,12 @@
 [package]
-name = "process-supervision"
+name = "skippy-subprocess"
 version.workspace = true
-edition = "2024"
-publish = false
-description = "Bounded supervision of CI automation child process trees and the command interruption scope"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = ["crates-io"]
+description = "Bounded subprocess supervision for Skippy tuning and measurement"
+readme = "README.md"
 
 [dependencies]
 thiserror = "2"

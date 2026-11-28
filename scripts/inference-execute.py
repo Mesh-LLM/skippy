@@ -7,12 +7,12 @@ import json
 import os
 import platform
 import shutil
-import socket
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
+from contextlib import nullcontext
 
 from lib.ci_artifacts import read_json, write_json
 from lib.ci_process import cancel_on_signal, capture, command, start, stop
@@ -22,6 +22,8 @@ from lib.inference_checks import ENDPOINT, numerical, offload, performance, scor
 from lib.inference_inputs import admit, fixture, input_hashes, record
 from lib.inference_ladder import plan
 from lib.inference_admission import split_admissions_digest
+from lib.inference_probe import measure
+from lib.inference_peer import PeerControl, port_available
 
 
 def authority(backend):
@@ -76,17 +78,7 @@ def prepare_split(model, coordinate, profile, context, output, worker):
     args = ["--config", str(local), "--stage-transport", "binary"]
     if worker:
         args.append("--worker-only")
-    else:
-        deadline = time.monotonic() + 900
-        while True:
-            try:
-                with socket.create_connection((str(follower), 9401), timeout=1):
-                    break
-            except OSError:
-                if time.monotonic() >= deadline:
-                    raise RuntimeError("split worker listener did not become ready")
-                time.sleep(1)
-    return args, "http://" + address(leader, 9912)
+    return args
 
 
 def wait_for(server, url, seconds, poll, check):
@@ -103,26 +95,7 @@ def wait_for(server, url, seconds, poll, check):
     raise RuntimeError("inference server or split leader timed out")
 
 
-def acknowledge_worker():
-    with socket.socket() as listener:
-        listener.bind(("0.0.0.0", 9912))
-        listener.listen(1)
-        listener.settimeout(60)
-        try:
-            connection, _ = listener.accept()
-        except socket.timeout:
-            return
-        with connection:
-            connection.settimeout(2)
-            try:
-                connection.recv(1024)
-            except OSError:
-                pass
-            body = b"qualification-complete"
-            connection.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 22\r\nConnection: close\r\n\r\n" + body)
-
-
-def execute(profile, key, mode, backend):
+def execute(profile, key, mode, backend="cuda"):
     if backend == "metal" and mode != "standalone":
         raise ValueError("Metal qualification supports standalone jobs")
     sha, gpu, metal_budget = authority(backend)
@@ -141,29 +114,40 @@ def execute(profile, key, mode, backend):
     model = admit(key, inputs)
     coordinate = f'{inputs["repo"]}@{inputs["revision"]}'
     context = 4096 if profile == "pr" else 65536
-    if not worker and profile != "pr":
-        numerical(model, coordinate, inputs, output)
     args = ["target/debug/skippy", "--debug", "serve", "--startup-timeout-secs", "300"]
     if backend == "metal":
         args[1:1] = ["--output", "jsonl"]
     if not worker:
         args += ["--speculative-strategy", "disabled", "--generation-concurrency", "1"]
-    control = None
     if mode == "split":
-        split_args, control = prepare_split(model, coordinate, profile, context, output, worker)
-        args += split_args
+        args += prepare_split(model, coordinate, profile, context, output, worker)
     else:
         args += [
             "--ctx-size", str(context), "--n-gpu-layers", "999", "--bind-addr", "127.0.0.1:9337",
             "--model-path", str(model), "--model-id", coordinate,
         ]
     log = output / "server.log"
-    with log.open("wb") as stream:
+    peer_context = PeerControl.from_environment(sha, key, profile) if mode == "split" else nullcontext()
+    with log.open("wb") as stream, peer_context as peer:
+        # Keep formation identity observable while the leader runs longer
+        # nightly/release numerical checks, before starting its serving child.
+        if not worker and profile != "pr":
+            numerical(model, coordinate, inputs, output)
+        if peer is not None:
+            peer.await_peer(None if worker else "ready")
+            if worker:
+                # A ready control response must describe our own new listener.
+                port_available(peer.host, 9401)
+        if not worker:
+            port_available("127.0.0.1", 9337)
         server = start(args, stdin=subprocess.DEVNULL, stdout=stream, stderr=stream)
         try:
             if worker:
-                wait_for(server, control, 18000, 5, lambda body: body == "qualification-complete")
+                peer.worker_ready(server, read_json(output / "stage.json"))
+                peer.await_peer("complete", server, seconds=18000)
                 offload(log)
+                peer.acknowledge()
+                peer.save(output)
                 return
             wait_for(server, ENDPOINT + "/v1/models", 900, 2, lambda _body: True)
             if backend == "metal":
@@ -173,22 +157,25 @@ def execute(profile, key, mode, backend):
             score(coordinate, output, profile)
             if profile == "pr":
                 streaming(coordinate, output)
+                measure(coordinate, output)
                 scope = "GPU startup, deterministic endpoint repeats and bounded streaming smoke"
             else:
                 performance(profile, coordinate, context, output, inputs)
                 scope = ("native chain parity, state handoff, deterministic endpoint repeat; "
                          "not an independent implementation reference")
+            if peer is not None:
+                peer.complete(server)
+                peer.save(output)
             write_json(output / "qualification.json", {
                 "source_sha": sha, "model": key, "mode": mode, "profile": profile, "status": "passed",
                 "performance_claim": result["performance_claim"], "gpu": gpu, "backend": backend,
                 "layers": inputs["layers"],
                 "artifact_manifest_sha256": input_hashes()["model_manifest_sha256"],
                 "correctness_scope": scope,
+                "split_peer": peer.proof() if peer is not None else None,
                 "split_admissions_sha256": (split_admissions_digest(read_json(output / "split-admissions.json"))
                                              if mode == "split" else None),
             })
-            if mode == "split":
-                acknowledge_worker()
         finally:
             stop(server)
 

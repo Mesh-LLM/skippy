@@ -87,7 +87,7 @@ class NightlyTests(unittest.TestCase):
                     with patch.dict(prepare_split.__globals__, command=command), patch.dict(os.environ, JIANYANG_PEERS=peers):
                         args = (Path("model.gguf"), "test-model", profile, 65536, Path(temporary), True)
                         if valid:
-                            self.assertEqual(len(prepare_split(*args)), 2)
+                            self.assertIn("--worker-only", prepare_split(*args))
                         else:
                             with self.assertRaisesRegex(ValueError, "native stage admissions"):
                                 prepare_split(*args)
@@ -127,11 +127,11 @@ class NightlyTests(unittest.TestCase):
             row = next(row for row in matrix("nightly", SOURCE) if row["id"] == entry["configuration"])
             recipe = contract("nightly", row, row["id"].removesuffix("-" + row["mode"]))
             canonical = canonical_contract(row["id"], entry["workload"], entry["legacy_sha256"])
-            if entry["workload"].endswith("(experimental split)"):
-                self.assertNotEqual(canonical, recipe)
-                self.assertEqual(canonical, entry["recipe_sha256"])
-            else:
-                self.assertEqual(canonical, recipe)
+            # Main now verifies formation peers and fresh serving listeners.
+            # Its execution contract starts a new series; historical aliases
+            # remain bound to their audited recipes instead of being rewritten.
+            self.assertNotEqual(canonical, recipe)
+            self.assertEqual(canonical, entry["recipe_sha256"])
         cuda = matrix("nightly", SOURCE)[0]
         metal = matrix("nightly", SOURCE, backend="metal")[0]
         key = cuda["id"].removesuffix("-standalone")
@@ -217,7 +217,7 @@ class NightlyTests(unittest.TestCase):
             smoke_receipt(root, SOURCE, "23", configuration="qwen3-coder-30b-a3b-split")
             report = nightly_run(root, SOURCE, "23", "1", "2026-11-21T00:00:00Z", True)
             split = next(config for config in report["configurations"]
-                         if config["id"] == "qwen3-coder-30b-a3b-split" and config["workload"] == "DGX Spark smoke v1")
+                         if config["id"] == "qwen3-coder-30b-a3b-split" and config["workload"] == "DGX Spark warm probe v2")
             self.assertEqual(split["outcome"], "passed")
             self.assertEqual(report["outcome"], "failed")
             self.assertEqual(len(report["configurations"]), 31)

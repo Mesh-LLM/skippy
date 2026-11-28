@@ -24,19 +24,31 @@ def github(path):
 
 
 def admit_pr(sha):
-    pulls = github(f"repos/{REPO}/commits/{sha}/pulls")
-    current = next((pr for pr in pulls if pr["head"]["sha"] == sha and pr["state"] == "open"), None)
-    if current is None:
+    approved_fork = (os.environ.get("GITHUB_EVENT_NAME") == "workflow_run"
+                     and os.environ.get("GITHUB_WORKFLOW_REF") ==
+                     f"{REPO}/.github/workflows/fork-native.yml@refs/heads/main")
+    if approved_fork:
+        number = os.environ.get("APPROVED_FORK_PR", "")
+        if not re.fullmatch(r"[1-9][0-9]*", number):
+            raise ValueError("missing approved fork PR identity")
+        current = github(f"repos/{REPO}/pulls/{number}")
+    else:
+        pulls = github(f"repos/{REPO}/commits/{sha}/pulls")
+        current = next((pr for pr in pulls if pr["head"]["sha"] == sha and pr["state"] == "open"), None)
+    if current is None or current["state"] != "open" or current["head"]["sha"] != sha:
         raise ValueError("no current open PR for tested SHA")
-    if current["head"]["repo"]["full_name"] != REPO:
-        raise ValueError("fork PR needs isolated execution")
+    fork = current["head"]["repo"]["full_name"] != REPO
+    if fork and not approved_fork:
+        raise ValueError("fork PR requires the protected approved-fork controller")
     number, author = current["number"], current["user"]["login"]
     if type(number) is not int or number <= 0 or not re.fullmatch(r"[A-Za-z0-9-]+", author):
         raise ValueError("invalid PR identity")
-    permission = github(f"repos/{REPO}/collaborators/{author}/permission")["permission"]
-    if permission not in {"admin", "write", "maintain"}:
-        raise ValueError("PR author is not a trusted collaborator")
-    if github(f"repos/{REPO}/pulls/{number}")["head"]["sha"] != sha:
+    if not fork:
+        permission = github(f"repos/{REPO}/collaborators/{author}/permission")["permission"]
+        if permission not in {"admin", "write", "maintain"}:
+            raise ValueError("PR author is not a trusted collaborator")
+    latest = github(f"repos/{REPO}/pulls/{number}")
+    if latest.get("state") != "open" or latest["head"]["sha"] != sha:
         raise ValueError("PR head changed during inference admission")
 
 
@@ -47,10 +59,10 @@ def output(**values):
 
 
 def admit_release_candidate(sha):
-    if (os.environ["GITHUB_EVENT_NAME"] not in {"schedule", "workflow_dispatch"}
+    if (os.environ["GITHUB_EVENT_NAME"] not in {"workflow_dispatch", "schedule"}
             or os.environ["GITHUB_REF"] != "refs/heads/main"
             or os.environ["GITHUB_WORKFLOW_REF"] != f"{REPO}/.github/workflows/release.yml@refs/heads/main"):
-        raise ValueError("release candidates require a protected Release run")
+        raise ValueError("release candidates require a protected Release dispatch or schedule")
     run = os.environ["GITHUB_RUN_ID"]
     if not re.fullmatch(r"[1-9][0-9]*", run):
         raise ValueError("invalid release run ID")

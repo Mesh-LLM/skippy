@@ -7,4 +7,7 @@ self-hosted-runner:
     - metal
     - cuda12
     - cuda13
+    - rocm
     - runtime-image
+    - windows-vm
+    - cuda

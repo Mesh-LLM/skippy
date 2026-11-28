@@ -2,7 +2,7 @@
 name = "skippy-hardware-profile"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Host hardware profile detection for Skippy native runtime selection"
 repository = "https://github.com/Mesh-LLM/skippy"

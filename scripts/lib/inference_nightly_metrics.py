@@ -13,10 +13,11 @@ from .inference_inputs import fixture, input_hashes
 from .inference_admission import split_admissions_digest
 from .inference_metal import DEVICE as METAL_DEVICE
 from .inference_throughput import collect, successful_run
+from .inference_probe import WORKLOAD
 
-WORKLOADS = {"pr": "DGX Spark smoke v1", "nightly": "DGX Spark AgentX nightly v1",
+WORKLOADS = {"pr": WORKLOAD, "nightly": "DGX Spark AgentX nightly v1",
              "release": "DGX Spark AgentX release v1"}
-METAL_WORKLOADS = {"pr": "Apple M3 Ultra smoke v1", "nightly": "Apple M3 Ultra AgentX nightly v1",
+METAL_WORKLOADS = {"pr": "Apple M3 Ultra warm probe v2", "nightly": "Apple M3 Ultra AgentX nightly v1",
                    "release": "Apple M3 Ultra AgentX release v1"}
 SMOKE_METRICS = ("prefill_tok_s", "decode_tok_s")
 AGENTX_METRICS = ("output_tok_s", "ttft_p95_ms", "itl_p95_ms", "requests", "request_error_pct")
@@ -81,6 +82,7 @@ def benchmark_definition(profile, mode, backend="cuda"):
         functions["scripts/lib/inference_checks.py"].extend(["streaming", "request"])
         functions["scripts/lib/inference_nightly_metrics.py"] = ["smoke_metrics"]
         functions["scripts/lib/inference_throughput.py"] = ["collect", "totals"]
+        files += ("scripts/lib/inference_probe.py",)
     else:
         functions["scripts/lib/inference_checks.py"].append("performance")
         functions["scripts/lib/inference_nightly_metrics.py"] = ["agentx_metrics"]

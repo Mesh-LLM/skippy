@@ -37,7 +37,7 @@ def plan(profile, sha):
         raise ValueError("unknown inference profile")
     if not re.fullmatch(r"[0-9a-fA-F]{40}", sha):
         raise ValueError("source must be an immutable 40-digit commit SHA")
-    checks = (["gpu-startup", "scored-quality", "streaming-smoke"] if profile == "pr"
+    checks = (["gpu-startup", "scored-quality", "streaming-smoke", "bounded-throughput-probes"] if profile == "pr"
               else ["correctness", "scored-quality", "agentx-performance"])
     rows = []
     for model in ladder_models():

@@ -194,7 +194,7 @@ inference-compare evidence:
     @"{{ automation_python }}" scripts/inference-compare.py "$@"
 
 process-supervision-test:
-    @cargo test --locked -p process-supervision
+    @cargo test --locked -p skippy-subprocess
 
 [positional-arguments]
 inference-dispatch profile source output="target/ci-evidence/inference" *configuration:
@@ -352,6 +352,10 @@ release version canary="false":
 [positional-arguments]
 release-version tag:
     @"{{ automation_python }}" scripts/ci-release.py bump "$@"
+
+[positional-arguments]
+release-crates *args:
+    @"{{ automation_python }}" scripts/ci-crates.py "$@"
 
 [positional-arguments]
 release-candidate *args:

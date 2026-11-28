@@ -1,4 +1,4 @@
-"""Summarize complete scored smoke receipts for the inference report."""
+"""Summarize warmed fixed-length probes after successful scored qualification."""
 
 import math
 import re
@@ -7,6 +7,8 @@ from pathlib import Path
 
 from .ci_artifacts import read_json, write_json
 from .jy_qualification import PilotHTTPError
+from .inference_inputs import fixture
+from .inference_probe import WORKLOAD, validate_evidence
 
 ARTIFACT_RETRIES = 6
 ARTIFACT_RETRY_DELAY = 5
@@ -45,11 +47,15 @@ def collect(pilot, job, row, sha, output, key):
     cases = read_json(Path("ci/inference-quality.json"))
     if not isinstance(samples, list) or len(samples) != len(cases):
         raise ValueError("incomplete scored throughput evidence")
-    prefill, decode = [], []
     for sample, case in zip(samples, cases):
         if sample.get("passed") is not True or sample.get("case") != case:
             raise ValueError("unscored or mismatched throughput sample")
-        response = sample["response"]
+    inputs = fixture(key)
+    model = f'{inputs["repo"]}@{inputs["revision"]}'
+    evidence = fetch_artifact(pilot, run_id, "throughput-probe.json")
+    responses = validate_evidence(evidence, model)
+    prefill, decode = [], []
+    for response in responses:
         timing = response.get("timings") or {}
         cached = ((response.get("usage") or {}).get("prompt_tokens_details") or {}).get("cached_tokens")
         prompt = timing.get("prompt_n")
@@ -60,7 +66,8 @@ def collect(pilot, job, row, sha, output, key):
     d_tokens, d_ms = totals(decode)
     receipt = {
         "source_sha": sha, "configuration": row["id"], "job_id": job["id"], "run_id": run_id,
-        "requests": len(samples), "prefill_tokens": p_tokens, "prefill_ms": p_ms,
+        "workload": WORKLOAD,
+        "requests": len(responses), "prefill_tokens": p_tokens, "prefill_ms": p_ms,
         "decode_tokens": d_tokens, "decode_ms": d_ms,
     }
     write_json(output / f'{row["id"]}-throughput.json', receipt)

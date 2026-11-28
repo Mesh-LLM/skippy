@@ -1,7 +1,7 @@
-# process-supervision
+# skippy-subprocess
 
-`process-supervision` runs CI automation child processes under bounded
-supervision. It is a library only. Its normal dependencies are thiserror, libc
+`skippy-subprocess` provides bounded supervision for tuning trials and native GPU
+measurement helpers. It is a library only. Its normal dependencies are thiserror, libc
 on Unix, and windows-sys on Windows.
 
 It owns:

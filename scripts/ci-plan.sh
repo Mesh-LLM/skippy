@@ -11,7 +11,7 @@ result="$(jq -cer --arg profile "$profile" '
     if $id == "darwin-aarch64" then ["macos-15"]
     elif $id == "linux-x86_64" then ["ubuntu-24.04"]
     elif $id == "linux-aarch64" then ["ubuntu-24.04-arm"]
-    elif $id == "windows-x86_64" then ["windows-2025"]
+    elif $id == "windows-x86_64" then ["windows-2022"]
     else null end;
   def valid_host_identity:
     ([.id, .target, .os, .arch] == ["darwin-aarch64", "aarch64-apple-darwin", "macos", "aarch64"])
@@ -21,17 +21,22 @@ result="$(jq -cer --arg profile "$profile" '
   def runtime_variant($r; $h):
     if $r.backend == "cpu" and $r.toolkit == "" and $r.gpu_architectures == "" then "cpu"
     elif $r.backend == "metal" and $h.os == "macos" and $r.toolkit == "" then "metal"
+    elif $r.backend == "vulkan" and ($h.id == "linux-x86_64" or $h.id == "windows-x86_64") and
+         $r.toolkit == "1.4.328.1" and $r.gpu_architectures == "" then "vulkan"
     elif $r.backend == "cuda" and $h.os != "macos" and ($r.toolkit | startswith("12.")) and $r.gpu_architectures != "" then "cuda12"
     elif $r.backend == "cuda" and $h.os != "macos" and ($r.toolkit | startswith("13.")) and $r.gpu_architectures != "" then "cuda13"
+    elif $r.backend == "rocm" and ($h.id == "linux-x86_64" or $h.id == "windows-x86_64") and
+         ($r.toolkit | test("^7\\.[0-9]+\\.[0-9]+$")) and
+         ($r.gpu_architectures | test("^gfx[0-9a-f]+(;gfx[0-9a-f]+)*$")) then "rocm"
     else null end;
-  def expected_runtime_runner($h; $variant):
-    if $variant == "cpu" then $h.runner
+  def expected_runtime_runner($h; $variant; $validation):
+    if $variant == "cpu" or $h.os == "windows" or $validation == "artifact" then $h.runner
     else
       (["self-hosted", "skippy-ephemeral",
         (if $h.os == "macos" then "macOS" elif $h.os == "linux" then "Linux" else "Windows" end),
         (if $h.arch == "aarch64" then "ARM64" else "X64" end)]
        + (if ($variant | startswith("cuda")) then ["runtime-image"] else [] end)
-       + [$variant])
+       + [(if $variant == "vulkan" then "rocm" else $variant end)])
     end;
   def has_only_keys($allowed): (keys - $allowed) == [];
   def enabled: .enabled != false;
@@ -44,8 +49,8 @@ result="$(jq -cer --arg profile "$profile" '
     then error("hosts and runtimes must be arrays") else . end
   | if any(.hosts[], .runtimes[]; type != "object")
     then error("hosts and runtimes must contain objects") else . end
-  | if .schema_version != 1 or (.hosts | length) != 4 or (.runtimes | length) != 11
-    then error("expected schema 1, four hosts, and eleven runtimes") else . end
+  | if .schema_version != 1 or (.hosts | length) != 4
+    then error("expected schema 1 and four hosts") else . end
   | if (([.hosts[].id, .runtimes[].id] | length) != ([.hosts[].id, .runtimes[].id] | unique | length))
     then error("host and runtime IDs must be unique") else . end
   | if (has("enabled_hosts") and .enabled_hosts != null and
@@ -64,13 +69,15 @@ result="$(jq -cer --arg profile "$profile" '
       or (valid_host_identity | not) or .runner != host_runner(.id))
     then error("invalid host identity or runner boundary") else . end
   | if any(.runtimes[];
-      (has_only_keys(["id", "display_name", "host", "backend", "toolkit", "gpu_architectures", "runner", "runner_group", "enabled"]) | not)
+      (has_only_keys(["id", "display_name", "host", "backend", "toolkit", "gpu_architectures", "validation", "full_only", "runner", "runner_group", "enabled"]) | not)
       or (has("id") | not) or (has("display_name") | not) or (has("host") | not)
       or (has("backend") | not) or (has("toolkit") | not) or (has("gpu_architectures") | not)
       or (has("runner") | not)
       or (.id | safe_id | not) or (.display_name | type != "string" or (gsub("^[[:space:]]+|[[:space:]]+$"; "") | length) == 0)
       or (.host as $host | ($host | type != "string") or ([ $m.hosts[].id ] | index($host)) == null)
       or (.backend | type != "string") or (.toolkit | type != "string") or (.gpu_architectures | type != "string")
+      or (has("validation") and .validation != "artifact" and .validation != "inference")
+      or (has("full_only") and (.full_only | type != "boolean"))
       or (.runner | type != "array" or any(.[]; type != "string"))
       or (has("enabled") and (.enabled | type != "boolean"))
       or (has("runner_group") and .runner_group != null and (.runner_group | type != "string"))
@@ -80,15 +87,23 @@ result="$(jq -cer --arg profile "$profile" '
     then error("invalid runtime identity or runner boundary") else . end
   | if any(.runtimes[];
       . as $r | ($m.hosts[] | select(.id == $r.host)) as $h
+      | runtime_variant($r; $h) as $variant
       | ($r.enabled != false and $h.enabled == false)
-        or (runtime_variant($r; $h) == null)
-        or ($r.runner != expected_runtime_runner($h; runtime_variant($r; $h))))
+        or ($variant == null)
+        or ($r.id != "\($h.id)-\($variant)")
+        or (($r.validation // "inference") !=
+            (if $h.os == "windows" and ($variant == "cpu" or $variant == "vulkan") then "artifact" else "inference" end))
+        or (($r.full_only // false) != ($h.os == "windows" or $variant == "rocm" or $variant == "vulkan"))
+        or ($r.runner != expected_runtime_runner($h; $variant; ($r.validation // "inference"))))
     then error("unsupported backend/toolkit/OS combination or runtime runner labels") else . end
   | ([.runtimes[] as $r | ($m.hosts[] | select(.id == $r.host)) as $h | "\($r.host)/\(runtime_variant($r; $h))"] as $variants
      | if ($variants | length) != ($variants | unique | length)
        then error("duplicate runtime variant") else . end)
   | if any(.hosts[];
-      . as $h | (if $h.os == "macos" then ["cpu", "metal"] else ["cpu", "cuda12", "cuda13"] end) as $required
+      . as $h | (if $h.os == "macos" then ["cpu", "metal"]
+                 elif $h.id == "linux-x86_64" then ["cpu", "cuda12", "cuda13", "rocm", "vulkan"]
+                 elif $h.id == "windows-x86_64" then ["cpu", "cuda12", "cuda13", "rocm", "vulkan"]
+                 else ["cpu", "cuda12", "cuda13"] end) as $required
       | any($required[]; . as $variant | ([$m.runtimes[] as $r | ($m.hosts[] | select(.id == $r.host)) as $rh | select($r.host == $h.id and runtime_variant($r; $rh) == $variant)] | length) == 0))
     then error("missing required host runtime variant") else . end
   | ([.hosts[] | select((if $m.enabled_hosts == null then true else .id as $id | any($m.enabled_hosts[]; . == $id) end) and enabled)
@@ -96,8 +111,11 @@ result="$(jq -cer --arg profile "$profile" '
   | ([$m.runtimes[]
       | . as $runtime
       | select(($m.enabled_hosts == null or any($m.enabled_hosts[]; . == $runtime.host)) and $runtime.enabled != false)
+      # Evidence policy is independent of scheduling: Linux ROCm and Vulkan require
+      # inference but stay full-only alongside the five Windows packages.
+      | select($profile == "full" or (($runtime.full_only // false) | not))
       | ($m.hosts[] | select(.id == $runtime.host)) as $host
-      | . + {host_runner: $host.runner, enabled: true}
+      | . + {host_runner: $host.runner, enabled: true, validation: ($runtime.validation // "inference")}
       | if ($runtime.runner_group // null) != null
         then .runner = {group: $runtime.runner_group, labels: $runtime.runner}
         else del(.runner_group) end]) as $runtimes

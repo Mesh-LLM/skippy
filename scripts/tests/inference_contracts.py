@@ -11,7 +11,8 @@ from urllib.error import HTTPError
 from unittest.mock import Mock, patch
 
 from lib import inference_metal
-from lib import inference_ladder, inference_throughput
+from lib import inference_ladder, inference_throughput, inference_probe
+from lib.inference_inputs import fixture
 from lib.jy_qualification import Pilot, PilotHTTPError, placement
 
 
@@ -28,7 +29,8 @@ class LadderTests(unittest.TestCase):
         self.assertEqual(plan["performance_claim"], "smoke-only")
         for row in rows:
             self.assertEqual(row["machines"], 2 if row["mode"] == "split" else 1)
-            self.assertEqual(row["checks"], ["gpu-startup", "scored-quality", "streaming-smoke"])
+            self.assertEqual(row["checks"], ["gpu-startup", "scored-quality", "streaming-smoke",
+                                             "bounded-throughput-probes"])
 
     def test_extended_profiles(self):
         nightly = inference_ladder.plan("nightly", self.sha)["rows"]
@@ -63,29 +65,6 @@ class LadderTests(unittest.TestCase):
         self.assertEqual(len(inference_ladder.matrix("nightly", self.sha, True, backend="metal")), 12)
 
 
-class MetalAdmissionTests(unittest.TestCase):
-    def test_available_memory_is_bounded_by_vm_stats_and_metal_budget(self):
-        stats = "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 3.\nPages inactive: 5.\n"
-        self.assertEqual(inference_metal.available_memory(stats, 2**20), 8 * 16384)
-        self.assertEqual(inference_metal.available_memory(stats, 65536), 65536)
-        with self.assertRaisesRegex(ValueError, "could not be measured"):
-            inference_metal.available_memory("invalid", 65536)
-
-    def test_rejects_the_wrong_apple_chip(self):
-        with patch.object(inference_metal.platform, "system", return_value="Darwin"), \
-             patch.object(inference_metal.platform, "machine", return_value="arm64"), \
-             patch.object(inference_metal, "capture", return_value="Apple M5 Max\n"):
-            with self.assertRaisesRegex(ValueError, "Apple M3 Ultra"):
-                inference_metal.device_and_budget()
-
-    def test_comparisons_take_any_apple_m_series_chip_with_its_own_metal_gpu(self):
-        with patch.object(inference_metal.platform, "system", return_value="Darwin"), \
-             patch.object(inference_metal.platform, "machine", return_value="arm64"):
-            with patch.object(inference_metal, "capture", return_value="Apple M1 Ultra\n"):
-                self.assertEqual(inference_metal.chip(), "Apple M1 Ultra")
-            with patch.object(inference_metal, "capture", return_value="Apple Paravirtual device\n1024\n"):
-                with self.assertRaisesRegex(ValueError, "Metal device"):
-                    inference_metal.working_set("Apple M1 Ultra")
 
 
 class PilotRequestTests(unittest.TestCase):
@@ -123,12 +102,29 @@ class ThroughputTests(unittest.TestCase):
         response = {"timings": {"prompt_n": 3, "prompt_ms": 2, "predicted_n": 1, "predicted_ms": 3},
                     "usage": {"prompt_tokens_details": {"cached_tokens": 1}}}
         samples = [{"case": case, "response": response, "passed": True} for case in cases]
+        inputs = fixture(model)
+        coordinate = f'{inputs["repo"]}@{inputs["revision"]}'
+        probes = {"schema_version": 1, "workload": inference_probe.WORKLOAD,
+                  "status": "passed", "samples": []}
+        for index in range(3):
+            pair = {}
+            for warmup in (True, False):
+                payload = inference_probe.payload(coordinate, index, warmup)
+                pair["warmup" if warmup else "measured"] = {
+                    "payload": payload, "client_ms": 10,
+                    "response": {"choices": [{"message": {"content": "answer"}}],
+                                 "timings": {"prompt_n": 200 + index, "prompt_ms": 2,
+                                             "predicted_n": payload["max_tokens"], "predicted_ms": 3},
+                                 "usage": {"prompt_tokens": 200 + index,
+                                           "completion_tokens": payload["max_tokens"],
+                                           "prompt_tokens_details": {"cached_tokens": 0}}}}
+            probes["samples"].append(pair)
         quality_path = self.prefix + "quality.json"
         missing = HTTPError("https://pilot.jianyang.cloud" + quality_path, 404, "Not Found", {},
                             io.BytesIO(b'{"error":"not_found","message":"artifact not found"}'))
         pilot = Pilot()
         replies = [io.BytesIO(json.dumps(qualification).encode()), missing,
-                   io.BytesIO(json.dumps(samples).encode())]
+                   io.BytesIO(json.dumps(samples).encode()), io.BytesIO(json.dumps(probes).encode())]
         with TemporaryDirectory() as directory, patch.object(pilot, "auth", return_value="test"), \
                 patch.object(pilot.opener, "open", side_effect=replies) as send, \
                 patch.object(inference_throughput.time, "sleep") as sleep:
@@ -138,10 +134,13 @@ class ThroughputTests(unittest.TestCase):
 
         self.assertEqual(receipt["run_id"], self.run_id)
         self.assertEqual(receipt["requests"], len(cases))
-        self.assertEqual(receipt["prefill_tokens"], 2 * len(cases))
+        self.assertEqual(receipt["prefill_tokens"], 603)
+        self.assertEqual(receipt["decode_tokens"], 384)
+        self.assertEqual(receipt["workload"], inference_probe.WORKLOAD)
         self.assertEqual(receipt["decode_ms"], 3 * len(cases))
         self.assertEqual([call.args[0].selector for call in send.call_args_list],
-                         [self.prefix + "qualification.json", quality_path, quality_path])
+                         [self.prefix + "qualification.json", quality_path, quality_path,
+                          self.prefix + "throughput-probe.json"])
         sleep.assert_called_once_with(inference_throughput.ARTIFACT_RETRY_DELAY)
 
     def test_persistent_404_stops_and_names_the_artifact(self):
@@ -184,7 +183,100 @@ class PlacementTests(unittest.TestCase):
             placement(agents, "controller", 0, "b" * 40)
 
 
+class ForkAdmissionTests(unittest.TestCase):
+    def test_only_protected_approved_fork_caller_can_admit_current_fork_source(self):
+        admit = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))["admit_pr"]
+        sha = "a" * 40
+        pr = {"number": 12, "state": "open", "user": {"login": "outside"},
+              "head": {"sha": sha, "repo": {"full_name": "outside/skippy"}}}
+        caller = "Mesh-LLM/skippy/.github/workflows/fork-native.yml@refs/heads/main"
+        for event, workflow, allowed in [("workflow_run", caller, True),
+                                         ("pull_request_target", caller, False),
+                                         ("pull_request", caller, False),
+                                         ("workflow_run", caller.replace("main", "feature"), False),
+                                         ("workflow_run", caller.replace("fork-native", "other"), False)]:
+            with self.subTest(event=event, workflow=workflow), \
+                    patch.dict(os.environ, GITHUB_EVENT_NAME=event, GITHUB_WORKFLOW_REF=workflow, APPROVED_FORK_PR="12"), \
+                    patch.dict(admit.__globals__, github=Mock(side_effect=[pr if allowed else [pr], pr])):
+                if allowed:
+                    admit(sha)
+                else:
+                    with self.assertRaisesRegex(ValueError, "protected approved-fork controller"):
+                        admit(sha)
+        with patch.dict(os.environ, GITHUB_EVENT_NAME="workflow_run", GITHUB_WORKFLOW_REF=caller, APPROVED_FORK_PR="12"), \
+                patch.dict(admit.__globals__, github=Mock(side_effect=[pr, {"head": {"sha": "b" * 40}}])):
+            with self.assertRaisesRegex(ValueError, "PR head changed"):
+                admit(sha)
+
+
 class ReleaseAdmissionTests(unittest.TestCase):
+    def setUp(self):
+        self.admission = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))
+        self.admit = self.admission["admit_release_candidate"]
+        self.candidate, self.base = "a" * 40, "b" * 40
+        self.env = {
+            "GITHUB_EVENT_NAME": "workflow_dispatch",
+            "GITHUB_REF": "refs/heads/main",
+            "GITHUB_WORKFLOW_REF": "Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/main",
+            "GITHUB_RUN_ID": "123",
+            "GITHUB_SHA": self.base,
+        }
+        self.ref = {"object": {"sha": self.candidate}}
+        self.commit = {"parents": [{"sha": self.base}], "message": "Release\n\nSkippy-Release-Run: 123"}
+
+    def test_staged_commit_from_manual_or_scheduled_release_is_admitted(self):
+        for event in ("workflow_dispatch", "schedule"):
+            github = Mock(side_effect=[self.ref, self.commit])
+            with self.subTest(event=event), patch.dict(os.environ, {**self.env, "GITHUB_EVENT_NAME": event}), \
+                    patch.dict(self.admit.__globals__, github=github):
+                self.admit(self.candidate)
+            self.assertEqual([call.args[0] for call in github.call_args_list], [
+                "repos/Mesh-LLM/skippy/git/ref/heads/release-candidates/123",
+                f"repos/Mesh-LLM/skippy/git/commits/{self.candidate}",
+            ])
+
+    def test_other_events_refs_and_workflows_are_rejected_before_api_access(self):
+        contexts = [
+            {"GITHUB_EVENT_NAME": event}
+            for event in ("push", "pull_request", "pull_request_target", "workflow_run", "workflow_call")
+        ] + [
+            {"GITHUB_REF": "refs/heads/branch"},
+            {"GITHUB_WORKFLOW_REF": "Mesh-LLM/skippy/.github/workflows/inference.yml@refs/heads/main"},
+            {"GITHUB_WORKFLOW_REF": "Mesh-LLM/skippy/.github/workflows/release.yml@refs/heads/branch"},
+        ]
+        for context in contexts:
+            github = Mock()
+            with self.subTest(context=context), patch.dict(os.environ, {**self.env, **context}), \
+                    patch.dict(self.admit.__globals__, github=github):
+                with self.assertRaisesRegex(ValueError, "protected Release dispatch or schedule"):
+                    self.admit(self.candidate)
+                github.assert_not_called()
+
+    def test_scheduled_release_requires_exact_candidate_parent_and_run_identity(self):
+        mismatches = [
+            ({"object": {"sha": "c" * 40}}, self.commit),
+            (self.ref, {**self.commit, "parents": [{"sha": "c" * 40}]}),
+            (self.ref, {**self.commit, "parents": [{"sha": self.base}, {"sha": "c" * 40}]}),
+            (self.ref, {**self.commit, "message": "Release\n\nSkippy-Release-Run: 124"}),
+        ]
+        for ref, commit in mismatches:
+            with self.subTest(ref=ref, commit=commit), \
+                    patch.dict(os.environ, {**self.env, "GITHUB_EVENT_NAME": "schedule"}), \
+                    patch.dict(self.admit.__globals__, github=Mock(side_effect=[ref, commit])):
+                with self.assertRaisesRegex(ValueError, "does not belong"):
+                    self.admit(self.candidate)
+
+    def test_scheduled_candidate_uses_release_profile_and_candidate_source(self):
+        admit = self.admission["admit"]
+        planner, output = Mock(), Mock()
+        with patch.dict(os.environ, {**self.env, "GITHUB_EVENT_NAME": "schedule",
+                                   "GITHUB_EVENT_PATH": "event.json", "RELEASE_CANDIDATE": self.candidate}), \
+                patch.dict(admit.__globals__, read_json=Mock(return_value={}), plan=planner,
+                           github=Mock(side_effect=[self.ref, self.commit]), output=output):
+            admit()
+        planner.assert_called_once_with("release", self.candidate)
+        output.assert_called_once_with(source=self.candidate, profile="release", publication="false")
+
     def test_only_the_staged_commit_from_protected_release_dispatch_is_admitted(self):
         admission = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))
         admit = admission["admit_release_candidate"]
@@ -206,8 +298,35 @@ class ReleaseAdmissionTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "does not belong"):
                     admit("c" * 40)
                 with patch.dict(os.environ, GITHUB_REF="refs/heads/branch"):
-                    with self.assertRaisesRegex(ValueError, "protected Release run"):
+                    with self.assertRaisesRegex(ValueError, "protected Release dispatch or schedule"):
                         admit(candidate)
+
+
+class MetalAdmissionTests(unittest.TestCase):
+    def test_available_memory_is_bounded_by_vm_stats_and_metal_budget(self):
+        stats = "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 3.\nPages inactive: 5.\n"
+        self.assertEqual(inference_metal.available_memory(stats, 2**20), 8 * 16384)
+        self.assertEqual(inference_metal.available_memory(stats, 65536), 65536)
+        with self.assertRaisesRegex(ValueError, "could not be measured"):
+            inference_metal.available_memory("invalid", 65536)
+
+    def test_rejects_the_wrong_apple_chip(self):
+        with patch.object(inference_metal.platform, "system", return_value="Darwin"), \
+             patch.object(inference_metal.platform, "machine", return_value="arm64"), \
+             patch.object(inference_metal, "capture", return_value="Apple M5 Max\n"):
+            with self.assertRaisesRegex(ValueError, "Apple M3 Ultra"):
+                inference_metal.device_and_budget()
+
+    def test_comparisons_take_any_apple_m_series_chip_with_its_own_metal_gpu(self):
+        with patch.object(inference_metal.platform, "system", return_value="Darwin"), \
+             patch.object(inference_metal.platform, "machine", return_value="arm64"):
+            with patch.object(inference_metal, "capture", return_value="Apple M1 Ultra\n"):
+                self.assertEqual(inference_metal.chip(), "Apple M1 Ultra")
+            with patch.object(inference_metal, "capture", return_value="Apple Paravirtual device\n1024\n"):
+                with self.assertRaisesRegex(ValueError, "Metal device"):
+                    inference_metal.working_set("Apple M1 Ultra")
+
+
 
 
 if __name__ == "__main__":
