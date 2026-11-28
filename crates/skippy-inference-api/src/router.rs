@@ -793,6 +793,9 @@ pub(crate) fn request_context(
     observe_stream_usage: bool,
 ) -> InferenceRequestContext {
     let mut context = InferenceRequestContext::with_request_id(request_id);
+    if let Some(id) = crate::http_exchange::current_host_exchange_id() {
+        context.publish_exchange_id(id);
+    }
     if trusted_agent_session {
         context = context.with_trusted_agent_session();
     }
@@ -899,7 +902,12 @@ async fn frontend_lifecycle_middleware(
         .extensions()
         .get::<ExchangeIdExtension>()
         .map(|extension| extension.0.clone());
-    if let Some(exchange_id) = &exchange_id
+    let host_exchange_id = response
+        .extensions()
+        .get::<crate::http_exchange::HostExchangeId>()
+        .map(|id| id.0.clone());
+    if host_exchange_id.is_none()
+        && let Some(exchange_id) = &exchange_id
         && let Ok(value) = HeaderValue::from_str(exchange_id)
     {
         response
@@ -913,7 +921,7 @@ async fn frontend_lifecycle_middleware(
             .extensions()
             .get::<TerminalUsage>()
             .map(|usage| usage.0);
-        lifecycle.finish_with_usage(response.status(), usage, exchange_id);
+        lifecycle.finish_with_usage(response.status(), usage, host_exchange_id.or(exchange_id));
     }
     tracing::info!(
         request_id = %request_id.as_ref(),
