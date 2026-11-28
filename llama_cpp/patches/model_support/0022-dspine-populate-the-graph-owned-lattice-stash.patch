@@ -1,4 +1,4 @@
-From 9d0a0b257c4867e09e86e4282fbbd3bb6e5c28df Mon Sep 17 00:00:00 2001
+From cfde64498b78539e8d42b2172c5289fa08e81d4e Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Wed, 25 Nov 2026 07:49:52 +1100
 Subject: [PATCH] dspine: populate the graph-owned lattice stash
@@ -8,10 +8,10 @@ Subject: [PATCH] dspine: populate the graph-owned lattice stash
  1 file changed, 2 deletions(-)
 
 diff --git a/src/models/dflash.cpp b/src/models/dflash.cpp
-index ab1cc749d..961a6e7ab 100644
+index 797a306b5..6a493a353 100644
 --- a/src/models/dflash.cpp
 +++ b/src/models/dflash.cpp
-@@ -631,8 +631,6 @@ ggml_tensor * llama_model_dflash::graph_base::build_layers(ggml_tensor * tok_emb
+@@ -707,8 +707,6 @@ ggml_tensor * llama_model_dflash::graph_base::build_layers(ggml_tensor * tok_emb
      }
      cb(inpL, "inp_noise_embd", -1);
  
@@ -21,5 +21,5 @@ index ab1cc749d..961a6e7ab 100644
          const auto & layer = model.layers[il];
  
 -- 
-2.56.0
+2.56.1
 

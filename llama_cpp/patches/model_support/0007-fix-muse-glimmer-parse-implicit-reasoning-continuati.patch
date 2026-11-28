@@ -1,4 +1,4 @@
-From 3b1f087fbf3ac465230f530a3fa0015d9f03c9ea Mon Sep 17 00:00:00 2001
+From 7276b07c4444878681870845560cc682a6f496f2 Mon Sep 17 00:00:00 2001
 From: James Dumay <jameswdumay@gmail.com>
 Date: Sat, 17 Oct 2026 03:37:10 +1100
 Subject: [PATCH] fix(muse-glimmer): parse implicit reasoning continuations
@@ -25,10 +25,10 @@ index a1ee40f49..f31845702 100644
              p.rule("analysis", p.literal(" to=self") + message + p.content(p.until(eom)) + eom);
          }
 diff --git a/tests/test-chat.cpp b/tests/test-chat.cpp
-index 2a272cb51..f904edd06 100644
+index 5c48dba96..d079742f5 100644
 --- a/tests/test-chat.cpp
 +++ b/tests/test-chat.cpp
-@@ -7509,6 +7509,12 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
+@@ -7742,6 +7742,12 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
              .expect(message_assist)
              .run();
  

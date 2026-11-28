@@ -122,6 +122,12 @@ fn rejects_pre_workload_abi_even_with_the_same_major_and_minor() {
 }
 
 #[test]
+fn rejects_pre_b12780_quantization_layout() {
+    // ABI 0.1.87 predates b12780's enlarged, by-value quantization params.
+    assert!(!runtime_abi_supported(version(0, 1, 87)));
+}
+
+#[test]
 #[cfg(not(feature = "dynamic-runtime"))]
 fn linked_native_abi_matches_the_rust_facade() {
     // SAFETY: The statically linked symbol takes no arguments and owns no
@@ -130,6 +136,19 @@ fn linked_native_abi_matches_the_rust_facade() {
     assert_eq!(native.major, ABI_VERSION_MAJOR);
     assert_eq!(native.minor, ABI_VERSION_MINOR);
     assert_eq!(native.patch, ABI_VERSION_PATCH);
+}
+
+#[test]
+#[cfg(not(feature = "dynamic-runtime"))]
+fn native_quantize_defaults_cross_the_ffi_boundary() {
+    // SAFETY: the pinned native defaults query returns an owned plain struct
+    // without allocating or borrowing model state.
+    let params = unsafe { crate::llama_model_quantize_default_params() };
+    assert!(params.quantize_output_tensor);
+    assert_eq!(params.target_bpw, -1.0);
+    assert_eq!(params.target_size, -1);
+    assert!(params.abort_callback.is_none());
+    assert!(params.abort_callback_data.is_null());
 }
 
 #[test]

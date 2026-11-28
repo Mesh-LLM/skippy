@@ -1,4 +1,4 @@
-From 6637989576fe454545fb1ff9d67514133a23c378 Mon Sep 17 00:00:00 2001
+From 962143862b7b63f53ec1b78827ff9c06169aea69 Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Wed, 25 Nov 2026 07:49:52 +1100
 Subject: [PATCH] cachegen: import only into empty KV cells
@@ -10,7 +10,7 @@ Subject: [PATCH] cachegen: import only into empty KV cells
  3 files changed, 40 insertions(+), 7 deletions(-)
 
 diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
-index 90d93fdf4..023eedcc4 100644
+index 0099261f9..deed32cbb 100644
 --- a/src/llama-kv-cache.cpp
 +++ b/src/llama-kv-cache.cpp
 @@ -1298,7 +1298,7 @@ std::vector<uint32_t> llama_kv_cache::find_chunked_cells(
@@ -43,7 +43,7 @@ index 90d93fdf4..023eedcc4 100644
          error = "failed to allocate KV cache cells for CacheGen page";
          return false;
 diff --git a/src/llama-kv-cache.h b/src/llama-kv-cache.h
-index fcff5365b..c2535892d 100644
+index 1343a605f..52c06ffa4 100644
 --- a/src/llama-kv-cache.h
 +++ b/src/llama-kv-cache.h
 @@ -274,7 +274,7 @@ public:
@@ -125,5 +125,5 @@ index 43cc3f7d6..f0d28e15c 100644
      std::unique_ptr<llama_kv_cache> mla_kv = make_cache(*model, mla_hparams);
      if (!populate(*mla_kv, page_token_count)) {
 -- 
-2.56.0
+2.56.1
 

@@ -1,4 +1,4 @@
-From b6bedeb040834a5df0a7d41a1417e71c3eaa09e4 Mon Sep 17 00:00:00 2001
+From 9e4d9e67ba23c1853ae917cb4e385d05a4de3eda Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Thu, 12 Nov 2026 15:55:33 +1100
 Subject: [PATCH] tests: check row-list attention over the lists a unified KV
@@ -31,10 +31,10 @@ Claude-Session: https://claude.ai/code/session_01QA3dWey3RBtBgDz1Tery9Y
  2 files changed, 113 insertions(+), 5 deletions(-)
 
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 687681d2a..a80911aa4 100644
+index 35dda15c4..868abee4e 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
-@@ -409,6 +409,11 @@ if (GGML_METAL AND NOT GGML_BACKEND_DL)
+@@ -410,6 +410,11 @@ if (GGML_METAL AND NOT GGML_BACKEND_DL)
  endif()
  
  llama_build(test-backend-ops.cpp LINK ggml Threads::Threads)
@@ -47,10 +47,10 @@ index 687681d2a..a80911aa4 100644
  llama_build_and_test(test-backend-tensor.cpp LINK ggml)
  llama_build_and_test(test-sleep.cpp LINK ggml)
 diff --git a/tests/test-backend-ops.cpp b/tests/test-backend-ops.cpp
-index 91ff4c86a..4b1994475 100644
+index 084037eeb..f14ba7db5 100644
 --- a/tests/test-backend-ops.cpp
 +++ b/tests/test-backend-ops.cpp
-@@ -9420,11 +9420,8 @@ struct test_flash_attn_ext_kv_rows : public test_case {
+@@ -10112,11 +10112,8 @@ struct test_flash_attn_ext_kv_rows : public test_case {
          return out;
      }
  
@@ -64,7 +64,7 @@ index 91ff4c86a..4b1994475 100644
          std::vector<int32_t> order(n_cells);
          for (int64_t s = 0; s < n_slices; ++s) {
              for (int64_t i = 0; i < n_cells; ++i) {
-@@ -9436,6 +9433,13 @@ struct test_flash_attn_ext_kv_rows : public test_case {
+@@ -10128,6 +10125,13 @@ struct test_flash_attn_ext_kv_rows : public test_case {
                  rows[s*kv + i] = order[i];
              }
          }
@@ -78,7 +78,7 @@ index 91ff4c86a..4b1994475 100644
  
          for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != NULL; t = ggml_get_next_tensor(ctx, t)) {
              if (t->view_src) {
-@@ -9465,6 +9469,91 @@ struct test_flash_attn_ext_kv_rows : public test_case {
+@@ -10275,6 +10279,91 @@ struct test_flash_attn_ext_indexed_bias : public test_case {
      }
  };
  
@@ -170,7 +170,7 @@ index 91ff4c86a..4b1994475 100644
  // GGML_OP_CROSS_ENTROPY_LOSS
  struct test_cross_entropy_loss : public test_case {
      const ggml_type type;
-@@ -13436,6 +13525,20 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
+@@ -14521,6 +14610,20 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
          }
      }
  

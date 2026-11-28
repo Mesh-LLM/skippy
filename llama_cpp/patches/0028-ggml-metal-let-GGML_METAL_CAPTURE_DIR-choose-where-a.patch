@@ -1,4 +1,4 @@
-From de3dbee11a0dd568cdf53c1eb8b6306861784cfc Mon Sep 17 00:00:00 2001
+From 251de2bf0b0b3c173a61c5fe338e285e3bc3cbc4 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Sun, 8 Nov 2026 11:03:23 +1100
 Subject: [PATCH] ggml-metal: let GGML_METAL_CAPTURE_DIR choose where a capture
@@ -15,7 +15,7 @@ Claude-Session: https://claude.ai/code/session_01QA3dWey3RBtBgDz1Tery9Y
  1 file changed, 4 insertions(+), 1 deletion(-)
 
 diff --git a/ggml/src/ggml-metal/ggml-metal-context.m b/ggml/src/ggml-metal/ggml-metal-context.m
-index f89c8ebe6..063d458a8 100644
+index 539aca161..fdaf0fc14 100644
 --- a/ggml/src/ggml-metal/ggml-metal-context.m
 +++ b/ggml/src/ggml-metal/ggml-metal-context.m
 @@ -642,7 +642,10 @@ enum ggml_status ggml_metal_graph_compute(ggml_metal_t ctx, struct ggml_cgraph *

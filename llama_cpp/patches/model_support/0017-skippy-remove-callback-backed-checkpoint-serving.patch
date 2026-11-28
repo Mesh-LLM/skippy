@@ -1,4 +1,4 @@
-From cf08bad7625351870efe26d416f8e194eea94539 Mon Sep 17 00:00:00 2001
+From 23f1cc2948e39c9f56cfbd608e2bce427325113a Mon Sep 17 00:00:00 2001
 From: Skippy <build@skippy.local>
 Date: Fri, 20 Nov 2026 16:34:51 +1100
 Subject: [PATCH] skippy: remove callback-backed checkpoint serving
@@ -142,7 +142,7 @@ index 5d77f4804..000000000
 -
 -#endif // SKIPPY_MODEL_SOURCE_H
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 316c866f6..3d11e2444 100644
+index ac5698b88..a4952c269 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -56,7 +56,6 @@ add_library(llama
@@ -210,7 +210,7 @@ index c772a3766..8ac906c9e 100644
             SKIPPY_FEATURE_MODEL_LOAD_EVENTS_V2 |
             SKIPPY_FEATURE_KV_EVENTS |
 diff --git a/src/skippy/model_loading.cpp b/src/skippy/model_loading.cpp
-index 5f100aa46..61100a17e 100644
+index 364ae850e..2cf87e158 100644
 --- a/src/skippy/model_loading.cpp
 +++ b/src/skippy/model_loading.cpp
 @@ -35,12 +35,14 @@

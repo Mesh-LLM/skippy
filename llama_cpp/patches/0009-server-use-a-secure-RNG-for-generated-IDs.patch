@@ -1,4 +1,4 @@
-From 6df637d60d143c5b963eae243b5b6c1e13243604 Mon Sep 17 00:00:00 2001
+From 60b601f6388b86d04578e5b94ab09af54010342f Mon Sep 17 00:00:00 2001
 From: benthecarman <benthecarman@live.com>
 Date: Wed, 7 Oct 2026 14:42:10 -0500
 Subject: [PATCH] server: use a secure RNG for generated IDs
@@ -18,7 +18,7 @@ size.
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/tools/server/server-common.cpp b/tools/server/server-common.cpp
-index 95c57f877..5250598bf 100644
+index 8bceea6aa..5721a7bed 100644
 --- a/tools/server/server-common.cpp
 +++ b/tools/server/server-common.cpp
 @@ -175,12 +175,12 @@ std::string random_string() {

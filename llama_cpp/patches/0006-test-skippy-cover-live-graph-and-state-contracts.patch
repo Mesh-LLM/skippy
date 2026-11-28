@@ -1,4 +1,4 @@
-From 6e26ddfb14b7d47446f57454a53f60b407582150 Mon Sep 17 00:00:00 2001
+From 8ba62ae065dbf777d8cf48ccd998aefd6bcf105f Mon Sep 17 00:00:00 2001
 From: James Dumay <james@generalinference.xyz>
 Date: Tue, 13 Oct 2026 22:06:43 +1100
 Subject: [PATCH] test(skippy): cover live graph and state contracts
@@ -7813,7 +7813,7 @@ index 000000000..21f659cbd
 +    return result;
 +}
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 5b997e91b..4733ae088 100644
+index 2e0edcb49..742ca1737 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
 @@ -181,7 +181,16 @@ set(LLAMA_CONTEXT_TEST_SRC
@@ -7962,7 +7962,7 @@ index b9a407182..7cc5c57f6 100644
  
  static void test_cohere_reasoning_detection(testing & t) {
 diff --git a/tests/test-chat.cpp b/tests/test-chat.cpp
-index 11fa68f6a..e61bde084 100644
+index 83c11cc2d..291b7a753 100644
 --- a/tests/test-chat.cpp
 +++ b/tests/test-chat.cpp
 @@ -518,6 +518,21 @@ static common_chat_tool special_function_tool{
@@ -8065,7 +8065,7 @@ index 11fa68f6a..e61bde084 100644
  static void test_template_output_peg_parsers(bool detailed_debug) {
      LOG_DBG("%s\n", __func__);
  
-@@ -4849,6 +4898,15 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
+@@ -5058,6 +5107,15 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
      {
          auto tst = peg_tester("models/templates/GLM-4.7-Flash.jinja", detailed_debug);
  
@@ -8081,7 +8081,7 @@ index 11fa68f6a..e61bde084 100644
          // Pure content (no reasoning)
          tst.test("Hello, world!\nWhat's up?")
              .enable_thinking(false)
-@@ -4875,6 +4933,70 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
+@@ -5084,6 +5142,70 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
              .expect_reconstruction()
              .run();
  
@@ -8152,7 +8152,7 @@ index 11fa68f6a..e61bde084 100644
          // Tool call with reasoning (forced-open mode)
          tst.test(
                 "I'm\nthinking</think>"
-@@ -5079,7 +5201,7 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
+@@ -5288,7 +5410,7 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
                  "Thinking.\n"
                  "</think>"
                  "<tool_call>get_weather"
@@ -8161,7 +8161,7 @@ index 11fa68f6a..e61bde084 100644
                  "</tool_call>\n";
  
              bool got_runtime_error = false;
-@@ -8402,6 +8524,41 @@ static void test_template_generation_prompt() {
+@@ -8643,6 +8765,41 @@ static void test_template_generation_prompt() {
          check(tmpls, continuation_content(),   "<|im_start|>assistant\n<think>\nI'm thinking\n</think>\n\nHello, ");
          check(tmpls, continuation_reasoning(), "<|im_start|>assistant\n<think>\nI'm");
      }
@@ -8203,7 +8203,7 @@ index 11fa68f6a..e61bde084 100644
  }
  
  // Test the developer role to system workaround with a simple mock template
-@@ -9027,6 +9184,7 @@ static void test_msg_diffs_compute() {
+@@ -9441,6 +9598,7 @@ static void test_msg_diffs_compute() {
  int main(int argc, char ** argv) {
      bool detailed_debug    = false;
      bool only_run_filtered = false;
@@ -8211,7 +8211,7 @@ index 11fa68f6a..e61bde084 100644
  
      // Check for --template and --detailed flags
      for (int i = 1; i < argc; i++) {
-@@ -9044,9 +9202,19 @@ int main(int argc, char ** argv) {
+@@ -9458,9 +9616,19 @@ int main(int argc, char ** argv) {
              g_force_reconstruction_test = true;
              only_run_filtered          = true;
          }
@@ -8503,7 +8503,7 @@ index 624542838..fe4869cc1 100644
      const size_t pos = path.find_last_of("/\\");
      return (pos == std::string::npos ? std::string(".") : path.substr(0, pos)) + "/../scripts/chat_tts_norm.py";
 diff --git a/tests/test-llama-archs.cpp b/tests/test-llama-archs.cpp
-index 6faa8843d..79a5fe5a5 100644
+index e9e7a6cbf..bc15ea0da 100644
 --- a/tests/test-llama-archs.cpp
 +++ b/tests/test-llama-archs.cpp
 @@ -7,12 +7,14 @@
@@ -8597,7 +8597,7 @@ index 6faa8843d..79a5fe5a5 100644
      } else if (arch == LLM_ARCH_DEEPSEEK41) {
          // window-only, Engram, ratio-2 and ratio-1 sources, top-k reuse and a candidate-masked index layer
          n_embd  = 512;
-@@ -333,6 +375,16 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const
+@@ -338,6 +380,16 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const
          n_layer = 3;
      }
  
@@ -8614,7 +8614,7 @@ index 6faa8843d..79a5fe5a5 100644
      uint32_t n_head_kv = n_head;
      if (arch == LLM_ARCH_QWEN3) {
          n_head_kv = 1; // MQA coverage
-@@ -355,7 +407,10 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const
+@@ -360,7 +412,10 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const
      ms.add_kv(LLM_KV_EMBEDDING_LENGTH,          n_embd);
      ms.add_kv(LLM_KV_FEATURES_LENGTH,           n_embd);
      ms.add_kv(LLM_KV_BLOCK_COUNT,               n_layer);
@@ -8626,7 +8626,7 @@ index 6faa8843d..79a5fe5a5 100644
  
      if (arch == LLM_ARCH_K2_HORIZON) {
          ms.add_kv(LLM_KV_ROPE_SCALING_YARN_BETA_FAST, 128.0f);
-@@ -419,7 +474,7 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const
+@@ -432,7 +487,7 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const
      if (arch == LLM_ARCH_DEEPSEEK4 || arch == LLM_ARCH_DEEPSEEK41) {
          ms.add_kv(LLM_KV_ATTENTION_KEY_LENGTH,   n_embd_head);
          ms.add_kv(LLM_KV_ATTENTION_VALUE_LENGTH, n_embd_head);
@@ -8635,7 +8635,7 @@ index 6faa8843d..79a5fe5a5 100644
      } else if (arch == LLM_ARCH_DEEPSEEK2
              || arch == LLM_ARCH_DEEPSEEK32
              || arch == LLM_ARCH_GLM_DSA
-@@ -576,12 +631,45 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const
+@@ -601,12 +656,45 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const
      // note: using a realistic top-k here makes the results unstable and hard to match between CPU and GPU
      //       a large value makes things deterministic since all data is selected by the indexer
      //ms.add_kv(LLM_KV_ATTENTION_INDEXER_TOP_K,        uint32_t(8));
@@ -8682,7 +8682,7 @@ index 6faa8843d..79a5fe5a5 100644
      // mrope sections count rope pairs; Ling 3.0 VL files carry [t, h, w] sections
      // summing to n_rot / 2 (n_rot is 64 in this fixture)
      if (arch == LLM_ARCH_BAILINGMOE3) {
-@@ -589,7 +677,6 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const
+@@ -617,7 +705,6 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const
      } else {
          ms.add_kv(LLM_KV_ROPE_DIMENSION_SECTIONS, std::vector<uint32_t>({n_embd_head/4, n_embd_head/4, n_embd_head/4, n_embd_head/4}));
      }
@@ -8690,7 +8690,7 @@ index 6faa8843d..79a5fe5a5 100644
      if (arch == LLM_ARCH_HY_V4) {
          ms.add_kv(LLM_KV_HYPER_CONNECTION_COUNT,     uint32_t(4));
          ms.add_kv(LLM_KV_HYPER_CONNECTION_EPSILON,   1.0e-6f);
-@@ -615,13 +702,15 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const
+@@ -690,13 +777,15 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const
      }
  
      if (arch == LLM_ARCH_DEEPSEEK4) {
@@ -8713,7 +8713,7 @@ index 6faa8843d..79a5fe5a5 100644
          ms.add_kv(LLM_KV_HASH_LAYER_COUNT,                      uint32_t(0));
          ms.add_kv(LLM_KV_SWIGLU_CLAMP_EXP,                      10.0f);
          ms.add_kv(LLM_KV_EXPERT_WEIGHTS_SCALE,                  1.0f);
-@@ -855,6 +944,16 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const
+@@ -931,6 +1020,16 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const
          ggml_format_name(&t, "convnext.%" PRIu32 ".dw.weight", il);
          gguf_add_tensor(ms.gguf_ctx, &t);
      }
@@ -8730,7 +8730,7 @@ index 6faa8843d..79a5fe5a5 100644
      return ret;
  }
  
-@@ -862,6 +961,61 @@ static bool silent_model_load_progress(float /*progress*/, void * /*user_data*/)
+@@ -938,6 +1037,61 @@ static bool silent_model_load_progress(float /*progress*/, void * /*user_data*/)
      return true;
  }
  
@@ -8792,7 +8792,7 @@ index 6faa8843d..79a5fe5a5 100644
  static std::string get_tmp_gguf_path() {
      static size_t id = 0;
      return (std::filesystem::temp_directory_path() / ("test-llama-archs-" + std::to_string(++id) + ".gguf")).string();
-@@ -895,7 +1049,9 @@ static std::pair<llama_model_ptr, llama_context_ptr> get_model_and_ctx(
+@@ -971,7 +1125,9 @@ static std::pair<llama_model_ptr, llama_context_ptr> get_model_and_ctx(
          struct gguf_context * gguf_ctx, FILE * file, const size_t seed, const float stdev,
          const std::vector<ggml_backend_dev_t> & devs,
          const llama_split_mode split_mode = LLAMA_SPLIT_MODE_LAYER, bool encode = false,
@@ -8803,7 +8803,7 @@ index 6faa8843d..79a5fe5a5 100644
      llama_model_ptr model = get_model(gguf_ctx, file, seed, stdev, devs, split_mode, tensor_buft_overrides);
  
      llama_context_params ctx_params = llama_context_default_params();
-@@ -910,6 +1066,9 @@ static std::pair<llama_model_ptr, llama_context_ptr> get_model_and_ctx(
+@@ -986,6 +1142,9 @@ static std::pair<llama_model_ptr, llama_context_ptr> get_model_and_ctx(
          ctx_params.moe_cache_size = moe_cache_size;
          ctx_params.n_ubatch = 2;
      }
@@ -8813,7 +8813,7 @@ index 6faa8843d..79a5fe5a5 100644
  
      llama_context_ptr lctx(llama_init_from_model(model.get(), ctx_params));
      if (!lctx) {
-@@ -918,6 +1077,17 @@ static std::pair<llama_model_ptr, llama_context_ptr> get_model_and_ctx(
+@@ -994,6 +1153,17 @@ static std::pair<llama_model_ptr, llama_context_ptr> get_model_and_ctx(
      return std::make_pair(std::move(model), std::move(lctx));
  }
  
@@ -8831,7 +8831,7 @@ index 6faa8843d..79a5fe5a5 100644
  static std::vector<float> get_logits(
          llama_model * model, llama_context * lctx, const std::vector<llama_token> & tokens, bool encode = false) {
      const uint32_t n_vocab  = llama_vocab_n_tokens(llama_model_get_vocab(model));
-@@ -1235,7 +1405,21 @@ static bool arch_supported(const llm_arch arch) {
+@@ -1313,7 +1483,21 @@ static bool arch_supported(const llm_arch arch) {
      return true;
  }
  
@@ -8854,7 +8854,7 @@ index 6faa8843d..79a5fe5a5 100644
      struct user_data_t {
          struct {
              ggml_log_callback callback;
-@@ -1279,11 +1463,20 @@ static int save_models(const std::string & arch_filter, const size_t seed, const
+@@ -1357,11 +1541,20 @@ static int save_models(const std::string & arch_filter, const size_t seed, const
                  LOG_INF("%s: %s model (%s) is unsupported, skipping\n", __func__, llama_arch_name(arch), moe ? "MoE" : "dense");
                  continue;
              }
@@ -8876,7 +8876,7 @@ index 6faa8843d..79a5fe5a5 100644
              const std::uintmax_t size = std::filesystem::file_size(path);
              LOG_CNT(" (%.2f MB)\n", (double) size / (1024.0 * 1024.0));
          }
-@@ -1460,6 +1653,12 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
+@@ -1538,6 +1731,12 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
                  char mixed_str[12] = {0};
  
                  bool skip = !arch_supported(arch) || (dc.split_mode == LLAMA_SPLIT_MODE_TENSOR && dc.devs.empty());
@@ -8889,7 +8889,7 @@ index 6faa8843d..79a5fe5a5 100644
                  bool test_executed = false;
                  bool test_ok = true;
                  if (!skip) {
-@@ -1904,6 +2103,9 @@ static int test_kv_shift(const std::string & arch_filter, const size_t seed, con
+@@ -1982,6 +2181,9 @@ static int test_kv_shift(const std::string & arch_filter, const size_t seed, con
      return n_failed == 0 ? 0 : 1;
  }
  
@@ -8899,7 +8899,7 @@ index 6faa8843d..79a5fe5a5 100644
  int main(int argc, char ** argv) {
      // init the logger at max verbosity. filter with a custom callback respecting the user-configure verbosity
      common_log_set_verbosity_thold(LOG_LEVEL_DEBUG);
-@@ -1918,11 +2120,50 @@ int main(int argc, char ** argv) {
+@@ -1996,11 +2198,50 @@ int main(int argc, char ** argv) {
      std::string out;
      const char * target_backend = nullptr;
      bool kv_shift = false;
@@ -8952,7 +8952,7 @@ index 6faa8843d..79a5fe5a5 100644
              usage(argv);
              return 0;
          } else if (strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "--arch") == 0) {
-@@ -2002,8 +2243,89 @@ int main(int argc, char ** argv) {
+@@ -2080,8 +2321,89 @@ int main(int argc, char ** argv) {
      init_normal_pool(seed, stdev);
  
      try {

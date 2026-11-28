@@ -1,4 +1,4 @@
-From c37ff6e042995f03ddc29f38998048d8fe774312 Mon Sep 17 00:00:00 2001
+From 3d5cf0139546378726bdb58c88569ea1ac8a5ffd Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Wed, 18 Nov 2026 20:05:26 +1100
 Subject: [PATCH] skippy: a helper takes a run's tasks only while that run

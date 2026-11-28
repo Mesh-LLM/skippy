@@ -1,4 +1,4 @@
-From 3a5e73a101fcc8d8df7f2bda2287e34ad2caa5b2 Mon Sep 17 00:00:00 2001
+From 316ad71e65fe1da2aec16dd7dda28dfa4b348610 Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Thu, 26 Nov 2026 14:39:36 +1100
 Subject: [PATCH] graph: preserve registered expert scales in explicit overload
@@ -12,10 +12,10 @@ Subject: [PATCH] graph: preserve registered expert scales in explicit overload
  create mode 100644 src/skippy/tests/expert_scales.cpp
 
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 735f3081d..cccbf74c1 100644
+index 86e25d60f..37542b3ce 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -463,12 +463,19 @@ if (LLAMA_STAGE_BUILD_TESTS)
+@@ -384,12 +384,19 @@ if (LLAMA_STAGE_BUILD_TESTS)
          NAME skippy_stage_slice_plan
          COMMAND skippy-stage-slice-plan)
  
@@ -36,10 +36,10 @@ index 735f3081d..cccbf74c1 100644
      add_test(NAME skippy_decode_input_width COMMAND skippy-graph-build-inputs --input-width)
  
 diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
-index de693bf4b..46d304c0e 100644
+index 2eab7af70..7deb06595 100644
 --- a/src/llama-graph.cpp
 +++ b/src/llama-graph.cpp
-@@ -2434,6 +2434,10 @@ ggml_tensor * llm_graph_context::build_lora_mm_id(
+@@ -2467,6 +2467,10 @@ ggml_tensor * llm_graph_context::build_lora_mm_id(
            ggml_tensor * w_s,
            ggml_tensor * slots,
                   bool   cached) const {
@@ -51,10 +51,10 @@ index de693bf4b..46d304c0e 100644
      ggml_tensor * cur_mm = build_hadamard_input(w, cur);
      // the experts in the MoE cache are selected by their slots
 diff --git a/src/llama-graph.h b/src/llama-graph.h
-index dc816099e..b8fe5d263 100644
+index b6833e580..2071b8bd0 100644
 --- a/src/llama-graph.h
 +++ b/src/llama-graph.h
-@@ -1387,6 +1387,7 @@ struct llm_graph_context {
+@@ -1400,6 +1400,7 @@ struct llm_graph_context {
                ggml_tensor * ids,
                ggml_tensor * slots  = nullptr,
                       bool   cached = true) const;
@@ -163,5 +163,5 @@ index 000000000..ac9a7824e
 +    return check_expert_scales(false) && check_expert_scales(true) ? 0 : 1;
 +}
 -- 
-2.56.0
+2.56.1
 

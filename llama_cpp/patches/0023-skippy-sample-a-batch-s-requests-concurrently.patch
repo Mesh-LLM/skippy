@@ -1,4 +1,4 @@
-From e8862a25a2ba0d5ff4398e34170e96aa8db3d140 Mon Sep 17 00:00:00 2001
+From 0ce0c9361073f4887b6ddf1e0a22d594ec003355 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Thu, 5 Nov 2026 01:00:00 +1100
 Subject: [PATCH] skippy: sample a batch's requests concurrently
@@ -78,10 +78,10 @@ index 9321a2102..e17e72c31 100644
          NAME skippy_generate_qwen3_fixture
          COMMAND skippy-model-fixture-generator
 diff --git a/src/llama-context.cpp b/src/llama-context.cpp
-index b36f1b649..250c2bb26 100644
+index c4230801d..fd08598b2 100644
 --- a/src/llama-context.cpp
 +++ b/src/llama-context.cpp
-@@ -1004,8 +1004,26 @@ void llama_context::sched_reserve(const skippy_graph_build_inputs & graph_build_
+@@ -1033,8 +1033,26 @@ void llama_context::sched_reserve(const skippy_graph_build_inputs & graph_build_
              __func__, (t_end_us - t_start_us)/1000.0, ggml_backend_sched_get_n_copies(sched.get()));
  }
  
@@ -109,7 +109,7 @@ index b36f1b649..250c2bb26 100644
          return;
      }
  
-@@ -3013,6 +3031,9 @@ bool llama_context::extract_layer_inputs(const llm_graph_result * res, size_t to
+@@ -3035,6 +3053,9 @@ bool llama_context::extract_layer_inputs(const llm_graph_result * res, size_t to
  }
  
  void llama_context::output_reorder() {
@@ -171,10 +171,10 @@ index 75cea4e84..e09428d41 100644
      const llama_cparams & get_cparams() const;
      const skippy_graph_build_inputs & get_graph_build_inputs() const;
 diff --git a/src/llama-graph.h b/src/llama-graph.h
-index 45996f1b4..4ce46d522 100644
+index e1cc92a17..9c68abc0c 100644
 --- a/src/llama-graph.h
 +++ b/src/llama-graph.h
-@@ -1787,7 +1787,7 @@ struct llm_graph_context {
+@@ -1802,7 +1802,7 @@ struct llm_graph_context {
                  int32_t   state_size,
                  int32_t   n_seqs,
              skippy_state_kind kind, int il,

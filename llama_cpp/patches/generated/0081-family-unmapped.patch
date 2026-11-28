@@ -332,7 +332,7 @@ index c6a6d6a97521fa8cfee3c8073e7ccfd9ff594108..a88cb1dd2e3636258be19c27b6102b50
      cur = inpL;
  
 diff --git a/src/models/deepseek41.cpp b/src/models/deepseek41.cpp
-index e481cbd1de106d32a06a8c7075163beb29cb9bdd..9cf6bf4cd8cd966172a48fb4c117655670c17f3c 100644
+index c9c00b88558b44cad40439f7d30fa3658d3fdb7d..2a2aa48a374a651b9df0c870cd5f478a09b65f35 100644
 --- a/src/models/deepseek41.cpp
 +++ b/src/models/deepseek41.cpp
 @@ -832,6 +832,8 @@ llama_model_deepseek41::graph::graph(const llm_graph_params & params) :
@@ -563,10 +563,10 @@ index 920827dc58d857cfd77b213820358850dab364aa..84110ebdb1b54232b11ea1ccdfded2e2
  
      cur = build_norm(inpL, model.output_norm, nullptr, LLM_NORM_RMS, -1);
 diff --git a/src/models/glm5-next.cpp b/src/models/glm5-next.cpp
-index 6b1e1f62813e2e562b0a0a13b8d6861f4d2bdcde..84aa75671cac5b399c98b7652ce35b900a1c6a81 100644
+index 452aea5abfb4f5cbc8b89418108691ecbb79af54..15e92ab6cc458e77ee45e6f2804fdc0d4e3f096c 100644
 --- a/src/models/glm5-next.cpp
 +++ b/src/models/glm5-next.cpp
-@@ -699,6 +699,8 @@ llama_model_glm5_next::graph::graph(const llm_graph_params & params) :
+@@ -713,6 +713,8 @@ llama_model_glm5_next::graph::graph(const llm_graph_params & params) :
      ggml_tensor * prev_sel = nullptr;
  
      for (int il = 0; il < n_layer; ++il) {
@@ -575,7 +575,7 @@ index 6b1e1f62813e2e562b0a0a13b8d6861f4d2bdcde..84aa75671cac5b399c98b7652ce35b90
          // Speculative drafters (DFlash, EAGLE3) read the stream-mean residual entering each layer.
          if ((size_t) il < cparams.embeddings_layer_inp.size() && cparams.embeddings_layer_inp[il]) {
              res->t_layer_inp[il] = build_hc_mean(inpL);
-@@ -772,6 +774,7 @@ llama_model_glm5_next::graph::graph(const llm_graph_params & params) :
+@@ -786,6 +788,7 @@ llama_model_glm5_next::graph::graph(const llm_graph_params & params) :
          inpL = build_hc_post(cur, residual, ffn_hc.post, ffn_hc.comb, il);
          inpL = build_cvec(inpL, il);
          cb(inpL, "l_out", il);
@@ -605,10 +605,10 @@ index 711a148a28bd1aa2c1dccf2e3b21803aac4a4185..1b8d70b304628707d8d71efbd83fda0e
  
      cur = build_norm(inpL,
 diff --git a/src/models/grok.cpp b/src/models/grok.cpp
-index 42486e60beadb7cc4158a963e8caf86283434a26..c40d10de182367c20e7bc4616e8f021576a86d95 100644
+index 36debf2ad2085874ddea5755038fb9f147dae701..dd1832acbdbf50d76cbf2625e83351878bdb19d0 100644
 --- a/src/models/grok.cpp
 +++ b/src/models/grok.cpp
-@@ -102,6 +102,8 @@ llama_model_grok::graph::graph(const llm_graph_params & params) : llm_graph_cont
+@@ -99,6 +99,8 @@ llama_model_grok::graph::graph(const llm_graph_params & params) : llm_graph_cont
      ggml_tensor * inp_out_ids = build_inp_out_ids();
  
      for (int il = 0; il < n_layer; ++il) {
@@ -617,7 +617,7 @@ index 42486e60beadb7cc4158a963e8caf86283434a26..c40d10de182367c20e7bc4616e8f0215
          ggml_tensor * inpSA = inpL;
  
          // norm
-@@ -186,6 +188,7 @@ llama_model_grok::graph::graph(const llm_graph_params & params) : llm_graph_cont
+@@ -183,6 +185,7 @@ llama_model_grok::graph::graph(const llm_graph_params & params) : llm_graph_cont
  
          // input for next layer
          inpL = cur;
@@ -646,6 +646,27 @@ index 00659c88eb53c377a1d30e9bdba4e2670ce0cb65..dd2f5ab2f7bb996a77aee08b3659e6ab
      }
      cur = inpL;
  
+diff --git a/src/models/hy-v4-flash.cpp b/src/models/hy-v4-flash.cpp
+index 7f5c39232ec6786195522f1faa0ef529c971f8fb..3ef05560fbba7425ac1cc3eec85498b7184e8cde 100644
+--- a/src/models/hy-v4-flash.cpp
++++ b/src/models/hy-v4-flash.cpp
+@@ -1011,6 +1011,8 @@ llama_model_hy_v4_flash::graph::graph(const llama_model & model, const llm_graph
+     cb(inpL, "hc_init", -1);
+ 
+     for (int il = 0; il < n_layer; ++il) {
++        begin_block(inpL, il);
++
+         const auto & layer = model.layers[il];
+ 
+         // Engram writes into the streams before the attention pre-mix reads them
+@@ -1050,6 +1052,7 @@ llama_model_hy_v4_flash::graph::graph(const llama_model & model, const llm_graph
+ 
+         inpL = build_hc_post(cur, residual, ffn_hc.post, il);
+         cb(inpL, "l_out", il);
++        end_block(inpL, il);
+     }
+ 
+     // prune the output rows after all streams, or after the nextn state when it needs every row
 diff --git a/src/models/hy-v4.cpp b/src/models/hy-v4.cpp
 index de7d87cd03ee978fd70c20f5eb1b2d086158282b..a9e294d655e8f0d0659f7ea78b65f57b40063324 100644
 --- a/src/models/hy-v4.cpp
@@ -668,25 +689,27 @@ index de7d87cd03ee978fd70c20f5eb1b2d086158282b..a9e294d655e8f0d0659f7ea78b65f57b
  
      // prune to the requested output rows once, after all HC streams are done
 diff --git a/src/models/inkling2.cpp b/src/models/inkling2.cpp
-index 618e3686162d2f251bd9659c51adb8d01be423a6..1dccace083fe44709e96d7c581ed1aaed57e2d0a 100644
+index 9960a4fc1d0d9ab667830a425eaddee3cd7d1fbe..419f1b0a3a5462d58c1a12e1bb77311d7593d952 100644
 --- a/src/models/inkling2.cpp
 +++ b/src/models/inkling2.cpp
-@@ -448,7 +448,10 @@ llama_model_inkling2::graph::graph(const llm_graph_params & params) : llm_graph_
+@@ -459,9 +459,12 @@ llama_model_inkling2::graph::graph(const llm_graph_params & params) : llm_graph_
  
      std::vector<ggml_tensor *> blocks;
      for (int il = 0; il < n_layer; ++il) {
 +        begin_block(cur, il);
 +
+         // DSpark target features: the partial block at the layer input
+         res->t_layer_inp[il] = cur;
          cur = build_layer(il, il, cur, blocks);
 +        end_block(cur, il);
      }
  
      build_output(cur, blocks);
 diff --git a/src/models/k2-horizon.cpp b/src/models/k2-horizon.cpp
-index 534efa523a0c316475b05ea8d81a5a2aea099c63..758f8f6045318f7d19d8832b9be73401084ebceb 100644
+index cf82347b7e66fd4764e76555c5b57d21a0da5414..e5b1c085dc3695430f00e86564ed16f1088b2402 100644
 --- a/src/models/k2-horizon.cpp
 +++ b/src/models/k2-horizon.cpp
-@@ -229,6 +229,8 @@ llama_model_k2_horizon::graph::graph(const llm_graph_params & params) : llm_grap
+@@ -227,6 +227,8 @@ llama_model_k2_horizon::graph::graph(const llm_graph_params & params) : llm_grap
      const float kq_scale = 1.0f / sqrtf(float(n_embd_head));
  
      for (int il = 0; il < n_layer; ++il) {
@@ -695,7 +718,7 @@ index 534efa523a0c316475b05ea8d81a5a2aea099c63..758f8f6045318f7d19d8832b9be73401
          const auto & layer = model.layers[il];
  
          res->t_layer_inp[il] = inpL;
-@@ -343,6 +345,7 @@ llama_model_k2_horizon::graph::graph(const llm_graph_params & params) : llm_grap
+@@ -341,6 +343,7 @@ llama_model_k2_horizon::graph::graph(const llm_graph_params & params) : llm_grap
  
          // input for next layer
          inpL = cur;
@@ -704,7 +727,7 @@ index 534efa523a0c316475b05ea8d81a5a2aea099c63..758f8f6045318f7d19d8832b9be73401
  
      cur = k2_horizon_group_rms_norm(ctx0, inpL, model.output_norm, hparams.n_norm_groups, hparams.f_norm_rms_eps);
 diff --git a/src/models/kimi-k31.cpp b/src/models/kimi-k31.cpp
-index 6c2fb474fa27d9ae3b45ef1aea45d8a14af63b4b..e2b312eb43c08853b4672abdd22f57aea8a8f8ff 100644
+index 49e0c747e8ccb03b896c065076e14c016c440fa7..c3ac763ffc971290a18fed26bd0d71c0b60f342a 100644
 --- a/src/models/kimi-k31.cpp
 +++ b/src/models/kimi-k31.cpp
 @@ -308,6 +308,8 @@ llama_model_kimi_k31::graph::graph(const llm_graph_params & params) :
@@ -1291,6 +1314,27 @@ index 4e0b1986da88a67b1820ce968e42dccbe8c8c6bd..292adb2aa1c0e1a7be5a3eb847873fbd
      }
      cur = inpL;
  
+diff --git a/src/models/raon1-mini.cpp b/src/models/raon1-mini.cpp
+index e5b1671ecdd4880eb1af015757427427e7025444..e526d566aa3f2792c08053c85a605d93c3529391 100644
+--- a/src/models/raon1-mini.cpp
++++ b/src/models/raon1-mini.cpp
+@@ -425,6 +425,8 @@ llama_model_raon1_mini::graph::graph(const llm_graph_params & params) : llm_buil
+     GGML_ASSERT(ubatch.n_tokens == ubatch.n_seq_tokens*ubatch.n_seqs);
+ 
+     for (int il = 0; il < n_layer; ++il) {
++        begin_block(inp, il);
++
+         const auto & layer = model.layers[il];
+         ggml_tensor * post;
+         ggml_tensor * comb;
+@@ -465,6 +467,7 @@ llama_model_raon1_mini::graph::graph(const llm_graph_params & params) : llm_buil
+         inp = build_hc_post(inp, cur, post, comb, il);
+         inp = build_cvec(inp, il);
+         cb(inp, "l_out", il);
++        end_block(inp, il);
+     }
+     ggml_tensor * cur = nullptr;
+     for (int64_t i = 0; i < hc; ++i) {
 diff --git a/src/models/refact.cpp b/src/models/refact.cpp
 index 51bb0bad6227bbfc37619bb06e2b43cee915e25b..ec4b6063ea2a131411b0628cf1c04a28f3fa2104 100644
 --- a/src/models/refact.cpp

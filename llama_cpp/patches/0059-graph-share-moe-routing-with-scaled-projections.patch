@@ -1,19 +1,19 @@
-From 750421f5f9979cdef5979a78210797b8143517d6 Mon Sep 17 00:00:00 2001
+From d74c6d38ac18339128e9ab8534095118cb457954 Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Thu, 26 Nov 2026 14:49:56 +1100
 Subject: [PATCH] graph: share MoE routing across optional projection scales
 
 ---
  src/CMakeLists.txt                 |   1 +
- src/llama-graph.cpp                | 424 +++--------------------------
+ src/llama-graph.cpp                | 432 +++--------------------------
  src/skippy/tests/expert_scales.cpp |  96 ++++++-
- 3 files changed, 129 insertions(+), 392 deletions(-)
+ 3 files changed, 133 insertions(+), 396 deletions(-)
 
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index cccbf74c1..a4952c269 100644
+index 37542b3ce..1985b193a 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -468,6 +468,7 @@ if (LLAMA_STAGE_BUILD_TESTS)
+@@ -389,6 +389,7 @@ if (LLAMA_STAGE_BUILD_TESTS)
      target_compile_features(skippy-expert-scales PRIVATE cxx_std_17)
      target_link_libraries(skippy-expert-scales PRIVATE llama)
      add_test(NAME skippy_expert_scales COMMAND skippy-expert-scales)
@@ -22,10 +22,10 @@ index cccbf74c1..a4952c269 100644
      add_executable(skippy-graph-build-inputs
          skippy/tests/graph_build_inputs.cpp)
 diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
-index 46d304c0e..8668bde10 100644
+index 7deb06595..faa236a96 100644
 --- a/src/llama-graph.cpp
 +++ b/src/llama-graph.cpp
-@@ -2893,393 +2893,23 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
+@@ -2926,394 +2926,23 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
           ggml_tensor * selected_experts_in,
           ggml_tensor * post_exp_norm,
                 float   post_exp_norm_eps) const {
@@ -259,7 +259,7 @@ index 46d304c0e..8668bde10 100644
 -                        const float limit = hparams.swiglu_clamp_exp[il];
 -                        constexpr float eps = 1e-6f;
 -                        if (limit > eps) {
--                            if (arch == LLM_ARCH_MAPLE || arch == LLM_ARCH_DEEPSEEK4 || arch == LLM_ARCH_DEEPSEEK41 || arch == LLM_ARCH_GLM5_NEXT || (arch == LLM_ARCH_DFLASH && hparams.dsv4_hc_mult > 0) || arch == LLM_ARCH_HY_V4) {
+-                            if (arch == LLM_ARCH_MAPLE || arch == LLM_ARCH_DEEPSEEK4 || arch == LLM_ARCH_DEEPSEEK41 || arch == LLM_ARCH_GLM5_NEXT || (arch == LLM_ARCH_DFLASH && hparams.dsv4_hc_mult > 0) || arch == LLM_ARCH_HY_V4 || arch == LLM_ARCH_HY_V4_FLASH) {
 -                                cur = ggml_swiglu_clamp(ctx0, cur, up, limit);
 -                            } else {
 -                                up = ggml_clamp(ctx0, up, -limit, limit);
@@ -339,15 +339,16 @@ index 46d304c0e..8668bde10 100644
 -        //       ggml_prec_set_src(experts, GGML_PREC_BF16, 1);
 -        //       the amax op cannot be split across devices, so these architectures are denied -sm tensor [TAG_MOE_AMAX_SCALE]
 -        //       ref: https://github.com/ggml-org/llama.cpp/pull/30656#issuecomment-6269597922
+-        const bool use_amax = llm_arch_mmid_down_bf16(arch) && prec_policy.get_src1(down_exps) != GGML_PREC_BF16;
+-
 -        llm_graph_amax_src1 amax_src1 = { nullptr, nullptr };
 -
--        if (arch == LLM_ARCH_MISTRAL4 || arch == LLM_ARCH_MELLUM || arch == LLM_ARCH_FLINT || arch == LLM_ARCH_LAGUNA) {
+-        if (use_amax) {
 -            amax_src1 = build_amax_src1_f16(cur);
 -            cur = amax_src1.res;
 -        }
 -
 -        ggml_tensor * experts = build_lora_mm_id(down_exps, cur, ids, mm_ids, cached); // [n_embd, n_expert_used, n_tokens]
--        //ggml_prec_set_src(experts, GGML_PREC_BF16, 1); // (see TODO above)
 -        cb(experts, "ffn_moe_down", il);
 -
 -        if (amax_src1.scale_s) {
@@ -436,7 +437,7 @@ index 46d304c0e..8668bde10 100644
  }
  
  ggml_tensor * llm_graph_context::build_moe_ffn(
-@@ -3370,10 +3000,6 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
+@@ -3404,10 +3033,6 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
  
      if (probs_in == nullptr) {
          logits = build_lora_mm(gate_inp, cur); // [n_expert, n_tokens]
@@ -447,7 +448,7 @@ index 46d304c0e..8668bde10 100644
          cb(logits, "ffn_moe_logits", il);
      } else {
          logits = probs_in;
-@@ -3488,6 +3114,8 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
+@@ -3522,6 +3147,8 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
          if (arch == LLM_ARCH_DEEPSEEK41) {
              // model.py Gate.forward: weights / (sum + 1e-20); the sum can fall below the F16 clamp below
              weights_sum = ggml_scale_bias(ctx0, weights_sum, 1.0f, 1e-20f);
@@ -456,7 +457,7 @@ index 46d304c0e..8668bde10 100644
          } else {
              // Avoid division by zero, clamp to smallest number representable by F16
              weights_sum = ggml_clamp(ctx0, weights_sum, 6.103515625e-5, INFINITY);
-@@ -3507,6 +3135,20 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
+@@ -3541,6 +3168,20 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
      //call early so that topk-moe can be used
      ggml_build_forward_expand(gf, weights);
  
@@ -477,6 +478,34 @@ index 46d304c0e..8668bde10 100644
      // compute the expert input before the slot lookup, so that the scheduler prefetches it for the CPU part (the router can read a different tensor)
      ggml_build_forward_expand(gf, cur);
  
+@@ -3621,7 +3262,7 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
+                         const float limit = hparams.swiglu_clamp_exp[il];
+                         constexpr float eps = 1e-6f;
+                         if (limit > eps) {
+-                            if (arch == LLM_ARCH_MAPLE || arch == LLM_ARCH_DEEPSEEK4 || arch == LLM_ARCH_DEEPSEEK41 || arch == LLM_ARCH_GLM5_NEXT || (arch == LLM_ARCH_DFLASH && hparams.dsv4_hc_mult > 0) || arch == LLM_ARCH_HY_V4) {
++                            if (arch == LLM_ARCH_MAPLE || arch == LLM_ARCH_DEEPSEEK4 || arch == LLM_ARCH_DEEPSEEK41 || arch == LLM_ARCH_GLM5_NEXT || (arch == LLM_ARCH_DFLASH && hparams.dsv4_hc_mult > 0) || arch == LLM_ARCH_HY_V4 || arch == LLM_ARCH_HY_V4_FLASH) {
+                                 cur = ggml_swiglu_clamp(ctx0, cur, up, limit);
+                             } else {
+                                 up = ggml_clamp(ctx0, up, -limit, limit);
+@@ -3701,15 +3342,16 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
+         //       ggml_prec_set_src(experts, GGML_PREC_BF16, 1);
+         //       the amax op cannot be split across devices, so these architectures are denied -sm tensor [TAG_MOE_AMAX_SCALE]
+         //       ref: https://github.com/ggml-org/llama.cpp/pull/30656#issuecomment-6269597922
++        const bool use_amax = llm_arch_mmid_down_bf16(arch) && prec_policy.get_src1(down_exps) != GGML_PREC_BF16;
++
+         llm_graph_amax_src1 amax_src1 = { nullptr, nullptr };
+ 
+-        if (arch == LLM_ARCH_MISTRAL4 || arch == LLM_ARCH_MELLUM || arch == LLM_ARCH_FLINT || arch == LLM_ARCH_LAGUNA) {
++        if (use_amax) {
+             amax_src1 = build_amax_src1_f16(cur);
+             cur = amax_src1.res;
+         }
+ 
+         ggml_tensor * experts = build_lora_mm_id(down_exps, cur, ids, down_exps_s, mm_ids, cached); // [n_embd, n_expert_used, n_tokens]
+-        //ggml_prec_set_src(experts, GGML_PREC_BF16, 1); // (see TODO above)
+         cb(experts, "ffn_moe_down", il);
+ 
+         if (amax_src1.scale_s) {
 diff --git a/src/skippy/tests/expert_scales.cpp b/src/skippy/tests/expert_scales.cpp
 index ac9a7824e..43bdac4fa 100644
 --- a/src/skippy/tests/expert_scales.cpp
@@ -591,5 +620,5 @@ index ac9a7824e..43bdac4fa 100644
      return check_expert_scales(false) && check_expert_scales(true) ? 0 : 1;
  }
 -- 
-2.56.0
+2.56.1
 

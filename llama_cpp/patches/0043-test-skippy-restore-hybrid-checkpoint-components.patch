@@ -1,4 +1,4 @@
-From c7ed06ce8cfd2e87454ffa8edd730119ec84ccd5 Mon Sep 17 00:00:00 2001
+From ca823a396c5ab3260b773e469d663a51e68e886f Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Fri, 20 Nov 2026 07:55:59 +1100
 Subject: [PATCH] test-skippy: restore both hybrid checkpoint components

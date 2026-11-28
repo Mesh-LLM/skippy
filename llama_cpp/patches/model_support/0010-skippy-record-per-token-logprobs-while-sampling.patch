@@ -1,4 +1,4 @@
-From eef055f2bcc87f5b24442c4dac307880fc211dd3 Mon Sep 17 00:00:00 2001
+From 8167e6133bd09264c88e982698fc29b2c4e2d1a0 Mon Sep 17 00:00:00 2001
 From: Virgile-pct <pourchetvirgile@gmail.com>
 Date: Wed, 21 Oct 2026 23:42:33 +0200
 Subject: [PATCH] skippy: record per-token logprobs while sampling
@@ -144,7 +144,7 @@ index 1b42f32c0..c1a755c4c 100644
  
  #ifdef __cplusplus
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 041db49bc..48aaa4eab 100644
+index 00b9dac51..37d87b23c 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -89,6 +89,7 @@ add_library(llama
@@ -256,10 +256,10 @@ index 000000000..43260dfc2
 +    return skippy_success(out_error);
 +}
 diff --git a/src/skippy/resident_prefix.cpp b/src/skippy/resident_prefix.cpp
-index 317c96b46..bbd592fe8 100644
+index 57b1d78ac..ebe660b64 100644
 --- a/src/skippy/resident_prefix.cpp
 +++ b/src/skippy/resident_prefix.cpp
-@@ -168,6 +168,7 @@ skippy_status restore_checkpoint(skippy_session * session, int32_t cache_seq_id,
+@@ -172,6 +172,7 @@ skippy_status restore_checkpoint(skippy_session * session, int32_t cache_seq_id,
      session->n_past = static_cast<int32_t>(count);
      session->token_history = std::move(history);
      session->signal_history.clear();

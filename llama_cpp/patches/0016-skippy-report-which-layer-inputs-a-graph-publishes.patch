@@ -1,4 +1,4 @@
-From c772cecc84b1bce5c0832f72c1f1d180efc21b51 Mon Sep 17 00:00:00 2001
+From ca42ae64d6ff7c13ea75c2da89d2a225717b6bce Mon Sep 17 00:00:00 2001
 From: Mesh-LLM CI <ci@mesh-llm.local>
 Date: Thu, 29 Oct 2026 19:55:52 -0400
 Subject: [PATCH] skippy: report published layer inputs including head input
@@ -10,7 +10,7 @@ Subject: [PATCH] skippy: report published layer inputs including head input
  3 files changed, 104 insertions(+), 1 deletion(-)
 
 diff --git a/src/llama-context.cpp b/src/llama-context.cpp
-index b5bf1c84f..dabcf5553 100644
+index 6d32d444d..9ea8710eb 100644
 --- a/src/llama-context.cpp
 +++ b/src/llama-context.cpp
 @@ -25,6 +25,7 @@
@@ -21,7 +21,7 @@ index b5bf1c84f..dabcf5553 100644
  #include <stdexcept>
  #include <string>
  #include <unordered_map>
-@@ -1503,9 +1504,10 @@ void llama_context::set_embeddings_nextn(bool value, bool masked) {
+@@ -1532,9 +1533,10 @@ void llama_context::set_embeddings_nextn(bool value, bool masked) {
  }
  
  void llama_context::set_embeddings_layer_inp(uint32_t lid, bool enable) {
@@ -33,7 +33,7 @@ index b5bf1c84f..dabcf5553 100644
  
      if (cparams.embeddings_layer_inp[lid] == enable) return;
      ++computation_generation;
-@@ -2269,6 +2271,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
+@@ -2291,6 +2293,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
  int llama_context::decode(
          const llama_batch_ext & batch_inp,
          const skippy_graph_build_inputs & graph_build_inputs) {
@@ -41,7 +41,7 @@ index b5bf1c84f..dabcf5553 100644
      if (!memory) {
          LLAMA_LOG_DEBUG("%s: cannot decode batches with this context (calling encode() instead)\n", __func__);
          return encode(batch_inp, graph_build_inputs);
-@@ -3181,6 +3184,43 @@ bool llama_context::get_input_activation_frontier(std::vector<skippy_activation_
+@@ -3203,6 +3206,43 @@ bool llama_context::get_input_activation_frontier(std::vector<skippy_activation_
      return true;
  }
  
@@ -85,7 +85,7 @@ index b5bf1c84f..dabcf5553 100644
  ggml_cgraph * llama_context::graph_reserve(uint32_t                          n_tokens,
                                             uint32_t                          n_seqs,
                                             uint32_t                          n_outputs,
-@@ -5115,6 +5155,10 @@ void llama_set_embeddings_layer_inp(llama_context * ctx, uint32_t lid, bool valu
+@@ -5145,6 +5185,10 @@ void llama_set_embeddings_layer_inp(llama_context * ctx, uint32_t lid, bool valu
      ctx->set_embeddings_layer_inp(lid, value);
  }
  
@@ -129,7 +129,7 @@ index c26fdd615..75cea4e84 100644
      const skippy_graph_build_inputs graph_build_inputs;
      uint64_t computation_generation = 0;
 diff --git a/src/llama-ext.h b/src/llama-ext.h
-index da6387f43..a4486f61e 100644
+index e5f2e6c91..f9c4b0c65 100644
 --- a/src/llama-ext.h
 +++ b/src/llama-ext.h
 @@ -152,6 +152,58 @@ LLAMA_API bool llama_batch_ext_set_decision_group(struct llama_batch_ext * batch

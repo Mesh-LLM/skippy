@@ -1,4 +1,4 @@
-From 6dabea28c98c2f994e3d44d874aebb7b59afda04 Mon Sep 17 00:00:00 2001
+From 44c5b53bb9b9f8db31fb9a68a2598dfd3787b252 Mon Sep 17 00:00:00 2001
 From: Daniel Winter <danielwinterw@gmail.com>
 Date: Sat, 10 Oct 2026 18:34:14 +0100
 Subject: [PATCH] fix(skippy): stop re-attaching backend samplers between

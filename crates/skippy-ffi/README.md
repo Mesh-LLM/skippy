@@ -105,10 +105,17 @@ same Rust crate.
 
 ## ABI Contract
 
-The staged ABI is versioned as `0.1.87`. The patch header in
+The staged ABI is versioned as `0.1.88`. The patch header in
 `llama_cpp/patches/` and the Rust constants in
 `crates/skippy-ffi/src/lib.rs` are the source of truth, so keep this README
 aligned with those files instead of treating it as canonical prose.
+
+ABI `0.1.88` includes llama.cpp b12780's enlarged `llama_model_quantize_params`,
+which crosses the FFI boundary both by value and by pointer. The exact-version
+loader gate rejects `0.1.87` runtimes before resolving or calling these APIs.
+The version covers consumed upstream C layouts as well as Skippy's own exports;
+changes to either require a distinct ABI identity. Rebuild the native runtime
+and callers together from the matching patch recipe.
 
 ABI `0.1.87` removes the callback-backed checkpoint loader. The staged
 model loaders accept GGUF files and GGUF package parts.

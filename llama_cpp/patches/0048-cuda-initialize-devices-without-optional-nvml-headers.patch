@@ -1,4 +1,4 @@
-From 8f04f057c6906cd640b105d6a7ebc46fbb738e5f Mon Sep 17 00:00:00 2001
+From 1fa5f31673367e91dbb49873ebbf42a8cefe02fe Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Wed, 25 Nov 2026 07:18:03 +1100
 Subject: [PATCH] cuda: retain device initialization without optional NVML
@@ -9,10 +9,10 @@ Subject: [PATCH] cuda: retain device initialization without optional NVML
  1 file changed, 15 insertions(+), 1 deletion(-)
 
 diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
-index caf78523d..d0be6ef4b 100644
+index 5086bcde6..655cfd31a 100644
 --- a/ggml/src/ggml-cuda/ggml-cuda.cu
 +++ b/ggml/src/ggml-cuda/ggml-cuda.cu
-@@ -101,8 +101,11 @@
+@@ -100,8 +100,11 @@
  #include <vector>
  
  #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
@@ -24,7 +24,7 @@ index caf78523d..d0be6ef4b 100644
  #endif // !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
  
  static_assert(sizeof(half) == sizeof(ggml_fp16_t), "wrong fp16 size");
-@@ -322,6 +325,7 @@ static ggml_cuda_device_info ggml_cuda_init() {
+@@ -321,6 +324,7 @@ static ggml_cuda_device_info ggml_cuda_init() {
      total_vram = 0;
  
  #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
@@ -32,7 +32,7 @@ index caf78523d..d0be6ef4b 100644
  #if defined(_WIN32)
      // NVML is installed by the driver; its NVSMI directory is not added to PATH on Windows.
      dl_handle_ptr library(LoadLibraryExW(L"nvml.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32));
-@@ -355,10 +359,13 @@ static ggml_cuda_device_info ggml_cuda_init() {
+@@ -354,10 +358,13 @@ static ggml_cuda_device_info ggml_cuda_init() {
      const auto get_brand = reinterpret_cast<decltype(&nvmlDeviceGetBrand)>(get_symbol("nvmlDeviceGetBrand"));
      const bool nvml_initialized = init && shutdown && get_device && get_brand && init() == NVML_SUCCESS;
  
@@ -46,7 +46,7 @@ index caf78523d..d0be6ef4b 100644
          if (!fast_bf16_hardware_available(cc) || !nvml_initialized) {
              return false;
          }
-@@ -376,6 +383,13 @@ static ggml_cuda_device_info ggml_cuda_init() {
+@@ -375,6 +382,13 @@ static ggml_cuda_device_info ggml_cuda_init() {
                                brand == NVML_BRAND_NVIDIA_RTX;
          }
          return prefer_fp32_acc;
@@ -60,7 +60,7 @@ index caf78523d..d0be6ef4b 100644
      };
  #endif // !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
  
-@@ -478,7 +492,7 @@ static ggml_cuda_device_info ggml_cuda_init() {
+@@ -477,7 +491,7 @@ static ggml_cuda_device_info ggml_cuda_init() {
  #endif  // defined(GGML_USE_HIP)
      }
  
@@ -70,5 +70,5 @@ index caf78523d..d0be6ef4b 100644
          (void) shutdown();
      }
 -- 
-2.56.0
+2.56.1
 

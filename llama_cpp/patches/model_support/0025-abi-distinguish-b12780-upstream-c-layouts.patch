@@ -1,0 +1,25 @@
+From cc6c860292ebae40a212b27dc386cfa396ef2c72 Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Sat, 28 Nov 2026 12:09:27 +1100
+Subject: [PATCH] abi: distinguish b12780 upstream C layouts
+
+---
+ include/skippy/common.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/skippy/common.h b/include/skippy/common.h
+index e06e491d5..ee9bb3f1f 100644
+--- a/include/skippy/common.h
++++ b/include/skippy/common.h
+@@ -46,7 +46,7 @@ extern "C" {
+ 
+ #define SKIPPY_ABI_VERSION_MAJOR 0
+ #define SKIPPY_ABI_VERSION_MINOR 1
+-#define SKIPPY_ABI_VERSION_PATCH 87
++#define SKIPPY_ABI_VERSION_PATCH 88
+ 
+ #if defined(_MSC_VER)
+ #define SKIPPY_DEPRECATED(message) __declspec(deprecated(message))
+-- 
+2.56.0
+

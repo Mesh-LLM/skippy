@@ -1,4 +1,4 @@
-From 9b03cc9f85f0157cc2c701bea7708d63c5907451 Mon Sep 17 00:00:00 2001
+From 175231e54b8493fb0a917ddd621214286e210326 Mon Sep 17 00:00:00 2001
 From: Daniel Winter <danielwinterw@gmail.com>
 Date: Thu, 22 Oct 2026 17:15:05 +1100
 Subject: [PATCH] skippy: add Whisper speech recognition
@@ -238,7 +238,7 @@ index 2c9342d91..cc08d3899 100644
  enum skippy_status {
      SKIPPY_STATUS_OK                      = 0,
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 0c4b5c895..041db49bc 100644
+index a961445c6..00b9dac51 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -103,6 +103,7 @@ add_library(llama

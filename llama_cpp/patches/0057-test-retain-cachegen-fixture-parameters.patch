@@ -1,4 +1,4 @@
-From 044c14b507a133e9e20f14cffd2ee6bb25d2f8bf Mon Sep 17 00:00:00 2001
+From d9f08c76b06083ef157e96a5bac6455f25cb821b Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Wed, 25 Nov 2026 13:13:03 +1100
 Subject: [PATCH] test: retain CacheGen fixture parameters through cache
@@ -23,5 +23,5 @@ index 3dcc05c64..094ec9769 100644
      llama_pos pos = kv_capacity;
      llama_seq_id seq = 1;
 -- 
-2.56.0
+2.56.1
 

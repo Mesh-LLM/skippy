@@ -1,4 +1,4 @@
-From b4067dac59da1b8abb7d405220e5a7fa150a5a45 Mon Sep 17 00:00:00 2001
+From 2ee510f8a21b6757513aff4d332554799ebcfbaf Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Wed, 18 Nov 2026 20:03:10 +1100
 Subject: [PATCH] llama: reclaim released chunks before compaction copies rows
@@ -26,7 +26,7 @@ moved rows.
  create mode 100644 tests/test-skippy-kv-release-compact.cpp
 
 diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
-index 7625ddf87..de4ce268a 100644
+index c28ac5f1f..a06758f9d 100644
 --- a/src/llama-kv-cache.cpp
 +++ b/src/llama-kv-cache.cpp
 @@ -675,6 +675,20 @@ void llama_kv_cache::reclaim_chunks(uint32_t stream, const std::vector<uint32_t>
@@ -60,7 +60,7 @@ index 7625ddf87..de4ce268a 100644
                  LLAMA_LOG_DEBUG("%s: compacted %zu KV cells\n", __func__, moves.size());
              }
 diff --git a/src/llama-kv-cache.h b/src/llama-kv-cache.h
-index 6cda2cc51..0ed753c83 100644
+index 21c2e18e5..6d5eccaf7 100644
 --- a/src/llama-kv-cache.h
 +++ b/src/llama-kv-cache.h
 @@ -313,6 +313,7 @@ public:
@@ -72,7 +72,7 @@ index 6cda2cc51..0ed753c83 100644
      void for_each_chunk_range(uint32_t stream, uint32_t chunk0, uint32_t chunk1,
              const std::function<void(ggml_tensor *, size_t, size_t)> & fn) const;
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index a80911aa4..e6bf3aa41 100644
+index 868abee4e..0ca07a326 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
 @@ -195,6 +195,7 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)

@@ -1,4 +1,4 @@
-From 0bcd0c8c941e3c9117ddbfb20a0c31502e5a5ac6 Mon Sep 17 00:00:00 2001
+From 3367ee913365bf8ac6989328e27b40d58d0b761f Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Wed, 25 Nov 2026 11:11:17 +1100
 Subject: [PATCH] models: preserve checkpoint layouts and head scales
@@ -85,5 +85,5 @@ index 684aeed66..a5885cca6 100644
      GGML_ASSERT(head_w != nullptr && "NEMOTRON_H_MOE MTP requires an output projection (own or shared trunk)");
      cur = build_lora_mm(head_w, cur, head_s);
 -- 
-2.56.0
+2.56.1
 

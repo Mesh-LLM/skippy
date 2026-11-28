@@ -1,4 +1,4 @@
-From b1efd6ece1e8741fb0af28ec894cb49d1f40402f Mon Sep 17 00:00:00 2001
+From cea225ff603d5f916a2826f561ab91cc1ed1812d Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Sun, 8 Nov 2026 19:48:49 +1100
 Subject: [PATCH] ggml, skippy: report every backend buffer's life as a trace
@@ -19,10 +19,10 @@ Claude-Session: https://claude.ai/code/session_01QA3dWey3RBtBgDz1Tery9Y
  3 files changed, 132 insertions(+)
 
 diff --git a/ggml/include/ggml-backend.h b/ggml/include/ggml-backend.h
-index f326769a3..4383bd3ff 100644
+index 830ffa1df..208e129c2 100644
 --- a/ggml/include/ggml-backend.h
 +++ b/ggml/include/ggml-backend.h
-@@ -373,6 +373,35 @@ extern "C" {
+@@ -375,6 +375,35 @@ extern "C" {
              ggml_backend_trace_span_callback_t callback,
              void * user_data);
  
@@ -59,7 +59,7 @@ index f326769a3..4383bd3ff 100644
      // Backend registry
      //
 diff --git a/ggml/src/ggml-backend.cpp b/ggml/src/ggml-backend.cpp
-index 1b65dceaf..7b4ef7aba 100644
+index c8c05e442..7b4d3a6d0 100644
 --- a/ggml/src/ggml-backend.cpp
 +++ b/ggml/src/ggml-backend.cpp
 @@ -20,6 +20,7 @@
@@ -68,9 +68,9 @@ index 1b65dceaf..7b4ef7aba 100644
  #include <algorithm>
 +#include <mutex>
  #include <unordered_map>
+ #include <unordered_set>
  #include <vector>
- 
-@@ -233,6 +234,68 @@ ggml_backend_dev_t ggml_backend_buft_get_device(ggml_backend_buffer_type_t buft)
+@@ -234,6 +235,68 @@ ggml_backend_dev_t ggml_backend_buft_get_device(ggml_backend_buffer_type_t buft)
  
  // backend buffer
  
@@ -139,7 +139,7 @@ index 1b65dceaf..7b4ef7aba 100644
  ggml_backend_buffer_t ggml_backend_buffer_init(
                 ggml_backend_buffer_type_t buft,
          struct ggml_backend_buffer_i      iface,
-@@ -245,6 +308,7 @@ ggml_backend_buffer_t ggml_backend_buffer_init(
+@@ -246,6 +309,7 @@ ggml_backend_buffer_t ggml_backend_buffer_init(
          /* .size      = */ size,
          /* .usage     = */ GGML_BACKEND_BUFFER_USAGE_ANY
      };
@@ -147,7 +147,7 @@ index 1b65dceaf..7b4ef7aba 100644
  
      return buffer;
  }
-@@ -257,6 +321,7 @@ void ggml_backend_buffer_free(ggml_backend_buffer_t buffer) {
+@@ -258,6 +322,7 @@ void ggml_backend_buffer_free(ggml_backend_buffer_t buffer) {
      if (buffer == NULL) {
          return;
      }
@@ -155,7 +155,7 @@ index 1b65dceaf..7b4ef7aba 100644
  
      if (buffer->iface.free_buffer != NULL) {
          buffer->iface.free_buffer(buffer);
-@@ -333,6 +398,8 @@ void ggml_backend_buffer_set_usage(ggml_backend_buffer_t buffer, enum ggml_backe
+@@ -334,6 +399,8 @@ void ggml_backend_buffer_set_usage(ggml_backend_buffer_t buffer, enum ggml_backe
          ggml_backend_multi_buffer_set_usage(buffer, usage);
      } else if (ggml_backend_buffer_is_meta(buffer)) {
          ggml_backend_meta_buffer_set_usage(buffer, usage);

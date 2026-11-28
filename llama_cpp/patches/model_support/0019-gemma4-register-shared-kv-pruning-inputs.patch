@@ -1,4 +1,4 @@
-From 15bc36234d59beb17460b8e6e1da9183aa52387b Mon Sep 17 00:00:00 2001
+From 248c32feafadda2df6cb72629181b10e8c4e699a Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Wed, 25 Nov 2026 07:34:04 +1100
 Subject: [PATCH] gemma4: register request inputs for shared KV pruning
@@ -8,10 +8,10 @@ Subject: [PATCH] gemma4: register request inputs for shared KV pruning
  1 file changed, 5 insertions(+)
 
 diff --git a/src/models/gemma4.cpp b/src/models/gemma4.cpp
-index 3bb8db05a..80a5890a6 100644
+index 0e1e68087..d8bf44a12 100644
 --- a/src/models/gemma4.cpp
 +++ b/src/models/gemma4.cpp
-@@ -260,6 +260,11 @@ llama_model_gemma4::graph::graph(const llm_graph_params & params) :
+@@ -258,6 +258,11 @@ llama_model_gemma4::graph::graph(const llm_graph_params & params) :
              ggml_set_input(prune_input->inp_prune_ids);
              ggml_set_input(prune_input->inp_prune_keep);
  
@@ -24,5 +24,5 @@ index 3bb8db05a..80a5890a6 100644
              inp_prune_keep = prune_input->inp_prune_keep;
  
 -- 
-2.56.0
+2.56.1
 

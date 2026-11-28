@@ -1,5 +1,5 @@
 {
-  "full_patch_sha256": "0bff8f0f1c8c0aa0497ff8edd91d1ab710cdaf399d53c3138f93a0be4e0ad24b",
+  "full_patch_sha256": "d6a3e1a3b32a0aabe570cc287616e264b2ae21798b91f7638247939a708b425b",
   "generator_version": "0.5.0",
   "schema_version": 1,
   "shards": [
@@ -59,7 +59,7 @@
         "bailingmoe3"
       ],
       "file": "0006-family-bailingmoe3.patch",
-      "sha256": "b21e5b14fb7e4fef7defd514b94472a0323b17179d4e02f243f693eab945cbaa",
+      "sha256": "c709680caf0d51dc268efe63a45dcd8dd2b9acb87f3dd73f66cb9004b5fc4a37",
       "sources": [
         "src/models/bailingmoe3.cpp"
       ]
@@ -121,7 +121,7 @@
         "deepseek4"
       ],
       "file": "0012-family-deepseek4.patch",
-      "sha256": "ac291099b81da530e325cda11a38a4d6264a7c46ae042a85081212a73df7cef0",
+      "sha256": "2a8f5f48031811fa18b484f89aa7bd5c99f271f4d31893a1b567689f2e8d802f",
       "sources": [
         "src/models/deepseek4.cpp",
         "src/models/dflash.cpp"
@@ -425,7 +425,7 @@
         "kimi-k3"
       ],
       "file": "0042-family-kimi-k3.patch",
-      "sha256": "2bf6290aed4f6d178d0fbae7bf4e3582f43969638d32880dfb5d6e05c8d6800c",
+      "sha256": "55654a62a13880939141d11f4d8ad7d182cd9c1f0caf66ba4a7f4d3c8b62c68f",
       "sources": [
         "src/models/kimi-k3.cpp"
       ]
@@ -445,7 +445,7 @@
         "laguna"
       ],
       "file": "0044-family-laguna.patch",
-      "sha256": "86a8343ebd0b733a8a55f6418cb75fb833822211bf9291229b9b8c51af331afb",
+      "sha256": "f4e1050dbd03f3e429bf44298875b253e733c4b1022d220eb87ca42a7dd94561",
       "sources": [
         "src/models/laguna.cpp"
       ]
@@ -570,7 +570,7 @@
         "mistral3"
       ],
       "file": "0056-family-mistral-small--mistral3.patch",
-      "sha256": "c1d3c40c5ebc3075d95b864af1f8030f295080d37b536c40154535f7eb82f627",
+      "sha256": "100af39dd134b652f6896f31d0d708881092a8bdd51384bdc46d75e6c595ad38",
       "sources": [
         "src/models/mistral3.cpp"
       ]
@@ -742,7 +742,7 @@
         "qwen4exp"
       ],
       "file": "0073-family-qwen4exp.patch",
-      "sha256": "f7c8c96096a686996003574066a0d74297d4f61aa3c74a6a6d38d0b9479ccd07",
+      "sha256": "e0fe4ae76b7db7de8480e0778f27abdfc8a40c6c9241c1da0c302ef80af622e5",
       "sources": [
         "src/models/qwen4exp.cpp"
       ]
@@ -821,7 +821,7 @@
     {
       "families": [],
       "file": "0081-family-unmapped.patch",
-      "sha256": "80d983665136bb424c3b8a1080d105b20eafe3a2b7f5e7dd31785f6896a4d043",
+      "sha256": "d5e6f5886b50dbf99a5befc951654179fae2b503891ae608ce69fed9dfda04ab",
       "sources": [
         "src/models/arctic.cpp",
         "src/models/baichuan.cpp",
@@ -853,6 +853,7 @@
         "src/models/gpt2.cpp",
         "src/models/grok.cpp",
         "src/models/hunyuan-moe.cpp",
+        "src/models/hy-v4-flash.cpp",
         "src/models/hy-v4.cpp",
         "src/models/inkling2.cpp",
         "src/models/k2-horizon.cpp",
@@ -884,6 +885,7 @@
         "src/models/plm.cpp",
         "src/models/pockettts.cpp",
         "src/models/qwen.cpp",
+        "src/models/raon1-mini.cpp",
         "src/models/refact.cpp",
         "src/models/ricursive.cpp",
         "src/models/rnd1.cpp",

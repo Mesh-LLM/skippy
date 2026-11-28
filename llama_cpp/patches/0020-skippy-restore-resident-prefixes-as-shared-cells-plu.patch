@@ -1,4 +1,4 @@
-From 1764662164e7e9d9d2516a28950af4f7ff41dd3b Mon Sep 17 00:00:00 2001
+From 69926199af887bc2006c856e542aa398a95b45df Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Tue, 10 Nov 2026 21:00:00 +1100
 Subject: [PATCH] skippy: restore resident prefixes as shared cells plus
@@ -218,10 +218,10 @@ index bb9de46af..2e85dbfe1 100644
                  COMMAND skippy-sampling-history
                      "${SKIPPY_MODEL_FIXTURE_DIR}/${family}-dense.gguf" ${mode} ${state})
 diff --git a/src/llama-context.cpp b/src/llama-context.cpp
-index dabcf5553..4868e31d5 100644
+index 9ea8710eb..61aea8a12 100644
 --- a/src/llama-context.cpp
 +++ b/src/llama-context.cpp
-@@ -3759,6 +3759,10 @@ private:
+@@ -3789,6 +3789,10 @@ private:
      std::vector<write_info> winfos;
  };
  
