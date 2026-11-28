@@ -21,7 +21,7 @@ mod split;
 
 use std::ffi::CString;
 use std::path::Path;
-use std::ptr;
+use std::ptr::{self, NonNull};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Instant;
 
@@ -38,6 +38,11 @@ use crate::{RuntimeConfig, StageModel, StageSession, ensure_ok, write_native_log
 use context::{DraftContext, IngestPlan};
 use draft_batch::{DraftBatch, target_feature_row};
 use readout::{BlockLayout, argmax_token, walk_dflash2_lattice};
+#[cfg(target_os = "macos")]
+use skippy_ane::dflash::AneDraft;
+#[cfg(target_os = "macos")]
+#[path = "dflash/ane.rs"]
+mod ane;
 
 pub use context::DFlashHealth;
 pub use feature_wire::{DFlashFeatureEncoding, dflash_feature_identity, dflash_feature_layer};
@@ -88,7 +93,8 @@ pub struct DFlashDraftOptions {
     pub max_draft_tokens: Option<usize>,
     /// Draft layers offloaded to the accelerator. Defaults to the target's.
     pub n_gpu_layers: Option<i32>,
-    /// Backend device name for the draft. Defaults to the target's device.
+    /// Backend device name for the draft, or `ANE` to require Core ML conversion.
+    /// Defaults to the target's device.
     pub device: Option<String>,
 }
 
@@ -149,7 +155,7 @@ pub(crate) struct DFlashDraft {
     api: &'static LlamaDraftApi,
     target_ctx: *mut Opaque,
     model: *mut Opaque,
-    ctx: *mut Opaque,
+    native_ctx: Option<NonNull<Opaque>>,
     info: DFlashDraftInfo,
     /// Per target layer: captured on this stage, or sent by an earlier stage
     /// of a split target.
@@ -167,16 +173,14 @@ pub(crate) struct DFlashDraft {
     mrope: bool,
     layout: BlockLayout,
     batch: DraftBatch,
+    #[cfg(target_os = "macos")]
+    ane: Option<AneDraft>,
 }
 
-// The draft model and context are only touched behind the owning Mutex, and
-// Skippy serializes target-context use on the runtime worker.
+// The draft model, context, and Core ML states are only touched behind the
+// owning Mutex. Skippy serializes target-context use on the runtime worker,
+// including every prediction that uses a Core ML state.
 unsafe impl Send for DFlashDraft {}
-
-struct LoadedDraft {
-    model: *mut Opaque,
-    ctx: *mut Opaque,
-}
 
 impl DFlashDraft {
     /// Loads `path` as a draft for the target context and enables capture of
@@ -184,6 +188,7 @@ impl DFlashDraft {
     pub(crate) fn open(
         target_ctx: *mut Opaque,
         path: &Path,
+        target_path: Option<&Path>,
         options: &DFlashDraftOptions,
         config: &RuntimeConfig,
     ) -> Result<Self> {
@@ -203,12 +208,12 @@ impl DFlashDraft {
             bail!("target context has no model");
         }
         let lanes = i32::try_from(config.lane_count.max(1)).context("lane count exceeds i32")?;
-        let loaded = load_draft(api, target_ctx, path, options, config, lanes)?;
+        let model = load_draft_model(api, path, options, config)?;
         let mut draft = Self {
             api,
             target_ctx,
-            model: loaded.model,
-            ctx: loaded.ctx,
+            model,
+            native_ctx: None,
             info: DFlashDraftInfo {
                 variant: DFlashVariant::DFlash,
                 block_size: DEFAULT_BLOCK_SIZE,
@@ -228,9 +233,18 @@ impl DFlashDraft {
             mrope: false,
             layout: BlockLayout::BonusAnchor,
             batch: DraftBatch::default(),
+            #[cfg(target_os = "macos")]
+            ane: None,
         };
         // From here the Drop impl owns the native handles.
-        draft.configure(target_model, options, config, tensors.markov)?;
+        draft.configure(
+            target_model,
+            options,
+            config,
+            tensors.markov,
+            path,
+            target_path,
+        )?;
         Ok(draft)
     }
 
@@ -240,7 +254,11 @@ impl DFlashDraft {
         options: &DFlashDraftOptions,
         config: &RuntimeConfig,
         markov: bool,
+        draft_path: &Path,
+        target_path: Option<&Path>,
     ) -> Result<()> {
+        #[cfg(not(target_os = "macos"))]
+        let _ = (draft_path, target_path);
         let api = self.api;
         let architecture =
             unsafe { skippy_ffi::llama_model_meta_val_str(self.model, "general.architecture") };
@@ -310,9 +328,6 @@ impl DFlashDraft {
             bail!("draft model has no mask token");
         }
         self.mrope = unsafe { (api.model_rope_type)(self.model) } == LLAMA_ROPE_TYPE_MROPE;
-        self.n_ubatch = usize::try_from(unsafe { (api.n_ubatch)(self.ctx) })
-            .context("draft n_ubatch exceeds usize")?
-            .max(1);
         self.target_n_batch = usize::try_from(unsafe { (api.n_batch)(self.target_ctx) })
             .context("target n_batch exceeds usize")?;
         self.info.block_size =
@@ -328,17 +343,22 @@ impl DFlashDraft {
             self.info.block_size,
             options.max_draft_tokens.unwrap_or(usize::MAX),
         );
+        #[cfg(target_os = "macos")]
+        ane::attach(self, options, config, draft_path, target_path)?;
         // The draft's model builder publishes whether its block attends
         // causally (a decoder contract that needs it sets the key even when
         // the file does not).
         let causal =
             unsafe { skippy_ffi::llama_model_meta_val_str(self.model, "dflash.attention.causal") }
                 .is_some_and(|value| value == "true");
-        let dflash2 = self.info.variant == DFlashVariant::DFlash2;
+        #[cfg(target_os = "macos")]
+        let use_native_context = self.ane.is_none();
+        #[cfg(not(target_os = "macos"))]
+        let use_native_context = true;
+        if use_native_context {
+            self.configure_native_context(config, causal)?;
+        }
         unsafe {
-            // DFlash2 reads its lattice from every row of the nextn output.
-            (api.set_embeddings_nextn)(self.ctx, true, !dflash2);
-            (api.set_causal_attn)(self.ctx, causal);
             for (&lid, &local) in self.info.target_layer_ids.iter().zip(&self.local_layers) {
                 if local {
                     (api.set_embeddings_layer_inp)(self.target_ctx, lid, true);
@@ -356,6 +376,29 @@ impl DFlashDraft {
             self.mask_token,
             self.mrope,
         ));
+        Ok(())
+    }
+
+    fn configure_native_context(&mut self, config: &RuntimeConfig, causal: bool) -> Result<()> {
+        let api = self.api;
+        let params = draft_context_params(api, self.target_ctx, config, self.lanes)?;
+        let ctx = NonNull::new(unsafe { (api.init_from_model)(self.model, params) })
+            .with_context(|| {
+                format!(
+                    "failed to create the DFlash draft context (cache_k={} cache_v={} flash_attn={:?})",
+                    config.cache_type_k, config.cache_type_v, config.flash_attn_type
+                )
+            })?;
+        self.native_ctx = Some(ctx);
+        self.n_ubatch = usize::try_from(unsafe { (api.n_ubatch)(ctx.as_ptr()) })
+            .context("draft n_ubatch exceeds usize")?
+            .max(1);
+        let dflash2 = self.info.variant == DFlashVariant::DFlash2;
+        unsafe {
+            // DFlash2 reads its lattice from every row of the nextn output.
+            (api.set_embeddings_nextn)(ctx.as_ptr(), true, !dflash2);
+            (api.set_causal_attn)(ctx.as_ptr(), causal);
+        }
         Ok(())
     }
 
@@ -409,6 +452,13 @@ impl DFlashDraft {
     ) -> Result<()> {
         if positions.is_empty() {
             return Ok(());
+        }
+        #[cfg(target_os = "macos")]
+        if self.ane.is_some() {
+            let features = self.gather_features(first_row, positions, remote)?;
+            if let Some(ane) = self.ane.as_mut() {
+                return ane.ingest(seq_id, &features, positions);
+            }
         }
         let layers = self.feature_layers(first_row, positions.len(), remote)?;
         let n_embd = self.n_embd_target;
@@ -491,6 +541,10 @@ impl DFlashDraft {
         if positions.is_empty() {
             return Ok(());
         }
+        #[cfg(target_os = "macos")]
+        if let Some(ane) = self.ane.as_mut() {
+            return ane.ingest(seq_id, features, positions);
+        }
         let row_len = features.len() / positions.len();
         self.inject_rows(seq_id, positions, |row| {
             features[row * row_len..(row + 1) * row_len].iter().copied()
@@ -505,6 +559,9 @@ impl DFlashDraft {
         positions: &[i32],
         mut row: impl FnMut(usize) -> I,
     ) -> Result<()> {
+        let ctx = self
+            .native_ctx
+            .context("DFlash has no native draft context")?;
         for (chunk_index, chunk) in positions.chunks(self.n_ubatch).enumerate() {
             self.batch.clear();
             let chunk_row = chunk_index * self.n_ubatch;
@@ -512,7 +569,7 @@ impl DFlashDraft {
                 self.batch
                     .push_features(row(chunk_row + offset), position, seq_id);
             }
-            let rc = unsafe { (self.api.decode)(self.ctx, self.batch.as_raw(self.mrope)) };
+            let rc = unsafe { (self.api.decode)(ctx.as_ptr(), self.batch.as_raw(self.mrope)) };
             if rc != 0 {
                 bail!("draft feature injection failed with status {rc}");
             }
@@ -522,24 +579,39 @@ impl DFlashDraft {
 
     /// Drops draft cache entries at or after `position` for one lane.
     pub(crate) fn truncate(&mut self, seq_id: i32, position: i32) {
-        unsafe {
-            let memory = (self.api.get_memory)(self.ctx);
-            (self.api.memory_seq_rm)(memory, seq_id, position.max(0), -1);
+        #[cfg(target_os = "macos")]
+        if let Some(ane) = self.ane.as_mut() {
+            ane.truncate(seq_id, position);
+            return;
+        }
+        if let Some(ctx) = self.native_ctx {
+            let memory = unsafe { (self.api.get_memory)(ctx.as_ptr()) };
+            unsafe { (self.api.memory_seq_rm)(memory, seq_id, position.max(0), -1) };
         }
     }
 
     /// Drops every lane's draft cache.
     fn clear_all(&mut self) {
-        unsafe {
-            let memory = (self.api.get_memory)(self.ctx);
-            (self.api.memory_seq_rm)(memory, -1, -1, -1);
+        #[cfg(target_os = "macos")]
+        if let Some(ane) = self.ane.as_mut() {
+            ane.clear_all();
+            return;
+        }
+        if let Some(ctx) = self.native_ctx {
+            let memory = unsafe { (self.api.get_memory)(ctx.as_ptr()) };
+            unsafe { (self.api.memory_seq_rm)(memory, -1, -1, -1) };
         }
     }
 
     pub(crate) fn clear(&mut self, seq_id: i32) {
-        unsafe {
-            let memory = (self.api.get_memory)(self.ctx);
-            (self.api.memory_seq_rm)(memory, seq_id, -1, -1);
+        #[cfg(target_os = "macos")]
+        if let Some(ane) = self.ane.as_mut() {
+            ane.clear(seq_id);
+            return;
+        }
+        if let Some(ctx) = self.native_ctx {
+            let memory = unsafe { (self.api.get_memory)(ctx.as_ptr()) };
+            unsafe { (self.api.memory_seq_rm)(memory, seq_id, -1, -1) };
         }
     }
 
@@ -556,6 +628,14 @@ impl DFlashDraft {
         if draft_tokens == 0 {
             return Ok(Vec::new());
         }
+        #[cfg(target_os = "macos")]
+        if let Some(ane) = self.ane.as_mut() {
+            ane.truncate(seq_id, anchor_position);
+            return ane.propose(seq_id, anchor_position, anchor, draft_tokens);
+        }
+        let ctx = self
+            .native_ctx
+            .context("DFlash has no native draft context")?;
         let dflash2 = self.info.variant == DFlashVariant::DFlash2;
         // Rows a split final stage verified past the anchor are still cached.
         self.truncate(seq_id, anchor_position);
@@ -572,9 +652,9 @@ impl DFlashDraft {
                 .context("draft position overflow")?;
             self.batch.push_token(token, position, seq_id, !dflash2);
         }
-        let rc = unsafe { (self.api.decode)(self.ctx, self.batch.as_raw(self.mrope)) };
+        let rc = unsafe { (self.api.decode)(ctx.as_ptr(), self.batch.as_raw(self.mrope)) };
         let tokens = if rc == 0 {
-            self.read_block(draft_tokens)
+            self.read_block(ctx, draft_tokens)
         } else {
             Err(anyhow!("draft block decode failed with status {rc}"))
         };
@@ -583,9 +663,9 @@ impl DFlashDraft {
         tokens
     }
 
-    fn read_block(&self, draft_tokens: usize) -> Result<Vec<i32>> {
+    fn read_block(&self, ctx: NonNull<Opaque>, draft_tokens: usize) -> Result<Vec<i32>> {
         if self.info.variant == DFlashVariant::DFlash2 {
-            let lattice = unsafe { (self.api.get_embeddings_nextn)(self.ctx) };
+            let lattice = unsafe { (self.api.get_embeddings_nextn)(ctx.as_ptr()) };
             if lattice.is_null() {
                 bail!("DFlash2 selector produced no lattice");
             }
@@ -604,7 +684,7 @@ impl DFlashDraft {
         let first = self.layout.first_draft_row();
         for row in first..first + draft_tokens {
             let row = i32::try_from(row).context("draft row exceeds i32")?;
-            let logits = unsafe { (self.api.get_logits_ith)(self.ctx, row) };
+            let logits = unsafe { (self.api.get_logits_ith)(ctx.as_ptr(), row) };
             if logits.is_null() {
                 bail!("draft produced no logits for block row {row}");
             }
@@ -623,8 +703,8 @@ impl Drop for DFlashDraft {
                     (self.api.set_embeddings_layer_inp)(self.target_ctx, lid, false);
                 }
             }
-            if !self.ctx.is_null() {
-                (self.api.free)(self.ctx);
+            if let Some(ctx) = self.native_ctx {
+                (self.api.free)(ctx.as_ptr());
             }
             if !self.model.is_null() {
                 (self.api.model_free)(self.model);
@@ -769,19 +849,29 @@ fn check_head_input(
     Ok(())
 }
 
-fn load_draft(
+fn load_draft_model(
     api: &LlamaDraftApi,
-    target_ctx: *mut Opaque,
     path: &Path,
     options: &DFlashDraftOptions,
     config: &RuntimeConfig,
-    lanes: i32,
-) -> Result<LoadedDraft> {
+) -> Result<*mut Opaque> {
     let path = path_to_cstring(path, "DFlash draft model path")?;
-    let device_name = options
-        .device
-        .as_deref()
-        .or(config.selected_backend_device.as_deref());
+    #[cfg(not(target_os = "macos"))]
+    if options.device.as_deref() == Some("ANE") {
+        bail!("ANE DFlash requires macOS and Apple Neural Engine");
+    }
+    #[cfg(target_os = "macos")]
+    let use_ane = ane::requested(options);
+    #[cfg(not(target_os = "macos"))]
+    let use_ane = false;
+    let device_name = if use_ane {
+        None
+    } else {
+        options
+            .device
+            .as_deref()
+            .or(config.selected_backend_device.as_deref())
+    };
     let device_name = device_name
         .map(|name| CString::new(name).context("draft device name contains a NUL byte"))
         .transpose()?;
@@ -794,7 +884,11 @@ fn load_draft(
         devices.extend([device, ptr::null_mut()]);
     }
     let mut model_params: LlamaModelParams = unsafe { (api.model_default_params)() };
-    model_params.n_gpu_layers = options.n_gpu_layers.unwrap_or(config.n_gpu_layers);
+    model_params.n_gpu_layers = if use_ane {
+        0
+    } else {
+        options.n_gpu_layers.unwrap_or(config.n_gpu_layers)
+    };
     if !devices.is_empty() {
         model_params.devices = devices.as_mut_ptr().cast();
     }
@@ -804,7 +898,6 @@ fn load_draft(
         device_name,
         model_params.n_gpu_layers
     ));
-    let context_params = draft_context_params(api, target_ctx, config, lanes)?;
     let model = unsafe { (api.model_load_from_file)(path.as_ptr(), model_params) };
     if model.is_null() {
         bail!(
@@ -812,17 +905,7 @@ fn load_draft(
             path.to_string_lossy()
         );
     }
-    let ctx = unsafe { (api.init_from_model)(model, context_params) };
-    if ctx.is_null() {
-        unsafe { (api.model_free)(model) };
-        bail!(
-            "failed to create the DFlash draft context (cache_k={} cache_v={} flash_attn={:?})",
-            config.cache_type_k,
-            config.cache_type_v,
-            config.flash_attn_type
-        );
-    }
-    Ok(LoadedDraft { model, ctx })
+    Ok(model)
 }
 
 fn draft_context_params(
@@ -1500,7 +1583,13 @@ impl StageModel {
         if target_ctx.is_null() {
             bail!("target session has no llama context");
         }
-        let draft = DFlashDraft::open(target_ctx, path.as_ref(), options, config)?;
+        let draft = DFlashDraft::open(
+            target_ctx,
+            path.as_ref(),
+            self.source_gguf(),
+            options,
+            config,
+        )?;
         let info = draft.info().clone();
         refresh_target_program(&probe)?;
         drop(probe);

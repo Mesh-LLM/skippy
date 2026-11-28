@@ -257,6 +257,9 @@ pub(in crate::frontend) fn attach_dflash_draft(
     let Some(dflash) = &speculative.dflash else {
         return Ok(None);
     };
+    if speculative.draft_device.as_deref() == Some("ANE") && config.downstream.is_some() {
+        bail!("ANE DFlash currently requires a single-stage target GGUF");
+    }
     attach_planned_dflash_draft(runtime, config, n_gpu_layers, speculative, dflash)
         .context(crate::DFlashDraftAttachFailed)
 }

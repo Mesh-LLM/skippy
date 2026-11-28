@@ -1,6 +1,6 @@
 use crate::native_timing::native_call;
 use std::ffi::CString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::Arc;
 
@@ -104,6 +104,7 @@ pub struct SystemOneReadSlot {
 
 struct StageModelInner {
     raw: *mut RawModel,
+    source_gguf: Option<PathBuf>,
     terminal_stage: bool,
     capability: Option<LoadedModelCapability>,
     /// External DFlash draft that borrows this model's context. Freed before
@@ -172,6 +173,7 @@ impl StageModel {
         Self {
             inner: Arc::new(StageModelInner {
                 raw: std::ptr::null_mut(),
+                source_gguf: None,
                 terminal_stage: true,
                 capability: None,
                 dflash: None,
@@ -230,6 +232,7 @@ impl StageModel {
 
     fn from_opened_raw(
         raw: *mut RawModel,
+        source_gguf: Option<PathBuf>,
         config: &RuntimeConfig,
         null_handle_message: &'static str,
     ) -> Result<Self> {
@@ -242,6 +245,7 @@ impl StageModel {
         let mut model = Self {
             inner: Arc::new(StageModelInner {
                 raw,
+                source_gguf,
                 terminal_stage: config.is_terminal_stage(),
                 capability,
                 dflash: None,
@@ -257,6 +261,10 @@ impl StageModel {
         Ok(model)
     }
 
+    pub(crate) fn source_gguf(&self) -> Option<&Path> {
+        self.inner.source_gguf.as_deref()
+    }
+
     fn open_path_with_optional_event_queue(
         path: impl AsRef<Path>,
         config: &RuntimeConfig,
@@ -264,6 +272,7 @@ impl StageModel {
     ) -> Result<Self> {
         let path = path.as_ref();
         skippy_model_ref::validate_gguf_model_path(path).map_err(anyhow::Error::msg)?;
+        let source_gguf = std::path::absolute(path)?;
         let use_events = event_queue.is_some() && runtime_events::model_open_events_supported();
         let begin_label = if use_events {
             "skippy_model_open_with_events begin"
@@ -286,7 +295,7 @@ impl StageModel {
             config.native_log_summary()
         ));
         clear_last_native_error();
-        let path = path_to_cstring(path, "model path")?;
+        let path = path_to_cstring(&source_gguf, "model path")?;
         let raw_config = config.as_raw()?;
         #[cfg(not(test))]
         let (raw, status, error) = runtime_events::run_model_open(
@@ -341,7 +350,7 @@ impl StageModel {
             }
         }
         open_result?;
-        Self::from_opened_raw(raw, config, null_handle_message)
+        Self::from_opened_raw(raw, Some(source_gguf), config, null_handle_message)
     }
 
     fn open_parts_with_optional_event_queue(
@@ -448,7 +457,7 @@ impl StageModel {
             }
         }
         open_result?;
-        Self::from_opened_raw(raw, config, null_handle_message)
+        Self::from_opened_raw(raw, None, config, null_handle_message)
     }
 
     pub fn open(path: impl AsRef<Path>, config: &RuntimeConfig) -> Result<Self> {
