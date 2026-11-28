@@ -25,7 +25,7 @@ def cache_key(inputs):
 def native_inputs():
     # Bind Cargo's bundled archives and compiler outputs to the same source recipe.
     # Git tree entries include paths and blob identities, including removed patches.
-    paths = ["llama_cpp", "Justfile", "crates/skippy-ffi", "scripts/build-llama.sh",
+    paths = ["llama_cpp", "Justfile", "ci/inference.just", "crates/skippy-ffi", "scripts/build-llama.sh",
              "scripts/prepare-llama.sh", "scripts/prepare-whisper.sh", "scripts/lib/cuda-toolkit.sh",
              "scripts/inference-build.py"]
     return hashlib.sha256(capture(["git", "ls-tree", "-r", "HEAD", "--", *paths]).encode()).hexdigest()

@@ -26,6 +26,7 @@ on:
       - 'scripts/lib/lld.sh'
       - 'scripts/lib/macos-deployment-target*'
       - '.gi/templates.yaml'
+      - 'ci/inference.just'
       - 'ci/inference-ladder.json'
       - 'ci/inference-artifacts.json'
       - 'ci/inference-quality.json'
@@ -47,6 +48,7 @@ on:
       - '!**/*_tests.rs'
       - '!**/tests_*.rs'
       - '!**/test_support.rs'
+      - '!**/test_support/**'
       - '!crates/llama-spec-bench/**'
       - '!crates/metrics-server/**'
       - '!crates/skippy-gpu-bench/**'
@@ -57,6 +59,11 @@ on:
       - '!scripts/lib/inference_markdown.py'
       - '!scripts/lib/inference_charts.py'
       - '!scripts/lib/inference_png.py'
+      - '!scripts/lib/inference_labels.py'
+      - '!scripts/lib/inference_mermaid.py'
+      - '!scripts/lib/inference_health.py'
+      - '!scripts/lib/inference_health_charts.py'
+      - '!scripts/lib/inference_health_markdown.py'
   schedule:
     - cron: '0 14 * * *'
   workflow_dispatch:

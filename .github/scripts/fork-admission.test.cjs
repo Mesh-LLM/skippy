@@ -159,3 +159,34 @@ test('approved fork Cargo cache keys and restores stay outside main and branch n
     ]) assert.equal(prefix({ event_name }), expected, `${event_name}: ${line}`);
   }
 });
+
+
+test('test support and display reports admit offline fork CI without native work', async () => {
+  for (const filename of ['crates/skippy-runtime/src/test_support/libraries.rs',
+    'scripts/lib/inference_labels.py', 'scripts/lib/inference_health.py']) {
+    const outputs = await admission({ files: [{ filename }] });
+    assert.equal(outputs.ci, 'true');
+    assert.equal(outputs.inference, 'false');
+    const selected = JSON.parse(outputs.routes);
+    assert.equal(selected.packages, false);
+    assert.equal(selected.inference, false);
+    assert.equal(selected.code, filename.startsWith('crates/'));
+  }
+  const outputs = await admission({ files: [{ filename: 'ci/inference.just' }] });
+  assert.equal(outputs.inference, 'true');
+  assert.equal(JSON.parse(outputs.routes).packages, false);
+});
+
+test('fork aggregate does not wait for excluded inference jobs but still requires offline CI', async () => {
+  const checked = { ...run, event: 'workflow_run' };
+  const successful = ['admission', 'ci / CI'].map((name, index) =>
+    ({ name, id: index + 1, status: 'completed', conclusion: 'success', run_attempt: 1 }));
+  const files = [{ filename: 'crates/skippy-runtime/src/test_support/libraries.rs' }];
+  const github = { rest: { actions: { listJobsForWorkflowRun: 'jobs' } },
+    paginate: async () => successful };
+  await forkRuns.requireForkJobs(github, { owner: 'Mesh-LLM', repo: 'skippy' }, checked, files);
+  await assert.rejects(forkRuns.requireForkJobs({ ...github, paginate: async () => successful.slice(0, 1) },
+    { owner: 'Mesh-LLM', repo: 'skippy' }, checked, files), /ci \/ CI: missing or incomplete/);
+  await assert.rejects(forkRuns.requireForkJobs(github, { owner: 'Mesh-LLM', repo: 'skippy' }, checked,
+    [{ filename: 'ci/inference.just' }]), /Inference qualification: plan: missing or incomplete/);
+});

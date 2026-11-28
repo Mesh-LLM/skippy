@@ -1,0 +1,96 @@
+[
+  {
+    "number": 252,
+    "title": "Compare inference changes on fixed hardware with calibrated intervals",
+    "url": "https://github.com/Mesh-LLM/skippy/pull/252",
+    "files": [
+      ".gi/templates.yaml",
+      ".github/workflows/inference.yml",
+      "Justfile",
+      "ci/README.md",
+      "ci/automation.just",
+      "scripts/inference-dispatch.py",
+      "scripts/inference-execute.py",
+      "scripts/inference-paired.py",
+      "scripts/inference-plan.py",
+      "scripts/inference-report.sh",
+      "scripts/lib/inference-report-baseline.sh",
+      "scripts/lib/inference_paired_collect.py",
+      "scripts/lib/inference_pairs.py",
+      "scripts/lib/inference_probe.py",
+      "scripts/lib/inference_rendezvous.py",
+      "scripts/tests/inference-report.sh",
+      "scripts/tests/inference_deadlines.py",
+      "scripts/tests/inference_paired_execution.py",
+      "scripts/tests/inference_pairs.py",
+      "scripts/tests/inference_peer_evidence.py",
+      "scripts/tests/inference_probe.py"
+    ]
+  },
+  {
+    "number": 241,
+    "title": "Load a test runtime named directly, not only its parent directory",
+    "url": "https://github.com/Mesh-LLM/skippy/pull/241",
+    "files": [
+      "crates/skippy-runtime/src/test_support.rs",
+      "crates/skippy-runtime/src/test_support/libraries.rs"
+    ]
+  },
+  {
+    "number": 240,
+    "title": "Keep Clippy clean on Windows in skippy-hf-hub and skippy-package-builder",
+    "url": "https://github.com/Mesh-LLM/skippy/pull/240",
+    "files": [
+      "crates/skippy-hf-hub/src/cache/storage.rs",
+      "crates/skippy-package-builder/src/cli.rs"
+    ]
+  },
+  {
+    "number": 248,
+    "title": "Build and verify Skippy CPU runtimes for Windows ARM64",
+    "url": "https://github.com/Mesh-LLM/skippy/pull/248",
+    "files": [
+      ".agents/skills/manage-ci/SKILL.md",
+      ".github/actions/ci-package/action.yml",
+      ".github/scripts/ci-gate.test.cjs",
+      ".github/workflows/ci.yml",
+      ".github/workflows/release.yml",
+      "CONTRIBUTING.md",
+      "Justfile",
+      "ci/README.md",
+      "ci/targets.json",
+      "scripts/build-llama.sh",
+      "scripts/build-windows.ps1",
+      "scripts/ci-plan.sh",
+      "scripts/ci-product.py",
+      "scripts/ci-release.py",
+      "scripts/enable-msvc-dev-env.ps1",
+      "scripts/lib/native_policy.py",
+      "scripts/native-inspect.py",
+      "scripts/package-cli-release.sh",
+      "scripts/package-native-runtime.sh",
+      "scripts/tests/release_contracts.py"
+    ]
+  },
+  {
+    "number": 192,
+    "title": "Run the native build scripts with a Windows bash, not WSL's",
+    "url": "https://github.com/Mesh-LLM/skippy/pull/192",
+    "files": [
+      "crates/skippy-ffi/build/native_link.rs",
+      "crates/skippy-ffi/tests/windows_bash_paths.rs"
+    ]
+  },
+  {
+    "number": 193,
+    "title": "Make a hardware probe die with the process that started it on Windows",
+    "url": "https://github.com/Mesh-LLM/skippy/pull/193",
+    "files": [
+      "Cargo.lock",
+      "crates/skippy-hardware-profile/Cargo.toml",
+      "crates/skippy-hardware-profile/src/probe.rs",
+      "crates/skippy-hardware-profile/src/probe/owner_job.rs",
+      "crates/skippy-hardware-profile/src/probe/tests.rs"
+    ]
+  }
+]

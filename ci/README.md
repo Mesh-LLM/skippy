@@ -113,20 +113,35 @@ and artifacts are available in **Approved fork CI** and the aggregate status.
 On PRs, runtime source and package/build/smoke inputs select device package smoke.
 Qualification planning, dispatch, scoring, baselines and publication select
 qualification and offline automation without rebuilding packages. Renderers,
-charts, workflow controllers and standalone automation tests select only offline
-automation. Unknown scripts retain conservative code checks. Separate Rust
-source test files select code checks without device smoke. Docs-only and
-metadata-only PRs do not start CI. The gate requires successful selected jobs
+charts, display labels, health views, workflow controllers and standalone automation
+tests select only offline automation. Admission, dispatch, workload definitions, scoring,
+baselines and evidence validation remain qualification inputs. Unknown scripts
+retain conservative code checks. Separate Rust
+source test files and `test_support/` directories select code checks without device
+smoke or the Spark ladder. Inline tests in production source files still select
+hardware: split tests into dedicated files when they should select only code checks.
+Docs-only and metadata-only PRs do not start CI. The gate requires successful selected jobs
 and rejects missing, failed, cancelled or unexpectedly skipped results.
 
 These are file-level rules: inline tests in production files, shared Cargo
 manifests/lockfiles, and any root `Justfile` edit remain build inputs. Reporting
 and offline automation recipes live in the imported `ci/automation.just`;
-editing those recipes selects only automation. Public Just command names are
-unchanged. Keep new automation recipes there instead of editing the root file.
+editing those recipes selects only automation. Qualification controller and execution
+recipes live in the imported `ci/inference.just`; edits select the Spark ladder
+without rebuilding packaged runtimes. Its contents remain part of the qualification
+native build-cache identity. Public Just command names are unchanged. Add new
+reporting recipes to `ci/automation.just` and qualification recipes to
+`ci/inference.just` instead of editing the root file.
 `.gi/templates.yaml` selects qualification, while `.gi/agents/**` is excluded.
 
 PR routing changes take effect after the filters reach the PR's base commit.
+Existing PRs must first integrate the recipe relocation; this policy does not
+reinterpret their old root `Justfile` changes. Windows-only changes inside shared
+build scripts, production source and Cargo manifests also remain conservative.
+They need separate platform validation before their hardware routes can be narrowed.
+Unknown inference helpers remain qualification inputs; only named display modules
+are excluded.
+
 Main pushes keep conservative source checks with the short CI profile, including
 when the latest push changes only automation. Inference, packaging or native
 changes select the same ARM64 CUDA 13 and Metal device smokes on the exact
