@@ -32,8 +32,12 @@ head. Coder c256 and Flash c1 merged-source tables are pending. The version 2
 protocol registered `79523f8b`, but its build was cancelled before timing:
 current `main` added a required split-peer CI receipt and a new native patch.
 The [version 3 protocol](SCHEDULER_PERFORMANCE_PROTOCOL_V3.json) pins the
-merged `9707dba3` source with the same margins. No version 3 timing or positive
-four-model claim has been completed.
+merged `9707dba3` source with the same margins. Before any version 3 timing,
+its decision rule was clarified to use the arithmetic mean of eight
+resampled paired-round ratios. The historical version 1 file remains
+immutable; its reducer used that same statistic. The version 3 product build
+`job_gcj37aeavgwxh6q` is running on the authorized $0 Mac Studio. No version 3
+timing or positive four-model claim has been completed.
 
 The 30-second TTFT SLO failed in every arm of the historical Qwen3.5 c128 and
 Coder c256 runs. Output differences and earlier task-quality failures remain
