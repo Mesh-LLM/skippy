@@ -1,7 +1,7 @@
 # Scheduler performance qualification
 
-The [current-source performance protocol](SCHEDULER_PERFORMANCE_PROTOCOL_V2.json) compares
-the Skippy product built from `79523f8b` with both pinned vanilla llama.cpp layouts at four
+The [merged-source performance protocol](SCHEDULER_PERFORMANCE_PROTOCOL_V3.json) compares
+the Skippy product built from `9707dba3` with both pinned vanilla llama.cpp layouts at four
 model/load points. It requires complete, matched 512-input/32-output requests,
 full Metal, F16 KV, 16 lanes with 8192 context each, batch/microbatch 512,
 caches off, nominal thermals, and eight balanced fresh-process rounds per model.
@@ -21,9 +21,11 @@ and [status](SCHEDULER_FIX_PROGRESS.md) summarize completed evidence.
 The [original protocol](SCHEDULER_PERFORMANCE_PROTOCOL.json) names the source
 used for its first timing jobs. Review cleanup at `478f44ed` removed the
 resident-prefix policy and changed Rust inputs; the Q4_K test repair at
-`79523f8b` changed a native patch. Those earlier timing jobs remain diagnostic.
-Version 2 seals the new source and retains the same decision thresholds. Its
-timing jobs have not run yet, so it establishes no performance result.
+`79523f8b` changed a native patch. The [version 2 registration](https://github.com/Mesh-LLM/skippy/blob/dcdbe8d4e9598ba53dd07ec10375dafd0706a6b8/evals/kv-profiling/SCHEDULER_PERFORMANCE_PROTOCOL_V2.json)
+was superseded before timing when current `main` added a required split-peer
+CI contract and a native patch. Its product build was cancelled. Version 3
+pins the merged source and retains the same decision thresholds. It has no
+timing result yet.
 
 Do not submit duplicate jobs, substitute models or native inputs, or edit
 runtime code without a measured mechanism. Builds use Just and required Rust

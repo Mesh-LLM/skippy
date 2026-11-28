@@ -1,13 +1,13 @@
 {
-  "schema": "skippy-pr233-relative-performance-v2",
+  "schema": "skippy-pr233-relative-performance-v3",
   "registered_before_first_result": true,
   "claim": "At the four listed model and offered-load points, the current Skippy Metal product has no more than a 2% regression in aggregate output tokens per second or client-measured p95 TTFT, E2E, and TPOT against each of the two pinned vanilla llama.cpp layouts.",
-  "scope": "Performance only. This does not claim answer equivalence, absolute latency SLO compliance, other load points, or other models. Preserve all observed output differences and failed quality checks separately. V1 timing results predate this source and remain diagnostic, not qualifying.",
+  "scope": "Performance only. This does not claim answer equivalence, absolute latency SLO compliance, other load points, or other models. Preserve output differences and failed quality checks separately. V1 timing used earlier product source; V2 build was cancelled before completion when current main changed the native patch queue. Neither qualifies this merged source.",
   "source_equivalence": {
-    "product_build_head": "79523f8b1bd27e924748a0902f84adea87e72d2a",
-    "pr_head_at_registration": "79523f8b1bd27e924748a0902f84adea87e72d2a",
-    "product_build_spec_sha256": "4eba7aba7ad15adeab16470b71ae517b345240d94704f243437acda66e9fc310",
-    "require": "Build and attest the exact source at product_build_head through Just on macstudio-2l0352. Verify the runtime binary and all native files against the resulting manifest before every timing cell. Later PR commits may change docs/evidence only; any Rust/native/ABI/model/build-recipe change requires new build and protocol."
+    "product_build_head": "9707dba3e7723377e546daa5af8ab9a145d67221",
+    "pr_head_at_registration": "9707dba3e7723377e546daa5af8ab9a145d67221",
+    "product_build_spec_sha256": "27ba91025e838eefc720cd478c8675a0573ae62c747df1c70b818af32eaafa93",
+    "require": "Build and attest the exact merged source at product_build_head through Just on macstudio-2l0352. Verify the runtime binary and all native files against the resulting manifest before every timing cell. Later PR commits may change docs/evidence only; any Rust/native/ABI/model/build-recipe change requires a new build and protocol."
   },
   "models": [
     {
