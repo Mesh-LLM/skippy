@@ -22,3 +22,4 @@
 0022-dspine-populate-the-graph-owned-lattice-stash.patch
 0023-muse-glimmer-retain-token-aware-turn-boundaries.patch
 0024-models-preserve-checkpoint-layouts-and-head-scales.patch
+0025-abi-distinguish-b12780-upstream-c-layouts.patch
