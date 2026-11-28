@@ -1,0 +1,152 @@
+From f1b083b9bb2bf83636ffb810563b4a7efb4ef4a0 Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Wed, 25 Nov 2026 13:04:07 +1100
+Subject: [PATCH] skippy: keep the text chat bridge compatible with token-aware
+ parsers
+
+---
+ common/stage-chat.cpp      |   2 +
+ tests/CMakeLists.txt       |   5 ++
+ tests/test-skippy-chat.cpp | 101 +++++++++++++++++++++++++++++++++++++
+ 3 files changed, 108 insertions(+)
+ create mode 100644 tests/test-skippy-chat.cpp
+
+diff --git a/common/stage-chat.cpp b/common/stage-chat.cpp
+index c3362e2a7..d357342da 100644
+--- a/common/stage-chat.cpp
++++ b/common/stage-chat.cpp
+@@ -276,6 +276,8 @@ extern "C" SKIPPY_COMMON_API enum skippy_status skippy_apply_chat_template_json(
+             throw std::runtime_error("failed to initialize model chat templates");
+         }
+         skippy_chat_templates_lock_guard templates_lock(model);
++        // This ABI carries text, not sampled token IDs. Keep its parser and grammar text-based.
++        common_chat_templates_set_specials(tmpls, {});
+         common_chat_params params = common_chat_templates_apply(tmpls, inputs);
+         if (grammar != nullptr && grammar[0] != '\0') {
+             params.grammar = grammar;
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index e6bf3aa41..0d5df5901 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -349,6 +349,11 @@ llama_test_cmd(python3
+ llama_build_and_test(test-json-schema.cpp  LABEL behavior)
+ llama_build_and_test(test-chat-auto-parser.cpp  LABEL behavior  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+ llama_build_and_test(test-chat-template.cpp  LABEL behavior)
++if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
++    llama_build_and_test(test-skippy-chat.cpp LABEL behavior
++        ARGS "${PROJECT_SOURCE_DIR}/models/templates/Qwen3.5-4B.jinja")
++    target_include_directories(test-skippy-chat PRIVATE ${PROJECT_SOURCE_DIR}/src)
++endif()
+ 
+ if (GGML_METAL)
+     llama_build_and_test(test-skippy-cachegen-metal.cpp)
+diff --git a/tests/test-skippy-chat.cpp b/tests/test-skippy-chat.cpp
+new file mode 100644
+index 000000000..62f23eb09
+--- /dev/null
++++ b/tests/test-skippy-chat.cpp
+@@ -0,0 +1,101 @@
++#include "chat.h"
++#include "json.h"
++#include "skippy/runtime_types.h"
++
++#include <fstream>
++#include <iostream>
++#include <iterator>
++#include <memory>
++#include <stdexcept>
++#include <vector>
++
++using json = common_json;
++
++static void require(bool value, const std::string & message) {
++    if (!value) {
++        throw std::runtime_error(message);
++    }
++}
++
++static void check_status(skippy_status status, skippy_error * error) {
++    const std::string message = error && error->message ? error->message : "chat bridge failed";
++    skippy_error_free(error);
++    require(status == SKIPPY_STATUS_OK, message);
++}
++
++static std::string render(skippy_model & model, bool thinking, const char * tools = nullptr) {
++    std::vector<char> prompt(1 << 20), metadata(1 << 20);
++    size_t prompt_bytes = 0, metadata_bytes = 0;
++    skippy_error * error = nullptr;
++    const auto status = skippy_apply_chat_template_json(
++        &model, R"([{"role":"user","content":"What is 17 + 25? Reply with only the integer."}])",
++        tools, nullptr, true, true, thinking, true, "auto", nullptr, nullptr, true,
++        nullptr, nullptr, false, prompt.data(), prompt.size(), &prompt_bytes,
++        metadata.data(), metadata.size(), &metadata_bytes, &error);
++    check_status(status, error);
++    return std::string(metadata.data(), metadata_bytes);
++}
++
++static json parse(const std::string & text, const std::string & metadata, bool partial = false) {
++    std::vector<char> output(1 << 20);
++    size_t bytes = 0;
++    skippy_error * error = nullptr;
++    const auto status = skippy_parse_chat_response_json(
++        text.c_str(), metadata.c_str(), partial, output.data(), output.size(), &bytes, &error);
++    check_status(status, error);
++    return json::parse(std::string(output.data(), bytes));
++}
++
++int main(int argc, char ** argv) {
++    try {
++        require(argc == 2, "expected the local Qwen3.5 template path");
++        std::ifstream file(argv[1]);
++        require(file.good(), "cannot read the local template");
++        const std::string source((std::istreambuf_iterator<char>(file)), {});
++        auto templates = common_chat_templates_init(nullptr, source);
++        common_peg_tokens specials;
++        llama_token id = 1000;
++        for (const std::string piece : {"<|im_start|>", "<|im_end|>", "<think>", "</think>",
++                                       "<tool_call>", "</tool_call>", "<tool_response>", "</tool_response>"}) {
++            specials.ids.emplace(piece, id);
++            specials.tokens.emplace(id++, common_peg_token{piece, LLAMA_TOKEN_ATTR_CONTROL});
++        }
++        // Use control IDs as in upstream's parser tests; no weights or inference are needed.
++        common_chat_templates_set_specials(templates.get(), specials);
++        std::unique_ptr<llama_model> native(llama_model_create(LLM_ARCH_LLAMA, llama_model_default_params()));
++        require(native != nullptr, "cannot create the metadata-only model");
++        skippy_model model;
++        model.model = native.get();
++        model.chat_templates = templates.get();
++
++        const auto disabled = render(model, false);
++        require(json::parse(disabled).at("generation_prompt").get<std::string>().find("</think>") != std::string::npos,
++                "fixture must include the closed thinking prefix");
++        for (bool partial : {false, true}) {
++            const auto message = parse("42", disabled, partial);
++            require(message.at("content") == "42", "thinking prefix leaked: " + message.dump());
++        }
++        // The cached template must remain usable across requests and reasoning modes.
++        common_chat_templates_set_specials(templates.get(), specials);
++        const auto enabled = render(model, true);
++        const auto reasoned = parse("17 + 25 = 42.</think>\n\n42", enabled);
++        require(reasoned.at("content") == "42", "reasoned answer lost: " + reasoned.dump());
++        require(reasoned.at("reasoning_content") == "17 + 25 = 42.", "reasoning was not separated");
++        require(parse("42", render(model, false)).at("content") == "42", "cached parser changed behavior");
++
++        common_chat_templates_set_specials(templates.get(), specials);
++        const auto tools = render(model, false,
++            R"([{"type":"function","function":{"name":"get_weather","parameters":{"type":"object","properties":{"location":{"type":"string"}},"required":["location"]}}}])");
++        const auto called = parse(
++            "<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n</function>\n</tool_call>", tools);
++        require(called.at("tool_calls").size() == 1, "tool call was not parsed: " + called.dump());
++        const auto function = called.at("tool_calls").at(0).at("function");
++        require(function.at("name") == "get_weather", "wrong tool name");
++        require(json::parse(function.at("arguments").get<std::string>()).at("location") == "Paris", "wrong tool arguments");
++        std::cout << "Skippy text chat bridge: content, partial output, reasoning and tools passed\n";
++        return 0;
++    } catch (const std::exception & error) {
++        std::cerr << error.what() << '\n';
++        return 1;
++    }
++}
+-- 
+2.56.0
+

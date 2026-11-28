@@ -1,4 +1,4 @@
-From 4762ecd45539dcd02163ecc3111ff665db043fbd Mon Sep 17 00:00:00 2001
+From 5df98009e30e637f45de93a8660fba4cc30bc86f Mon Sep 17 00:00:00 2001
 From: IvGolovach <20299097+IvGolovach@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 12:00:00 -0700
 Subject: [PATCH] feat(skippy): read selected token scores in causal batches
@@ -265,5 +265,5 @@ index 000000000..d33237d1a
 +    return 0;
 +}
 -- 
-2.56.0
+2.56.1
 

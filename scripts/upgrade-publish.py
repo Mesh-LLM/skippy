@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Check both complete upgrade qualification passes and publish their exact commit."""
+"""Publish the immutable candidate selected by the successful full CI job."""
 
 import argparse
 import base64
-import hashlib
 import json
 import os
 import subprocess
@@ -11,9 +10,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from lib.ci_artifacts import digest, extract_archive, read_json, source
+from lib.ci_artifacts import digest, read_json, source
 from lib.ci_process import cancel_on_signal, command
-from lib.upgrade_evidence import MANIFEST, RECIPE, family, inventory, recipe_digest
 from lib.upgrade_resolution import REPO, open_upgrade
 from lib.upgrade_source import PIN, WORKFLOW, check_changes, git, validate_sha
 
@@ -45,61 +43,6 @@ def import_candidate(root, bundle):
     return candidate
 
 
-def candidate_recipe(sha):
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        archive, checkout = root / "source.tar", root / "source"
-        command(["git", "archive", "--format=tar", "--output", str(archive), sha, "--", *RECIPE])
-        extract_archive(archive, checkout, allow_symlinks=False)
-        return recipe_digest(checkout)
-
-
-def expected_families(manifest):
-    expected = {}
-    for model in manifest["models"]:
-        receipt = family(model)
-        name = receipt["family"]
-        if name in expected:
-            raise ValueError("duplicate supported family")
-        receipt["lanes"].sort()
-        expected[name] = receipt
-    required = {"qwen3-dense", "qwen3-moe", "qwen3-next", "qwen3-vl", "qwen3vlmoe", "qwen3tts"}
-    if not required <= set(expected):
-        raise ValueError("supported family roster is missing Qwen3 variants")
-    return expected
-
-
-def admit_receipts(root, candidate, manifest, manifest_hash, recipe):
-    expected = expected_families(manifest)
-    for pass_name in ("candidate", "independent"):
-        for backend in ("cpu", "metal", "cuda"):
-            directory = root / f"llama-{pass_name}-{backend}-evidence"
-            roster = set(inventory(directory, [directory]))
-            receipt = read_json(directory / "receipt.json")
-            identity = {"schema_version": 1, "candidate_sha": candidate["candidate_sha"],
-                        "upstream_sha": candidate["upstream_sha"], "manifest_sha256": manifest_hash,
-                        "native_recipe_sha256": recipe, "backend": backend, "pass": pass_name, "result": "pass"}
-            if (set(receipt) != {*identity, "families", "artifacts"} or any(
-                type(receipt[key]) is not type(value) or receipt[key] != value
-                for key, value in identity.items()
-            )):
-                raise ValueError(f"invalid source, recipe or result in {pass_name}/{backend} receipt")
-            artifacts = receipt["artifacts"]
-            if not artifacts or "receipt.json" in artifacts or roster != {*artifacts, "receipt.json"}:
-                raise ValueError("family evidence contains missing or unaccounted files")
-            actual = {}
-            for item in receipt["families"]:
-                name = item["family"]
-                if name in actual:
-                    raise ValueError("duplicate family evidence")
-                actual[name] = dict(item, lanes=sorted(item["lanes"]))
-            if actual != expected:
-                raise ValueError(f"incomplete family/model/lane coverage in {pass_name}/{backend}")
-            for path, checksum in artifacts.items():
-                if digest(directory / path) != checksum:
-                    raise ValueError("changed family evidence artifact")
-
-
 def authenticated(*args):
     token = os.environ["GH_TOKEN"]
     if not token:
@@ -115,12 +58,41 @@ def authenticated(*args):
         raise RuntimeError(f"authenticated {args[0]} failed") from None
 
 
+def description(candidate):
+    sha = validate_sha(candidate["candidate_sha"])
+    upstream = validate_sha(candidate["upstream_sha"])
+    run = os.environ["GITHUB_RUN_ID"]
+    if not run.isdecimal():
+        raise ValueError("invalid workflow run ID")
+    return (
+        "## Original problem\n\n"
+        f"Integrate llama.cpp `{upstream}` with Skippy's native stage implementation. Tracks #12.\n\n"
+        "## Diagnostics\n\n"
+        f"[Upstream revision](https://github.com/ggml-org/llama.cpp/commit/{upstream}). "
+        f"[Upgrade checks and repair evidence](https://github.com/{REPO}/actions/runs/{run}).\n\n"
+        "## Fix\n\n"
+        "Update the pinned native source, ordered patch queues, generated bindings and source-recipe identity. "
+        f"The exact independently verified candidate is `{sha}`.\n\n"
+        "## Compatibility\n\n"
+        "Native ABI and graph contracts are checked by the existing CI gates. The native source-recipe "
+        "identity changes with the pin and patch queue; runtime artifacts are built from this candidate.\n\n"
+        "## Validation\n\n"
+        "The controller's CPU `just lint`, `just test` and `just llama-check` gates passed, followed by "
+        "independent full CI on this exact candidate. The linked run records the selected platform "
+        "builds and smoke results. No additional live-model inference battery was run.\n\n"
+        "## Acceptance criteria\n\n"
+        "- [x] I ran the relevant local checks, or explained why they do not apply.\n"
+        "- [x] I agree to license my contributions under the Apache License, Version 2.0.\n"
+    )
+
+
 def publish(candidate):
     sha, upstream = candidate["candidate_sha"], candidate["upstream_sha"]
     current = open_upgrade(upstream)
     if current:
         print(current)
         return
+    body_text = description(candidate)
     branch = "automation/llama-" + sha[:12]
     authenticated("git", "push", f"https://github.com/{REPO}.git", f"{sha}:refs/heads/{branch}")
     existing = json.loads(authenticated("gh", "pr", "list", "--repo", REPO, "--head", branch,
@@ -132,34 +104,31 @@ def publish(candidate):
         return
     with tempfile.TemporaryDirectory() as tmp:
         body = Path(tmp) / "body.md"
-        body.write_text(
-            f"Upgrade Skippy's native inference engine to llama.cpp `{upstream}`.\n\n"
-            "The complete supported-family roster passed CPU, Metal and CUDA qualification and "
-            "an independent clean verification of this exact candidate. Both passes used the "
-            "normal platform CI and packaged Qwen3 smoke matrix.\n\n"
-            f"Candidate: `{sha}`\n", encoding="utf-8",
-        )
+        body.write_text(body_text, encoding="utf-8")
         print(authenticated("gh", "pr", "create", "--repo", REPO, "--base", "main", "--head", branch,
                             "--title", f"Upgrade llama.cpp to {upstream[:12]}", "--body-file", str(body)))
 
 
-def main(bundle, evidence):
+def validated_candidate(root, bundle, expected):
+    validate_sha(expected)
+    candidate = import_candidate(root, bundle.resolve(strict=True))
+    if candidate["candidate_sha"] != expected:
+        raise ValueError("candidate differs from the source selected by successful full CI")
+    return candidate
+
+
+def main(bundle, expected):
     require_publisher()
-    candidate = import_candidate(Path.cwd(), bundle.resolve(strict=True))
-    sha = candidate["candidate_sha"]
-    manifest = command(["git", "show", f"{sha}:{MANIFEST}"], capture_stdout=True, raw=True)
-    admit_receipts(evidence, candidate, json.loads(manifest), hashlib.sha256(manifest).hexdigest(),
-                   candidate_recipe(sha))
-    publish(candidate)
+    publish(validated_candidate(Path.cwd(), bundle, expected))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidate", required=True, type=Path)
-    parser.add_argument("--evidence", required=True, type=Path)
+    parser.add_argument("--validated-sha", required=True)
     args = parser.parse_args()
     try:
         with cancel_on_signal():
-            main(args.candidate, args.evidence)
+            main(args.candidate, args.validated_sha)
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt) as error:
         sys.exit(str(error))

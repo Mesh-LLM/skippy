@@ -367,6 +367,46 @@ impl BatchConfig {
     }
 }
 
+/// How many threads sample the requests of one decode wave.
+///
+/// The wire keeps the integer the setting has always been, so absent, null
+/// and the legacy zero all read as [`SampleThreads::Auto`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(from = "Option<u32>", into = "Option<u32>")]
+pub enum SampleThreads {
+    /// The scheduler thread plus as many pooled helpers as the wave and the
+    /// hardware allow.
+    #[default]
+    Auto,
+    /// At most this many, the scheduler thread included; one samples every
+    /// request on the scheduler thread.
+    AtMost(NonZeroU32),
+}
+
+impl SampleThreads {
+    /// The cap, or `None` when the scheduler chooses.
+    pub const fn limit(self) -> Option<NonZeroU32> {
+        match self {
+            Self::Auto => None,
+            Self::AtMost(threads) => Some(threads),
+        }
+    }
+}
+
+impl From<Option<u32>> for SampleThreads {
+    fn from(threads: Option<u32>) -> Self {
+        threads
+            .and_then(NonZeroU32::new)
+            .map_or(Self::Auto, Self::AtMost)
+    }
+}
+
+impl From<SampleThreads> for Option<u32> {
+    fn from(threads: SampleThreads) -> Self {
+        threads.limit().map(NonZeroU32::get)
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct StageConfig {
@@ -484,12 +524,9 @@ pub struct StageConfig {
     /// over the whole pool.
     #[serde(default)]
     pub kv_row_attention: Option<bool>,
-    /// Threads that sample the requests of one decode wave. None and zero
-    /// use the scheduler thread plus as many pooled helpers as the wave and
-    /// the hardware allow; one samples every request on the scheduler
-    /// thread; any other value caps the scheduler thread plus helpers.
+    /// Threads that sample the requests of one decode wave.
     #[serde(default)]
-    pub sample_threads: Option<u32>,
+    pub sample_threads: SampleThreads,
     #[serde(default)]
     pub cache_idle_slots: Option<u32>,
     /// The longest a prompt waits for others to join its prefill wave, in
@@ -740,6 +777,30 @@ mod peer_config_tests {
         value["persistent_lane_marker"] = true.into();
         let capable: PeerConfig = serde_json::from_value(value).unwrap();
         assert!(capable.persistent_lane_marker);
+    }
+}
+
+#[cfg(test)]
+mod sample_threads_tests {
+    use super::{SampleThreads, StageConfig};
+    use std::num::NonZeroU32;
+
+    #[test]
+    fn sample_threads_keeps_its_wire_integer() {
+        let mut stage = serde_json::to_value(StageConfig::default()).unwrap();
+        assert!(stage["sample_threads"].is_null());
+
+        stage["sample_threads"] = 0.into();
+        let legacy_zero: StageConfig = serde_json::from_value(stage.clone()).unwrap();
+        assert_eq!(legacy_zero.sample_threads, SampleThreads::Auto);
+
+        stage["sample_threads"] = 6.into();
+        let capped: StageConfig = serde_json::from_value(stage).unwrap();
+        assert_eq!(capped.sample_threads.limit(), NonZeroU32::new(6));
+        assert_eq!(
+            serde_json::to_value(capped).unwrap()["sample_threads"],
+            serde_json::json!(6)
+        );
     }
 }
 

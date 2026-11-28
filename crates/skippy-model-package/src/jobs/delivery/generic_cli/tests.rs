@@ -174,3 +174,10 @@ fn generic_facade_prepares_full_mounted_roster_and_correlates_locator_before_out
     assert!(!refused.exists());
     temp.close().unwrap();
 }
+
+#[test]
+#[cfg(debug_assertions)]
+fn cli_definition_is_internally_consistent() {
+    use clap::CommandFactory;
+    Cli::command().debug_assert();
+}

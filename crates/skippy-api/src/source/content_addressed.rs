@@ -1,4 +1,7 @@
-use std::{ffi::OsStr, path::Path};
+use std::{
+    ffi::OsStr,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
 use hf_hub::HFClientSync;
@@ -7,14 +10,32 @@ use sha2::{Digest, Sha256};
 
 use super::{SkippyPackageIdentity, SkippyPackageSourceFile, hex_lower, synthetic_gguf_package};
 
-struct ManagedHfSnapshotBlob {
-    blob_root: std::path::PathBuf,
-    target: std::path::PathBuf,
+struct HuggingFaceBlobRoots {
+    repo: PathBuf,
+    shared: PathBuf,
+}
+
+impl HuggingFaceBlobRoots {
+    fn new(repo: &Path) -> Result<Self> {
+        let cache = repo
+            .parent()
+            .context("Hugging Face repository has no cache root")?;
+        Ok(Self {
+            repo: repo.join("blobs").canonicalize().with_context(|| {
+                format!("canonicalize Hugging Face blob root {}", repo.display())
+            })?,
+            shared: cache
+                .canonicalize()
+                .with_context(|| format!("canonicalize Hugging Face cache {}", cache.display()))?
+                .join("blobs"),
+        })
+    }
 }
 
 pub(super) struct HuggingFaceSourceFiles {
     pub files: Vec<SkippyPackageSourceFile>,
     pub identity_sha256: String,
+    pub verified_fingerprint: Option<Vec<crate::source_registry::VerifiedFileFingerprint>>,
 }
 
 #[derive(Serialize)]
@@ -50,6 +71,7 @@ fn is_huggingface_commit(value: &str) -> bool {
 /// Large Hub artifacts are stored under `blobs/<sha256>` and snapshot entries
 /// point at those immutable blobs. Their names and sizes are authoritative
 /// identity inputs, so startup does not need to scan the weight payload.
+/// For shared Xet blobs, the repo-local pointer retains the SHA-256 ETag.
 pub(super) fn huggingface_source_files(
     identity: &skippy_model_hf::store::local::HuggingFaceModelIdentity,
     snapshot_root: &Path,
@@ -74,11 +96,8 @@ pub(super) fn huggingface_source_files(
         .parent()
         .and_then(Path::parent)
         .context("Hugging Face snapshot has no repository root")?;
-    let blob_root = repo_dir
-        .join("blobs")
-        .canonicalize()
-        .with_context(|| format!("canonicalize Hugging Face blob root {}", repo_dir.display()))?;
-    let local_paths = match managed_hf_multipart_view_in_root(&snapshot_paths, &blob_root)? {
+    let blobs = HuggingFaceBlobRoots::new(repo_dir)?;
+    let local_paths = match managed_hf_multipart_view_in_root(&snapshot_paths, &blobs)? {
         Some(paths) => paths,
         None => snapshot_paths
             .iter()
@@ -90,6 +109,7 @@ pub(super) fn huggingface_source_files(
             .collect::<Result<Vec<_>>>()?,
     };
 
+    let verified_fingerprint = crate::source_registry::verified_path_fingerprint(&local_paths);
     let mut api = None;
     let resolved = snapshot_paths
         .into_iter()
@@ -114,30 +134,16 @@ pub(super) fn huggingface_source_files(
                 local_path.display()
             );
 
-            let (sha256, bytes) =
-                match managed_hf_snapshot_blob_in_root(&snapshot_path, &blob_root)? {
-                    Some(blob) => {
-                        let sha256 = blob
-                            .target
-                            .file_name()
-                            .and_then(|name| name.to_str())
-                            .filter(|value| is_sha256(value))
-                            .with_context(|| {
-                                format!(
-                                    "Hugging Face GGUF blob has no authoritative SHA-256 name: {}",
-                                    blob.target.display()
-                                )
-                            })?
-                            .to_string();
-                        let metadata = blob.target.metadata().with_context(|| {
-                            format!("stat Hugging Face GGUF blob {}", blob.target.display())
-                        })?;
-                        (sha256, metadata.len())
+            let (sha256, bytes) = match managed_hf_snapshot_blob_in_root(&snapshot_path, &blobs)? {
+                Some(blob) => {
+                    if blob != local_path {
+                        ensure_same_regular_file(&blob, &local_path)?;
                     }
-                    None => {
-                        hub_file_identity(&mut api, identity, &relative_file, &mut build_client)?
-                    }
-                };
+                    let sha256 = managed_hf_blob_etag(&snapshot_path, &blob, &blobs)?;
+                    (sha256, local_metadata.len())
+                }
+                None => hub_file_identity(&mut api, identity, &relative_file, &mut build_client)?,
+            };
             anyhow::ensure!(
                 local_metadata.len() == bytes,
                 "Hugging Face GGUF metadata and local source size differ: {}",
@@ -162,6 +168,7 @@ pub(super) fn huggingface_source_files(
     Ok(HuggingFaceSourceFiles {
         files,
         identity_sha256,
+        verified_fingerprint,
     })
 }
 
@@ -178,6 +185,47 @@ fn huggingface_identity_sha256(
     };
     let bytes = serde_json::to_vec(&canonical).context("serialize Hugging Face GGUF identity")?;
     Ok(hex_lower(&Sha256::digest(bytes)))
+}
+
+fn managed_hf_blob_etag(
+    snapshot: &Path,
+    blob: &Path,
+    blobs: &HuggingFaceBlobRoots,
+) -> Result<String> {
+    let etag_path = if blob.starts_with(&blobs.repo) {
+        blob.to_path_buf()
+    } else {
+        // Hugging Face makes the repo-local ETag entry a symlink to an Xet
+        // object. Its name stays the file's SHA-256 even when the target moves.
+        let link = std::fs::read_link(snapshot)
+            .with_context(|| format!("read Hugging Face snapshot link {}", snapshot.display()))?;
+        let entry = snapshot
+            .parent()
+            .context("Hugging Face snapshot has no parent")?
+            .join(link);
+        let parent = entry
+            .parent()
+            .context("Hugging Face blob entry has no parent")?
+            .canonicalize()
+            .with_context(|| format!("resolve Hugging Face blob entry {}", entry.display()))?;
+        anyhow::ensure!(
+            parent == blobs.repo && entry.canonicalize()? == blob,
+            "shared Hugging Face GGUF snapshot has no repo-local blob entry: {}",
+            snapshot.display()
+        );
+        entry
+    };
+    etag_path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .filter(|value| is_sha256(value))
+        .map(str::to_owned)
+        .with_context(|| {
+            format!(
+                "Hugging Face GGUF blob has no authoritative SHA-256 name: {}",
+                etag_path.display()
+            )
+        })
 }
 
 fn hub_file_identity(
@@ -259,7 +307,7 @@ fn snapshot_source_paths(model_path: &Path) -> Result<Vec<std::path::PathBuf>> {
         .collect()
 }
 
-fn managed_hf_snapshot_blob(path: &Path) -> Result<Option<ManagedHfSnapshotBlob>> {
+fn managed_hf_blob_roots(path: &Path) -> Result<Option<HuggingFaceBlobRoots>> {
     let Some(repo_dir) = path.ancestors().find_map(|revision_dir| {
         let snapshots_dir = revision_dir.parent()?;
         (snapshots_dir.file_name() == Some(OsStr::new("snapshots")))
@@ -274,17 +322,13 @@ fn managed_hf_snapshot_blob(path: &Path) -> Result<Option<ManagedHfSnapshotBlob>
     if skippy_model_hf::huggingface_identity_for_path_in_cache(path, cache_root).is_none() {
         return Ok(None);
     }
-    let blob_root = repo_dir
-        .join("blobs")
-        .canonicalize()
-        .with_context(|| format!("canonicalize Hugging Face blob root {}", repo_dir.display()))?;
-    managed_hf_snapshot_blob_in_root(path, &blob_root)
+    HuggingFaceBlobRoots::new(repo_dir).map(Some)
 }
 
 fn managed_hf_snapshot_blob_in_root(
     path: &Path,
-    blob_root: &Path,
-) -> Result<Option<ManagedHfSnapshotBlob>> {
+    blobs: &HuggingFaceBlobRoots,
+) -> Result<Option<PathBuf>> {
     let metadata = std::fs::symlink_metadata(path)
         .with_context(|| format!("stat Hugging Face GGUF snapshot entry {}", path.display()))?;
     if !metadata.file_type().is_symlink() {
@@ -294,14 +338,11 @@ fn managed_hf_snapshot_blob_in_root(
         .canonicalize()
         .with_context(|| format!("resolve Hugging Face GGUF snapshot link {}", path.display()))?;
     anyhow::ensure!(
-        target.starts_with(blob_root),
+        target.starts_with(&blobs.repo) || target.starts_with(&blobs.shared),
         "Hugging Face GGUF snapshot link escapes its blob store: {}",
         path.display()
     );
-    Ok(Some(ManagedHfSnapshotBlob {
-        blob_root: blob_root.to_path_buf(),
-        target,
-    }))
+    Ok(Some(target))
 }
 
 /// Give native multipart GGUF discovery stable upstream filenames without
@@ -315,22 +356,22 @@ pub(super) fn managed_hf_multipart_view(
         return Ok(None);
     }
 
-    let Some(source) = managed_hf_snapshot_blob(&snapshot_paths[0])? else {
+    let Some(blobs) = managed_hf_blob_roots(&snapshot_paths[0])? else {
         return Ok(None);
     };
-    managed_hf_multipart_view_in_root(snapshot_paths, &source.blob_root)
+    managed_hf_multipart_view_in_root(snapshot_paths, &blobs)
 }
 
 fn managed_hf_multipart_view_in_root(
     snapshot_paths: &[std::path::PathBuf],
-    blob_root: &Path,
+    blobs: &HuggingFaceBlobRoots,
 ) -> Result<Option<Vec<std::path::PathBuf>>> {
     if snapshot_paths.len() <= 1 {
         return Ok(None);
     }
     let mut sources = Vec::with_capacity(snapshot_paths.len());
     for snapshot_path in snapshot_paths {
-        let Some(source) = managed_hf_snapshot_blob_in_root(snapshot_path, blob_root)? else {
+        let Some(source) = managed_hf_snapshot_blob_in_root(snapshot_path, blobs)? else {
             return Ok(None);
         };
         sources.push(source);
@@ -350,14 +391,14 @@ fn managed_hf_multipart_view_in_root(
             })?;
         view_id.update((name.len() as u64).to_le_bytes());
         view_id.update(name.as_bytes());
-        let target = source.target.to_string_lossy();
+        let target = source.to_string_lossy();
         view_id.update((target.len() as u64).to_le_bytes());
         view_id.update(target.as_bytes());
     }
-    let repo_root = blob_root.parent().with_context(|| {
+    let repo_root = blobs.repo.parent().with_context(|| {
         format!(
             "Hugging Face blob root has no parent: {}",
-            blob_root.display()
+            blobs.repo.display()
         )
     })?;
     let view_dir = repo_root
@@ -374,7 +415,7 @@ fn managed_hf_multipart_view_in_root(
                 .file_name()
                 .context("multipart GGUF snapshot path has no filename")?,
         );
-        match std::fs::hard_link(&source.target, &destination) {
+        match std::fs::hard_link(source, &destination) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(error) => {
@@ -382,12 +423,12 @@ fn managed_hf_multipart_view_in_root(
                     format!(
                         "create multipart GGUF view {} -> {}",
                         destination.display(),
-                        source.target.display()
+                        source.display()
                     )
                 });
             }
         }
-        ensure_same_regular_file(&source.target, &destination)?;
+        ensure_same_regular_file(source, &destination)?;
         view_paths.push(destination);
     }
     Ok(Some(view_paths))
@@ -467,8 +508,10 @@ pub(super) fn validate_source_set(model_path: &Path) -> Result<()> {
     let validate_file = |path: &Path| -> Result<()> {
         let metadata = std::fs::symlink_metadata(path)
             .with_context(|| format!("stat content-addressed GGUF source {}", path.display()))?;
-        let managed_hf_snapshot_blob = if metadata.file_type().is_symlink() {
-            managed_hf_snapshot_blob(path)?
+        let managed_hf_snapshot_blob = if metadata.file_type().is_symlink()
+            && let Some(blobs) = managed_hf_blob_roots(path)?
+        {
+            managed_hf_snapshot_blob_in_root(path, &blobs)?
         } else {
             None
         };
@@ -478,9 +521,8 @@ pub(super) fn validate_source_set(model_path: &Path) -> Result<()> {
             path.display()
         );
         if let Some(source) = managed_hf_snapshot_blob {
-            let target_metadata = std::fs::symlink_metadata(&source.target).with_context(|| {
-                format!("stat Hugging Face GGUF blob {}", source.target.display())
-            })?;
+            let target_metadata = std::fs::symlink_metadata(&source)
+                .with_context(|| format!("stat Hugging Face GGUF blob {}", source.display()))?;
             anyhow::ensure!(
                 target_metadata.is_file() && !target_metadata.file_type().is_symlink(),
                 "Hugging Face GGUF snapshot link must resolve to a regular file: {}",

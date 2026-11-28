@@ -83,7 +83,7 @@ while the process-wide libraries stay resident.
 
 `SplitOptions` builds a two-stage direct GGUF chain with explicit stage-zero
 return and downstream worker endpoints. It verifies the source, independently
-realizes native graphs, checks the split certification and activation frontier,
+realizes native graphs, checks native stage admission and the activation frontier,
 and waits for a binary readiness handshake. `SplitExecution` owns the
 in-process frontend and joins the worker after frontend drain. Split defaults
 keep MTP, speculative drafting, and cross-lane batching off. Experimental

@@ -77,9 +77,9 @@ These changes affect memory use and batch latency, so compare an unchanged
 workload with explicit pool, retention, and batch settings before adopting
 historical performance results.
 
-The bundled split certification roster is not renewed by this port. Its prior
-recipe remains recorded, so certification gates reject a mismatched recipe.
-New split qualification must follow the normal recipe-bound process.
+Split planning validates native stage graphs, tensor closures and activation
+frontiers. Qualification results bind to the exact source recipe and tested
+configuration.
 
 ## Qualification
 

@@ -115,6 +115,7 @@ fn expired_direct_iteration_behind_blocked_worker_never_reaches_native_runtime()
     let (release_worker, release_worker_rx) = std_mpsc::sync_channel(0);
     commands
         .send(SchedulerCommand::ExecuteRuntime(RuntimeOperation {
+            kind: RuntimeOperationKind::Mutation,
             label: "deadline-test-gate",
             control: None,
             run: Box::new(move |_| {
@@ -783,6 +784,7 @@ fn full_direct_wave_suppresses_cache_runtime_while_direct_queue_is_temporarily_e
     };
     worker.cache_runtime_queue.enqueue_with_policy(
         RuntimeOperation {
+            kind: RuntimeOperationKind::Mutation,
             label: "full-wave-cache",
             control: None,
             run: Box::new(move |_| {
@@ -836,6 +838,7 @@ fn resident_kv_does_not_engage_direct_wave_gate() {
     };
     worker.cache_runtime_queue.enqueue(
         RuntimeOperation {
+            kind: RuntimeOperationKind::Mutation,
             label: "resident-cache",
             control: None,
             run: Box::new(move |_| {
@@ -940,6 +943,7 @@ fn worker_panic_is_contained_and_fails_active_requests() {
     let (release_worker, release_worker_rx) = std_mpsc::sync_channel(0);
     commands
         .send(SchedulerCommand::ExecuteRuntime(RuntimeOperation {
+            kind: RuntimeOperationKind::Mutation,
             label: "panic-test-gate",
             control: None,
             run: Box::new(move |_| {
@@ -968,6 +972,7 @@ fn worker_panic_is_contained_and_fails_active_requests() {
         .unwrap();
     commands
         .send(SchedulerCommand::ExecuteRuntime(RuntimeOperation {
+            kind: RuntimeOperationKind::Mutation,
             label: "panic-test",
             control: None,
             run: Box::new(|_| -> Duration { panic!("injected scheduler worker panic") }),
@@ -1067,6 +1072,7 @@ fn detached_capture_unit_releases_on_completion_rejection_and_shutdown_drop() {
     let run_guard = CaptureTaskOutstandingGuard::new(run_counter);
     commands
         .send(SchedulerCommand::ExecuteRuntime(RuntimeOperation {
+            kind: RuntimeOperationKind::Mutation,
             label: "capture-unit-run",
             control: None,
             run: Box::new(move |_| {
@@ -1089,6 +1095,7 @@ fn detached_capture_unit_releases_on_completion_rejection_and_shutdown_drop() {
 fn capture_operation(counter: &Arc<AtomicUsize>, label: &'static str) -> RuntimeOperation {
     let guard = CaptureTaskOutstandingGuard::new(counter.clone());
     RuntimeOperation {
+        kind: RuntimeOperationKind::Mutation,
         label,
         control: None,
         run: Box::new(move |_| {

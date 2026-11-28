@@ -135,6 +135,7 @@ mod tests {
         queue_restore(
             &mut worker,
             RuntimeOperation {
+                kind: RuntimeOperationKind::Mutation,
                 label: "fourth-required-restore",
                 control: None,
                 run: Box::new(move |_| {
@@ -166,6 +167,7 @@ mod tests {
         queue_restore(
             &mut worker,
             RuntimeOperation {
+                kind: RuntimeOperationKind::Mutation,
                 label: "next-wave-restore",
                 control: None,
                 run: Box::new(move |_| {
@@ -195,6 +197,7 @@ mod tests {
         let observed = next_restore.clone();
         worker.cache_runtime_queue.enqueue_with_policy(
             RuntimeOperation {
+                kind: RuntimeOperationKind::Mutation,
                 label: "next-wave-required-restore",
                 control: None,
                 run: Box::new(move |_| {

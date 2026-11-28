@@ -1,7 +1,7 @@
-From 4ec7dee538537b4ce0cbc386b71faef3bfa4d964 Mon Sep 17 00:00:00 2001
+From ce1bcb22150e758399d65e0e16a6eff6041f9174 Mon Sep 17 00:00:00 2001
 From: Mesh-LLM CI <ci@mesh-llm.local>
 Date: Wed, 28 Oct 2026 20:57:15 +1300
-Subject: [PATCH 11/32] grammar: match literal lazy triggers without regex
+Subject: [PATCH] grammar: match literal lazy triggers without regex
 
 ---
  src/llama-grammar.cpp                   | 10 ++++
@@ -11,10 +11,10 @@ Subject: [PATCH 11/32] grammar: match literal lazy triggers without regex
  create mode 100644 tests/test-grammar-trigger-patterns.cpp
 
 diff --git a/src/llama-grammar.cpp b/src/llama-grammar.cpp
-index 4e096a368..96772743d 100644
+index 21a018c8c..40eca5a1e 100644
 --- a/src/llama-grammar.cpp
 +++ b/src/llama-grammar.cpp
-@@ -382,6 +382,16 @@ static void print_rule(
+@@ -440,6 +440,16 @@ static void print_rule(
  //
  
  size_t llama_grammar_trigger_pattern::find(const std::string & input) const {
@@ -32,7 +32,7 @@ index 4e096a368..96772743d 100644
          // get from the first matched capturing group to the end of the string
          size_t start = std::string::npos;
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 173b02c00..7c55e2c5f 100644
+index 4733ae088..90df03839 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
 @@ -196,6 +196,7 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
@@ -121,3 +121,6 @@ index 000000000..6df57b5c6
 +    assert(insensitive.find("WORD") == 0);
 +    return 0;
 +}
+-- 
+2.56.1
+

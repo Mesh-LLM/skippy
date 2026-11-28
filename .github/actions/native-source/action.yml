@@ -4,7 +4,7 @@ runs:
   using: composite
   steps:
     - name: Restore prepared llama.cpp source
-      if: env.LLAMA_WORKDIR == '' && env.LLAMA_UPSTREAM_URL == '' && env.LLAMA_PIN_FILE == '' && env.LLAMA_PATCH_DIR == '' && env.SKIPPY_LLAMA_DIR == ''
+      if: ${{ !startsWith(runner.name, 'depot-') && env.LLAMA_WORKDIR == '' && env.LLAMA_UPSTREAM_URL == '' && env.LLAMA_PIN_FILE == '' && env.LLAMA_PATCH_DIR == '' && env.SKIPPY_LLAMA_DIR == '' }}
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: .deps/llama.cpp
@@ -12,7 +12,7 @@ runs:
         restore-keys: |
           native-source-v1-${{ runner.os }}-${{ hashFiles('llama_cpp/upstream.txt') }}-
     - name: Restore pinned whisper.cpp source
-      if: env.WHISPER_WORKDIR == '' && env.WHISPER_UPSTREAM_URL == '' && env.WHISPER_PIN_FILE == ''
+      if: ${{ !startsWith(runner.name, 'depot-') && env.WHISPER_WORKDIR == '' && env.WHISPER_UPSTREAM_URL == '' && env.WHISPER_PIN_FILE == '' }}
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: .deps/whisper.cpp

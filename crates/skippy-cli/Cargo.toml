@@ -5,7 +5,7 @@ license.workspace = true
 publish = false
 version.workspace = true
 description = "Standalone Skippy model serving and management CLI"
-repository = "https://github.com/general-inference/skippy"
+repository = "https://github.com/Mesh-LLM/skippy"
 
 [[bin]]
 name = "skippy"
@@ -19,6 +19,7 @@ tracy = ["skippy-serving/tracy"]
 
 [dependencies]
 skippy-gpu-bench = { path = "../skippy-gpu-bench", version = "0.80.0" }
+tempfile = "3"
 anyhow.workspace = true
 dirs = "6.0.0"
 clap.workspace = true
@@ -46,4 +47,3 @@ uuid = { version = "1", features = ["v4"] }
 [dev-dependencies]
 skippy-native-runtime = { path = "../skippy-native-runtime", version = "0.80.0" }
 serde_json.workspace = true
-tempfile = "3"

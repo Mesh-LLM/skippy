@@ -87,7 +87,8 @@ The repository secret `JIANYANG_INFERENCE_SSH_KEY` is a dedicated submitter SSH
 identity. The controller signs a challenge, caches a short-lived session for at
 most 30 minutes and renews it during long runs. No admin key is given to Actions
 or model jobs. The controller records launches and terminal snapshots under
-`target/ci-evidence/inference`; JY retains native logs and artifact directories.
+`target/ci-evidence/inference`; native attempt logs stream into the Actions
+qualification step and are copied into its uploaded evidence.
 Native artifacts include flat AgentX profile summaries and `agentx.tar.gz` with
 the complete nested request evidence, including when the client fails.
 
@@ -194,21 +195,20 @@ remain bounded by the native JY lease. Admission and formation-member polling
 share one controller deadline, leaving ten minutes before Actions' six-hour
 limit for cleanup and evidence retention.
 
-## PR results comment
+## Split admission
 
-PR split smoke exercises a candidate native recipe before release certification.
-It passes `plan-split --allow-uncertified-split` explicitly and retains
-`split-admissions.json` from each member. `qualification.json` records the
-planner's actual `certified` or `uncertified_override` admission. Both paths
-still require native stage/frontier admission, GPU offload, deterministic scored
-responses and streaming completion. Smoke does not renew `split-certified.json`.
-Default CLI planning, nightly and release continue to require the exact certified
-recipe. Admission unit tests use explicit fixtures and test rejection of stale
-upstream, patch digest, ABI and schema identities independently of that roster.
+All profiles use ordinary `plan-split` native admission. Both formation members
+retain `split-admissions.json`, containing the native stage descriptors and
+activation frontiers. `qualification.json` binds their canonical digest to the
+source, model, backend and mode. Missing or malformed native evidence fails
+qualification. Nightly also requires chain parity, state handoff and both AgentX
+trials. Qualification describes the exact configuration tested by that run.
+
+## PR results comment
 
 The protected inference workflow publishes one bot-owned results comment per PR,
 updating it on reruns. The heading is
-"[General Inference](https://generalinference.xyz) Lab Qualification". It shows
+"Skippy Lab Qualification". It shows
 the tested SHA, each serving configuration's Actions outcome, prefill/decode
 tokens per second, workflow timing/log links, GitHub evidence and available
 durable lab records. PR smoke does not claim AgentX performance measurements.
@@ -218,6 +218,18 @@ divided by total server-reported phase seconds, rather than an average of reques
 rates. Prefill counts prompt tokens minus cached tokens; decode counts generated
 tokens. These very short samples include startup/warmup effects and do not
 establish sustained throughput or a controlled speedup comparison.
+
+The comment also shows each phase's percentage change and main TPS against the
+latest successful `main` inference workflow run, with its run, attempt and commit
+linked. It reuses the matching PR-profile smoke artifacts, including those
+produced alongside nightly AgentX by the nightly publisher. This is distinct
+from the saved performance baseline in the public dataset, which can be older.
+Comparison requires unchanged harness/model/template inputs, matching serving
+host class and equal phase token counts. The reporter checks Git tree metadata
+without executing candidate code. AgentX receipts never substitute for smoke.
+Missing, expired or incompatible evidence shows `Unavailable`; it does not
+search older runs or change qualification verdicts. Physical machine placement
+and runtime conditions can differ, so these are descriptive smoke deltas.
 
 The protected controller retrieves `qualification.json` and `quality.json` from
 the successful native attempt and writes a numeric, per-configuration throughput
@@ -234,7 +246,15 @@ The reporting job runs on success or failure, uses only protected-main code and
 has pull-requests-write permission without the native dispatch credential. Its payload
 never includes PR titles, candidate-generated Markdown or native log contents.
 It refuses to update a comment when the PR head changed or a newer run/attempt
-has already reported. Missing controller artifacts leave JY links unavailable;
-Actions outcomes still report. Comment failures are visible separately and do not
+has already reported. The report links directly to each configuration’s Actions
+log and the workflow’s saved evidence; no external lab login is needed.
+Missing controller artifacts do not hide Actions outcomes. Comment failures are visible separately and do not
 change the source-bound qualification verdict. GitHub artifact copies have a
-30-day retention period; JY job records link to the native evidence.
+30-day retention period. Per-attempt JSONL logs cover standalone jobs and both
+split members, including retries and failures. The controller reads incremental
+log pages during status polling and gives terminal logs a 30-second final drain window
+within the existing deadline; in-flight API reads retain their existing timeout
+and retry limits. Capture errors/gaps are visible in Actions and
+`*-logs/diagnostics.txt`; they do not change the native qualification verdict.
+Actions command processing is disabled around native output using a fresh,
+controller-only resume token. Lines are prefixed and control characters escaped.

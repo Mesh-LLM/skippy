@@ -12,6 +12,21 @@ from .upgrade_source import PIN, git
 SCRIPTS = Path(__file__).resolve().parents[1]
 
 
+def validate_patch_metadata(patches):
+    for patch in patches.rglob("*.patch"):
+        paths = command(["git", "apply", "--numstat", "-z", str(patch.resolve())], capture_stdout=True)
+        for entry in paths.split("\0"):
+            path = entry.rsplit("\t", 1)[-1]
+            if path.split("/", 1)[0].startswith(".skippy-"):
+                raise ValueError(f"repair patch contains preparation metadata: {patch}: {path}")
+
+
+def stage_patches(source, destination):
+    shutil.rmtree(destination, ignore_errors=True)
+    patches_only(source, destination, exclude_generated=True)
+    validate_patch_metadata(destination)
+
+
 def patches_only(source, destination, exclude_generated=False):
     destination.mkdir(parents=True, exist_ok=True)
     for item in source.iterdir():
@@ -31,7 +46,7 @@ def patches_only(source, destination, exclude_generated=False):
 def regenerate(checkout):
     scratch = checkout / "target/llama-regeneration"
     patches, native, tools = (scratch / name for name in ("core-patches", "native", "rewriter"))
-    patches_only(checkout / "llama_cpp/patches", patches, exclude_generated=True)
+    stage_patches(checkout / "llama_cpp/patches", patches)
     source = checkout / ".deps/llama.cpp"
     env = {"LLAMA_WORKDIR": str(source), "LLAMA_PIN_FILE": str(checkout / PIN),
            "LLAMA_PATCH_DIR": str(patches), "LLAMA_STAGE_BUILD_DIR": str(native),
@@ -46,8 +61,9 @@ def regenerate(checkout):
     command(["cmake", "--build", str(tools), "--parallel"], timeout=3600)
     command(["ctest", "--test-dir", str(tools), "--output-on-failure", "--no-tests=error"], timeout=600)
     generated, report = scratch / "generated", scratch / "report.json"
+    shutil.rmtree(generated, ignore_errors=True)
     family_map = checkout / "ci/llama-canary/generated-family-map.json"
-    manifest = checkout / "ci/llama-canary/family-certified.json"
+    manifest = checkout / "ci/llama-canary/model-fixtures.json"
     argv = [sys.executable, str(SCRIPTS / "generate-skippy-family-patch.py"), "generate",
             "--git", shutil.which("git"), "--source-root", str(source), "--build-dir", str(native),
             "--rewriter", str(tools / "skippy-stage-rewriter"), "--report", str(report),
@@ -61,8 +77,11 @@ def regenerate(checkout):
     command(argv, timeout=1500)
     command([sys.executable, str(SCRIPTS / "verify-skippy-family-generator-coverage.py"),
              "--manifest", str(manifest), "--family-map", str(family_map), "--report", str(report)])
+    command([sys.executable, str(SCRIPTS / "graph-contract-coverage.py"),
+             "--root", str(checkout), "--source-root", str(source), "--report", str(report),
+             "--output", str(scratch / "graph-coverage.json")])
     destination = checkout / "llama_cpp/patches/generated"
-    shutil.rmtree(destination)
+    shutil.rmtree(destination, ignore_errors=True)
     patches_only(generated, destination)
     env.pop("LLAMA_PATCH_DIR")
     command([*just, "llama-build"], overrides=env, timeout=7200)

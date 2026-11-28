@@ -15,5 +15,12 @@
 0015-models-add-laguna-dflash-drafts.patch
 0016-models-add-dspine-block-parallel-drafter-support.patch
 0017-skippy-remove-callback-backed-checkpoint-serving.patch
-0018-skippy-bump-the-native-abi-for-shared-verification.patch
-0019-skippy-import-stage-checkpoints-whole-and-check-recurrent-imports.patch
+0018-models-shape-dflash-inkling2-zonos3-builders-for-stage-proof.patch
+0019-gemma4-register-shared-kv-pruning-inputs.patch
+0020-minimax-m3-load-indexer-tensors-by-attention-role.patch
+0021-inkling-preserve-media-aware-template-routing.patch
+0022-dspine-populate-the-graph-owned-lattice-stash.patch
+0023-muse-glimmer-retain-token-aware-turn-boundaries.patch
+0024-models-preserve-checkpoint-layouts-and-head-scales.patch
+0025-skippy-bump-the-native-abi-for-shared-verification.patch
+0026-skippy-import-stage-checkpoints-whole-and-check-recurrent-imports.patch

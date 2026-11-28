@@ -462,10 +462,16 @@ async fn download_runtime_archive(
         .send()
         .await
         .map_err(reqwest::Error::without_url)
-        .with_context(|| format!("download native runtime {diagnostic_url}"))?
+        .with_context(|| {
+            NativeRuntimeFetchError(format!("download native runtime {diagnostic_url}"))
+        })?
         .error_for_status()
         .map_err(reqwest::Error::without_url)
-        .with_context(|| format!("native runtime request failed for {diagnostic_url}"))?;
+        .with_context(|| {
+            NativeRuntimeFetchError(format!(
+                "native runtime request failed for {diagnostic_url}"
+            ))
+        })?;
     let total = response.content_length();
     let mut stream = response.bytes_stream();
     let mut file = tokio::fs::File::create(path)
@@ -476,7 +482,9 @@ async fn download_runtime_archive(
     while let Some(chunk) = stream.next().await {
         let chunk = chunk
             .map_err(reqwest::Error::without_url)
-            .with_context(|| format!("read native runtime body from {diagnostic_url}"))?;
+            .with_context(|| {
+                NativeRuntimeFetchError(format!("read native runtime body from {diagnostic_url}"))
+            })?;
         file.write_all(&chunk)
             .await
             .with_context(|| format!("write native runtime archive {}", path.display()))?;
@@ -491,6 +499,20 @@ async fn download_runtime_archive(
     verify_downloaded_archive(artifact, hasher)?;
     Ok(())
 }
+
+/// Context of a runtime archive that could not be fetched (no answer, an HTTP
+/// error such as a 404, or a broken body), so callers can tell that the
+/// runtime was unavailable without reading the message.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NativeRuntimeFetchError(pub String);
+
+impl std::fmt::Display for NativeRuntimeFetchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for NativeRuntimeFetchError {}
 
 pub(crate) fn verify_download_policy_before_fetch(
     artifact: &NativeRuntimeArtifact,
@@ -615,5 +637,71 @@ mod tests {
             find_extracted_runtime_dir(extracted.path()).unwrap(),
             runtime
         );
+    }
+
+    /// A runtime archive the server refuses fails with a typed fetch error, so
+    /// a caller can tell an unavailable runtime from other install failures.
+    #[test]
+    fn a_refused_runtime_download_is_a_typed_fetch_error() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/runtime.tar.gz", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request);
+            stream
+                .write_all(
+                    b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
+                )
+                .unwrap();
+        });
+        let profile = host_runtime_profile();
+        let artifact = NativeRuntimeArtifact {
+            id: "refused-runtime".to_string(),
+            release_version: Some("0.0.0".to_string()),
+            skippy_abi: "0.0.0".to_string(),
+            platform: skippy_native_runtime::NativeRuntimePlatform {
+                os: profile.os,
+                arch: profile.arch,
+                target: profile.target_triple,
+                min_glibc: None,
+            },
+            backend: skippy_native_runtime::NativeRuntimeBackend::cpu(),
+            rank: 0,
+            libraries: Vec::new(),
+            files: Default::default(),
+            tools: Default::default(),
+            url: Some(url.clone()),
+            sha256: Some("0".repeat(64)),
+            signature: None,
+        };
+        let options = NativeRuntimeInstallOptions::new(
+            "0.0.0",
+            NativeRuntimeCatalog {
+                release_tags: Default::default(),
+                releases_url: "https://example.invalid/skippy/releases".to_string(),
+                rolling_release: None,
+            },
+        );
+        let archive = tempfile::tempdir().unwrap();
+
+        let error = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(download_runtime_archive(
+                &url,
+                &archive.path().join(NATIVE_RUNTIME_ARCHIVE_FILE),
+                &artifact,
+                &options,
+            ))
+            .unwrap_err();
+        server.join().unwrap();
+
+        let fetch = error
+            .downcast_ref::<NativeRuntimeFetchError>()
+            .expect("typed fetch error");
+        assert!(fetch.0.contains("native runtime request failed"), "{fetch}");
     }
 }

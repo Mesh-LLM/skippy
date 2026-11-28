@@ -122,7 +122,7 @@ def run(args):
             return
         command(["cargo", "run", "--offline", "--locked", "--",
                  str(bundle), args.runtime_manifest_sha256, str(model),
-                 args.return_endpoint, args.worker_endpoint, args.device or "-", args.split_policy],
+                 args.return_endpoint, args.worker_endpoint, args.device or "-"],
                 cwd=root, overrides=environment, timeout=1200)
         artifacts.write_json(args.evidence, {
             "source": args.source,
@@ -135,7 +135,6 @@ def run(args):
             "device": args.device or "CPU",
             "model_sha256": args.model_sha256,
             "native_build": manifest["build"],
-            "split_policy": args.split_policy,
             "qualification": "passed",
         })
 
@@ -154,7 +153,6 @@ def main():
     qualify.add_argument("--return-endpoint", required=True)
     qualify.add_argument("--worker-endpoint", required=True)
     qualify.add_argument("--device", help="exact native backend device name for an accelerator runtime")
-    qualify.add_argument("--split-policy", choices=("certified", "experimental"), default="certified")
     qualify.add_argument("--evidence", type=Path, required=True)
     run(parser.parse_args())
 

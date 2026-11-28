@@ -23,32 +23,11 @@ mod linked {
     use bindings::llama as raw;
 
     unsafe extern "C" {
-        #[cfg_attr(
-            not(target_env = "msvc"),
-            link_name = "_Z34llama_set_embeddings_layer_inp_devP13llama_contextb"
-        )]
-        #[cfg_attr(
-            target_env = "msvc",
-            link_name = "?llama_set_embeddings_layer_inp_dev@@YAXPEAUllama_context@@_N@Z"
-        )]
+        #[link_name = "llama_set_embeddings_layer_inp_dev"]
         fn set_capture(ctx: *mut Opaque, enabled: bool);
-        #[cfg_attr(
-            not(target_env = "msvc"),
-            link_name = "_Z23llama_supports_embd_rowPK13llama_context"
-        )]
-        #[cfg_attr(
-            target_env = "msvc",
-            link_name = "?llama_supports_embd_row@@YA_NPEBUllama_context@@@Z"
-        )]
+        #[link_name = "llama_supports_embd_row"]
         fn supports_rows(ctx: *const Opaque) -> bool;
-        #[cfg_attr(
-            not(target_env = "msvc"),
-            link_name = "_Z28llama_batch_ext_add_embd_rowP15llama_batch_extii"
-        )]
-        #[cfg_attr(
-            target_env = "msvc",
-            link_name = "?llama_batch_ext_add_embd_row@@YAHPEAUllama_batch_ext@@HH@Z"
-        )]
+        #[link_name = "llama_batch_ext_add_embd_row"]
         fn add_row(batch: *mut Opaque, seq: i32, row: i32) -> i32;
     }
 

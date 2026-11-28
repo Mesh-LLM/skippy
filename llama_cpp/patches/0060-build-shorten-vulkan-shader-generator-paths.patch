@@ -1,0 +1,23 @@
+From c8bf63a8a73e1de07b097280f8134a9dbfe4de61 Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Sat, 28 Nov 2026 09:44:05 +1100
+Subject: [PATCH] build: shorten Vulkan shader-generator build paths
+
+---
+ ggml/src/ggml-vulkan/CMakeLists.txt | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/ggml/src/ggml-vulkan/CMakeLists.txt b/ggml/src/ggml-vulkan/CMakeLists.txt
+index d8fa6ef40..84b236a5c 100644
+--- a/ggml/src/ggml-vulkan/CMakeLists.txt
++++ b/ggml/src/ggml-vulkan/CMakeLists.txt
+@@ -199,6 +199,9 @@ if (Vulkan_FOUND)
+     ExternalProject_Add(
+         vulkan-shaders-gen
+         SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vulkan-shaders
++        # Keep MSVC compiler checks below MAX_PATH for normal checkout paths.
++        # ExternalProject's default <name>-prefix/src/<name>-build is too deep.
++        BINARY_DIR ${CMAKE_BINARY_DIR}/vulkan-shaders-gen-build
+         CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/$<CONFIG>
+                    -DCMAKE_INSTALL_BINDIR=.
+                    -DCMAKE_BUILD_TYPE=$<CONFIG>

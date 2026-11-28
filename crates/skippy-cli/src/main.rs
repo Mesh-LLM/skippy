@@ -15,6 +15,7 @@ mod residency;
 mod runtime;
 mod serve;
 mod serve_settings;
+mod tuning;
 
 use anyhow::Context;
 use anyhow::Result;
@@ -120,7 +121,7 @@ async fn run_main(
     analytics::init(&cli.command);
     let family = analytics::family(&cli.command);
     let result = run_command(cli, native_logs).await;
-    if family != "serve" && family != "analytics" {
+    if !matches!(family, "serve" | "analytics" | "tune_trial") {
         analytics::record_command(family, result.is_ok());
     }
     skippy_analytics::shutdown().await;
@@ -177,6 +178,8 @@ async fn run_command(cli: Cli, native_logs: Arc<native_logging::NativeDiagnostic
         Command::ServeManaged(args) => managed::serve(args, native_options).await,
         #[cfg(unix)]
         Command::Manage(args) => managed::manage(args).await,
+        Command::Tune(args) => tuning::run(args).await,
+        Command::TuneTrial { input } => tuning::run_trial(input).await,
         Command::Models { command } => skippy_commands::models::run_standalone(&command).await,
         Command::PlanSplit(args) => skippy_commands::split::run(args.into()),
         Command::Runtime { command } => {
