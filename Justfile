@@ -227,6 +227,25 @@ inference-build-uncached backend="cuda":
     just llama-build
     cargo build --locked -p skippy-cli -p skippy-correctness
 
+[positional-arguments]
+inference-performance-admit evidence="target/ci-evidence/inference-performance":
+    @"{{ automation_python }}" scripts/inference-performance.py admit "$@"
+
+[positional-arguments]
+inference-performance-dispatch evidence="target/ci-evidence/inference-performance":
+    @"{{ automation_python }}" scripts/inference-performance.py dispatch "$@"
+
+[positional-arguments]
+inference-performance-cancel ledger="target/ci-evidence/inference-performance/jobs.json":
+    @"{{ automation_python }}" scripts/inference-performance.py cancel "$@"
+
+inference-performance-build:
+    @command -v hf uv cmake ninja cargo && xcrun --find swift
+    @"{{ automation_python }}" scripts/inference-performance.py build
+
+inference-performance-execute:
+    @"{{ automation_python }}" scripts/inference-performance.py execute
+
 # Linux diagnostic: retain all MiMo2 graph assertions and report peak memory.
 native-contract-build: llama-prepare
     @LLAMA_STAGE_BACKEND=cpu LLAMA_STAGE_LINK_MODE=static LLAMA_STAGE_BUILD_TESTS=ON scripts/build-llama.sh --build-only

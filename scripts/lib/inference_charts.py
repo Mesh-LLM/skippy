@@ -9,6 +9,8 @@ from .inference_labels import configuration_label
 
 COLORS = {None: "#536574", "passed": "#2457a5", "improved": "#14704e", "regressed": "#ad3535"}
 METRICS = {
+    "ttft_ms_p50": ("Time to first token (p50)", "ms", 1),
+    "itl_ms_p50": ("Time between tokens (p50)", "ms", 1),
     "output_tok_s": ("Output throughput", "tok/s", 1),
     "ttft_p95_ms": ("Time to first token", "seconds", 0.001),
     "itl_p95_ms": ("Time between tokens", "ms", 1),
@@ -27,6 +29,7 @@ class HealthPanel:
     change: float | None
     verdict: str | None
     points: tuple
+    arms: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -49,8 +52,8 @@ def health_charts(view):
             if row is None:
                 continue
             panels.append(HealthPanel(
-                config["id"], config["workload"], configuration_label(config["id"]), row["measured"],
-                row["reference_value"], row["change_pct"], row["health_verdict"], tuple(row["points"]),
+                config["id"], config["workload"], config.get("label", configuration_label(config["id"])), row["measured"],
+                row["reference_value"], row["change_pct"], row["health_verdict"], tuple(row["points"]), tuple(row.get("comparison_arms", ())),
             ))
         if panels:
             title, unit, scale = METRICS[metric]

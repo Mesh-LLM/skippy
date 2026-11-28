@@ -12,6 +12,7 @@ HISTORY_LIMIT = 64
 RUN_PATH = re.compile(r"runs/([1-9][0-9]*)/([1-9][0-9]*)\.parquet")
 TOLERANCE = Decimal("0.01")
 DIRECTION = {
+    "ttft_ms_p50": -1, "itl_ms_p50": -1,
     "prefill_tok_s": 1, "decode_tok_s": 1, "output_tok_s": 1,
     "ttft_p95_ms": -1, "itl_p95_ms": -1,
 }

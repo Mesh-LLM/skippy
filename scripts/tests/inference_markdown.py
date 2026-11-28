@@ -136,6 +136,21 @@ class InferenceMarkdownTests(unittest.TestCase):
                 self.assertNotIn("Qwen3.5-4B", latest)
                 self.assertEqual(sum(view["counts"].values()), 3)
 
+    def test_unmeasured_row_without_fingerprint_keeps_history_and_mermaid_renders(self):
+        report = history()
+        for row in report["runs"][-1]["configurations"][0]["metrics"]:
+            row["measured"] = None
+            row.pop("contract_sha256")
+        panel = dataset_charts(report)[0].panels[0]
+        self.assertIsNone(panel.current)
+        self.assertEqual([value for _, value in panel.points], [100, None])
+        text = run_summary(report, "2-1", chart_format="mermaid")
+        self.assertIn("Qwen3-Coder", text)
+        for row in report["runs"][-1]["configurations"][0]["metrics"]:
+            row["contract_sha256"] = "c" * 64
+        self.assertFalse(any(panel.configuration == "qwen35-4b-standalone"
+                             for chart in dataset_charts(report) for panel in chart.panels))
+
     def test_real_execution_failures_and_request_errors_remain_visible(self):
         report = history()
         report["runs"][-1]["configurations"].append({"id": "qwen35-9b-standalone", "outcome": "failed", "metrics": []})

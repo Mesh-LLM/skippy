@@ -52,6 +52,9 @@ context/cache capacity, concurrency and an operating-system reserve. Nominal
 parameter counts are not memory budgets. Admit the measured footprint before
 executing; insufficient capacity must queue or fail. There is no passing skip.
 
+Comparisons between commits are a separate workflow with its own rules: see
+[`INFERENCE_PERFORMANCE.md`](INFERENCE_PERFORMANCE.md).
+
 ## Evidence and checks
 
 Correctness, scored answer quality and serving performance are separate gates.

@@ -58,6 +58,11 @@ def graceful_stop(child):
             os.killpg(child.pid, signal.SIGTERM)
         except ProcessLookupError:
             pass
+        except PermissionError:
+            # A recycled pgid names a group we cannot signal; once the child
+            # has exited there is nothing of ours left to signal.
+            if child.poll() is None:
+                raise
 
 
 def force_stop(child):
@@ -68,6 +73,9 @@ def force_stop(child):
             os.killpg(child.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        except PermissionError:
+            if child.poll() is None:
+                raise
     child.wait(timeout=10)
 
 

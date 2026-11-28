@@ -88,7 +88,7 @@ def benchmark_definition(profile, mode, backend="cuda"):
         functions["scripts/lib/inference_nightly_metrics.py"] = ["agentx_metrics"]
         files += ("ci/inference-corpus.json", "ci/aiperf-requirements.lock")
     if backend == "metal":
-        functions["scripts/lib/inference_metal.py"] = ["device_and_budget", "available_memory", "offload"]
+        functions["scripts/lib/inference_metal.py"] = ["chip", "working_set", "device_and_budget", "available_memory", "offload"]
         functions["scripts/lib/ci_smoke.py"] = ["require_device"]
     return functions, files
 

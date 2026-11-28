@@ -279,10 +279,14 @@ dataset has no comparable release workload. A merge to `main` adds no
 qualification run.
 
 Dispatch `inference.yml` on `main` with `profile=nightly` to run the same
-nineteen-configuration matrix, collect public measurements, and publish the
+31-job CUDA and Metal matrix, collect public measurements, and publish the
 report as a scheduled run. Both triggers require publication to succeed for
 the final qualification status to pass. Manual PR and release profiles retain
 their own qualification contracts.
+
+`inference-performance.yml` is manual/reusable and compares protected-main commits or admitted same-repository PR heads
+on one Metal host at a time; it reports into the run summary and gates nothing
+(see [`INFERENCE_PERFORMANCE.md`](INFERENCE_PERFORMANCE.md)).
 
 Scheduled, manual and reusable full/candidate validation bypass path selection.
 Tagged releases and manual llama upgrades retain their explicit triggers. The

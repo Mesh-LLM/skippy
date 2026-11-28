@@ -8,6 +8,7 @@ from .inference_comparability import contracts_match
 from .inference_nightly_metrics import metric_value
 
 AGENTX = ("output_tok_s", "ttft_p95_ms", "itl_p95_ms")
+CONTROLLED = ("output_tok_s", "ttft_ms_p50", "itl_ms_p50")
 SMOKE = ("prefill_tok_s", "decode_tok_s")
 HISTORY_DAYS = 30
 
@@ -77,7 +78,7 @@ def health_view(report, run_id=None):
     timeline = [(run, rows) for run, rows in timeline if run["id"] != target["id"]]
     timeline.append((target, indexed(target)))
     current = indexed(target)
-    metrics = (*AGENTX, *SMOKE)
+    metrics = CONTROLLED if target.get("measurement_kind") == "controlled" else (*AGENTX, *SMOKE)
     groups, chart_groups, counts = {}, {}, Counter()
     retained = {key: row for _, rows in timeline for key, row in rows.items()}
     for (configuration, workload, metric), retained_row in retained.items():
@@ -85,6 +86,11 @@ def health_view(report, run_id=None):
             continue
         key = configuration, workload, metric
         row = current.get(key, {**retained_row, "measured": None})
+        if row["measured"] is None and not row.get("contract_sha256"):
+            previous_row = next((rows[key] for _, rows in reversed(timeline)
+                                 if key in rows and rows[key]["measured"] is not None), None)
+            if previous_row is not None:
+                row = {**row, "contract_sha256": previous_row.get("contract_sha256")}
         points = history_for(key, row, timeline)
         if not any(value is not None for _, value in points):
             continue
@@ -101,9 +107,13 @@ def health_view(report, run_id=None):
         if measured is not None:
             groups.setdefault((configuration, workload), {})[metric] = analyzed
             counts[verdict or "new"] += 1
-    configurations = [{"id": config, "workload": workload, "metrics": rows}
+    metadata = {config["id"]: config for config in target["configurations"]}
+    configurations = [{"id": config, "workload": workload, "metrics": rows,
+                       **{field: metadata[config][field] for field in ("label", "group") if field in metadata[config]}}
                       for (config, workload), rows in groups.items()]
-    chart_configurations = [{"id": config, "workload": workload, "metrics": rows}
+    chart_configurations = [{"id": config, "workload": workload, "metrics": rows,
+                             **{field: metadata.get(config, {})[field] for field in ("label", "group")
+                                if field in metadata.get(config, {})}}
                             for (config, workload), rows in chart_groups.items()]
     metrics = tuple(metric for metric in metrics
                     if any(metric in rows for rows in chart_groups.values()))

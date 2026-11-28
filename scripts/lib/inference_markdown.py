@@ -145,7 +145,7 @@ def regression_table(view):
         for metric, row in config["metrics"].items():
             if row["health_verdict"] == "regressed":
                 rows.append((abs(row["change_pct"]), [
-                    plain(configuration_label(config["id"])), CHART_METRICS[metric][0],
+                    plain(config.get("label", configuration_label(config["id"]))), CHART_METRICS[metric][0],
                     health_measurement(metric, row["measured"]),
                     health_measurement(metric, row["reference_value"]), f'{row["change_pct"]:+.2f}%',
                 ]))
@@ -162,8 +162,14 @@ def latest_tables(view):
              "Current values and signed changes against the saved reference, "
              "or the previous comparable measurement when no saved reference exists. "
              "Higher throughput and lower latency are better.", ""]
-    for platform, heading in (("standalone", "One Spark"), ("split", "Two Sparks"), ("metal", "Metal · Apple M3 Ultra")):
-        configs = [config for config in view["configurations"] if ("metal" if config["id"].startswith("metal-") else "split" if config["id"].endswith("-split") else "standalone") == platform]
+    if view["run"].get("measurement_kind") == "controlled":
+        lines[3] = "Candidate medians and signed changes against the supplied baseline from the same experiment. Higher throughput and lower latency are better."
+    grouped = {}
+    for config in view["configurations"]:
+        group = config.get("group") or ("Metal · Apple M3 Ultra" if config["id"].startswith("metal-") else
+                                        "Two Sparks" if config["id"].endswith("-split") else "One Spark")
+        grouped.setdefault(group, []).append(config)
+    for heading, configs in grouped.items():
         if not configs:
             continue
         if any("experimental" in config["workload"] for config in configs):
@@ -172,7 +178,7 @@ def latest_tables(view):
                                 for metric in view["metrics"]]
         rows = []
         for config in configs:
-            cells = [plain(configuration_label(config["id"]))]
+            cells = [plain(config.get("label", configuration_label(config["id"])) + " · " + workload_label(config["workload"]))]
             for metric in view["metrics"]:
                 row = config["metrics"].get(metric)
                 if row is None:
@@ -219,7 +225,7 @@ def health_sections(view, charts, image_base_url=None, chart_format="png"):
         lines.extend(["", plain(run["comparison_notice"])])
     lines.extend(regression_table(view))
     if charts:
-        explanation = ("Each panel compares the measured value with its saved reference. "
+        explanation = ("Each panel compares the measured value with its comparison reference. "
                        "The comparison colour indicates its 1% verdict: green improved, blue within tolerance, "
                        "red regressed, and grey a new series. No unmeasured samples are filled in."
                        if chart_format == "mermaid" else
@@ -242,7 +248,12 @@ def health_sections(view, charts, image_base_url=None, chart_format="png"):
     if view["configurations"]:
         lines.extend(latest_tables(view))
     lines.extend(["", "## Measurement notes", ""])
-    if any(metric in view["metrics"] for metric in ("output_tok_s", "ttft_p95_ms", "itl_p95_ms")):
+    if run.get("measurement_kind") == "controlled":
+        lines.extend(["Medians over measured rounds on the same host. Latency uses each round’s p50; "
+                      "round ranges and sample counts are listed below. Range overlap is an uncertainty "
+                      "note and does not replace the ±1% tolerance verdict. "
+                      "These arm comparisons are not a time history. Diagnostic trace passes are excluded.", ""])
+    elif any(metric in view["metrics"] for metric in ("output_tok_s", "ttft_p95_ms", "itl_p95_ms")):
         lines.extend([
             'Two trials per configuration. Throughput and latency values are means of trial summaries. '
             'Latency is the mean of trial p95 values, not a pooled p95.'

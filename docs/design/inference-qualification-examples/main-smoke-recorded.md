@@ -30,17 +30,17 @@ Current values and signed changes against the saved reference, or the previous c
 
 | Model | Prefill throughput (tok/s) | Decode throughput (tok/s) |
 | --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | 612.17 (New series) | 63.32 (New series) |
-| Qwen3-Coder-30B-A3B (1 Spark) | 216.07 (New series) | 62.64 (New series) |
-| Qwen3.6-35B-A3B (1 Spark) | 251.80 (New series) | 60.44 (New series) |
-| Qwen3.8-Flash-Next (1 Spark) | 89.28 (New series) | 28.88 (New series) |
+| Qwen3.5-4B (1 Spark) · Smoke test (v1) | 612.17 (New series) | 63.32 (New series) |
+| Qwen3-Coder-30B-A3B (1 Spark) · Smoke test (v1) | 216.07 (New series) | 62.64 (New series) |
+| Qwen3.6-35B-A3B (1 Spark) · Smoke test (v1) | 251.80 (New series) | 60.44 (New series) |
+| Qwen3.8-Flash-Next (1 Spark) · Smoke test (v1) | 89.28 (New series) | 28.88 (New series) |
 
 ### Two Sparks
 
 | Model | Prefill throughput (tok/s) | Decode throughput (tok/s) |
 | --- | --- | --- |
-| Qwen3-Coder-30B-A3B (2 Sparks) | 260.23 (New series) | 29.38 (New series) |
-| Qwen3.8-Flash-Next (2 Sparks) | 40.59 (New series) | 13.10 (New series) |
+| Qwen3-Coder-30B-A3B (2 Sparks) · Smoke test (v1) | 260.23 (New series) | 29.38 (New series) |
+| Qwen3.8-Flash-Next (2 Sparks) · Smoke test (v1) | 40.59 (New series) | 13.10 (New series) |
 
 
 ## Measurement notes

@@ -20,6 +20,8 @@ inference-contracts:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/jy_read_recovery.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_markdown.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_nightly.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_performance_contracts.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/performance_controller_contracts.py
 
 inference-publication-test:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_publication.py

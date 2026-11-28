@@ -38,6 +38,11 @@ def offload(log):
             match = re.search(r"offloaded ([0-9]+)/[^\n]*GPU", line)
             if match and int(match[1]) > 0:
                 return
+            # Skippy's structured status log does not forward llama.cpp's
+            # offload line; a Metal backend device selection is its GPU
+            # evidence, with the harness having applied --n-gpu-layers.
+            if '"type":"backend_device_selected"' in line and re.search(r'"detail":"MTL', line):
+                return
     raise ValueError("server log has no positive GPU-layer offload evidence")
 
 

@@ -1,0 +1,147 @@
+"""Reduce per-round samples to per-arm medians and spreads, and render the comparison."""
+
+import json
+import statistics
+
+from .inference_baselines import classify
+from .inference_health import health_view
+from .inference_charts import health_charts
+from .inference_markdown import HEALTH_LABELS, health_sections, plain, table
+from .inference_nightly_metrics import metric_value
+
+# Higher is better for rates; lower is better for latencies.
+HEADLINE = {"output_tok_s": "higher", "ttft_ms_p50": "lower", "itl_ms_p50": "lower"}
+
+
+def summarize(samples):
+    """Group by (model, server, point, metric), then by arm: median, min, max and n over rounds."""
+    groups, settings = {}, {}
+    for sample in samples:
+        key = sample["model"], sample["server"], sample["point"]
+        settings.setdefault(key, {}).setdefault(sample["arm"], set()).add(json.dumps({
+            "applied": sample.get("applied", {}), "unsupported": sorted(sample.get("unsupported", []))}, sort_keys=True))
+        for metric, value in sample["metrics"].items():
+            if value is None:
+                continue
+            key = (sample["model"], sample["server"], sample["point"], metric)
+            groups.setdefault(key, {}).setdefault(sample["arm"], []).append(metric_value(value, positive=True))
+    rows = []
+    for (model, server, point, metric), by_arm in sorted(groups.items()):
+        arms = {arm: {"median": statistics.median(values), "min": min(values), "max": max(values),
+                      "n": len(values)} for arm, values in sorted(by_arm.items())}
+        by_settings = settings[(model, server, point)]
+        candidate, baseline = (by_settings.get(arm, set()) for arm in ("candidate", "baseline"))
+        matched = not candidate or not baseline or (len(candidate) == len(baseline) == 1 and candidate == baseline)
+        rows.append({"settings_match": matched, "model": model, "server": server, "point": point, "metric": metric, "arms": arms,
+                     "candidate_vs_baseline": change(arms.get("candidate"), arms.get("baseline")) if matched else None})
+    return rows
+
+
+def change(candidate, baseline):
+    if not candidate or not baseline or not baseline["median"]:
+        return None
+    overlap = candidate["min"] <= baseline["max"] and baseline["min"] <= candidate["max"]
+    return {"percent": 100 * (candidate["median"] - baseline["median"]) / baseline["median"],
+            "ranges_overlap": overlap}
+
+
+def cell(stats):
+    if not stats:
+        return "—"
+    return f'{stats["median"]:.1f} ({stats["min"]:.1f}–{stats["max"]:.1f}, n={stats["n"]})'
+
+
+def verdict(row):
+    if not row.get("settings_match", True):
+        return "Different settings — no matched-settings verdict"
+    delta = row["candidate_vs_baseline"]
+    if delta is None:
+        return "New series"
+    arms = row["arms"]
+    result = classify(row["metric"], arms["candidate"]["median"], arms["baseline"]["median"])
+    overlap = "; round ranges overlap" if delta["ranges_overlap"] else "; round ranges do not overlap"
+    return f'{delta["percent"]:+.2f}% · {HEALTH_LABELS[result]}{overlap}'
+
+
+def report_view(host, rows, record):
+    """Adapt real controlled measurements to the common inference health report."""
+    candidate = next(arm for arm in record["arms"] if arm["label"] == "candidate")
+    configurations = {}
+    for row in rows:
+        if (row["metric"] not in HEADLINE or "candidate" not in row["arms"]
+                or not row.get("settings_match", True)):
+            continue
+        key = row["model"], row["server"], row["point"]
+        configuration = configurations.setdefault(key, {
+            "id": "/".join(key), "label": " · ".join(key), "group": host,
+            "workload": f'Controlled Metal · {host} · {row["server"]} · {row["point"]}',
+            "outcome": "passed", "metrics": [],
+        })
+        arms = row["arms"]
+        metric = {"metric": row["metric"], "workload": configuration["workload"],
+                  "measured": arms["candidate"]["median"],
+                  "comparison_arms": [(label.title(), arms[label]["median"])
+                                      for label in ("baseline", "candidate", "reference") if label in arms]}
+        if "baseline" in arms:
+            metric["reference"] = {"value": arms["baseline"]["median"]}
+        configuration["metrics"].append(metric)
+    run = {"id": "controlled", "source_sha": candidate["sha"], "started_at": record["started_at"],
+           "profile": "controlled performance", "measurement_kind": "controlled", "outcome": "passed",
+           "configurations": list(configurations.values())}
+    return health_view({"schema_version": 1, "runs": [run]}, run["id"])
+
+
+def markdown(title, host, rows, record):
+    view = report_view(host, rows, record)
+    lines = ["# " + plain(title), "", "Host: " + plain(host), "",
+             *health_sections(view, health_charts(view), chart_format="mermaid"), "",
+             "## Round ranges", "", "Median (min–max, n). Reference is the optional llama.cpp arm. "
+             "Its measurements are shown separately from the candidate/baseline verdict.", ""]
+    if any(not row.get("settings_match", True) for row in rows):
+        lines.extend(["Candidate and baseline applied different settings in some cells. "
+                      "Both measurements are retained below; those cells are excluded from matched-settings verdict counts.", ""])
+    detail = []
+    for row in rows:
+        if row["metric"] in HEADLINE:
+            arms = row["arms"]
+            detail.append([plain(row[field]) for field in ("model", "server", "point", "metric")] +
+                          [cell(arms.get(arm)) for arm in ("baseline", "candidate", "reference")] + [verdict(row)])
+    lines.extend(table(["Model", "Server", "Point", "Metric", "Baseline", "Candidate", "Reference", "Change"], detail))
+    return "\n".join(lines) + "\n"
+
+
+def rows(record, shape, committed_at, job, pull_requests):
+    """One flat row per measured sample, for a table that graphs runs over time.
+
+    The diagnostic pass is left out. Every row carries what it was measured on and with,
+    so rows from many runs can share one table: `committed_at` orders arms by commit,
+    `started_at` orders runs by when they ran. An arm that `pull_requests` maps to a pull
+    request has `on_main` false, so a graph of main's history can leave it out; llama.cpp's
+    server has it null. What an arm applied or lacked differs by arm, so it is kept as JSON
+    text and every row has the same columns.
+    """
+    arms = {arm["label"]: arm for arm in record["arms"]}
+    points = {(server["id"], point["id"]): (server, point)
+              for server in shape["servers"] for point in server["points"]}
+    host = record["host"]
+    for sample in record["samples"]:
+        arm = arms[sample["arm"]]
+        pull_request = pull_requests.get(sample["arm"])
+        server, point = points[(sample["server"], sample["point"])]
+        yield {
+            "schema_version": 1, "job": job, "started_at": record.get("started_at"),
+            "harness": record["harness"], "scenario_sha256": record["scenario_sha256"],
+            "chip": host["chip"], "macos": host.get("macos"), "node": host.get("node"),
+            "metal_working_set_bytes": host.get("metal_working_set_bytes"),
+            "arm": sample["arm"], "kind": arm["kind"], "sha": arm["sha"],
+            "committed_at": committed_at.get(arm["sha"]), "binary_sha256": arm["binary_sha256"],
+            "on_main": None if arm["kind"] != "skippy" else pull_request is None,
+            "pull_request": pull_request,
+            "model": sample["model"], "model_revision": record["models"][sample["model"]]["revision"],
+            "server": sample["server"], "lanes": server["lanes"], "pool_tokens": server["pool_tokens"],
+            "point": sample["point"], "concurrency": point["concurrency"], "depth": point["depth"],
+            "input_tokens": point["input_tokens"], "output_tokens": point["output_tokens"],
+            "requests": point["requests"], "round": sample["round"],
+            "applied": json.dumps(sample["applied"], sort_keys=True),
+            "unsupported": json.dumps(sample["unsupported"]), **sample["metrics"],
+        }
