@@ -13,6 +13,7 @@ from pathlib import Path
 from lib.ci_artifacts import digest, write_json
 from lib.ci_process import cancel_on_signal, command, time_budget
 from lib.upgrade_regeneration import regenerate
+from lib.upgrade_verification import verify_offline
 from lib.upgrade_repair import repair
 from lib.upgrade_lifecycle import verify_or_repair
 from lib.upgrade_recovery import retain
@@ -37,10 +38,11 @@ def resolve(upstream, force):
 def save_preparation_diagnostics(checkout, destination):
     """Keep patch failures inspectable after the disposable checkout is removed."""
     source = checkout / ".deps/llama.cpp"
-    coverage = checkout / "target/llama-regeneration/graph-coverage.json"
-    if coverage.is_file():
-        destination.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(coverage, destination / coverage.name)
+    for name in ("graph-coverage.json", "abi-compatibility.json"):
+        report = checkout / "target/llama-regeneration" / name
+        if report.is_file():
+            destination.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(report, destination / name)
     if not (source / ".git").is_dir():
         return
     destination.mkdir(parents=True, exist_ok=True)
@@ -94,6 +96,7 @@ def prepare(upstream, repair_bundle=None, diagnostics=None):
                     command(["just", "--justfile", str(checkout / "Justfile"), "llama-prepare"],
                             overrides=env, timeout=3600)
                     write_native_recipe(checkout)
+                    verify_offline(checkout)
 
                 verify_or_repair(checkout, directory / "diagnostics", verify, repair, save_preparation_diagnostics,
                                  initial_repair=bool(repair_bundle))

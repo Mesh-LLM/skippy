@@ -2,7 +2,7 @@
 name = "skippy-native-runtime"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Native runtime manifest, selection, and cache policy for Skippy"
 repository = "https://github.com/Mesh-LLM/skippy"

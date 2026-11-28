@@ -2,7 +2,7 @@
 name = "skippy-guardrails"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Reusable guardrail and compaction primitives for Skippy OpenAI-compatible serving"
 repository = "https://github.com/Mesh-LLM/skippy"

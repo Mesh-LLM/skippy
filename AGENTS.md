@@ -31,14 +31,22 @@ CI implementation; tagged releases reuse it. Builds have no publication secrets.
 Trusted same-repository PRs may use standard native JY jobs on persistent
 hardware, with fresh source-pinned workspaces and no publication credentials.
 The standard JY job account is accepted; no separate account migration is required.
-Fork and other untrusted PRs require isolated
-ephemeral execution. See the CI skill for admission and cleanup requirements.
+Fork PRs may enter native execution after maintainer workflow approval through
+the protected approved-fork controller; other untrusted work remains isolated.
+See the CI skill for admission and cleanup requirements.
 
 Default tests are offline and use isolated temporary state. Model and hardware
 qualification is explicit and cannot pass through missing-fixture/device skips.
 Keep all third-party licenses and preserve wire/hash compatibility deliberately.
 Never commit credentials. The extraction plan and progress ledger are under
 `docs/design/`.
+
+For opt-in inference performance investigations, use the pinned InferenceKit
+wrapper in `scripts/inferencekit.sh` and follow the public contributing guide
+at `docs-site/content/contributing/index.mdx`. Record the exact workload,
+hardware, model, baseline, quality evidence, and result before making a
+performance claim. InferenceKit experiments do not replace Skippy's model and
+hardware qualification.
 
 ## Pull requests
 

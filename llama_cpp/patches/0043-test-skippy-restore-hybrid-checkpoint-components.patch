@@ -1,4 +1,4 @@
-From ceb169a837f0799c2260fa095734793891eb3d6e Mon Sep 17 00:00:00 2001
+From c7ed06ce8cfd2e87454ffa8edd730119ec84ccd5 Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Fri, 20 Nov 2026 07:55:59 +1100
 Subject: [PATCH] test-skippy: restore both hybrid checkpoint components
@@ -89,5 +89,5 @@ index 4c7c891e1..1e636d0f3 100644
      const auto warm_logits = decode_logits(warm, suffix.back());
      release(warm);
 -- 
-2.56.0
+2.56.1
 

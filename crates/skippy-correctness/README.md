@@ -37,6 +37,10 @@ temperature 0 and seed 42. Its JSON retains generated content separately from
 the cache-token accounting. The manual four-model owner is documented in
 [KV validation](../../evals/kv-validation/README.md).
 
+The checks start `skippy` stage servers. Without `--stage-server-bin` they use
+the `skippy` next to `skippy-correctness`, else `target/debug/skippy` when it
+exists, else the one on `PATH`.
+
 ```bash
 skippy-correctness single-step \
   --model model.gguf \
@@ -232,9 +236,14 @@ same activation/cache contracts without requiring a monolithic full GGUF.
   `--allow-mismatch` only for diagnostic payloads such as recurrent-only.
 - `native-mtp-open-ai-ab` launches a real two-stage `skippy-serving
   serve-binary` split three times through the embedded OpenAI frontend. The
-  baseline run sets `SKIPPY_NATIVE_MTP_ENABLED=0`, the n=1 run sets
-  `SKIPPY_NATIVE_MTP_BATCHED_VERIFY=0`, and the batched run uses the default
-  transactional verification path. The command fails unless all responses are
+  baseline run selects `--native-mtp=false --speculative-strategy disabled`.
+  The n=1 run selects native MTP with `--mtp-max-tokens 1`; the batched run
+  selects native MTP with its configured default proposal limit. Both MTP
+  cases use the current transactional batched verifier, including for one
+  draft token. The former environment toggles are no longer runtime controls.
+  Generated stage configs bind tokenizer identity to the canonical source
+  artifact, and an early child exit reports its status and log excerpt.
+  The command fails unless all responses are
   HTTP 200, baseline/n=1/batched output content is byte-identical, native MTP
   metrics are observed for n=1 and batched runs, and the batched run emits
   `stage.openai_native_mtp_verify` events.

@@ -2,7 +2,7 @@
 name = "skippy-ffi"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 build = "build.rs"
 description = "Rust FFI bindings for the Skippy native runtime ABI"

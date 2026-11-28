@@ -13,11 +13,12 @@ from pathlib import Path
 from . import ci_artifacts as artifacts
 from .ci_process import command, environment, start, stop
 from .ci_targets import require_host, validate_native_identity
+from .ci_vulkan import preflight as vulkan_preflight
 
 
 def verify_product(host, runtime, product_input, product):
     require_host(host)
-    artifacts.unpack(product_input, product)
+    artifacts.unpack(product_input, product, check_space=True)
     artifacts.verify(product, "product", host["target"], runtime["id"])
     binary = artifacts.binary(product.resolve(), host["os"])
     env = environment()
@@ -73,7 +74,9 @@ def curl(args, seconds, *, local=True):
     )
 
 
-def require_device(logs, server, deadline):
+def require_device(logs, server, deadline, backend):
+    prefixes = {"cuda": ("CUDA",), "metal": ("MTL", "Metal"), "rocm": ("ROCm", "HIP"),
+                "vulkan": ("Vulkan",)}[backend]
     readers = [path.open("rb") for path in logs]
     selected = offloaded = False
     try:
@@ -93,7 +96,7 @@ def require_device(logs, server, deadline):
                     if isinstance(event, dict) and event.get("type") == "backend_device_selected":
                         data = event.get("data")
                         detail = data.get("detail") if isinstance(data, dict) else None
-                        if isinstance(detail, str) and detail.startswith(("CUDA", "MTL")):
+                        if isinstance(detail, str) and detail.startswith(prefixes):
                             selected = True
                 if selected and offloaded:
                     return
@@ -110,7 +113,7 @@ def completion(server, endpoint, deadline):
         try:
             curl([endpoint + "/models"], 2)
             break
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             time.sleep(0.2)
     else:
         raise RuntimeError("server readiness deadline or early exit")
@@ -134,8 +137,10 @@ def smoke(host, runtime, product_input):
         raise ValueError("SKIPPY_CI_MODEL must point at the pinned Qwen3 dense fixture")
     model = Path(model_path).resolve(strict=True)
     backend, variant = runtime["backend"], runtime["id"]
-    gpu = backend != "cpu"
     output = product_input / "evidence"
+    vulkan_vendor = os.environ.get("SKIPPY_CI_VULKAN_VENDOR")
+    vulkan_devices = vulkan_preflight(vulkan_vendor, output) if backend == "vulkan" else None
+    gpu = backend != "cpu"
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         product = root / "product"
@@ -159,7 +164,7 @@ def smoke(host, runtime, product_input):
                     deadline = time.monotonic() + 850
                     response = completion(server, "http://" + address + "/v1", deadline)
                     if gpu:
-                        require_device(logs, server, deadline)
+                        require_device(logs, server, deadline, backend)
                     if server.poll() is not None:
                         raise RuntimeError("packaged server exited before shutdown")
                 finally:
@@ -170,4 +175,6 @@ def smoke(host, runtime, product_input):
             "source": artifacts.source(), "variant": variant, "backend": backend,
             "archive_sha256": artifacts.digest(product_input / f"skippy-{variant}.tar.gz"),
             "gpu_offload_required": gpu, "model_sha256": digest, "response": response,
+            **({"vulkan_vendor": vulkan_vendor, "vulkan_devices": vulkan_devices}
+               if vulkan_devices is not None else {}),
         })

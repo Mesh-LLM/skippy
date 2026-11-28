@@ -1,7 +1,7 @@
-From f417278f2f47e52f3a1bb88bc1e7d49e1ac51c84 Mon Sep 17 00:00:00 2001
+From cca2a74f96848b6d8bdac39fe8fa05ba2267f36b Mon Sep 17 00:00:00 2001
 From: Daniel Winter <danielwinterw@gmail.com>
 Date: Mon, 9 Nov 2026 15:52:17 +1100
-Subject: [PATCH 31/32] models: add Laguna DFlash drafts
+Subject: [PATCH] models: add Laguna DFlash drafts
 
 Laguna drafters (poolside/Laguna-XS-2.1-DFlash, Laguna-S-2.1-DFlash) read
 the target's layer inputs, including layer n_layer: the last layer's
@@ -39,14 +39,14 @@ of the Laguna contract fixture keep the draft's target layers 2, 14,
  gguf-py/gguf/gguf_writer.py                 |   3 +
  src/llama-arch.cpp                          |   3 +
  src/llama-arch.h                            |   2 +
- src/models/dflash.cpp                       | 104 ++++++++++++++++++--
+ src/models/dflash.cpp                       | 103 +++++++++++++++++++-
  src/models/laguna.cpp                       |  14 ++-
  src/models/models.h                         |   8 ++
  src/skippy/tests/graph_contract_cases.cmake |  23 +++++
- 10 files changed, 230 insertions(+), 7 deletions(-)
+ 10 files changed, 230 insertions(+), 6 deletions(-)
 
 diff --git a/conversion/__init__.py b/conversion/__init__.py
-index 6800093ae..330de9ee6 100644
+index 146c309e6..8142fdf9d 100644
 --- a/conversion/__init__.py
 +++ b/conversion/__init__.py
 @@ -66,6 +66,7 @@ TEXT_MODEL_MAP: dict[str, str] = {
@@ -147,10 +147,10 @@ index 29e0b3d6b..3510a0489 100644
 +
 +        yield from super().modify_tensors(data_torch, name, bid)
 diff --git a/gguf-py/gguf/constants.py b/gguf-py/gguf/constants.py
-index 4bca32f0c..6773c748e 100644
+index e4891f200..e4d367e5c 100644
 --- a/gguf-py/gguf/constants.py
 +++ b/gguf-py/gguf/constants.py
-@@ -173,6 +173,7 @@ class Keys:
+@@ -175,6 +175,7 @@ class Keys:
          CONV_GROUP_SIZE                   = "{arch}.conv_group_size"
          SELECTOR_RANK                     = "{arch}.selector_rank"
          SELECTOR_TOP_K                    = "{arch}.selector_top_k"
@@ -158,7 +158,7 @@ index 4bca32f0c..6773c748e 100644
          SAMPLE_FROM_ANCHOR                = "{arch}.sample_from_anchor"
          HAS_CONFIDENCE_HEAD               = "{arch}.has_confidence_head"
          NORM_BEFORE_RESIDUAL              = "{arch}.norm_before_residual"
-@@ -1041,6 +1042,7 @@ class MODEL_TENSOR(IntEnum):
+@@ -1099,6 +1100,7 @@ class MODEL_TENSOR(IntEnum):
      ENC_FFN_DOWN         = auto()
      ENC_FFN_UP           = auto()
      ENC_OUTPUT_NORM      = auto()
@@ -166,7 +166,7 @@ index 4bca32f0c..6773c748e 100644
      CLS                  = auto() # classifier
      CLS_OUT              = auto() # classifier output projection
      CLS_NORM             = auto()
-@@ -1958,6 +1960,7 @@ TENSOR_NAMES: dict[MODEL_TENSOR, str] = {
+@@ -2113,6 +2115,7 @@ TENSOR_NAMES: dict[MODEL_TENSOR, str] = {
      MODEL_TENSOR.ENC_FFN_DOWN:              "enc.blk.{bid}.ffn_down",
      MODEL_TENSOR.ENC_FFN_UP:                "enc.blk.{bid}.ffn_up",
      MODEL_TENSOR.ENC_OUTPUT_NORM:           "enc.output_norm",
@@ -174,7 +174,7 @@ index 4bca32f0c..6773c748e 100644
      MODEL_TENSOR.CLS:                       "cls",
      MODEL_TENSOR.CLS_OUT:                   "cls.output",
      MODEL_TENSOR.CLS_NORM:                  "cls.norm",
-@@ -6195,6 +6198,7 @@ MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
+@@ -6480,6 +6483,7 @@ MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
          MODEL_TENSOR.ATTN_OUT,
          MODEL_TENSOR.ATTN_Q_NORM,
          MODEL_TENSOR.ATTN_K_NORM,
@@ -182,7 +182,7 @@ index 4bca32f0c..6773c748e 100644
          MODEL_TENSOR.ATTN_SINKS,
          MODEL_TENSOR.ATTN_Q_A,
          MODEL_TENSOR.ATTN_Q_B,
-@@ -6230,6 +6234,7 @@ MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
+@@ -6515,6 +6519,7 @@ MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
          MODEL_TENSOR.FFN_UP_SHEXP,
          MODEL_TENSOR.FC,
          MODEL_TENSOR.ENC_OUTPUT_NORM,
@@ -191,10 +191,10 @@ index 4bca32f0c..6773c748e 100644
          # optional DSpark heads
          MODEL_TENSOR.DSPARK_MARKOV_W1,
 diff --git a/gguf-py/gguf/gguf_writer.py b/gguf-py/gguf/gguf_writer.py
-index 364eeaa75..7ae1ce046 100644
+index 08c8d2f33..c723d5abe 100644
 --- a/gguf-py/gguf/gguf_writer.py
 +++ b/gguf-py/gguf/gguf_writer.py
-@@ -1082,6 +1082,9 @@ class GGUFWriter:
+@@ -1104,6 +1104,9 @@ class GGUFWriter:
      def add_selector_top_k(self, value: int) -> None:
          self.add_uint32(Keys.LLM.SELECTOR_TOP_K.format(arch=self.arch), value)
  
@@ -205,10 +205,10 @@ index 364eeaa75..7ae1ce046 100644
          self.add_bool(Keys.LLM.SAMPLE_FROM_ANCHOR.format(arch=self.arch), value)
  
 diff --git a/src/llama-arch.cpp b/src/llama-arch.cpp
-index 83ea80ed6..984d38a42 100644
+index fa548386e..eff5e0e1b 100644
 --- a/src/llama-arch.cpp
 +++ b/src/llama-arch.cpp
-@@ -443,6 +443,7 @@ static const std::map<llm_kv, const char *> LLM_KV_NAMES = {
+@@ -464,6 +464,7 @@ static const std::map<llm_kv, const char *> LLM_KV_NAMES = {
      { LLM_KV_DFLASH_CONV_GROUP_SIZE,  "%s.conv_group_size"  },
      { LLM_KV_DFLASH_SELECTOR_RANK,    "%s.selector_rank"    },
      { LLM_KV_DFLASH_SELECTOR_TOP_K,   "%s.selector_top_k"   },
@@ -216,7 +216,7 @@ index 83ea80ed6..984d38a42 100644
  
      { LLM_KV_LILICORR_HIDDEN_SIZE,       "lilicorr.hidden_size"      },
      { LLM_KV_LILICORR_CANDIDATE_TOPK,    "lilicorr.candidate_topk"   },
-@@ -670,6 +671,7 @@ static const std::map<llm_tensor, const char *> LLM_TENSOR_NAMES = {
+@@ -722,6 +723,7 @@ static const std::map<llm_tensor, const char *> LLM_TENSOR_NAMES = {
      { LLM_TENSOR_ACT_HEAD_0,                             "act_head.0" },
      { LLM_TENSOR_ACT_HEAD_2,                             "act_head.2" },
      { LLM_TENSOR_ENC_OUTPUT_NORM,                        "enc.output_norm" },
@@ -224,8 +224,8 @@ index 83ea80ed6..984d38a42 100644
      { LLM_TENSOR_FFN_GATE_INP_SHEXP,                     "blk.%d.ffn_gate_inp_shexp" },
      { LLM_TENSOR_SSM_A_NOSCAN,                           "blk.%d.ssm_a" },
      { LLM_TENSOR_SSM_CONV1D,                             "blk.%d.ssm_conv1d" },
-@@ -997,6 +999,7 @@ static const std::map<llm_tensor, llm_tensor_info> LLM_TENSOR_INFOS = {
-     {LLM_TENSOR_OUTPUT_NORM_LFM2,           {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_MUL}},
+@@ -1061,6 +1063,7 @@ static const std::map<llm_tensor, llm_tensor_info> LLM_TENSOR_INFOS = {
+     {LLM_TENSOR_OUTPUT_RES_QUERY,           {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_MUL_MAT}},
      {LLM_TENSOR_DEC_OUTPUT_NORM,            {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_MUL}},
      {LLM_TENSOR_ENC_OUTPUT_NORM,            {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_MUL}},
 +    {LLM_TENSOR_ENC_AUX_NORM,               {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_MUL}},
@@ -233,10 +233,10 @@ index 83ea80ed6..984d38a42 100644
      {LLM_TENSOR_ROPE_FACTORS_LONG,          {LLM_TENSOR_LAYER_REPEATING, GGML_OP_ROPE}},
      {LLM_TENSOR_ROPE_FACTORS_SHORT,         {LLM_TENSOR_LAYER_REPEATING, GGML_OP_ROPE}},
 diff --git a/src/llama-arch.h b/src/llama-arch.h
-index f35716bfe..f39f71ec3 100644
+index 63785edcf..0d9c534d6 100644
 --- a/src/llama-arch.h
 +++ b/src/llama-arch.h
-@@ -489,6 +489,7 @@ enum llm_kv {
+@@ -510,6 +510,7 @@ enum llm_kv {
      LLM_KV_DFLASH_CONV_GROUP_SIZE,
      LLM_KV_DFLASH_SELECTOR_RANK,
      LLM_KV_DFLASH_SELECTOR_TOP_K,
@@ -244,7 +244,7 @@ index f35716bfe..f39f71ec3 100644
      LLM_KV_LILICORR_HIDDEN_SIZE,
      LLM_KV_LILICORR_CANDIDATE_TOPK,
      LLM_KV_LILICORR_NUM_HEADS,
-@@ -818,6 +819,7 @@ enum llm_tensor {
+@@ -870,6 +871,7 @@ enum llm_tensor {
      LLM_TENSOR_ENC_FFN_DOWN,
      LLM_TENSOR_ENC_FFN_UP,
      LLM_TENSOR_ENC_OUTPUT_NORM,
@@ -253,13 +253,14 @@ index f35716bfe..f39f71ec3 100644
      LLM_TENSOR_CLS_OUT,
      LLM_TENSOR_CLS_NORM,
 diff --git a/src/models/dflash.cpp b/src/models/dflash.cpp
-index 13020bb32..52d146ae5 100644
+index 98a8d1d9a..84fe61469 100644
 --- a/src/models/dflash.cpp
 +++ b/src/models/dflash.cpp
-@@ -140,6 +140,22 @@ void llama_model_dflash::load_arch_hparams(llama_model_loader & ml) {
-         return;
+@@ -79,6 +79,23 @@ void llama_model_dflash::load_arch_hparams(llama_model_loader & ml) {
+         hparams.rope_freq_scale_train_swa = hparams.rope_freq_scale_train;
      }
  
++
 +    // Laguna drafters follow the Laguna decoder contract: an attention output
 +    // gate, a norm per captured target feature, context K/V through each
 +    // layer's input norm, and a causal noise block.
@@ -276,10 +277,10 @@ index 13020bb32..52d146ae5 100644
 +        gguf_kv.emplace(LLM_KV(LLM_ARCH_DFLASH)(LLM_KV_ATTENTION_CAUSAL), "true");
 +    }
 +
-     // optional interleaved sliding-window attention with per-layer pattern array.
-     // DFlash has a single rope, so the SWA rope == main rope.
-     if (ml.get_key(LLM_KV_ATTENTION_SLIDING_WINDOW, hparams.n_swa, false) && hparams.n_swa > 0) {
-@@ -279,6 +295,12 @@ void llama_model_dflash::load_arch_tensors(llama_model_loader &) {
+     ml.get_key_or_arr(LLM_KV_ATTENTION_ROPE_PATTERN, hparams.rope_pattern, hparams.n_layer(), false);
+ 
+     type = LLM_TYPE_UNKNOWN;
+@@ -113,6 +130,12 @@ void llama_model_dflash::load_arch_tensors(llama_model_loader &) {
      output_norm_enc = create_tensor(tn(LLM_TENSOR_ENC_OUTPUT_NORM, "weight"), { n_embd }, 0); // encoder hidden_norm (after fc)
      output_norm     = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM,    "weight"), { n_embd }, 0); // decoder final norm
  
@@ -292,7 +293,7 @@ index 13020bb32..52d146ae5 100644
      // optional: reduced-vocab drafts ship their own lm head, full-vocab drafts can share the target's via ctx_other
      // a draft with its own embeddings + head references no target tensors and can run on devices the target does not use (e.g. -devd with a tensor-split target)
      output   = create_tensor(tn(LLM_TENSOR_OUTPUT,     "weight"), { n_embd, n_vocab_draft }, TENSOR_NOT_REQUIRED);
-@@ -384,6 +406,20 @@ void llama_model_dflash::load_arch_tensors(llama_model_loader &) {
+@@ -163,6 +186,20 @@ void llama_model_dflash::load_tensors_layers_base() {
          // optional per-head attention sinks (e.g. Nemotron DSpark)
          layer.attn_sinks = create_tensor(tn(LLM_TENSOR_ATTN_SINKS, "weight", i), { n_head }, TENSOR_NOT_REQUIRED);
  
@@ -313,7 +314,7 @@ index 13020bb32..52d146ae5 100644
          layer.ffn_norm = create_tensor(tn(LLM_TENSOR_FFN_NORM, "weight", i), { n_embd }, 0);
          layer.ffn_gate = create_tensor(tn(LLM_TENSOR_FFN_GATE, "weight", i), { n_embd, n_ff }, 0);
          layer.ffn_down = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "weight", i), { n_ff, n_embd }, 0);
-@@ -401,6 +437,26 @@ void llama_model_dflash::load_arch_tensors(llama_model_loader &) {
+@@ -170,6 +207,26 @@ void llama_model_dflash::load_tensors_layers_base() {
      }
  }
  
@@ -340,7 +341,7 @@ index 13020bb32..52d146ae5 100644
  template <>
  ggml_tensor * llama_model_dflash::graph<true>::build_inp_embd_enc() const {
      const int64_t n_embd_inp = hparams.n_embd_inp_enc();
-@@ -422,6 +478,7 @@ template <>
+@@ -191,6 +248,7 @@ template <>
  llama_model_dflash::graph<true>::graph(const llm_graph_params & params) : llm_graph_context(params) {
      ggml_tensor * cur = build_inp_embd_enc();
  
@@ -348,38 +349,40 @@ index 13020bb32..52d146ae5 100644
      cur = build_lora_mm(model.fc, cur, model.fc_s);
      cb(cur, "fc_out", -1);
  
-@@ -965,16 +1022,27 @@ llama_model_dflash::graph<false>::graph(const llm_graph_params & params) : llm_g
-         res->add_input(std::move(inp));
+@@ -231,6 +289,7 @@ ggml_tensor * llama_model_dflash::build_inject_inp(llm_graph_context & g, const
  
-         // fuse the target features through the encoder
--        ggml_tensor * inp_g = build_lora_mm(model.fc, inp_target, model.fc_s);
-+        ggml_tensor * inp_g = build_dflash_aux_norm(*this, model, inp_target);
-+        inp_g = build_lora_mm(model.fc, inp_g, model.fc_s);
-         inp_g = build_norm(inp_g, model.output_norm_enc, NULL, LLM_NORM_RMS, -1);
-         cb(inp_g, "inp_g_embeddings", -1);
+     g.res->add_input(std::move(inp));
  
-+        const bool decoder_laguna = static_cast<const llama_model_dflash &>(model).decoder_laguna;
++    inp_target = build_dflash_aux_norm(g, model, inp_target);
+     ggml_tensor * inp_g = g.build_lora_mm(model.fc, inp_target, model.fc_s);
+     return g.build_norm(inp_g, model.output_norm_enc, nullptr, LLM_NORM_RMS, -1);
+ }
+@@ -300,12 +359,22 @@ ggml_tensor * llama_model_dflash::graph_base::build_inject() {
+     ggml_tensor * inp_g = build_inject_inp(*this, model);
+     cb(inp_g, "inp_g_embeddings", -1);
+ 
++    const bool decoder_laguna = static_cast<const llama_model_dflash &>(model).decoder_laguna;
 +
-         for (int il = 0; il < n_layer; ++il) {
-             const auto & layer = model.layers[il];
+     for (int il = 0; il < n_layer; ++il) {
+         const auto & layer = model.layers[il];
  
--            ggml_tensor * Kcur = build_lora_mm(layer.wk, inp_g, layer.wk_s);
-+            // Laguna drafters project context K/V from the layer's input norm,
-+            // as they do the noise block; generic DFlash projects them raw.
-+            ggml_tensor * kv_inp = inp_g;
-+            if (decoder_laguna) {
-+                kv_inp = build_norm(inp_g, layer.attn_norm, NULL, LLM_NORM_RMS, il);
-+                cb(kv_inp, "kv_inp_normed", il);
-+            }
+-        ggml_tensor * Kcur = build_lora_mm(layer.wk, inp_g, layer.wk_s);
++        // Laguna drafters project context K/V from the layer's input norm,
++        // as they do the noise block; generic DFlash projects them raw.
++        ggml_tensor * kv_inp = inp_g;
++        if (decoder_laguna) {
++            kv_inp = build_norm(inp_g, layer.attn_norm, NULL, LLM_NORM_RMS, il);
++            cb(kv_inp, "kv_inp_normed", il);
++        }
 +
-+            ggml_tensor * Kcur = build_lora_mm(layer.wk, kv_inp, layer.wk_s);
-             const bool shared_kv = layer.wv == nullptr;
--            ggml_tensor * Vcur = shared_kv ? Kcur : build_lora_mm(layer.wv, inp_g, layer.wv_s);
-+            ggml_tensor * Vcur = shared_kv ? Kcur : build_lora_mm(layer.wv, kv_inp, layer.wv_s);
++        ggml_tensor * Kcur = build_lora_mm(layer.wk, kv_inp, layer.wk_s);
+         const bool shared_kv = layer.wv == nullptr;
+-        ggml_tensor * Vcur = shared_kv ? Kcur : build_lora_mm(layer.wv, inp_g, layer.wv_s);
++        ggml_tensor * Vcur = shared_kv ? Kcur : build_lora_mm(layer.wv, kv_inp, layer.wv_s);
  
-             Kcur = ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens);
-             Vcur = ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_tokens);
-@@ -1096,10 +1164,34 @@ llama_model_dflash::graph<false>::graph(const llm_graph_params & params) : llm_g
+         Kcur = ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens);
+         Vcur = ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_tokens);
+@@ -410,10 +479,34 @@ ggml_tensor * llama_model_dflash::graph_base::build_layers(ggml_tensor * inp_tok
          cb(Kcur, "Kcur", il);
          cb(Vcur, "Vcur", il);
  
@@ -464,12 +467,12 @@ index 1bf25eacf..0f4029bdb 100644
      cb(cur, "result_norm", -1);
      res->t_embd = cur;
 diff --git a/src/models/models.h b/src/models/models.h
-index 7adc95719..6f6d44bf5 100644
+index de72e8985..c4e284a0e 100644
 --- a/src/models/models.h
 +++ b/src/models/models.h
-@@ -1587,6 +1587,14 @@ struct llama_model_dflash : public llama_model_base {
-     void load_arch_hparams(llama_model_loader & ml) override;
-     void load_arch_tensors(llama_model_loader & ml) override;
+@@ -1687,6 +1687,14 @@ struct llama_model_dflash : public llama_model_base {
+     void load_tensors_layers_dsv4();
+     void load_tensors_layers_mistral_large4();
  
 +    // dflash.decoder_arch == "laguna": the draft layers follow the Laguna
 +    // decoder contract (softplus attention gate, per-feature target norms,
@@ -513,3 +516,6 @@ index fdcdc631f..725b75ad2 100644
 +    "${SKIPPY_MODEL_FIXTURE_DIR}/contract-laguna/graph-contract.gguf" 2,14,26,34,40)
 +set_tests_properties(skippy_laguna_stage_layer_inputs PROPERTIES
 +    FIXTURES_REQUIRED contract-laguna TIMEOUT 900)
+-- 
+2.56.1
+

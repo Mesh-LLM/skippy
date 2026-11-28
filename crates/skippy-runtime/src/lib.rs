@@ -112,7 +112,9 @@ pub use stage_planning::{
 };
 // KV page descriptor flags. Re-exported so callers can read a page's layout
 // without taking a direct dependency on the raw ABI crate.
-pub use skippy_ffi::{KV_PAGE_FLAG_HAS_K_IDX, KV_PAGE_FLAG_V_TRANSPOSED};
+pub use skippy_ffi::{
+    KV_PAGE_FLAG_CANONICAL_POSITIONS, KV_PAGE_FLAG_HAS_K_IDX, KV_PAGE_FLAG_V_TRANSPOSED,
+};
 // Native renderer identity. Re-exported so callers can fingerprint a chat-template
 // render (for example a rendered-prompt probe) without taking a direct dependency
 // on the raw ABI crate.
