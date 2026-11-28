@@ -73,3 +73,26 @@ test('infrastructure failures stop source repair and all repair evidence is reta
   assert.match(repair, /target\/llama-upgrade\/diagnostics/);
   assert.match(repair, /target\/llama-repair\/diagnostics/);
 });
+
+test('changed-pin preparation requires isolated publisher authentication first', () => {
+  const controller = workflow('llama-upgrade.yml');
+  const resolve = job(controller, 'resolve');
+  const preflight = job(controller, 'publisher_preflight');
+  const candidate = job(controller, 'candidate');
+  assert.match(resolve, /just automation-run upgrade resolve/);
+  assert.doesNotMatch(resolve, /APP_PRIVATE_KEY|create-github-app-token/);
+  assert.match(preflight, /needs: resolve/);
+  assert.match(preflight, /outputs\.validate == 'true' && needs\.resolve\.outputs\.changed == 'true'/);
+  assert.match(preflight, /bash scripts\/check-upgrade-publisher\.sh/);
+  assert.match(preflight, /SKIPPY_UPGRADE_APP_KEY_CONFIGURED: \$\{\{ secrets\.SKIPPY_UPGRADE_APP_PRIVATE_KEY != '' \}\}/);
+  assert.match(preflight, /actions\/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349/);
+  assert.match(preflight, /repositories: skippy/);
+  assert.match(preflight, /permission-contents: write/);
+  assert.match(preflight, /permission-pull-requests: write/);
+  assert.doesNotMatch(preflight, /outputs:|skip-token-revoke/);
+  assert.match(candidate, /needs: \[resolve, publisher_preflight\]/);
+  assert.match(candidate, /needs\.publisher_preflight\.result == 'success' \|\| needs\.resolve\.outputs\.changed == 'false'/);
+  assert.match(candidate, /UPSTREAM_SHA: \$\{\{ needs\.resolve\.outputs\.upstream_sha \}\}/);
+  assert.doesNotMatch(candidate, /APP_PRIVATE_KEY|create-github-app-token|upgrade resolve/);
+  assert.match(job(controller, 'publish'), /actions\/create-github-app-token/);
+});

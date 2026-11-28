@@ -175,7 +175,7 @@ class SmokeEvidenceContract(unittest.TestCase):
         self.assertTrue(runtime["full_only"])
         self.assertEqual(runtime["validation"], "inference")
         artifact_only = [row["id"] for row in runtimes.values() if row["validation"] == "artifact"]
-        self.assertEqual(len(artifact_only), 4)
+        self.assertEqual(artifact_only, ["windows-x86_64-cpu", "windows-x86_64-vulkan"])
         self.assertTrue(all(variant.startswith("windows-") for variant in artifact_only))
         source, digest = "a" * 40, "b" * 64
         with tempfile.TemporaryDirectory() as tmp:
@@ -195,9 +195,34 @@ class SmokeEvidenceContract(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "archive"):
                 release.verify_smoke(root, runtime["id"], source, "rocm", "c" * 64, **policy)
 
+    def test_windows_gpu_releases_require_matching_device_evidence(self):
+        release = release_script()
+        with patch.dict(os.environ, SKIPPY_CI_PROFILE="full", GITHUB_OUTPUT=""):
+            _, runtimes = release.targets()
+        source, digest = "a" * 40, "b" * 64
+        for variant in ("windows-x86_64-cuda12", "windows-x86_64-cuda13", "windows-x86_64-rocm"):
+            with self.subTest(variant=variant), tempfile.TemporaryDirectory() as tmp:
+                runtime = runtimes[variant]
+                self.assertTrue(runtime["full_only"])
+                self.assertEqual(runtime["validation"], "inference")
+                root = Path(tmp)
+                embedded = root / f"release-product-{variant}" / "evidence"
+                embedded.mkdir(parents=True)
+                report = {"source": source, "variant": variant, "backend": runtime["backend"],
+                          "archive_sha256": digest}
+                release.artifacts.write_json(embedded / "artifact-smoke.json", report)
+                with self.assertRaises(FileNotFoundError):
+                    release.verify_smoke(root, variant, source, runtime["backend"], digest)
+                detached = root / f"release-device-evidence-{variant}"
+                detached.mkdir()
+                release.artifacts.write_json(detached / "smoke.json", report)
+                release.verify_smoke(root, variant, source, runtime["backend"], digest)
+                with self.assertRaisesRegex(ValueError, "archive"):
+                    release.verify_smoke(root, variant, source, runtime["backend"], "c" * 64)
+
     def test_remote_smoke_binds_to_the_original_archive(self):
         release = release_script()
-        variant = "linux-x86_64-cuda12"
+        variant = "windows-x86_64-cuda12"
         source = "a" * 40
         digest = "b" * 64
         with tempfile.TemporaryDirectory() as tmp:

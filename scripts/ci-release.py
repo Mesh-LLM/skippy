@@ -12,6 +12,7 @@ from pathlib import Path
 from lib import ci_artifacts as artifacts
 from lib.ci_process import cancel_on_signal, capture, command
 from lib.ci_targets import targets, validate_native_identity
+from lib.ci_vulkan import DEVICE_TYPES, VENDORS
 from lib.release_version import bump, parse_tag, workspace_version
 
 # The host installer downloads this name; keep both in step with
@@ -97,10 +98,12 @@ def verify_catalog(value, tag, archives):
         raise ValueError("runtime catalog does not match the release archives")
 
 
-def verify_smoke(input_dir, variant, source, backend, archive_sha256, *, artifact_only=False):
+def verify_smoke(input_dir, variant, source, backend, archive_sha256, *, artifact_only=False, vendor=None):
     evidence_dir = input_dir / f"release-product-{variant}" / "evidence"
     if not artifact_only and (evidence_dir / "artifact-smoke.json").is_file():
         evidence_dir = input_dir / f"release-device-evidence-{variant}"
+    if vendor is not None:
+        evidence_dir = input_dir / f"release-device-evidence-{variant}-{vendor}"
     report = "artifact-smoke.json" if artifact_only else "smoke.json"
     evidence = artifacts.read_json(evidence_dir / report)
     if (evidence.get("source"), evidence.get("variant"), evidence.get("backend")) != (
@@ -109,6 +112,15 @@ def verify_smoke(input_dir, variant, source, backend, archive_sha256, *, artifac
         raise ValueError(f"missing or mismatched {report.removesuffix('.json')} evidence for {variant}")
     if evidence.get("archive_sha256") != archive_sha256:
         raise ValueError(f"smoke evidence does not match release archive for {variant}")
+    if vendor is not None:
+        devices = evidence.get("vulkan_devices")
+        if (evidence.get("vulkan_vendor") != vendor or not isinstance(devices, list) or not devices
+                or any(not isinstance(device, dict)
+                       or device.get("vendorID") != hex(VENDORS[vendor])
+                       or device.get("deviceType") not in DEVICE_TYPES
+                       or any(not device.get(key) for key in ("deviceName", "apiVersion", "driverVersion"))
+                       for device in devices)):
+            raise ValueError(f"missing real {vendor} Vulkan device evidence for {variant}")
 
 
 def inventory(tag, input_dir, source):
@@ -134,7 +146,10 @@ def inventory(tag, input_dir, source):
             file = stage / f"skippy-{tag}-{variant}.tar.gz"
             shutil.copyfile(directory / f"skippy-{variant}.tar.gz", file)
             assets[file.name] = artifacts.digest(file)
-            if runtime["validation"] != "package":
+            if runtime["backend"] == "vulkan" and runtime["validation"] == "inference":
+                for vendor in ("nvidia", "amd"):
+                    verify_smoke(input_dir, variant, source, "vulkan", assets[file.name], vendor=vendor)
+            elif runtime["validation"] != "package":
                 verify_smoke(input_dir, variant, source, runtime["backend"], assets[file.name],
                              artifact_only=runtime["validation"] == "artifact")
             artifacts.write_checksum(file)
