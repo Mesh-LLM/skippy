@@ -334,7 +334,7 @@ fn emit_native_link_fingerprint(value: &str) {
 
 fn default_build_dir(workspace_root: &std::path::Path, backend: &str) -> std::path::PathBuf {
     let script = workspace_root.join("scripts/build-llama.sh");
-    let output = std::process::Command::new("bash")
+    let output = bash_command()
         .arg(&script)
         .arg("--print-build-dir")
         .env("LLAMA_STAGE_BACKEND", backend)
@@ -355,12 +355,62 @@ fn default_build_dir(workspace_root: &std::path::Path, backend: &str) -> std::pa
     }
     let path = String::from_utf8(output.stdout)
         .expect("build-llama.sh --print-build-dir returned non-UTF-8 output");
-    let path = std::path::PathBuf::from(path.trim());
+    let path = native_path(path.trim());
     if path.is_absolute() {
         path
     } else {
         workspace_root.join(path)
     }
+}
+
+/// A path printed by the build scripts, as this platform reads it. A Windows
+/// bash prints a POSIX path, which Windows takes for a path relative to the
+/// current drive's root: `/c/Users/...` from Git Bash and MSYS2,
+/// `/cygdrive/c/Users/...` from Cygwin. The shell that printed it converts it
+/// with its own `cygpath -w`, which also knows its mount points; the drive
+/// prefixes are converted directly if that fails.
+pub(super) fn native_path(path: &str) -> std::path::PathBuf {
+    #[cfg(windows)]
+    if path.starts_with('/') {
+        if let Some(converted) = cygpath_windows(path) {
+            return converted;
+        }
+        if let Some(converted) = posix_drive_path(path) {
+            return std::path::PathBuf::from(converted);
+        }
+    }
+    std::path::PathBuf::from(path)
+}
+
+#[cfg(windows)]
+fn cygpath_windows(path: &str) -> Option<std::path::PathBuf> {
+    let output = bash_command()
+        .args(["-c", "cygpath -w \"$1\"", "cygpath", path])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let converted = String::from_utf8(output.stdout).ok()?;
+    let converted = converted.trim();
+    let converted = std::path::PathBuf::from(converted);
+    converted.is_absolute().then_some(converted)
+}
+
+/// `/c/...` or `/cygdrive/c/...` as `C:/...`.
+#[cfg(windows)]
+pub(super) fn posix_drive_path(path: &str) -> Option<String> {
+    let rest = path.strip_prefix("/cygdrive").unwrap_or(path);
+    let bytes = rest.as_bytes();
+    let is_drive = bytes.len() >= 2
+        && bytes[0] == b'/'
+        && bytes[1].is_ascii_alphabetic()
+        && (bytes.len() == 2 || bytes[2] == b'/');
+    if !is_drive {
+        return None;
+    }
+    let drive = (bytes[1] as char).to_ascii_uppercase();
+    Some(format!("{drive}:/{}", rest.get(3..).unwrap_or("")))
 }
 
 fn default_backend(target: &str) -> &'static str {
@@ -455,6 +505,45 @@ fn native_auto_build_enabled() -> bool {
     true
 }
 
+/// The shell for Skippy's build scripts.
+///
+/// On Windows, `Command::new("bash")` looks in the system directory before
+/// `PATH` and finds the WSL launcher there. That runs the script inside Linux,
+/// where a `C:\...` script path loses its backslashes, so the build fails on
+/// any machine with WSL. Use a Windows bash instead: the first `bash.exe` on
+/// `PATH` outside the Windows directory and the Store aliases, else the one
+/// that ships beside `git.exe` (Git for Windows puts only `cmd` on `PATH`).
+fn bash_command() -> std::process::Command {
+    #[cfg(windows)]
+    if let Some(bash) = windows_bash() {
+        return std::process::Command::new(bash);
+    }
+    std::process::Command::new("bash")
+}
+
+#[cfg(windows)]
+pub(super) fn windows_bash() -> Option<std::path::PathBuf> {
+    let windows_dir = std::env::var_os("SystemRoot")
+        .or_else(|| std::env::var_os("windir"))
+        .map(|dir| dir.to_string_lossy().to_lowercase());
+    let not_wsl = |candidate: &std::path::Path| {
+        let path = candidate.to_string_lossy().to_lowercase();
+        !windows_dir
+            .as_deref()
+            .is_some_and(|dir| path.starts_with(dir))
+            && !path.contains("\\windowsapps\\")
+    };
+    let dirs: Vec<_> = std::env::split_paths(&std::env::var_os("PATH")?).collect();
+    let on_path = dirs.iter().map(|dir| dir.join("bash.exe"));
+    let beside_git = dirs
+        .iter()
+        .filter(|dir| dir.join("git.exe").is_file())
+        .filter_map(|dir| Some(dir.parent()?.join("bin").join("bash.exe")));
+    on_path
+        .chain(beside_git)
+        .find(|candidate| candidate.is_file() && not_wsl(candidate))
+}
+
 fn run_native_script(
     workspace_root: &std::path::Path,
     script: &std::path::Path,
@@ -462,7 +551,7 @@ fn run_native_script(
     backend: &str,
     paths: &[(&str, std::path::PathBuf)],
 ) {
-    let mut command = std::process::Command::new("bash");
+    let mut command = bash_command();
     command.current_dir(workspace_root).arg(script).args(args);
     for (key, value) in paths {
         command.env(key, value);
