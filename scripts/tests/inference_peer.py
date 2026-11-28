@@ -123,6 +123,42 @@ class PeerTests(unittest.TestCase):
 
 
 class ExecuteTests(unittest.TestCase):
+    def test_control_precedes_model_admission_and_split_planning(self):
+        execute = run_path(str(Path(__file__).resolve().parents[1] / "inference-execute.py"))["execute"]
+        for role in ("leader", "worker"):
+            for blocked in ("admit", "prepare_split"):
+                with self.subTest(role=role, blocked=blocked), TemporaryDirectory() as tmp:
+                    local = PeerControl(identity(role), "127.0.0.1", "", port=0)
+                    other = "worker" if role == "leader" else "leader"
+                    observer = PeerControl(identity(other), "127.0.0.1", "", port=0)
+                    def preparation(*_args):
+                        self.assertTrue(hasattr(local, "server"), f"control must open before {blocked}")
+                        observer.peer_url = f"http://127.0.0.1:{local.port}"
+                        observer.await_peer(seconds=1)
+                        self.assertEqual(observer.peer, local.identity)
+                        self.assertEqual(observer.request()["phase"], "preparing")
+                        with self.assertRaisesRegex(RuntimeError, "has not reached ready"):
+                            observer.await_peer("ready", seconds=0.04)
+                        raise RuntimeError("stop during preparation")
+                    start = Mock()
+                    overrides = {
+                        "authority": lambda _: (SHA, "GB10", None),
+                        "plan": lambda *_: {"rows": [{"id": "fixture-split"}]},
+                        "record": Mock(), "available_memory": lambda _: 10**15,
+                        "fixture": lambda _: {"files": [{"size": 1}], "repo": "Fixture/Model", "revision": "b" * 40},
+                        "admit": Mock(return_value=Path("fixture.gguf")),
+                        "prepare_split": Mock(return_value=[]), "start": start,
+                        "PeerControl": Mock(from_environment=Mock(return_value=local)),
+                    }
+                    overrides[blocked] = preparation
+                    with patch.dict(os.environ, JIANYANG_ROLE=role, JIANYANG_ARTIFACT_DIR=tmp), \
+                         patch.dict(execute.__globals__, overrides):
+                        with self.assertRaisesRegex(RuntimeError, "stop during preparation"):
+                            execute("pr", "fixture", "split")
+                    start.assert_not_called()
+                    port_available("127.0.0.1", local.port)
+
+
     def test_leader_control_is_served_during_nightly_and_release_numerical_checks(self):
         execute = run_path(str(Path(__file__).resolve().parents[1] / "inference-execute.py"))["execute"]
         for profile in ("nightly", "release"):
