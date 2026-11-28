@@ -67,8 +67,16 @@ def server_args(built, help_text, model, coordinate, context, server):
     if built["kind"] == "llama-server":
         total = pool if pool is not None else context * lanes
         args = [built["binary"], "-m", str(model), "--host", "127.0.0.1", "--port", str(PORT),
-                "-ngl", "999", "-np", str(lanes), "-c", str(total), "-kvu", "--alias", coordinate]
-        return args, {"lanes": lanes, "total_context": total}, []
+                "-ngl", "999", "-np", str(lanes), "-c", str(total)]
+        missing = []
+        for flag, value in (("-kvu", None), ("--alias", coordinate)):
+            if supports(help_text, flag):
+                args.append(flag)
+                if value is not None:
+                    args.append(value)
+            else:
+                missing.append(flag)
+        return args, {"lanes": lanes, "total_context": total}, missing
     args = [built["binary"], "serve", "--startup-timeout-secs", "300", "--ctx-size", str(context),
             "--n-gpu-layers", "999", "--bind-addr", f"127.0.0.1:{PORT}", "--model-path", str(model),
             "--model-id", coordinate]

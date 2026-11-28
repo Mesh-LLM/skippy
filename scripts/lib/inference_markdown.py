@@ -178,7 +178,7 @@ def latest_tables(view):
                                 for metric in view["metrics"]]
         rows = []
         for config in configs:
-            cells = [plain(config.get("label", configuration_label(config["id"])))]
+            cells = [plain(config.get("label", configuration_label(config["id"])) + " · " + workload_label(config["workload"]))]
             for metric in view["metrics"]:
                 row = config["metrics"].get(metric)
                 if row is None:

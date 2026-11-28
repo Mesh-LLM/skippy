@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -118,7 +119,8 @@ def resource_id(identifier):
 
 def cancel(pilot, ledger):
     failures = []
-    for entry in read_json(ledger):
+    entries = read_json(ledger)
+    for entry in entries:
         identifier = entry if isinstance(entry, str) else entry.get("id")
         try:
             if identifier is None:
@@ -126,6 +128,8 @@ def cancel(pilot, ledger):
                 recovered = pilot.api("POST", "/v1/jobs", {
                     "spec": entry["spec"], "idempotency_key": entry["idempotency_key"]})
                 identifier = resource_id(recovered["id"])
+                entry["id"] = identifier
+                save_ledger(ledger, entries)
             job = pilot.api("GET", f"/v1/jobs/{resource_id(identifier)}")
             if job.get("status") not in TERMINAL:
                 pilot.api("POST", f"/v1/jobs/{identifier}/cancel")
@@ -154,13 +158,19 @@ def download(pilot, run_id, name, path):
         request = Request(f"{ORIGIN}/v1/artifacts/{run_id}/{kind}/{quote(name, safe='')}",
                           headers={"Authorization": "Bearer " + pilot.auth(),
                                    "User-Agent": "skippy-inference-ci/1.0"})
+        temporary = None
         try:
-            with pilot.opener.open(request, timeout=900) as response:
-                with path.open("wb") as stream:
+            with tempfile.NamedTemporaryFile(dir=path.parent, prefix=path.name + ".", delete=False) as stream:
+                temporary = Path(stream.name)
+                with pilot.opener.open(request, timeout=900) as response:
                     shutil.copyfileobj(response, stream)
-                return
+            temporary.replace(path)
+            return
         except OSError as error:
             last = error
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
     raise last
 
 
@@ -202,6 +212,7 @@ def dispatch(evidence):
     save_ledger(ledger, submissions)
     run = f'{os.environ.get("GITHUB_RUN_ID", "local")}-{os.environ.get("GITHUB_RUN_ATTEMPT", "1")}'
     deadline = time.monotonic() + 20700
+    finished, polling_error = [], None
     try:
         for job in plan["jobs"]:
             entry = {"spec": job["spec"], "idempotency_key": f'inference-performance-{run}-{job["label"]}',
@@ -213,23 +224,34 @@ def dispatch(evidence):
             identifiers.append(entry["id"])
             save_ledger(ledger, submissions)
             print(f'{job["label"]}: {created["id"]} {created.get("status")}', flush=True)
-        finished = [wait(pilot, identifier, evidence, deadline) for identifier in identifiers]
-    except (Exception, KeyboardInterrupt):
+        for identifier in identifiers:
+            finished.append(wait(pilot, identifier, evidence, deadline))
+    except (Exception, KeyboardInterrupt) as error:
         try:
             cancel(pilot, ledger)
         except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as cleanup:
             print(f"Cancellation incomplete: {cleanup}", file=sys.stderr)
-        raise
+        polling_error = error
     reports, failures = [], []
     for job, spec in zip(finished, plan["jobs"]):
         if job["status"] != "succeeded":
             failures.append(f'{spec["label"]}: {job["status"]}')
+            run_id = (job.get("runs") or [{}])[-1].get("id")
+            if run_id:
+                for arm in plan.get("arms", []):
+                    name = f'build-{arm["label"]}.log'
+                    try:
+                        download(pilot, resource_id(run_id), name, evidence / f'{spec["label"]}-{name}')
+                    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+                        failures.append(f'{spec["label"]}: {name} unavailable: {error}')
             continue
         try:
             reports.append(collect(pilot, job, plan, spec["label"], evidence))
         except Exception as error:
             failures.append(f'{spec["label"]}: collection failed: {error}')
-    report = off_main(plan["pull_requests"]) + "\n".join(reports)
+    if polling_error is not None:
+        failures.append(f"Controller interrupted: {polling_error}")
+    report = off_main(plan.get("pull_requests", {})) + "\n".join(reports)
     if failures:
         report += "\n## Incomplete jobs or evidence\n\n" + "\n".join("- " + error for error in failures) + "\n"
     (evidence / "summary.md").write_text(report, encoding="utf-8")
@@ -237,6 +259,8 @@ def dispatch(evidence):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
             stream.write(report)
     print(report)
+    if polling_error is not None:
+        raise polling_error
     if failures:
         raise RuntimeError("performance jobs did not succeed: " + "; ".join(failures))
 

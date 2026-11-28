@@ -15,6 +15,8 @@ def quoted(value):
 def measured_panels(chart):
     lines = []
     for panel in chart.panels:
+        if panel.current is None:
+            continue
         labels = ["This run"]
         values = [panel.current * chart.scale]
         if panel.reference is not None:

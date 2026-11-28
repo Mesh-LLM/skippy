@@ -41,17 +41,17 @@ def scenario():
             raise ValueError("invalid performance server")
         if not isinstance(server["id"], str) or not COMPONENT.fullmatch(server["id"]):
             raise ValueError("server id must be one safe path component")
-        if server["id"] in servers:
+        if server["id"].lower() in servers:
             raise ValueError(f'duplicate performance server: {server["id"]}')
-        servers.add(server["id"])
+        servers.add(server["id"].lower())
         lanes = count(server["lanes"], f'{server["id"]} lanes')
         if server["pool_tokens"] is not None and count(server["pool_tokens"], "pool_tokens") < context:
             raise ValueError(f'{server["id"]}: a KV pool must hold at least one lane\'s context')
         for point in server["points"]:
             if (set(point) != POINT_FIELDS or not isinstance(point["id"], str)
-                    or not COMPONENT.fullmatch(point["id"]) or point["id"] in points):
+                    or not COMPONENT.fullmatch(point["id"]) or point["id"].lower() in points):
                 raise ValueError("invalid or duplicate performance point")
-            points.add(point["id"])
+            points.add(point["id"].lower())
             for field in ("concurrency", "input_tokens", "output_tokens", "requests"):
                 count(point[field], f'{point["id"]} {field}')
             count(point["depth"], f'{point["id"]} depth', 0)

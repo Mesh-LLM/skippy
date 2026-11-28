@@ -41,7 +41,7 @@ class ControllerTests(unittest.TestCase):
                 calls = pilot.api.call_args_list
                 self.assertEqual(calls[0].args, calls[1].args)
                 self.assertEqual(calls[-1].args, ("POST", "/v1/jobs/job_a/cancel"))
-                self.assertIsNone(read_json(self.root / "jobs.json")[0]["id"])
+                self.assertEqual(read_json(self.root / "jobs.json")[0]["id"], "job_a")
 
     def test_subprocess_cleanup_failure_preserves_original_dispatch_error(self):
         dispatch = self.functions["dispatch"]
@@ -75,6 +75,66 @@ class ControllerTests(unittest.TestCase):
         summary = (self.root / "summary.md").read_text()
         self.assertIn("second report retained", summary)
         self.assertIn("first: collection failed: missing artifact", summary)
+
+    def test_recovered_id_survives_failed_status_and_retry_does_not_create_again(self):
+        ledger = self.root / "jobs.json"
+        write_json(ledger, [{"id": None, "spec": {}, "idempotency_key": "same"}])
+        pilot = Mock()
+        pilot.api.side_effect = [{"id": "job_a"}, OSError("unavailable")]
+        with self.assertRaisesRegex(RuntimeError, "job_a"):
+            self.functions["cancel"](pilot, ledger)
+        self.assertEqual(read_json(ledger)[0]["id"], "job_a")
+        pilot.reset_mock(); pilot.api.side_effect = [{"status": "queued"}, {}]
+        self.functions["cancel"](pilot, ledger)
+        self.assertEqual(pilot.api.call_args_list[0].args, ("GET", "/v1/jobs/job_a"))
+
+    def test_partial_archive_is_removed_before_route_fallback(self):
+        from io import BytesIO
+        download = self.functions["download"]
+        pilot = Mock(); pilot.auth.return_value = "fake"
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.read.side_effect = [b"partial", OSError("truncated")]
+        pilot.opener.open.side_effect = [response, OSError("missing"), OSError("missing")]
+        target = self.root / "trace.tar.gz"
+        with self.assertRaises(OSError):
+            download(pilot, "run_a", "trace.tar.gz", target)
+        self.assertEqual(list(self.root.iterdir()), [])
+        pilot.opener.open.side_effect = None
+        pilot.opener.open.return_value = BytesIO(b"complete")
+        download(pilot, "run_a", "trace.tar.gz", target)
+        self.assertEqual(target.read_bytes(), b"complete")
+        self.assertEqual(list(self.root.iterdir()), [target])
+
+    def test_polling_failure_retains_finished_job_evidence_and_original_error(self):
+        dispatch = self.functions["dispatch"]
+        write_json(self.root / "plan.json", {"pull_requests": {}, "jobs": [
+            {"spec": {}, "label": "first"}, {"spec": {}, "label": "second"}]})
+        pilot = Mock(); pilot.api.side_effect = [{"id": "job_a"}, {"id": "job_b"}]
+        collect = Mock(return_value="first evidence retained")
+        cancel = Mock()
+        with patch.dict(dispatch.__globals__, Pilot=lambda: pilot, cancel=cancel, collect=collect,
+                        wait=Mock(side_effect=[{"id": "job_a", "status": "succeeded"}, OSError("poll lost")])):
+            with self.assertRaisesRegex(OSError, "poll lost"):
+                dispatch(self.root)
+        cancel.assert_called_once()
+        collect.assert_called_once()
+        self.assertIn("first evidence retained", (self.root / "summary.md").read_text())
+        self.assertIn("poll lost", (self.root / "summary.md").read_text())
+
+    def test_failed_job_collects_build_logs_without_comparison(self):
+        dispatch = self.functions["dispatch"]
+        write_json(self.root / "plan.json", {"pull_requests": {}, "arms": [{"label": "candidate"}],
+                                             "jobs": [{"spec": {}, "label": "host"}]})
+        pilot = Mock(); pilot.api.return_value = {"id": "job_a"}
+        collect, download = Mock(), Mock()
+        with patch.dict(dispatch.__globals__, Pilot=lambda: pilot, collect=collect, download=download,
+                        wait=Mock(return_value={"status": "failed", "runs": [{"id": "run_a"}]})):
+            with self.assertRaisesRegex(RuntimeError, "host: failed"):
+                dispatch(self.root)
+        collect.assert_not_called()
+        download.assert_called_once_with(pilot, "run_a", "build-candidate.log", self.root / "host-build-candidate.log")
 
     def test_successful_collection_downloads_raw_aiperf_evidence(self):
         collect = self.functions["collect"]

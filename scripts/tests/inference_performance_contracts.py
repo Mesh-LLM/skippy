@@ -34,6 +34,17 @@ class ScenarioTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     performance_plan.scenario()
 
+    def test_case_only_ids_cannot_alias_on_apfs(self):
+        for key in ("server", "point"):
+            shape = performance_plan.read_json(performance_plan.SCENARIO)
+            if key == "server":
+                shape["servers"][1]["id"] = shape["servers"][0]["id"].upper()
+            else:
+                shape["servers"][1]["points"][0]["id"] = shape["servers"][0]["points"][0]["id"].upper()
+            with self.subTest(key=key), patch.object(performance_plan, "read_json", return_value=shape):
+                with self.assertRaisesRegex(ValueError, "duplicate"):
+                    performance_plan.scenario()
+
     def test_evidence_ids_cannot_alias_or_escape_directories(self):
         for key in ("server", "point"):
             for invalid in ("./short", "../short", "a/b", "a\\b", ".", "..", "", 1):
@@ -178,6 +189,14 @@ class ServerTests(unittest.TestCase):
                     capabilities(self.skippy)
             with self.assertRaisesRegex(ValueError, "unsupported"):
                 server_args(self.skippy, help_text, "/m.gguf", "org/m@rev", 8192, self.server)
+
+    def test_reference_optional_flags_are_probed_and_omissions_recorded(self):
+        built = {"label": "reference", "kind": "llama-server", "binary": "/b/llama-server"}
+        for help_text in ("", "-kvu", "--alias", "-kvu --alias"):
+            args, _, missing = server_args(built, help_text, "/m.gguf", "org/m@rev", 8192, self.server)
+            for flag in ("-kvu", "--alias"):
+                self.assertEqual(flag in args, flag in help_text)
+                self.assertEqual(flag in missing, flag not in help_text)
 
     def test_llama_server_gets_the_same_cells(self):
         built = {"label": "reference", "kind": "llama-server", "binary": "/b/llama-server"}

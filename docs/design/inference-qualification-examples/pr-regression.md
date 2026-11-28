@@ -36,7 +36,7 @@ Current values and signed changes against the saved reference, or the previous c
 
 | Model | Prefill throughput (tok/s) | Decode throughput (tok/s) |
 | --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | 611.12 (-0.17% · Within tolerance) | 60.10 (-5.09% · Regressed) |
+| Qwen3.5-4B (1 Spark) · Smoke test (v1) | 611.12 (-0.17% · Within tolerance) | 60.10 (-5.09% · Regressed) |
 
 
 ## Measurement notes

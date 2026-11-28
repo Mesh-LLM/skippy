@@ -42,8 +42,8 @@ Current values and signed changes against the saved reference, or the previous c
 
 | Model | Output throughput (tok/s) | Time to first token (seconds) | Prefill throughput (tok/s) | Decode throughput (tok/s) |
 | --- | --- | --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | 26.29 (New series) | 14.34 (New series) | — | — |
-| Qwen3.5-4B (1 Spark) | — | — | 612.17 (New series) | 63.32 (New series) |
+| Qwen3.5-4B (1 Spark) · Nightly AgentX (v1) | 26.29 (New series) | 14.34 (New series) | — | — |
+| Qwen3.5-4B (1 Spark) · Smoke test (v1) | — | — | 612.17 (New series) | 63.32 (New series) |
 
 
 ## Measurement notes

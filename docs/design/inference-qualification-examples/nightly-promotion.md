@@ -36,8 +36,8 @@ Current values and signed changes against the saved reference, or the previous c
 
 | Model | Output throughput (tok/s) | Time to first token (seconds) | Decode throughput (tok/s) |
 | --- | --- | --- | --- |
-| Qwen3.5-4B (1 Spark) | 30.42 (+15.71% · Improved) | 14.23 (-0.73% · Within tolerance) | — |
-| Qwen3.5-4B (1 Spark) | — | — | 64.01 (+1.09% · Improved) |
+| Qwen3.5-4B (1 Spark) · Nightly AgentX (v1) | 30.42 (+15.71% · Improved) | 14.23 (-0.73% · Within tolerance) | — |
+| Qwen3.5-4B (1 Spark) · Smoke test (v1) | — | — | 64.01 (+1.09% · Improved) |
 
 
 ## Measurement notes

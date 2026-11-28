@@ -86,6 +86,11 @@ def health_view(report, run_id=None):
             continue
         key = configuration, workload, metric
         row = current.get(key, {**retained_row, "measured": None})
+        if row["measured"] is None and not row.get("contract_sha256"):
+            previous_row = next((rows[key] for _, rows in reversed(timeline)
+                                 if key in rows and rows[key]["measured"] is not None), None)
+            if previous_row is not None:
+                row = {**row, "contract_sha256": previous_row.get("contract_sha256")}
         points = history_for(key, row, timeline)
         if not any(value is not None for _, value in points):
             continue
