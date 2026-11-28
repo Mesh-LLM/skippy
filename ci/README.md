@@ -110,6 +110,11 @@ documentation and image builds use their ordinary workflows, not Depot wrappers.
 The existing inference PR comment is target-event-only; fork qualification links
 and artifacts are available in **Approved fork CI** and the aggregate status.
 
+Inference implementation changes require native qualification on every PR head.
+This includes serving, scheduling, runtime/FFI, native patches and qualification
+execution code; adding report or test files to the same PR does not remove that
+requirement.
+
 On PRs, runtime source and package/build/smoke inputs select device package smoke.
 Qualification planning, dispatch, scoring, baselines and publication select
 qualification and offline automation without rebuilding packages. Renderers,

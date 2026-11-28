@@ -178,3 +178,31 @@ test('protected fork routes and aggregate triggers agree for exclusions, mixed c
     assert.equal(expectedWorkflows([change]).has('.github/workflows/inference.yml'), true);
   }
 });
+
+test('inference implementation changes always require qualification, including mixed PRs', () => {
+  const inference = [
+    'crates/skippy-inference-api/src/router.rs',
+    'crates/skippy-serving/src/split_dflash.rs',
+    'crates/skippy-scheduler/src/engine.rs',
+    'crates/skippy-runtime/src/native.rs',
+    'crates/skippy-ffi/src/static_bindings.rs',
+    'skippy_api/src/llama/staged.cpp',
+    'llama_cpp/patches/model_support/series',
+    'scripts/inference-execute.py',
+    'scripts/lib/inference_checks.py',
+    'scripts/lib/inference_admission.py',
+    'scripts/lib/inference_probe.py',
+    'scripts/lib/inference_new_execution_helper.py',
+    'ci/inference.just',
+  ];
+  for (const filename of inference) {
+    for (const files of [[filename], [filename, 'scripts/lib/inference_labels.py',
+      'crates/skippy-runtime/src/test_support/libraries.rs']]) {
+      const changed = files.map(filename => ({ filename }));
+      assert.equal(route(files).inference, true, filename);
+      assert.equal(expectedWorkflows.routes(changed).inference, true, filename);
+      assert.equal(expectedWorkflows(changed).has('.github/workflows/inference.yml'), true, filename);
+      assert.equal(expectedWorkflows(changed, false).has('.github/workflows/fork-native.yml'), true, filename);
+    }
+  }
+});
