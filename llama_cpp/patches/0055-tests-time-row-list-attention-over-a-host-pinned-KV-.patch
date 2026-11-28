@@ -1,0 +1,181 @@
+From e02c73bcbe070f152d5280471c22b761f93bfedd Mon Sep 17 00:00:00 2001
+From: Skippy contributors <ci@skippy.local>
+Date: Sat, 28 Nov 2026 15:03:45 +1100
+Subject: [PATCH 55/55] tests: time row-list attention over a host-pinned KV
+ cache
+
+With GGML_CUDA_INTEGRATED=1 and the cache in pinned host memory, a GB10
+decode step that holds two or more sequences took 56-62 ms of GPU time
+where device memory took 22.6 ms, while one sequence took 17 ms either
+way. One sequence's rows are one contiguous run; several sequences read
+through row lists with a run per row.
+
+--kv-memory device|host|both places K and V in the device's buffer type,
+in its pinned host buffer type, or measures both, so dense and row-list
+attention can be timed alone against each placement.
+---
+ tests/test-flash-attn-rows-perf.cpp | 65 ++++++++++++++++++++++-------
+ 1 file changed, 50 insertions(+), 15 deletions(-)
+
+diff --git a/tests/test-flash-attn-rows-perf.cpp b/tests/test-flash-attn-rows-perf.cpp
+index fd3179a06..4262c4cbb 100644
+--- a/tests/test-flash-attn-rows-perf.cpp
++++ b/tests/test-flash-attn-rows-perf.cpp
+@@ -4,7 +4,10 @@
+ // previous output, so they run back to back like a model's layers) and the
+ // backend's command timing gives the GPU time of the whole chain.
+ //
+-//   test-flash-attn-rows-perf [--backend NAME] [--iters N] [--depth N]
++//   test-flash-attn-rows-perf [--backend NAME] [--iters N] [--depth N] [--kv-memory device|host|both]
++//
++// --kv-memory places K and V in the device's own buffer type or in its pinned host buffer
++// type, the way GGML_CUDA_INTEGRATED keeps the cache on a GB10.
+ //
+ // GGML_METAL_CAPTURE_COMPUTE=N (with METAL_CAPTURE_ENABLED=1) captures one
+ // chain for Xcode; a chain is small enough for the full Metal profiler.
+@@ -103,9 +106,16 @@ struct timing_sink {
+     }
+ };
+ 
++struct kv_memory {
++    const char * name;
++    ggml_backend_buffer_type_t buft;
++};
++
+ struct chain {
+     ggml_context * ctx = nullptr;
+     ggml_backend_buffer_t buffer = nullptr;
++    ggml_context * kv_ctx = nullptr;
++    ggml_backend_buffer_t kv_buffer = nullptr;
+     ggml_tensor * q = nullptr;
+     ggml_tensor * k = nullptr;
+     ggml_tensor * v = nullptr;
+@@ -114,16 +124,19 @@ struct chain {
+     ggml_tensor * last = nullptr;
+     ggml_cgraph * graph = nullptr;
+ 
+-    chain(ggml_backend_t backend, layout value, int64_t rows_per_slice, int64_t slices, int depth) {
++    chain(ggml_backend_t backend, ggml_backend_buffer_type_t kv_buft, layout value, int64_t rows_per_slice, int64_t slices, int depth) {
+         const bool row_based = value != layout::dense;
+         ggml_init_params params{(size_t) (8 + 2*depth)*ggml_tensor_overhead() + ggml_graph_overhead_custom(2*depth + 8, false), nullptr, true};
+         ctx = ggml_init(params);
+         require(ctx != nullptr, "allocate graph context");
++        ggml_init_params kv_params{2*ggml_tensor_overhead(), nullptr, true};
++        kv_ctx = ggml_init(kv_params);
++        require(kv_ctx != nullptr, "allocate cache context");
+ 
+         q = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, dk, 1, heads, slices);
+         const int64_t pool = row_based ? rows_per_slice*slices + slack : rows_per_slice;
+-        k = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, dk, pool, kv_heads, row_based ? 1 : slices);
+-        v = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, dv, pool, kv_heads, row_based ? 1 : slices);
++        k = ggml_new_tensor_4d(kv_ctx, GGML_TYPE_F16, dk, pool, kv_heads, row_based ? 1 : slices);
++        v = ggml_new_tensor_4d(kv_ctx, GGML_TYPE_F16, dv, pool, kv_heads, row_based ? 1 : slices);
+         mask = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, rows_per_slice, mask_queries, 1, slices);
+         if (row_based) {
+             rows = ggml_new_tensor_2d(ctx, GGML_TYPE_I32, rows_per_slice, slices);
+@@ -152,9 +165,13 @@ struct chain {
+         ggml_build_forward_expand(graph, last);
+         buffer = ggml_backend_alloc_ctx_tensors(ctx, backend);
+         require(buffer != nullptr, "allocate backend tensors");
++        kv_buffer = ggml_backend_alloc_ctx_tensors_from_buft(kv_ctx, kv_buft);
++        require(kv_buffer != nullptr, "allocate the cache");
+     }
+ 
+     ~chain() {
++        ggml_backend_buffer_free(kv_buffer);
++        ggml_free(kv_ctx);
+         ggml_backend_buffer_free(buffer);
+         ggml_free(ctx);
+     }
+@@ -219,6 +236,7 @@ ggml_backend_t open_backend(const char * name) {
+ }
+ 
+ struct result {
++    const char * kv;
+     layout value;
+     int64_t rows;
+     int64_t slices;
+@@ -228,8 +246,8 @@ struct result {
+     float checksum;
+ };
+ 
+-result measure(ggml_backend_t backend, timing_sink & sink, layout value, int64_t rows, int64_t slices, int depth, int iters) {
+-    chain c(backend, value, rows, slices, depth);
++result measure(ggml_backend_t backend, timing_sink & sink, const kv_memory & kv, layout value, int64_t rows, int64_t slices, int depth, int iters) {
++    chain c(backend, kv.buft, value, rows, slices, depth);
+     c.fill(value, rows, slices);
+     for (int i = 0; i < 5; ++i) {
+         require(ggml_backend_graph_compute(backend, c.graph) == GGML_STATUS_SUCCESS, "warm-up compute");
+@@ -247,7 +265,7 @@ result measure(ggml_backend_t backend, timing_sink & sink, layout value, int64_t
+     std::this_thread::sleep_for(std::chrono::milliseconds(50));
+     const double calls = double(iters)*depth;
+     return {
+-        value, rows, slices,
++        kv.name, value, rows, slices,
+         double(sink.gpu_ns.load())/1e3/calls,
+         std::chrono::duration<double, std::micro>(t1 - t0).count()/calls,
+         double(sink.commands.load())/iters,
+@@ -262,6 +280,7 @@ int main(int argc, char ** argv) {
+         const char * backend_name = nullptr;
+         int iters = 50;
+         int depth = 48;
++        std::string memory = "device";
+         for (int i = 1; i < argc; ++i) {
+             if (std::strcmp(argv[i], "--backend") == 0 && i + 1 < argc) {
+                 backend_name = argv[++i];
+@@ -269,8 +288,11 @@ int main(int argc, char ** argv) {
+                 iters = std::stoi(argv[++i]);
+             } else if (std::strcmp(argv[i], "--depth") == 0 && i + 1 < argc) {
+                 depth = std::stoi(argv[++i]);
++            } else if (std::strcmp(argv[i], "--kv-memory") == 0 && i + 1 < argc) {
++                memory = argv[++i];
++                require(memory == "device" || memory == "host" || memory == "both", "--kv-memory takes device, host or both");
+             } else {
+-                require(false, "usage: test-flash-attn-rows-perf [--backend NAME] [--iters N] [--depth N]");
++                require(false, "usage: test-flash-attn-rows-perf [--backend NAME] [--iters N] [--depth N] [--kv-memory device|host|both]");
+             }
+         }
+         ggml_backend_load_all();
+@@ -286,19 +308,32 @@ int main(int argc, char ** argv) {
+         require(set_callback != nullptr, "backend reports no command timing; GPU time needs the Metal timing patch");
+         set_callback(timing_sink::record, &sink);
+ 
+-        std::printf("backend=%s dk=%lld dv=%lld heads=%lld kv_heads=%lld depth=%d iters=%d\n",
+-                ggml_backend_name(backend.get()), (long long) dk, (long long) dv, (long long) heads,
+-                (long long) kv_heads, depth, iters);
+-        std::printf("%-14s %6s %6s %12s %12s %8s %12s\n", "layout", "rows", "slices", "gpu_us/call", "wall_us/call", "cmd/chain", "checksum");
++        ggml_backend_dev_t device = ggml_backend_get_device(backend.get());
++        std::vector<kv_memory> memories;
++        if (memory != "host") {
++            memories.push_back({"device", ggml_backend_get_default_buffer_type(backend.get())});
++        }
++        if (memory != "device") {
++            ggml_backend_buffer_type_t host = ggml_backend_dev_host_buffer_type(device);
++            require(host != nullptr, "the device has no host buffer type");
++            memories.push_back({"host", host});
++        }
++
++        std::printf("backend=%s device_type=%s dk=%lld dv=%lld heads=%lld kv_heads=%lld depth=%d iters=%d\n",
++                ggml_backend_name(backend.get()), ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_IGPU ? "igpu" : "gpu",
++                (long long) dk, (long long) dv, (long long) heads, (long long) kv_heads, depth, iters);
++        std::printf("%-6s %-14s %6s %6s %12s %12s %8s %12s\n", "kv", "layout", "rows", "slices", "gpu_us/call", "wall_us/call", "cmd/chain", "checksum");
+         for (int64_t slices : {1, 4}) {
+             for (int64_t rows : {768, 4864}) {
+                 for (layout value : {layout::dense, layout::identity, layout::chunk64, layout::stride, layout::padded, layout::tail, layout::split}) {
+                     if (slices == 1 && (value == layout::chunk64 || value == layout::stride)) {
+                         continue; // identical to identity with one slice
+                     }
+-                    const result r = measure(backend.get(), sink, value, rows, slices, depth, iters);
+-                    std::printf("%-14s %6lld %6lld %12.2f %12.2f %8.1f %12.4g\n", layout_name(r.value),
+-                            (long long) r.rows, (long long) r.slices, r.gpu_us, r.wall_us, r.commands, r.checksum);
++                    for (const kv_memory & kv : memories) {
++                        const result r = measure(backend.get(), sink, kv, value, rows, slices, depth, iters);
++                        std::printf("%-6s %-14s %6lld %6lld %12.2f %12.2f %8.1f %12.4g\n", r.kv, layout_name(r.value),
++                                (long long) r.rows, (long long) r.slices, r.gpu_us, r.wall_us, r.commands, r.checksum);
++                    }
+                 }
+             }
+         }
+-- 
+2.43.0
+
