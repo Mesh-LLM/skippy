@@ -310,6 +310,12 @@ validation and appears in release notes as awaiting inference qualification.
 Linux users need a Vulkan loader and compatible GPU driver; Windows uses the
 system Vulkan loader. The backend-neutral CLI still cannot import Vulkan.
 
+The Vulkan shader generator builds directly beneath the native build directory,
+rather than ExternalProject's deeply nested default. This keeps MSVC's compiler
+checks within Windows path limits for ordinary checkout locations. The Windows
+Vulkan package job deliberately uses a longer native build root to retain this
+regression coverage. Custom `SKIPPY_LLAMA_BUILD_ROOT` inputs are still honored.
+
 The separate DGX Spark inference benchmark ladder and its published performance
 baselines remain CUDA-only; package smoke makes no performance claim.
 
