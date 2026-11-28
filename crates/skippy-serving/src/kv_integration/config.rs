@@ -32,7 +32,7 @@ mod runtime_identity;
 use durable_spill::{
     DurableRecordTarget, PendingDurableSpill, spill_exact_record_to_l3, start_durable_spill_worker,
 };
-use exact_state_limits::exact_state_byte_limits;
+use exact_state_limits::{exact_state_byte_limits, exact_state_working_set};
 use exact_state_retention::enforce_exact_state_limits;
 
 // Recurrent and hybrid payloads share the native n_ctx cell pool across
@@ -213,6 +213,7 @@ impl KvStageIntegration {
             cache_config.max_bytes,
             cache_config.exact_max_bytes,
             std::env::var(EXACT_STATE_MAX_BYTES_ENV).ok().as_deref(),
+            exact_state_working_set(config.lane_count, exact_max_entries),
         );
         let radix = Arc::new(Mutex::new(UnifiedRadixCache::new()));
         let exact_blobs = Arc::new(Mutex::new(CacheBlobStore::default()));
@@ -811,7 +812,7 @@ fn store_exact_radix_record_with_codec(
             payload.release_from(&mut blobs)?;
         }
     }
-    enforce_exact_state_limits(radix, blobs, limits, max_entries, logical_bytes)?;
+    enforce_exact_state_limits(radix, blobs, limits, max_entries)?;
     #[cfg(test)]
     crate::frontend::capture_trace::log_stored_identity(&namespace, &token_ids);
 
@@ -963,6 +964,7 @@ fn parse_cache_mode(value: &str) -> Option<StageKvCacheMode> {
 
 #[cfg(test)]
 mod tests {
+    use super::exact_state_limits::EXACT_STATE_MIN_RETAINED_ENTRIES;
     use super::*;
     use skippy_protocol::{FlashAttentionType, LoadMode};
 
@@ -977,6 +979,7 @@ mod tests {
             soft_bytes,
             hard_bytes,
             hard_is_explicit: false,
+            working_set_entries: EXACT_STATE_MIN_RETAINED_ENTRIES,
         }
     }
 
@@ -1496,14 +1499,11 @@ mod tests {
     }
 
     #[test]
-    fn exact_working_set_is_bounded_by_the_retention_floor_not_the_ceiling() {
+    fn the_ceiling_bounds_the_working_set_below_the_retention_floor() {
         let radix = Mutex::new(UnifiedRadixCache::new());
         let blobs = Mutex::new(CacheBlobStore::new(4));
         let budget = StorageBudget::new();
 
-        // Six sessions' snapshots against byte limits smaller than one
-        // snapshot, as happens when the attention-derived estimate cannot see
-        // hybrid recurrent state.
         for (page_id, tokens, bytes) in [
             ("s1", [1, 2], b"aaaabbbb"),
             ("s2", [1, 3], b"ccccdddd"),
@@ -1516,7 +1516,7 @@ mod tests {
                 &radix,
                 &blobs,
                 8,
-                limits(4, 8),
+                limits(4, 24),
                 None,
                 None,
                 pending(page_id, &tokens, bytes, &budget),
@@ -1524,21 +1524,13 @@ mod tests {
             .unwrap();
         }
 
-        // The ceiling still bounds the working set above the retention floor:
-        // the two least-recently-used snapshots go. At the floor the ceiling
-        // yields, because collapsing to a single entry made concurrent
-        // sessions evict each other on every request.
+        // The soft cap would keep four sessions; three fit the ceiling.
         let mut radix = radix.lock().unwrap();
-        assert_eq!(radix.stats().recurrent_entries, 4);
-        assert!(radix.lookup_recurrent("model", &[1, 2]).is_none());
-        assert!(radix.lookup_recurrent("model", &[1, 3]).is_none());
-        for tokens in [[1, 4], [1, 5], [1, 6], [1, 7]] {
-            assert!(
-                radix.lookup_recurrent("model", &tokens).is_some(),
-                "the retention floor must keep the newest four sessions"
-            );
+        assert_eq!(radix.stats().recurrent_entries, 3);
+        for tokens in [[1, 5], [1, 6], [1, 7]] {
+            assert!(radix.lookup_recurrent("model", &tokens).is_some());
         }
-        assert_eq!(blobs.lock().unwrap().physical_bytes(), 32);
+        assert_eq!(blobs.lock().unwrap().physical_bytes(), 24);
     }
 
     #[test]

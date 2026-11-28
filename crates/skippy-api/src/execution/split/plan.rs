@@ -149,6 +149,7 @@ impl SplitOptions {
             generation_signal_window: None,
             activation_codec: Default::default(),
             activation_codec_policy: Default::default(),
+            max_request_tier: None,
             n_batch: options.n_batch,
             n_ubatch: options.n_ubatch,
             n_gpu_layers: options.n_gpu_layers,

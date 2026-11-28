@@ -405,10 +405,11 @@ impl<R, E> UnifiedRadixCache<R, E> {
         })
     }
 
-    /// Evict the least-recently-used unreferenced recurrent entry that is a
-    /// strict prefix of another recurrent entry in its namespace. A longer
-    /// entry already continues that conversation, so the shorter one is the
-    /// cheapest snapshot to lose.
+    /// Evict the least-recently-used unreferenced recurrent entry that exactly
+    /// one branch of longer recurrent entries extends: an earlier turn of a
+    /// conversation whose later turn is cached, the cheapest snapshot to lose.
+    /// A prefix that several branches extend is kept, since every conversation
+    /// sharing it would lose it.
     pub fn evict_lru_superseded_recurrent(&mut self) -> Option<RadixEviction<E>> {
         let mut victim = None;
         for (namespace, root) in &self.roots {
@@ -978,7 +979,8 @@ fn count_recurrent_leaves<R, E>(node: &RadixNode<R, E>) -> (usize, bool) {
     (leaves, here || below)
 }
 
-/// Returns whether the subtree holds any recurrent entry.
+/// Offers the node's recurrent entry when exactly one child branch holds a
+/// recurrent entry, and returns whether this subtree holds any.
 fn collect_lru_superseded_recurrent<R, E>(
     namespace: &str,
     node: &RadixNode<R, E>,
@@ -987,12 +989,16 @@ fn collect_lru_superseded_recurrent<R, E>(
 ) -> bool {
     let original_len = path.len();
     path.extend_from_slice(&node.edge);
-    let mut below = false;
-    for child in node.children.values() {
-        below |= collect_lru_superseded_recurrent(namespace, child, path, victim);
-    }
+    let extending_branches = node
+        .children
+        .values()
+        .map(|child| collect_lru_superseded_recurrent(namespace, child, path, victim))
+        .filter(|holds_entry| *holds_entry)
+        .count();
     let entry = node.components.recurrent.as_ref();
-    if below && let Some(entry) = entry.filter(|entry| entry.active_refs == 0) {
+    if extending_branches == 1
+        && let Some(entry) = entry.filter(|entry| entry.active_refs == 0)
+    {
         let replace = victim.as_ref().is_none_or(|current| {
             (entry.last_used, namespace, path.as_slice())
                 < (
@@ -1012,7 +1018,7 @@ fn collect_lru_superseded_recurrent<R, E>(
         }
     }
     path.truncate(original_len);
-    below || entry.is_some()
+    extending_branches > 0 || entry.is_some()
 }
 
 fn collect_resident_eviction_candidates<R: Clone, E>(
@@ -1471,6 +1477,35 @@ mod tests {
         );
         assert!(cache.evict_lru_superseded_recurrent().is_none());
         assert_eq!(cache.recurrent_leaf_entries(), 2);
+    }
+
+    #[test]
+    fn superseded_recurrent_eviction_keeps_a_prefix_two_conversations_share() {
+        let mut cache = UnifiedRadixCache::<(), &str>::new();
+        cache
+            .insert_recurrent("stage", &[1, 2], 2, "system prompt")
+            .unwrap();
+        cache.insert_recurrent("stage", &[1, 2, 3], 3, "a").unwrap();
+        cache.insert_recurrent("stage", &[1, 2, 4], 3, "b").unwrap();
+        assert!(cache.evict_lru_superseded_recurrent().is_none());
+    }
+
+    #[test]
+    fn superseded_recurrent_eviction_counts_a_deeper_fork_as_one_branch() {
+        let mut cache = UnifiedRadixCache::<(), &str>::new();
+        cache
+            .insert_recurrent("stage", &[1, 2], 2, "turn 1")
+            .unwrap();
+        cache
+            .insert_recurrent("stage", &[1, 2, 3, 4], 4, "regenerated a")
+            .unwrap();
+        cache
+            .insert_recurrent("stage", &[1, 2, 3, 5], 4, "regenerated b")
+            .unwrap();
+        assert_eq!(
+            cache.evict_lru_superseded_recurrent().unwrap().value,
+            "turn 1"
+        );
     }
 
     #[test]

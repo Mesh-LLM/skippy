@@ -1,49 +1,6 @@
 use super::*;
 use crate::kv_integration::RadixResidentEntry;
 
-#[test]
-fn exact_state_retention_floor_survives_a_hard_cap_blind_to_recurrent_state() {
-    // Regression: the byte limits are derived from attention KV metadata,
-    // so hybrid snapshots (recurrent state the estimate cannot see) can
-    // push the retained working set past the hard cap. The retention floor
-    // must keep every concurrent session's entry; collapsing to a single
-    // entry made sessions evict each other on every request.
-    let radix = Mutex::new(UnifiedRadixCache::new());
-    let blobs = Mutex::new(CacheBlobStore::new(4));
-    let budget = StorageBudget::new();
-    // Each snapshot is 32 bytes; four of them (128) exceed the hard cap
-    // of 80 even though each individually fits the 8x headroom.
-    let oversized_for_attention_estimate = limits(10, 80);
-    for index in 0..4 {
-        store_exact_radix_record(
-            &radix,
-            &blobs,
-            512,
-            oversized_for_attention_estimate,
-            None,
-            None,
-            pending(
-                &format!("session-{index}"),
-                &[1, index + 2],
-                &distinct_payload(index as u8, 32),
-                &budget,
-            ),
-        )
-        .unwrap();
-    }
-    // Distinct blocks, so the retained set really is past the hard cap and
-    // the pre-floor policy would have evicted down to one entry.
-    assert!(blobs.lock().unwrap().physical_bytes() > 80);
-    let mut radix = radix.lock().unwrap();
-    assert_eq!(radix.stats().recurrent_entries, 4);
-    for index in 0..4 {
-        assert!(
-            radix.lookup_recurrent("model", &[1, index + 2]).is_some(),
-            "session {index} must retain its exact-state entry"
-        );
-    }
-}
-
 /// Payload bytes that dedupe into distinct 4-byte blocks per `seed`.
 fn distinct_payload(seed: u8, len: usize) -> Vec<u8> {
     (0..len)
@@ -77,9 +34,8 @@ fn explicit_exact_budget_stays_a_strict_ceiling_past_the_retention_floor() {
     let radix = Mutex::new(UnifiedRadixCache::new());
     let blobs = Mutex::new(CacheBlobStore::new(4));
     let explicit_ceiling = ExactStateByteLimits {
-        soft_bytes: 10,
-        hard_bytes: 40,
         hard_is_explicit: true,
+        ..limits(10, 40)
     };
     store_sessions(
         &radix,
@@ -102,9 +58,8 @@ fn explicit_exact_budget_evicts_a_continuation_when_its_parent_is_leased() {
     let radix = Mutex::new(UnifiedRadixCache::new());
     let blobs = Mutex::new(CacheBlobStore::new(4));
     let explicit_ceiling = ExactStateByteLimits {
-        soft_bytes: 10,
-        hard_bytes: 40,
         hard_is_explicit: true,
+        ..limits(10, 40)
     };
     let checkpoint = [1, 2];
     let continuation = [1, 2, 3];
@@ -126,6 +81,30 @@ fn explicit_exact_budget_evicts_a_continuation_when_its_parent_is_leased() {
     assert!(radix.recurrent_exact("model", &continuation).is_none());
     assert!(radix.release_recurrent("model", &checkpoint));
     assert_eq!(blobs.lock().unwrap().physical_bytes(), 32);
+}
+
+#[test]
+fn the_soft_cap_keeps_one_conversation_per_lane() {
+    let radix = Mutex::new(UnifiedRadixCache::new());
+    let blobs = Mutex::new(CacheBlobStore::new(4));
+    let six_lanes = ExactStateByteLimits {
+        working_set_entries: 6,
+        ..limits(10, 1_024)
+    };
+    store_sessions(
+        &radix,
+        &blobs,
+        six_lanes,
+        &[
+            ("a", &[1, 2], 0),
+            ("b", &[1, 3], 1),
+            ("c", &[1, 4], 2),
+            ("d", &[1, 5], 3),
+            ("e", &[1, 6], 4),
+            ("f", &[1, 7], 5),
+        ],
+    );
+    assert_eq!(radix.lock().unwrap().stats().recurrent_entries, 6);
 }
 
 #[test]
@@ -152,12 +131,12 @@ fn retention_floor_keeps_each_sessions_latest_continuation() {
     let radix = Mutex::new(UnifiedRadixCache::new());
     let blobs = Mutex::new(CacheBlobStore::new(4));
     // Session A stores a prefill and a post-decode checkpoint between the
-    // other sessions' prefills. Five snapshots exceed the derived hard
-    // cap; the superseded prefill must go, not another session's only one.
+    // other sessions' prefills. Five snapshots exceed the soft cap; the
+    // superseded prefill must go, not another session's only one.
     store_sessions(
         &radix,
         &blobs,
-        limits(10, 80),
+        limits(10, 1_024),
         &[
             ("a-prefill", &[1, 2], 0),
             ("b", &[1, 3], 1),
