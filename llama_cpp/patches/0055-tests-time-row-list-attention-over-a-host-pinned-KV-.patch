@@ -1,4 +1,4 @@
-From e02c73bcbe070f152d5280471c22b761f93bfedd Mon Sep 17 00:00:00 2001
+From ed6900603ad128a70f87da17596e442d5cdf9ada Mon Sep 17 00:00:00 2001
 From: Skippy contributors <ci@skippy.local>
 Date: Sat, 28 Nov 2026 15:03:45 +1100
 Subject: [PATCH 55/55] tests: time row-list attention over a host-pinned KV
@@ -14,11 +14,11 @@ through row lists with a run per row.
 in its pinned host buffer type, or measures both, so dense and row-list
 attention can be timed alone against each placement.
 ---
- tests/test-flash-attn-rows-perf.cpp | 65 ++++++++++++++++++++++-------
- 1 file changed, 50 insertions(+), 15 deletions(-)
+ tests/test-flash-attn-rows-perf.cpp | 74 ++++++++++++++++++++++-------
+ 1 file changed, 57 insertions(+), 17 deletions(-)
 
 diff --git a/tests/test-flash-attn-rows-perf.cpp b/tests/test-flash-attn-rows-perf.cpp
-index fd3179a06..4262c4cbb 100644
+index fd3179a06..b6c3c9442 100644
 --- a/tests/test-flash-attn-rows-perf.cpp
 +++ b/tests/test-flash-attn-rows-perf.cpp
 @@ -4,7 +4,10 @@
@@ -87,15 +87,22 @@ index fd3179a06..4262c4cbb 100644
          ggml_backend_buffer_free(buffer);
          ggml_free(ctx);
      }
-@@ -219,6 +236,7 @@ ggml_backend_t open_backend(const char * name) {
+@@ -218,7 +235,14 @@ ggml_backend_t open_backend(const char * name) {
+     return nullptr;
  }
  
++// GGML_CUDA_INTEGRATED reports a GB10 as an integrated GPU
++ggml_backend_t open_gpu() {
++    ggml_backend_t gpu = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_GPU, nullptr);
++    return gpu ? gpu : ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_IGPU, nullptr);
++}
++
  struct result {
 +    const char * kv;
      layout value;
      int64_t rows;
      int64_t slices;
-@@ -228,8 +246,8 @@ struct result {
+@@ -228,8 +252,8 @@ struct result {
      float checksum;
  };
  
@@ -106,7 +113,7 @@ index fd3179a06..4262c4cbb 100644
      c.fill(value, rows, slices);
      for (int i = 0; i < 5; ++i) {
          require(ggml_backend_graph_compute(backend, c.graph) == GGML_STATUS_SUCCESS, "warm-up compute");
-@@ -247,7 +265,7 @@ result measure(ggml_backend_t backend, timing_sink & sink, layout value, int64_t
+@@ -247,7 +271,7 @@ result measure(ggml_backend_t backend, timing_sink & sink, layout value, int64_t
      std::this_thread::sleep_for(std::chrono::milliseconds(50));
      const double calls = double(iters)*depth;
      return {
@@ -115,7 +122,7 @@ index fd3179a06..4262c4cbb 100644
          double(sink.gpu_ns.load())/1e3/calls,
          std::chrono::duration<double, std::micro>(t1 - t0).count()/calls,
          double(sink.commands.load())/iters,
-@@ -262,6 +280,7 @@ int main(int argc, char ** argv) {
+@@ -262,6 +286,7 @@ int main(int argc, char ** argv) {
          const char * backend_name = nullptr;
          int iters = 50;
          int depth = 48;
@@ -123,7 +130,7 @@ index fd3179a06..4262c4cbb 100644
          for (int i = 1; i < argc; ++i) {
              if (std::strcmp(argv[i], "--backend") == 0 && i + 1 < argc) {
                  backend_name = argv[++i];
-@@ -269,8 +288,11 @@ int main(int argc, char ** argv) {
+@@ -269,14 +294,16 @@ int main(int argc, char ** argv) {
                  iters = std::stoi(argv[++i]);
              } else if (std::strcmp(argv[i], "--depth") == 0 && i + 1 < argc) {
                  depth = std::stoi(argv[++i]);
@@ -136,7 +143,14 @@ index fd3179a06..4262c4cbb 100644
              }
          }
          ggml_backend_load_all();
-@@ -286,19 +308,32 @@ int main(int argc, char ** argv) {
+         using backend_ptr = std::unique_ptr<ggml_backend, decltype(&ggml_backend_free)>;
+-        backend_ptr backend(backend_name ? open_backend(backend_name)
+-                : ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_GPU, nullptr), ggml_backend_free);
++        backend_ptr backend(backend_name ? open_backend(backend_name) : open_gpu(), ggml_backend_free);
+         require(backend != nullptr, "backend unavailable");
+ 
+         timing_sink sink;
+@@ -286,19 +313,32 @@ int main(int argc, char ** argv) {
          require(set_callback != nullptr, "backend reports no command timing; GPU time needs the Metal timing patch");
          set_callback(timing_sink::record, &sink);
  
