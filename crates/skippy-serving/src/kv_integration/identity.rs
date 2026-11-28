@@ -2,7 +2,7 @@ use skippy_cache::{
     NATIVE_KV_DTYPE, NATIVE_KV_RUNTIME_ABI_VERSION, prefix_identity_with_namespace,
     prefix_namespace_hash,
 };
-use skippy_protocol::{MessageBase, StageConfig};
+use skippy_protocol::{CheckpointAdmission, MessageBase, StageConfig};
 
 use crate::kv_proto::{KvCodec, PageIdentity, PageLayout};
 
@@ -154,6 +154,23 @@ impl KvStageIntegration {
             })
     }
 
+    /// Whether a prompt records the shared checkpoint `identity` names.
+    ///
+    /// Only the decision moves, never the grid position, so the stages of a
+    /// split still agree on the one durable checkpoint a prompt can have.
+    pub(crate) fn admits_shared_checkpoint(&self, identity: &PrefillKvIdentity) -> bool {
+        match self.shared_checkpoint_admission {
+            CheckpointAdmission::Grid => true,
+            CheckpointAdmission::Branch => {
+                self.radix
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .shared_path_tokens(&identity.namespace, &identity.token_ids)
+                    >= identity.token_ids.len()
+            }
+        }
+    }
+
     pub(crate) fn exact_shared_checkpoint_token_count(&self, token_count: u64) -> Option<u64> {
         if token_count <= self.checkpoint_policy.min_tokens {
             return None;
@@ -218,7 +235,7 @@ impl KvStageIntegration {
 
 #[cfg(test)]
 mod tests {
-    use crate::kv_integration::ExactStateExtra;
+    use crate::kv_integration::{ExactStateExtra, RadixResidentEntry};
     use skippy_cache::ExactStatePayload;
     use skippy_protocol::{
         LoadMode, SCHEMA_VERSION, StageConfig, StageKvCacheConfig, StageKvCacheMode,
@@ -404,6 +421,135 @@ mod tests {
             Some(4096)
         );
         assert_eq!(shared_checkpoint(None), Some(4096));
+    }
+
+    fn admission_config(admission: Option<CheckpointAdmission>) -> StageConfig {
+        StageConfig {
+            ctx_size: 8192,
+            batch: skippy_protocol::BatchConfig {
+                checkpoint_admission: admission,
+                ..Default::default()
+            },
+            kv_cache: Some(StageKvCacheConfig {
+                min_tokens: 256,
+                shared_prefix_stride_tokens: 128,
+                ..test_config().kv_cache.expect("test cache config")
+            }),
+            ..test_config()
+        }
+    }
+
+    fn hybrid_resident(config: &StageConfig) -> KvStageIntegration {
+        KvStageIntegration::from_loaded_model(
+            config,
+            Some(skippy_runtime::ModelStateKind::Recurrent),
+            Some(skippy_runtime::MemoryCacheCapabilities {
+                resident: true,
+                resident_checkpoint: true,
+                resident_attention: true,
+                kv_recurrent: true,
+                full_state: true,
+            }),
+            None,
+        )
+        .unwrap()
+        .expect("cache enabled")
+    }
+
+    fn insert_resident(kv: &KvStageIntegration, config: &StageConfig, tokens: &[i32]) {
+        let identity = kv.prefill_identity(config, &test_base(), 0, tokens);
+        kv.radix
+            .lock()
+            .unwrap()
+            .insert_resident(
+                &identity.namespace,
+                &identity.token_ids,
+                32,
+                RadixResidentEntry {
+                    page_id: identity.page_id.clone(),
+                    seq_id: 1,
+                    token_count: tokens.len() as u64,
+                    recompute_cost: 1,
+                },
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn branch_admission_records_a_shared_checkpoint_once_a_resident_prompt_shares_it() {
+        let config = admission_config(None);
+        let kv = hybrid_resident(&config);
+        assert!(kv.records_resident_prefixes());
+        let checkpoint = |tokens: &[i32]| {
+            kv.exact_shared_checkpoint_identity(&config, &test_base(), 0, tokens)
+                .expect("grid checkpoint")
+        };
+        let first = (0..524).collect::<Vec<_>>();
+        let sibling: Vec<_> = first[..400]
+            .iter()
+            .copied()
+            .chain(100_000..100_124)
+            .collect();
+        let stranger: Vec<_> = first[..300]
+            .iter()
+            .copied()
+            .chain(200_000..200_224)
+            .collect();
+        assert_eq!(checkpoint(&first).identity.token_count, 384);
+
+        assert!(!kv.admits_shared_checkpoint(&checkpoint(&first)));
+        insert_resident(&kv, &config, &first);
+        assert!(kv.admits_shared_checkpoint(&checkpoint(&sibling)));
+        assert!(!kv.admits_shared_checkpoint(&checkpoint(&stranger)));
+    }
+
+    #[test]
+    fn grid_admission_records_every_shared_checkpoint() {
+        let tokens = (0..524).collect::<Vec<_>>();
+        let config = admission_config(Some(CheckpointAdmission::Grid));
+        let kv = hybrid_resident(&config);
+        let checkpoint = kv
+            .exact_shared_checkpoint_identity(&config, &test_base(), 0, &tokens)
+            .expect("grid checkpoint");
+        assert!(kv.admits_shared_checkpoint(&checkpoint));
+    }
+
+    #[test]
+    fn branch_admission_matches_exact_state_paths_too() {
+        let config = admission_config(Some(CheckpointAdmission::Branch));
+        let kv =
+            KvStageIntegration::from_test_state(&config, skippy_runtime::ModelStateKind::Recurrent)
+                .unwrap()
+                .expect("cache enabled");
+        assert!(kv.payload_is_exact_state());
+        let first = (0..524).collect::<Vec<_>>();
+        let sibling: Vec<_> = first[..400]
+            .iter()
+            .copied()
+            .chain(100_000..100_124)
+            .collect();
+        let checkpoint = kv
+            .exact_shared_checkpoint_identity(&config, &test_base(), 0, &sibling)
+            .expect("grid checkpoint");
+        assert!(!kv.admits_shared_checkpoint(&checkpoint));
+
+        let recorded = kv.prefill_identity(&config, &test_base(), 0, &first);
+        kv.radix
+            .lock()
+            .unwrap()
+            .insert_recurrent(
+                recorded.namespace.clone(),
+                &recorded.token_ids,
+                1,
+                super::super::RadixExactEntry::new(
+                    recorded.page_id.clone(),
+                    ExactStatePayload::kv_recurrent(Vec::new(), vec![1]),
+                    ExactStateExtra::default(),
+                    true,
+                ),
+            )
+            .unwrap();
+        assert!(kv.admits_shared_checkpoint(&checkpoint));
     }
 
     #[test]

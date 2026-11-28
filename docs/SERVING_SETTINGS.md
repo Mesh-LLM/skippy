@@ -403,6 +403,7 @@ known size. Use them without `--prompt` or `--stage-transport`.
 | `--batch-prefill-chunk` | `batch_prefill_chunk` | How many prompt tokens one step takes: adaptive (default) for up to a whole batch while no other request is generating tokens and batch-prefill-shared-tokens while some are, or microbatch for one microbatch |
 | `--batch-prefill-shared-tokens` | `batch_prefill_shared_tokens` | Tokens in an adaptive step shared with requests generating tokens, theirs included (default: one microbatch) |
 | `--batch-checkpoint-align` | `batch_checkpoint_align` | Where a prompt's shared-prefix checkpoint lands: microbatch (default), the microbatch boundary at or below one cache stride before the prompt's tail, or stride, that point itself |
+| `--batch-checkpoint-admission` | `batch_checkpoint_admission` | Which prompts record the shared-prefix checkpoint: branch (default) for only a prompt whose tokens up to it a cached entry already shares, or grid for every prompt long enough |
 | `--batch-decode-window-us` | `batch_decode_window_us` | How long generated tokens wait for the other active requests to join their batch, in microseconds |
 | `--batch-prefill-window-per-token-us` | `batch_prefill_window_per_token_us` | How long a prompt waits for others to join its prefill wave, per prompt token, in microseconds |
 | `--generation-signal-window` | `generation_signal_window` | Generation signal observation window in tokens |

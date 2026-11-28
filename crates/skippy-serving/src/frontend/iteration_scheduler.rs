@@ -586,6 +586,10 @@ impl IterationScheduler {
                     json!(config.batch.checkpoint_align),
                 ),
                 (
+                    "skippy.scheduler.batch_checkpoint_admission".to_string(),
+                    json!(config.batch.checkpoint_admission),
+                ),
+                (
                     "skippy.scheduler.cache_policy".to_string(),
                     json!("weighted_lpm_aging_dfs_waiting_prefix"),
                 ),

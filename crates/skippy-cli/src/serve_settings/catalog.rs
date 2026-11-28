@@ -372,6 +372,13 @@ pub const OPTIONS: &[OptionSpec] = &[
         "Where a prompt's shared-prefix checkpoint lands: microbatch (default), the microbatch boundary at or below one cache stride before the prompt's tail, or stride, that point itself",
     ),
     option(
+        "batch-checkpoint-admission",
+        "scheduling",
+        "batch.checkpoint_admission",
+        Kind::Text,
+        "Which prompts record the shared-prefix checkpoint: branch (default) for only a prompt whose tokens up to it a cached entry already shares, or grid for every prompt long enough",
+    ),
+    option(
         "batch-decode-window-us",
         "scheduling",
         "batch.decode_window_us",

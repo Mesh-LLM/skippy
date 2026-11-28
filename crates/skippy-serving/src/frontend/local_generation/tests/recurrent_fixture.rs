@@ -126,6 +126,11 @@ pub(super) fn recurrent_test_backend_with_lanes(
         bind_addr: "127.0.0.1:0".to_string(),
         upstream: None,
         downstream: None,
+        // These tests check where a lone prompt's grid checkpoint lands.
+        batch: skippy_protocol::BatchConfig {
+            checkpoint_admission: Some(skippy_protocol::CheckpointAdmission::Grid),
+            ..Default::default()
+        },
         ..StageConfig::default()
     };
     let runtime = load_runtime(&config)?

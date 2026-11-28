@@ -455,8 +455,16 @@ impl StageOpenAiBackend {
             return Vec::new();
         };
         let base = self.local_kv_message_base(session_id, request.ids);
-        let mut shared_checkpoint =
+        let boundary_of = |checkpoint: &Option<PrefillKvIdentity>| {
+            checkpoint
+                .as_ref()
+                .and_then(|identity| usize::try_from(identity.identity.token_count).ok())
+        };
+        let grid_checkpoint =
             kv.exact_shared_checkpoint_identity(&self.config, &base, 0, prefill_tokens);
+        let grid_boundary = boundary_of(&grid_checkpoint);
+        let mut shared_checkpoint =
+            grid_checkpoint.filter(|identity| kv.admits_shared_checkpoint(identity));
         let mut chat_checkpoint = request
             .recurrent_cache_prefix_token_ids
             .filter(|checkpoint_tokens| {
@@ -473,11 +481,6 @@ impl StageOpenAiBackend {
             .map(|checkpoint_tokens| {
                 kv.prefill_identity(&self.config, &base, 0, checkpoint_tokens)
             });
-        let boundary_of = |checkpoint: &Option<PrefillKvIdentity>| {
-            checkpoint
-                .as_ref()
-                .and_then(|identity| usize::try_from(identity.identity.token_count).ok())
-        };
         let shared_boundary = boundary_of(&shared_checkpoint);
         let chat_boundary = boundary_of(&chat_checkpoint);
         let system_boundary = boundary_of(&system_checkpoint);
@@ -510,6 +513,10 @@ impl StageOpenAiBackend {
             attrs.insert(
                 "skippy.kv.shared_checkpoint_tokens".to_string(),
                 json!(shared_boundary),
+            );
+            attrs.insert(
+                "skippy.kv.grid_checkpoint_tokens".to_string(),
+                json!(grid_boundary),
             );
             attrs.insert(
                 "skippy.kv.system_checkpoint_tokens".to_string(),
@@ -687,6 +694,7 @@ impl StageOpenAiBackend {
                     kv.exact_shared_checkpoint_identity(&self.config, &base, 0, prefill_tokens);
                 if let Some(identity) = checkpoint.filter(|identity| {
                     identity.identity.token_count as usize > restored_prefill_tokens
+                        && kv.admits_shared_checkpoint(identity)
                 }) {
                     let boundary = identity.identity.token_count as usize;
                     prefill_cache_chunks(

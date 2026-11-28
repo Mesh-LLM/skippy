@@ -467,6 +467,22 @@ pub enum CheckpointAlign {
     Microbatch,
 }
 
+/// Which prompts record the shared-prefix checkpoint. Reaching it costs a
+/// prompt an extra forward pass, so recording it pays only when another
+/// prompt later shares that much of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckpointAdmission {
+    /// Every prompt long enough to have one.
+    Grid,
+    /// Only a prompt whose prefix up to the checkpoint a cached entry already
+    /// shares, as at a branch of the prefix tree. A prompt seen once takes no
+    /// extra pass; the second sharing it records the checkpoint for those
+    /// after it. The first stage of a split whose stages keep exact state
+    /// still records every one, the only state its other stages keep.
+    Branch,
+}
+
 /// Batch-forming settings. A value left unset is the one the policy chooses
 /// for the backend the stage runs on.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -504,6 +520,9 @@ pub struct BatchConfig {
     /// Where the shared-prefix checkpoint lands.
     #[serde(default)]
     pub checkpoint_align: Option<CheckpointAlign>,
+    /// Which prompts record the shared-prefix checkpoint.
+    #[serde(default)]
+    pub checkpoint_admission: Option<CheckpointAdmission>,
 }
 
 impl BatchConfig {

@@ -11,7 +11,8 @@ use skippy_cache::{
     UnifiedRadixCache, exact_state_identity_for_stage, numerical_model_identity_for_stage,
 };
 use skippy_protocol::{
-    CheckpointAlign, StageConfig, StageKvCacheCodec, StageKvCacheConfig, StageKvCacheMode,
+    CheckpointAdmission, CheckpointAlign, StageConfig, StageKvCacheCodec, StageKvCacheConfig,
+    StageKvCacheMode,
 };
 use skippy_runtime::{ModelStateKind, RuntimeKvPageDesc};
 
@@ -373,6 +374,10 @@ impl KvStageIntegration {
             trust_local_writes: true,
             checkpoint_policy,
             shared_checkpoint_align: shared_checkpoint_align(config),
+            shared_checkpoint_admission: config
+                .batch
+                .checkpoint_admission
+                .unwrap_or(CheckpointAdmission::Branch),
             prefill_admission,
             inflight_records,
             resident_config,

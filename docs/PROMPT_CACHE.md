@@ -33,9 +33,15 @@ For an admitted resident representation:
   `--batch-checkpoint-align microbatch` that stride-grid boundary moves down to
   the microbatch boundary at or below it, so the prefill reaches it in whole
   microbatches rather than an extra short step, at the cost of up to one
-  microbatch less to share. A boundary shorter than the cache's minimum prefix
-  is neither split at nor recorded. Identical system messages map to one cached
-  checkpoint.
+  microbatch less to share. Reaching that boundary costs the prompt an extra
+  forward pass, so by default (`--batch-checkpoint-admission branch`) a prompt
+  records it only when a cached entry already shares its tokens up to it: the
+  first prompt with a prefix takes no extra pass, and the second records the
+  checkpoint for those after it. `grid` records it for every prompt long
+  enough. The first stage of a split whose stages keep exact state records
+  every one, because it is the only state the other stages keep. A boundary
+  shorter than the cache's minimum prefix is neither split at nor recorded.
+  Identical system messages map to one cached checkpoint.
 
 This follows SGLang's radix ownership model: token paths identify shared KV
 blocks, while recurrent state has separate checkpoint ownership. It is an
@@ -169,7 +175,9 @@ At debug level, a `checkpoint_boundary` decision shows the deferred prefill's
 candidate boundaries (`skippy.kv.chat_checkpoint_tokens`,
 `skippy.kv.system_checkpoint_tokens`, `skippy.kv.shared_checkpoint_tokens`) and
 those it exports, in prompt order
-(`skippy.kv.checkpoint_kinds`).
+(`skippy.kv.checkpoint_kinds`). `skippy.kv.grid_checkpoint_tokens` is the
+stride-grid boundary before admission; when it is set and
+`skippy.kv.shared_checkpoint_tokens` is not, admission skipped it.
 
 Validate cold, repeated, changed-tail, and lane-pressure requests separately.
 Use uninterrupted continuations as the correctness reference for restored and

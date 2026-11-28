@@ -17,7 +17,7 @@ use skippy_cache::{
     SparseCheckpointPolicy, UnifiedRadixCache,
 };
 use skippy_metrics::attr as attr_key;
-use skippy_protocol::StageKvRetention;
+use skippy_protocol::{CheckpointAdmission, StageKvRetention};
 use skippy_runtime::{ActivationFrame, MemoryCacheCapabilities, ModelStateKind, RuntimeKvPageDesc};
 
 use crate::kv_proto::{
@@ -183,6 +183,8 @@ pub struct KvStageIntegration {
     /// The grid the shared-prefix checkpoint moves down to; one token leaves it
     /// on the stride grid.
     pub(crate) shared_checkpoint_align: NonZeroU64,
+    /// Which prompts record the shared-prefix checkpoint.
+    pub(crate) shared_checkpoint_admission: CheckpointAdmission,
     pub(crate) prefill_admission: scheduling::CacheSchedulingPolicy,
     pub(crate) inflight_records: Arc<Mutex<BTreeSet<String>>>,
     pub(crate) resident_config: ResidentCacheConfig,

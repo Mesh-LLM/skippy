@@ -1038,6 +1038,8 @@ fn batch_settings_reach_the_stage_config() {
         "1024",
         "--batch-checkpoint-align",
         "microbatch",
+        "--batch-checkpoint-admission",
+        "grid",
         "--batch-decode-window-us",
         "500",
         "--batch-prefill-window-per-token-us",
@@ -1084,6 +1086,10 @@ fn batch_settings_reach_the_stage_config() {
     assert_eq!(
         stage.batch.checkpoint_align,
         Some(skippy_protocol::CheckpointAlign::Microbatch)
+    );
+    assert_eq!(
+        stage.batch.checkpoint_admission,
+        Some(skippy_protocol::CheckpointAdmission::Grid)
     );
     assert_eq!(stage.batch.decode_window_us, Some(500));
     assert_eq!(stage.batch.prefill_window_per_token_us, Some(40));

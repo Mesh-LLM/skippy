@@ -1,3 +1,4 @@
+mod path_sharing;
 mod resident_matching;
 use resident_matching::resident_backing_prefix;
 

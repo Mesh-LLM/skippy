@@ -111,6 +111,7 @@ The environment overrides are `SKIPPY_SERVE_ON_DEMAND`,
 | `batch_prefill_chunk` | Select `adaptive` (default), where a prompt takes up to `batch_size` tokens a step while no other request is generating tokens, and `batch_prefill_shared_tokens` less one token for each request that is, or `microbatch`, where each step takes one `microbatch_size` chunk of a prompt |
 | `batch_prefill_shared_tokens` | Set the tokens of an adaptive step shared with requests generating tokens, theirs included. Defaults to `microbatch_size` |
 | `batch_checkpoint_align` | Select `microbatch` (default), where a prompt's shared-prefix checkpoint moves down to a `microbatch_size` boundary so the prefill reaches it without a short extra step, or `stride`, where it sits one cache stride before its tail |
+| `batch_checkpoint_admission` | Select `branch` (default), where a prompt records the shared-prefix checkpoint only when a cached entry already shares its tokens up to it, so a prompt seen once takes no extra forward pass, or `grid`, where every prompt long enough records it |
 | `batch_decode_window_us`, `batch_prefill_window_per_token_us` | Tune batch gathering latency |
 | `prefill_coalesce_max_ms` | Cap the total batching wait for a prefill wave. Use `0` to skip the wait. |
 | `sample_threads` | Select pooled sampling (0), inline sampling (1), or a thread cap |
