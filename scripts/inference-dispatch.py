@@ -83,8 +83,9 @@ def launch(pilot, path, body, deadline, split):
     raise RuntimeError("JY qualification timed out waiting for placement")
 
 
-def wait(pilot, handle, row, sha, output, deadline):
+def wait(pilot, handle, row, sha, output, deadline, execution_seconds=None):
     logs = NativeLogs(pilot, row, output)
+    phase = "waiting for native execution" if execution_seconds is not None else "waiting for completion"
     if handle.startswith("frm_"):
         formation = pilot.api("GET", f"/v1/formations/{handle}", status_deadline=deadline)
         leader = next((member for member in formation["members"] if member.get("role") == "leader"), {})
@@ -98,6 +99,16 @@ def wait(pilot, handle, row, sha, output, deadline):
             formation_id = resource_id(job["formation_id"])
             formation = pilot.api("GET", f"/v1/formations/{formation_id}", status_deadline=deadline)
             write_json(output / f"{row}-formation.json", formation)
+        # Start the PR execution clock once either split member starts. The
+        # native paired lease enforces four hours plus 60-second grace;
+        # a long queue must not make the controller cancel that lease early.
+        if execution_seconds is not None and (
+                status == "running" or any(member.get("status") == "running"
+                                          for member in (formation or {}).get("members", []))):
+            deadline = time.monotonic() + execution_seconds
+            print(f"{row}: native execution started; controller budget {execution_seconds // 60} minutes", flush=True)
+            execution_seconds = None
+            phase = "during native execution"
         finished = status in TERMINAL and (not formation or formation.get("status") in TERMINAL)
         logs.capture(job, formation, deadline, final=finished or status in FAILURE)
         if status in FAILURE:
@@ -113,7 +124,7 @@ def wait(pilot, handle, row, sha, output, deadline):
                     continue
             return job
         time.sleep(15)
-    raise RuntimeError("JY qualification timed out")
+    raise RuntimeError(f"JY qualification timed out {phase}")
 
 
 def record(ledger, identifiers):
@@ -141,12 +152,13 @@ def dispatch(pilot, profile, sha, output, configuration, collect_public=False, b
     ledger = output / "jobs.json"
     identifiers = []
     record(ledger, identifiers)
-    # Manual qualification may queue behind another PR's atomic Spark pair;
-    # a PR profile waits for placement instead of failing fast, and the job
-    # timeout in inference.yml carries the same headroom.
-    deadline = time.monotonic() + (15000 if profile == "pr" else 21000)
+    # PR placement/queue time is separate from its native execution lease.
+    # Non-PR profiles keep their existing total deadline.
+    deadline = time.monotonic() + (5400 if profile == "pr" else 21000)
     try:
         for row in result["rows"]:
+            if profile == "pr":
+                deadline = time.monotonic() + 5400
             identity, mode = row["id"], row["mode"]
             model_key = identity.removesuffix(f"-{mode}")
             template = "inference-" + ("pr-" if profile == "pr" else "") + mode
@@ -166,7 +178,8 @@ def dispatch(pilot, profile, sha, output, configuration, collect_public=False, b
             identifiers.append(handle)
             record(ledger, identifiers)
             write_json(output / f"{identity}-launch.json", launched)
-            job = wait(pilot, handle, identity, sha, output, deadline)
+            job = wait(pilot, handle, identity, sha, output, deadline,
+                       execution_seconds=14460 if profile == "pr" else None)
             if profile == "pr":
                 collect_pairs(pilot, job, row, sha, baseline, output)
             if collect_public:

@@ -30,7 +30,7 @@ result="$(jq -cer --arg profile "$profile" '
          ($r.gpu_architectures | test("^gfx[0-9a-f]+(;gfx[0-9a-f]+)*$")) then "rocm"
     else null end;
   def expected_runtime_runner($h; $variant; $validation):
-    if $variant == "cpu" or $validation == "artifact" then $h.runner
+    if $variant == "cpu" or $h.os == "windows" or $validation == "artifact" then $h.runner
     else
       (["self-hosted", "skippy-ephemeral",
         (if $h.os == "macos" then "macOS" elif $h.os == "linux" then "Linux" else "Windows" end),
@@ -92,7 +92,7 @@ result="$(jq -cer --arg profile "$profile" '
         or ($variant == null)
         or ($r.id != "\($h.id)-\($variant)")
         or (($r.validation // "inference") !=
-            (if $h.os == "windows" then "artifact" else "inference" end))
+            (if $h.os == "windows" and ($variant == "cpu" or $variant == "vulkan") then "artifact" else "inference" end))
         or (($r.full_only // false) != ($h.os == "windows" or $variant == "rocm" or $variant == "vulkan"))
         or ($r.runner != expected_runtime_runner($h; $variant; ($r.validation // "inference"))))
     then error("unsupported backend/toolkit/OS combination or runtime runner labels") else . end

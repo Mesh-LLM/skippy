@@ -132,7 +132,8 @@ jobs:
       max-parallel: 3
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
-    timeout-minutes: ${{ matrix.profile == 'pr' && 260 || 360 }}
+    # PR: up to 90 minutes queued, 241 minutes executing, plus cleanup/upload.
+    timeout-minutes: ${{ matrix.profile == 'pr' && 340 || 360 }}
     env:
       EVIDENCE: target/ci-evidence/inference-${{ matrix.id }}
     steps:
