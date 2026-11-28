@@ -53,8 +53,10 @@ contract; no downstream product's workflow topology applies here.
   uses two device jobs and checks the three remaining CUDA archives on hosted
   compiler-image runners.
   Tagged releases add device smoke on those exact archives, including x64 CUDA 13.
-  Windows x64 CPU, CUDA and ROCm require archive smoke in full CI and on
-  releases. Linux x64 ROCm builds and smokes on the native JY ROCm pool using
+  Windows x64 CPU retains archive verification. Full CI additionally requires
+  two native Windows VM smoke jobs: CUDA 12 and 13 share one guest; ROCm has one.
+  Nightly, release and llama-upgrade callers reuse them. GPU manifest rows
+  require source/archive-bound inference receipts; short PR CI skips these jobs. Linux x64 ROCm builds and smokes on the native JY ROCm pool using
   the digest-pinned compiler container and the CPU job's verified CLI. Its
   inference evidence is embedded in the tested product; no separate smoke
   job or duplicate CLI build is needed. Restore candidate source before HIP
@@ -139,12 +141,36 @@ contract; no downstream product's workflow topology applies here.
   download failures and pass available CI evidence to repair. Preserve that
   evidence on failure even before preparation starts. Repair may update the
   exact handwritten FFI adapters static_bindings.rs, dynamic.rs and
-  llama_draft.rs for upstream signature/linkage changes; other Rust sources
-  and qualification policy stay outside the update allowlist.
-  Only the publisher receives scoped publication credentials. It can publish only the
-  exact candidate selected by successful full CI. The four established inference
+  llama_draft.rs for upstream signature/linkage changes. Assess consumed
+  upstream C layouts, by-value returns, callbacks and signatures as well as
+  Skippy-owned exports. Changed generated FFI declarations require a distinct
+  ABI identity before freezing, even when compilation passes. Verification
+  compares the protected base's generated declarations with the regenerated
+  candidate, ignoring docs/comments/spacing and the ABI constants themselves;
+  its conservative guard reports changed files in abi-compatibility.json and
+  returns missing bumps to the same repair session. It is not a complete
+  binary ABI analysis; retain the native/Rust checks and review handwritten
+  adapters too. The agent may change only the ABI_VERSION_PATCH literal in
+  crates/skippy-ffi/src/lib.rs, alongside the native version header in the
+  ordered queue and crates/skippy-ffi/README.md. Other edits to lib.rs are
+  rejected for dirty repairs and frozen bundles. Keep an existing candidate's
+  bump across repair turns; don't increment it on every turn. Recipe identity
+  is not a substitute for runtime ABI checking. Other Rust sources and
+  qualification policy stay outside the update allowlist.
+  Resolve the immutable upstream revision in a read-only hosted job. Before
+  changed-pin candidate preparation, a separate hosted preflight checks publisher
+  settings and authenticates the repository-scoped App with Contents and Pull
+  requests write permissions. Revoke that preflight token without passing it to
+  builds; the final publisher requests a fresh token after full CI. Only these
+  two jobs receive the App key. No-op and explicit unchanged-pin checks do not
+  require publication credentials. The publisher can publish only the exact
+  candidate selected by successful full CI. The four established inference
   models retain their separate PR/manual/nightly/release workflow.
 - `ci/targets.json` owns four host definitions and fifteen runtime definitions.
+  `ci/windows-gpu-smoke.md` documents the public Windows VM recipe, host profiles
+  and native restoration contract. Missing AMD unload/task receipts or failed
+  native restoration retain quarantine. Keep the temporary rehearsal workflow
+  out of the merge tree and retire its historical entry and dispatch allowlists.
   `enabled_hosts` selects the active CI and release roster. Require the evidence
   declared for every release asset. Call out pending inference qualification
   for archive-only targets in the release notes.
@@ -162,6 +188,10 @@ contract; no downstream product's workflow topology applies here.
 - Ordinary tests are offline. Model admission is explicit and digest-bound.
   GPU qualification requires a real matching device; missing fixtures, devices,
   capacity, or evidence fail or queue, never become passing skips.
+  Split qualification must bind readiness and acknowledged completion to its
+  own JY formation/source/model/profile/role/attempt identities. Require both
+  members' receipts and overlapping successful execution on the distinct
+  reserved nodes; a listening port or a leader-only pass is insufficient.
 - Split admission is established by actual native stage plans, tensor closures,
   activation frontiers, artifact identities and backend compatibility. Qualification
   records exact tested configurations. There is no architecture certification
@@ -203,6 +233,11 @@ contract; no downstream product's workflow topology applies here.
   Only release controller jobs may write the candidate refs. Release promotion
   and upgrade publication each use a scoped App credential. Do not expose
   publisher secrets to builds.
+- Native inference logs must stream into the Actions qualification step for every
+  standalone/split attempt and be retained with its evidence, including failures.
+  Treat candidate log text as data, never Actions commands. Report capture gaps
+  without replacing the qualification verdict. User-facing reports link to
+  Actions logs and saved artifacts, not an external lab console.
 - The protected inference results-comment job alone receives pull-requests write
   permission for PR comments, plus read-only contents/actions. It receives no
   native dispatch credential and never executes candidate code.

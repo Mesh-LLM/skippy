@@ -68,6 +68,10 @@ runs:
       with:
         artifact: ${{ inputs.candidate-artifact }}
         sha: ${{ inputs.candidate-sha }}
+    - name: Verify Windows smoke variant failure reporting
+      if: runner.os == 'Windows' && inputs.build-cli == 'true'
+      shell: bash
+      run: just ci-windows-vm-contracts
     - name: Set up the pinned macOS Rust toolchain
       if: runner.os == 'macOS'
       shell: bash

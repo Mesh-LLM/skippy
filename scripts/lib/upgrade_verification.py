@@ -1,9 +1,11 @@
 """Run the existing CPU correctness gates before freezing an upgrade candidate."""
 
 from .ci_process import command
+from .upgrade_abi import verify_abi
 
 
 def verify_offline(checkout):
+    verify_abi(checkout)
     native = checkout / "target/llama-regeneration/native"
     env = {
         "LLAMA_WORKDIR": str(checkout / ".deps/llama.cpp"),

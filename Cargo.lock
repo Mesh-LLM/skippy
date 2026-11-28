@@ -5288,7 +5288,6 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
- "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5828,6 +5827,7 @@ dependencies = [
  "tracing",
  "tracy-client",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
