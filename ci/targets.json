@@ -4,7 +4,8 @@
     "darwin-aarch64",
     "linux-x86_64",
     "linux-aarch64",
-    "windows-x86_64"
+    "windows-x86_64",
+    "windows-aarch64"
   ],
   "hosts": [
     {
@@ -45,6 +46,16 @@
       "arch": "x86_64",
       "runner": [
         "windows-2022"
+      ]
+    },
+    {
+      "id": "windows-aarch64",
+      "display_name": "Windows ARM64",
+      "target": "aarch64-pc-windows-msvc",
+      "os": "windows",
+      "arch": "aarch64",
+      "runner": [
+        "windows-11-arm"
       ]
     }
   ],
@@ -183,6 +194,19 @@
         "cuda13"
       ],
       "runner_group": "jy-rnr_8gvzbe9b9d79y0k"
+    },
+    {
+      "id": "windows-aarch64-cpu",
+      "display_name": "Windows ARM64, CPU",
+      "host": "windows-aarch64",
+      "backend": "cpu",
+      "toolkit": "",
+      "gpu_architectures": "",
+      "validation": "package",
+      "runner": [
+        "windows-11-arm"
+      ],
+      "full_only": true
     },
     {
       "id": "windows-x86_64-cpu",

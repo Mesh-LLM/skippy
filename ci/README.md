@@ -141,7 +141,7 @@ concurrency coalescing. If prior coverage cannot be verified, require both
 device smokes and Graph Contracts. The gate rejects missing, skipped, failed
 or cancelled selected jobs. Exact promoted-release receipt reuse avoids
 repeating validated work. Scheduled, manual and reusable full validation
-require all thirteen packages and Graph Contracts. Main merges do not start the
+require all fourteen packages and Graph Contracts. Main merges do not start the
 separate Spark qualification ladder.
 
 The protected inference workflow has its own qualification paths, separate from
@@ -223,7 +223,7 @@ for the Linux ARM64 CUDA 13 device job. Compiler-only CUDA builds always use the
 manifest architecture lists. The only source override is the immutable bundle
 produced by the protected-main llama upgrade workflow.
 
-`targets.json` defines four hosts and thirteen active runtimes. After the
+`targets.json` defines five hosts and fourteen active runtimes. After the
 automation checks and Quality canary, each CPU job builds and verifies its
 runtime and the shared CLI for that platform. Linux x64 builds its shared CLI
 on Ubuntu 24.04 for compatibility with the compiler images. Each backend
@@ -238,8 +238,10 @@ CUDA device job uses the existing ARM64 CUDA 13 runner group to use the larger
 Spark pool; x64 CUDA 13 device coverage remains required for releases. The full
 CI gate matches all package jobs to the plan and checks required device results.
 
-Full CI and releases also require archive checks for Windows x64 CPU, CUDA 12,
-CUDA 13 and ROCm 7.2.0. The Windows jobs use Windows
+Full CI and releases also package Windows ARM64 CPU on Windows 11 ARM64
+and verify the CLI and runtime archive inputs without running smoke.
+Windows x64 CPU, CUDA 12, CUDA 13 and ROCm 7.2.0 require archive smoke.
+The x64 Windows jobs use Windows
 Server 2022 for the pinned SDKs and compatible MSVC toolset. CUDA
 components and the HIP SDK are downloaded from checksum-pinned inputs. The
 Windows CUDA installer includes the NVML development component for both pinned
@@ -264,7 +266,7 @@ Native runners carry `self-hosted`, `Linux`, `X64`, `skippy-ephemeral`, and
 
 The job remains full-only: nightly, manual full CI, release candidates and
 llama-upgrade full validation require it; routine PR and main-push checks do
-not run it. The short plan retains eight runtimes and full CI retains thirteen.
+not run it. The short plan retains eight runtimes and full CI retains fourteen.
 `full_only` selects scheduling independently of the manifest's `validation`
 evidence requirement. Linux ROCm requires inference evidence; the four Windows
 runtimes remain archive-only. No package or release smoke jobs are added, and

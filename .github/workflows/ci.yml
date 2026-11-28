@@ -882,6 +882,29 @@ jobs:
           download-package: 'true'
           candidate_artifact: ${{ inputs.candidate_artifact }}
           candidate_sha: ${{ inputs.candidate_sha }}
+  package_windows_aarch64_cpu:
+    name: Build and package · Windows ARM64 CPU
+    needs: [plan, quality]
+    if: needs.plan.outputs.profile == 'full'
+    runs-on: windows-11-arm
+    timeout-minutes: 240
+    env:
+      SKIPPY_CI_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.SKIPPY_CI_SOURCE_REF }}
+          allow-unsafe-pr-checkout: ${{ inputs.approved_fork_pr != '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-package
+        with:
+          runtime-id: windows-aarch64-cpu
+          host-id: windows-aarch64
+          build-cli: 'true'
+          setup-host: 'true'
+          smoke: 'none'
+          candidate-artifact: ${{ inputs.candidate_artifact }}
+          candidate-sha: ${{ inputs.candidate_sha }}
   package_windows_x86_64_cpu:
     name: Build and verify archive · Windows x64 CPU
     needs: [plan, quality]
@@ -981,7 +1004,8 @@ jobs:
       package_darwin_aarch64_cpu, package_darwin_aarch64_metal,
       package_linux_x86_64_cpu, package_linux_x86_64_cuda12, package_linux_x86_64_cuda13, package_linux_x86_64_rocm,
       package_linux_aarch64_cpu, package_linux_aarch64_cuda12, package_linux_aarch64_cuda13,
-      package_windows_x86_64_cpu, package_windows_x86_64_cuda12, package_windows_x86_64_cuda13, package_windows_x86_64_rocm,
+      package_windows_aarch64_cpu, package_windows_x86_64_cpu, package_windows_x86_64_cuda12,
+      package_windows_x86_64_cuda13, package_windows_x86_64_rocm,
       release_smoke_linux_x86_64_cuda12, release_smoke_linux_aarch64_cuda12, release_smoke_linux_x86_64_cuda13
     ]
     if: always() && needs.changes.result != 'skipped'

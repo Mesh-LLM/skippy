@@ -12,12 +12,14 @@ result="$(jq -cer --arg profile "$profile" '
     elif $id == "linux-x86_64" then ["ubuntu-24.04"]
     elif $id == "linux-aarch64" then ["ubuntu-24.04-arm"]
     elif $id == "windows-x86_64" then ["windows-2022"]
+    elif $id == "windows-aarch64" then ["windows-11-arm"]
     else null end;
   def valid_host_identity:
     ([.id, .target, .os, .arch] == ["darwin-aarch64", "aarch64-apple-darwin", "macos", "aarch64"])
     or ([.id, .target, .os, .arch] == ["linux-x86_64", "x86_64-unknown-linux-gnu", "linux", "x86_64"])
     or ([.id, .target, .os, .arch] == ["linux-aarch64", "aarch64-unknown-linux-gnu", "linux", "aarch64"])
-    or ([.id, .target, .os, .arch] == ["windows-x86_64", "x86_64-pc-windows-msvc", "windows", "x86_64"]);
+    or ([.id, .target, .os, .arch] == ["windows-x86_64", "x86_64-pc-windows-msvc", "windows", "x86_64"])
+    or ([.id, .target, .os, .arch] == ["windows-aarch64", "aarch64-pc-windows-msvc", "windows", "aarch64"]);
   def runtime_variant($r; $h):
     if $r.backend == "cpu" and $r.toolkit == "" and $r.gpu_architectures == "" then "cpu"
     elif $r.backend == "metal" and $h.os == "macos" and $r.toolkit == "" then "metal"
@@ -47,8 +49,8 @@ result="$(jq -cer --arg profile "$profile" '
     then error("hosts and runtimes must be arrays") else . end
   | if any(.hosts[], .runtimes[]; type != "object")
     then error("hosts and runtimes must contain objects") else . end
-  | if .schema_version != 1 or (.hosts | length) != 4
-    then error("expected schema 1 and four hosts") else . end
+  | if .schema_version != 1 or (.hosts | length) != 5
+    then error("expected schema 1 and five hosts") else . end
   | if (([.hosts[].id, .runtimes[].id] | length) != ([.hosts[].id, .runtimes[].id] | unique | length))
     then error("host and runtime IDs must be unique") else . end
   | if (has("enabled_hosts") and .enabled_hosts != null and
@@ -74,7 +76,7 @@ result="$(jq -cer --arg profile "$profile" '
       or (.id | safe_id | not) or (.display_name | type != "string" or (gsub("^[[:space:]]+|[[:space:]]+$"; "") | length) == 0)
       or (.host as $host | ($host | type != "string") or ([ $m.hosts[].id ] | index($host)) == null)
       or (.backend | type != "string") or (.toolkit | type != "string") or (.gpu_architectures | type != "string")
-      or (has("validation") and .validation != "artifact" and .validation != "inference")
+      or (has("validation") and (.validation | IN("artifact", "inference", "package") | not))
       or (has("full_only") and (.full_only | type != "boolean"))
       or (.runner | type != "array" or any(.[]; type != "string"))
       or (has("enabled") and (.enabled | type != "boolean"))
@@ -89,8 +91,10 @@ result="$(jq -cer --arg profile "$profile" '
       | ($r.enabled != false and $h.enabled == false)
         or ($variant == null)
         or ($r.id != "\($h.id)-\($variant)")
+        or ($h.id == "windows-aarch64" and $variant != "cpu")
         or (($r.validation // "inference") !=
-            (if $h.os == "windows" then "artifact" else "inference" end))
+            (if $h.id == "windows-aarch64" then "package"
+             elif $h.os == "windows" then "artifact" else "inference" end))
         or (($r.full_only // false) != ($h.os == "windows" or $variant == "rocm"))
         or ($r.runner != expected_runtime_runner($h; $variant; ($r.validation // "inference"))))
     then error("unsupported backend/toolkit/OS combination or runtime runner labels") else . end
@@ -101,6 +105,7 @@ result="$(jq -cer --arg profile "$profile" '
       . as $h | (if $h.os == "macos" then ["cpu", "metal"]
                  elif $h.id == "linux-x86_64" then ["cpu", "cuda12", "cuda13", "rocm"]
                  elif $h.id == "windows-x86_64" then ["cpu", "cuda12", "cuda13", "rocm"]
+                 elif $h.id == "windows-aarch64" then ["cpu"]
                  else ["cpu", "cuda12", "cuda13"] end) as $required
       | any($required[]; . as $variant | ([$m.runtimes[] as $r | ($m.hosts[] | select(.id == $r.host)) as $rh | select($r.host == $h.id and runtime_variant($r; $rh) == $variant)] | length) == 0))
     then error("missing required host runtime variant") else . end
@@ -110,7 +115,7 @@ result="$(jq -cer --arg profile "$profile" '
       | . as $runtime
       | select(($m.enabled_hosts == null or any($m.enabled_hosts[]; . == $runtime.host)) and $runtime.enabled != false)
       # Evidence policy is independent of scheduling: Linux ROCm requires
-      # inference but stays full-only alongside the four Windows packages.
+      # inference but stays full-only alongside the Windows packages.
       | select($profile == "full" or (($runtime.full_only // false) | not))
       | ($m.hosts[] | select(.id == $runtime.host)) as $host
       | . + {host_runner: $host.runner, enabled: true, validation: ($runtime.validation // "inference")}

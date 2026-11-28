@@ -134,8 +134,9 @@ def inventory(tag, input_dir, source):
             file = stage / f"skippy-{tag}-{variant}.tar.gz"
             shutil.copyfile(directory / f"skippy-{variant}.tar.gz", file)
             assets[file.name] = artifacts.digest(file)
-            verify_smoke(input_dir, variant, source, runtime["backend"], assets[file.name],
-                         artifact_only=runtime["validation"] == "artifact")
+            if runtime["validation"] != "package":
+                verify_smoke(input_dir, variant, source, runtime["backend"], assets[file.name],
+                             artifact_only=runtime["validation"] == "artifact")
             artifacts.write_checksum(file)
             entries.append(catalog_entry(native["runtime"], tag, file.name, assets[file.name]))
         runtime_catalog = stage / CATALOG
@@ -153,6 +154,9 @@ def inventory(tag, input_dir, source):
         stage.rename(output)
     github_output("artifact_only", ", ".join(
         variant for variant, runtime in runtimes.items() if runtime["validation"] == "artifact"
+    ))
+    github_output("package_only", ", ".join(
+        variant for variant, runtime in runtimes.items() if runtime["validation"] == "package"
     ))
 
 

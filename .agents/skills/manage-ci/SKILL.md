@@ -48,13 +48,15 @@ contract; no downstream product's workflow topology applies here.
   which runs it expects. Hosted offline
   automation gates Quality canary and package jobs; Quality canary gates package
   jobs whenever source checks apply. Full CI
-  runs Graph Contracts in parallel with thirteen build, package and smoke jobs.
+  runs Graph Contracts in parallel with fourteen package jobs.
   Each CPU job supplies a shared platform CLI to its backend jobs. Routine CI
   uses two device jobs and checks the three remaining CUDA archives on hosted
   compiler-image runners.
   Tagged releases add device smoke on those exact archives, including x64 CUDA 13.
   Windows x64 CPU, CUDA and ROCm require archive smoke in full CI and on
-  releases. Linux x64 ROCm builds and smokes on the native JY ROCm pool using
+  releases. Full CI and releases verify the Windows ARM64 CPU package without
+  running smoke. Linux x64 ROCm
+  builds and smokes on the native JY ROCm pool using
   the digest-pinned compiler container and the CPU job's verified CLI. Its
   inference evidence is embedded in the tested product; no separate smoke
   job or duplicate CLI build is needed. Restore candidate source before HIP
@@ -137,7 +139,7 @@ contract; no downstream product's workflow topology applies here.
   Only the publisher receives scoped publication credentials. It can publish only the
   exact candidate selected by successful full CI. The four established inference
   models retain their separate PR/manual/nightly/release workflow.
-- `ci/targets.json` owns four host definitions and thirteen runtime definitions.
+- `ci/targets.json` owns five host definitions and fourteen runtime definitions.
   `enabled_hosts` selects the active CI and release roster. Require the evidence
   declared for every release asset. Call out pending inference qualification
   for archive-only targets in the release notes.

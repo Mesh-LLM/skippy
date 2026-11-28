@@ -191,6 +191,15 @@ if ($TargetArch) {
     if ($Target -and $Target -ne $archTarget) { throw "-Target and -TargetArch must select the same architecture." }
     $Target = $archTarget
 }
+if ($env:CARGO_BUILD_TARGET) {
+    if ($env:CARGO_BUILD_TARGET -notin @("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")) {
+        throw "Unsupported Windows Cargo target '$env:CARGO_BUILD_TARGET'."
+    }
+    if ($Target -and $Target -ne $env:CARGO_BUILD_TARGET) {
+        throw "The requested target '$Target' conflicts with CARGO_BUILD_TARGET '$env:CARGO_BUILD_TARGET'."
+    }
+    $Target = $env:CARGO_BUILD_TARGET
+}
 if (-not $Target) {
     $Target = if ($machineIsArm64) { "aarch64-pc-windows-msvc" } else { "x86_64-pc-windows-msvc" }
 }
@@ -225,12 +234,10 @@ try {
         $cargoMetadata = & cargo metadata --locked --no-deps --format-version 1
         if ($LASTEXITCODE -ne 0) { throw "cargo metadata failed with exit code $LASTEXITCODE" }
         $targetDir = ($cargoMetadata | ConvertFrom-Json).target_directory
-        # Pass an explicit triple when crossing architectures. A native build
-        # keeps Cargo's ordinary layout unless the caller already selected a target.
-        if ($architecture -eq "arm64" -or $machineIsArm64 -or $env:CARGO_BUILD_TARGET) {
-            $env:CARGO_BUILD_TARGET = $Target
-            $targetDir = Join-Path $targetDir $Target
-        }
+        # Use the same explicit triple for Cargo and the packaged runtime,
+        # including when a Cargo configuration supplies a different default.
+        $env:CARGO_BUILD_TARGET = $Target
+        $targetDir = Join-Path $targetDir $Target
         $productDir = Join-Path $targetDir $profile
         $nativePath = Join-Path $productDir "native-runtimes"
         $runtimeOut = (& $bash -c 'cygpath -au "$1"' bash $nativePath | Out-String).Trim()

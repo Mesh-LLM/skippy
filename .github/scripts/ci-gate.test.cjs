@@ -45,8 +45,8 @@ test('protected pull_request_target skips CI when trusted admission skips change
   assert.equal(shouldRun({ changes: { result: 'success' } }), true);
 });
 
-test('all thirteen runtime packages match the planned matrix and depend on the canary', () => {
-  assert.equal(packageJobs.length, 13);
+test('all fourteen runtime packages match the planned matrix and depend on the canary', () => {
+  assert.equal(packageJobs.length, 14);
   assert.deepEqual(declared.filter(job => job.startsWith('package_')).sort(), packageJobs.sort());
   for (const row of rows) {
     const job = `package_${row.id.replaceAll('-', '_')}`;
@@ -58,7 +58,8 @@ test('all thirteen runtime packages match the planned matrix and depend on the c
     assert.equal(body.includes("needs.changes.outputs.packages == 'true'"), prPackages.includes(job));
     const needsSeparateSmoke = releaseSmokes.includes(job.replace('package_', 'release_smoke_'));
     assert.equal(body.includes('smoke: artifact'), row.validation === 'artifact' || needsSeparateSmoke);
-    if (row.validation === 'artifact') assert.ok(body.includes(row.runner[0]));
+    assert.equal(body.includes("smoke: 'none'"), row.validation === 'package');
+    if (row.validation === 'artifact' || row.validation === 'package') assert.ok(body.includes(row.runner[0]));
     if (row.host === 'windows-x86_64' && row.backend === 'cuda') {
       assert.ok(body.includes(`windows-cuda: '${row.toolkit}'\n`));
     }
@@ -98,6 +99,7 @@ test('release publication consumes prepared assets and independently verifies th
   assert.match(publish, /cmp release-receipt\/release.json dist\/release\/release.json/);
   assert.doesNotMatch(publish, /release-prepare-candidate|release-product-/);
   assert.match(publish, /ARTIFACT_ONLY: \$\{\{ needs.verify.outputs.artifact_only \}\}/);
+  assert.match(publish, /PACKAGE_ONLY: \$\{\{ needs.verify.outputs.package_only \}\}/);
 });
 
 test('crates.io publishes from the verified stable tag when enabled', () => {
@@ -122,18 +124,19 @@ test('PR plans exclude full-only targets independently of their smoke evidence',
   const pr = plan('pr').runtimes.include;
   const full = plan('full').runtimes.include;
   assert.equal(pr.length, 8);
-  assert.equal(full.length, 13);
+  assert.equal(full.length, 14);
   assert.ok(pr.every(row => row.validation === 'inference'));
   assert.deepEqual(full.filter(row => !row.full_only), pr);
   const rocm = full.find(row => row.id === 'linux-x86_64-rocm');
   assert.equal(rocm.validation, 'inference');
   assert.equal(rocm.full_only, true);
   assert.equal(full.filter(row => row.validation === 'artifact').length, 4);
+  assert.deepEqual(full.filter(row => row.validation === 'package').map(row => row.id), ['windows-aarch64-cpu']);
   assert.ok(!pr.some(row => row.id === rocm.id));
   const release = results({ full: true, release: true });
   release.plan.outputs.runtimes = JSON.stringify({ include: full });
   assert.doesNotThrow(() => gate(release, true));
-  // An eight-package controller must reject a thirteen-package candidate.
+  // An eight-package controller must reject a fourteen-package candidate.
   for (const row of full.filter(row => row.full_only)) {
     delete release['package_' + row.id.replaceAll('-', '_')];
   }
@@ -279,7 +282,7 @@ test('the repository switch routes Windows CUDA 13 and eligible Linux and macOS 
     assert.ok(labels.some(label => label.includes('SKIPPY_DEPOT_RUNNERS_ENABLED')), name);
     for (const label of labels) {
       if (name.startsWith('llama-upgrade') && label === '${{ matrix.runner }}') continue;
-      if (name === 'ci' && label === 'windows-2022') continue;
+      if (name === 'ci' && ['windows-2022', 'windows-11-arm'].includes(label)) continue;
       assert.match(label, /vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true'.*depot-/, name);
     }
   }
@@ -288,7 +291,7 @@ test('the repository switch routes Windows CUDA 13 and eligible Linux and macOS 
     const body = workflow.split(`\n  ${job}:\n`)[1].split(/\n  \w+:\n/)[0];
     const expected = job === 'package_windows_x86_64_cuda13'
       ? "${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-windows-2022-8' || 'windows-2022' }}"
-      : 'windows-2022';
+      : job === 'package_windows_aarch64_cpu' ? 'windows-11-arm' : 'windows-2022';
     assert.equal(body.match(/^    runs-on: (.+)$/m)?.[1], expected, job);
   }
 });
@@ -498,7 +501,7 @@ test('main can reuse only a receipt for the exact release dispatch and candidate
 
 test('every candidate checkout opts in to fork code only for the approved-fork controller (real #222 context)', () => {
   const refs = workflow.match(/^ +ref: \$\{\{ env\.SKIPPY_CI_SOURCE_REF \}\}\n.*$/gm);
-  assert.equal(refs.length, 20);
+  assert.equal(refs.length, 21);
   for (const ref of refs) assert.match(ref, /\n +allow-unsafe-pr-checkout: \$\{\{ inputs\.approved_fork_pr != '' \}\}$/);
   assert.equal(workflow.match(/allow-unsafe-pr-checkout:/g).length, refs.length);
 });

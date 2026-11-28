@@ -12,6 +12,7 @@ import tarfile
 import tempfile
 import tomllib
 import unittest
+from contextlib import chdir
 from pathlib import Path
 from unittest.mock import patch
 
@@ -134,6 +135,38 @@ class WindowsRuntimeArtifactContract(unittest.TestCase):
 
 
 class SmokeEvidenceContract(unittest.TestCase):
+    def test_windows_arm64_inventory_accepts_verified_package_without_smoke(self):
+        release = release_script()
+        host_id, variant = "windows-aarch64", "windows-aarch64-cpu"
+        host = {"target": "aarch64-pc-windows-msvc", "os": "windows", "arch": "aarch64"}
+        runtime = {"host": host_id, "backend": "cpu", "validation": "package"}
+        source = "a" * 40
+        with tempfile.TemporaryDirectory() as tmp, chdir(tmp), \
+             patch.object(release, "targets", return_value=({host_id: host}, {variant: runtime})), \
+             patch.object(release.artifacts, "source", return_value=source), \
+             patch.object(release, "version"), patch.object(release, "github_output") as output:
+            Path("llama_cpp").mkdir()
+            Path("llama_cpp/upstream.txt").write_text("b" * 40)
+            product = Path("product")
+            native = product / "native-runtimes" / variant
+            native.mkdir(parents=True)
+            release.artifacts.write_json(native / "manifest.json", {"runtime": {
+                "platform": host, "backend": {"kind": "cpu"},
+                "release_version": TAG[1:], "skippy_abi": "0.1.87",
+            }})
+            release.artifacts.receipt(product, "product", host["target"], variant)
+            artifacts = Path("release-artifacts")
+            archive = artifacts / f"release-product-{variant}" / f"skippy-{variant}.tar.gz"
+            release.artifacts.archive(product, archive)
+
+            release.inventory(TAG, artifacts, source)
+
+            output.assert_any_call("package_only", variant)
+            index = release.artifacts.read_json(Path("dist/release/release.json"))
+            self.assertEqual(index["variants"], [variant])
+            self.assertEqual(index["assets"][f"skippy-{TAG}-{variant}.tar.gz"],
+                             release.artifacts.digest(archive))
+
     def test_linux_rocm_release_policy_rejects_archive_only_evidence(self):
         release = release_script()
         with patch.dict(os.environ, SKIPPY_CI_PROFILE="full", GITHUB_OUTPUT=""):

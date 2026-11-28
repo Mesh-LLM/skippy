@@ -75,6 +75,7 @@ HOST_TARGETS = {
     "linux-x86_64": ("elf", "x86_64"),
     "linux-aarch64": ("elf", "aarch64"),
     "windows-x86_64": ("pe", "x86_64"),
+    "windows-aarch64": ("pe", "aarch64"),
 }
 
 

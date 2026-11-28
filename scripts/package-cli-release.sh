@@ -13,7 +13,7 @@ input_dir="$3"
 output_dir="$4"
 case "$version" in *[!A-Za-z0-9._+-]*|'') echo "invalid version: $version" >&2; exit 2;; esac
 case "$target" in
-    darwin-aarch64|linux-x86_64|linux-aarch64|windows-x86_64) ;;
+    darwin-aarch64|linux-x86_64|linux-aarch64|windows-x86_64|windows-aarch64) ;;
     *) echo "invalid target: $target" >&2; exit 2;;
 esac
 

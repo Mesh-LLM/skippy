@@ -57,8 +57,8 @@ skippy: build
 skippy-cli-build:
     @cargo build --locked -p skippy-cli --features dynamic-native-runtime
 
-skippy-cli-release-build:
-    @cargo build --release --locked -p skippy-cli --features dynamic-native-runtime
+skippy-cli-release-build target="":
+    @cargo build --release --locked -p skippy-cli --features dynamic-native-runtime {{ if target == "" { "" } else { "--target " + quote(target) } }}
 
 [unix]
 release-runtime-build backend="" target="":
@@ -78,7 +78,7 @@ release-runtime-build backend="cpu" target="":
 
 release-build backend="" target="":
     @just release-runtime-build "{{ backend }}" "{{ target }}"
-    @just skippy-cli-release-build
+    @just skippy-cli-release-build "{{ target }}"
 
 package-builder-release-build backend="cpu":
     @just release-runtime-build "{{ backend }}"

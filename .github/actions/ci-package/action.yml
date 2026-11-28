@@ -14,7 +14,7 @@ inputs:
     description: Install the pinned command runner on a standard runner image.
     default: 'false'
   smoke:
-    description: Select inference or artifact smoke.
+    description: Select inference smoke, artifact smoke, or none for a package-only runtime.
     default: inference
   windows-cuda:
     description: Pinned CUDA toolkit version to provision on the hosted Windows builder.
@@ -111,6 +111,7 @@ runs:
           echo "::warning::Could not identify the native CUDA cache. Using the standard compiler cache."
         fi
     - uses: ./.github/actions/sccache
+      if: runner.os != 'Windows' || runner.arch != 'ARM64'
       with:
         scope: package-${{ inputs.runtime-id }}-${{ inputs.windows-cuda || inputs.windows-rocm || env.SKIPPY_TOOLCHAIN_CACHE_KEY || 'native' }}-${{ env.SKIPPY_CUDA_ARCHITECTURE_MODE }}
         native-windows-cuda-namespace: ${{ steps.cuda-cache.outputs.namespace }}
@@ -145,7 +146,7 @@ runs:
         SMOKE_MODE: ${{ inputs.smoke }}
       run: |
         case "$SMOKE_MODE" in
-          inference) ;;
+          inference|none) ;;
           artifact) export SKIPPY_CUDA_ARCHITECTURE_MODE=release ;;
           *) echo "Invalid smoke mode: $SMOKE_MODE" >&2; exit 1 ;;
         esac
@@ -161,7 +162,7 @@ runs:
       if: inputs.smoke == 'inference'
       with:
         runtime_id: ${{ inputs.runtime-id }}
-    - name: Upload tested package
+    - name: Upload package
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
         name: ${{ env.SKIPPY_ARTIFACT_SCOPE }}-product-${{ inputs.runtime-id }}

@@ -3,19 +3,21 @@
 # GITHUB_ENV. First-party replacement for a third-party action: the repository
 # only admits GitHub-owned and pattern-allowlisted actions.
 #
-# Equivalent of `ilammy/msvc-dev-cmd` arch=x64: rustc locates Visual Studio
-# itself, but the native CMake/Ninja stage, nvcc, and the HIP compilers need
-# cl.exe, INCLUDE, and LIB on PATH.
+# rustc locates Visual Studio itself. The native CMake/Ninja stage, nvcc,
+# and the HIP compilers need cl.exe, INCLUDE, and LIB on PATH.
 
 $ErrorActionPreference = 'Stop'
 
+$arm64 = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64'
+$arch = if ($arm64) { 'arm64' } else { 'amd64' }
+$component = if ($arm64) { 'Microsoft.VisualStudio.Component.VC.Tools.ARM64' } else { 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64' }
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 if (-not (Test-Path $vswhere)) {
     throw "vswhere.exe was not found at $vswhere"
 }
 
 $installPath = (& $vswhere -latest -products * `
-    -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+    -requires $component `
     -property installationPath) | Select-Object -First 1
 if (-not $installPath) {
     throw 'no Visual Studio installation with VC tools was found'
@@ -32,7 +34,7 @@ $batch = Join-Path $work 'dump-env.bat'
 $dump = Join-Path $work 'env.txt'
 @(
     '@echo off',
-    "call `"$devCmd`" -arch=amd64 -no_logo || exit /b 1",
+    "call `"$devCmd`" -arch=$arch -host_arch=$arch -no_logo || exit /b 1",
     "set > `"$dump`""
 ) | Set-Content -Path $batch -Encoding ascii
 
