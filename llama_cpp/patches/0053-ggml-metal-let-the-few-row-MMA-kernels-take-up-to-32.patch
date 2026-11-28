@@ -1,0 +1,80 @@
+From 53224beea1038be823b22b6a2f46712126208466 Mon Sep 17 00:00:00 2001
+From: Skippy contributors <ci@skippy.local>
+Date: Sat, 28 Nov 2026 19:53:38 +1100
+Subject: [PATCH] ggml-metal: let the few-row MMA kernels take up to 32 src1
+ rows
+
+A mat-mul with more than 16 src1 rows left the few-row MMA kernels for
+kernel_mul_mm, which costs about as much at 17 rows as at 45. On an M3
+Ultra serving Qwen3.5-4B Q4_K_M with 16 sequences decoding, a step that
+also carried a few prompt tokens spent 38 ms in mat-muls against 13 ms
+at 16 rows, so a 5-7 token prompt tail added 25 ms to every sequence's
+step.
+
+The MMA kernels already tile src1 by threadgroup along y: they clamp the
+rows they load and skip the rows past ne11 when they store. So 17-32 rows
+now run as two 16-row threadgroups, each reading src0 again. No kernel is
+added, so nothing new is compiled at load. 33 rows and more still take
+kernel_mul_mm.
+
+The few-row test cases cover 17, 24, 32 and 33 rows, and the perf cases
+time the Qwen3.5-4B Q4_K_M projections from 8 to 64 rows, to show where
+kernel_mul_mm starts to win.
+---
+ ggml/src/ggml-metal/ggml-metal-common.cpp |  6 ++++--
+ tests/test-backend-ops.cpp                | 15 +++++++++++++--
+ 2 files changed, 17 insertions(+), 4 deletions(-)
+
+diff --git a/ggml/src/ggml-metal/ggml-metal-common.cpp b/ggml/src/ggml-metal/ggml-metal-common.cpp
+index f363122..adc779e 100644
+--- a/ggml/src/ggml-metal/ggml-metal-common.cpp
++++ b/ggml/src/ggml-metal/ggml-metal-common.cpp
+@@ -49,8 +49,10 @@ bool ggml_metal_op_mul_mat_id_use_mm(const struct ggml_tensor * op, bool has_sim
+     return has_simdgroup_mm && ne00 >= 64 && ne02 <= 1024 && ne21 >= 32;
+ }
+ 
+-// the most src1 rows of the few-row MMA kernels
+-static constexpr int64_t GGML_METAL_MMA_ROWS_MAX = 16;
++// the most src1 rows of the few-row MMA kernels. A threadgroup covers 16 of them, so 17-32 rows
++// run as two threadgroups along src1, each reading src0 again: kernel_mul_mm costs about as
++// much at 17 rows as at 45 (measured on an M3 Ultra, Qwen3.5-4B Q4_K_M)
++static constexpr int64_t GGML_METAL_MMA_ROWS_MAX = 32;
+ 
+ // src1 rows per 8x8 simdgroup matrix tile of the few-row MMA kernels
+ static constexpr int64_t GGML_METAL_MMA_TILE_ROWS = 8;
+diff --git a/tests/test-backend-ops.cpp b/tests/test-backend-ops.cpp
+index 380ac8c..d5806c7 100644
+--- a/tests/test-backend-ops.cpp
++++ b/tests/test-backend-ops.cpp
+@@ -11996,8 +11996,10 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
+     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F32, GGML_TYPE_F32, 32, 509, 2112, {1, 1}, {1, 1}));
+     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q8_0, GGML_TYPE_F32, 32, 509, 2112, {1, 1}, {1, 1}));
+ 
+-    // few src1 rows (speculative verify): odd m, a single K block, long K, every tile width, broadcast batches
+-    for (int64_t n : {2, 3, 5, 8, 9, 13, 16}) {
++    // few src1 rows (speculative verify): odd m, a single K block, long K, every tile width, broadcast batches.
++    // 17-32 rows take two threadgroups along src1, a second that is partial, empty in its upper tile, or full;
++    // 33 is the first that leaves the few-row kernels
++    for (int64_t n : {2, 3, 5, 8, 9, 13, 16, 17, 24, 32, 33}) {
+         for (auto [m, k] : std::vector<std::pair<int64_t, int64_t>>{{40, 32}, {100, 96}, {1000, 5120}, {3000, 1024}, {6144, 5120}, {17408, 512}}) {
+             test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_0, GGML_TYPE_F32, m, n, k, {1, 1}, {1, 1}));
+         }
+@@ -13810,6 +13812,15 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
+         }
+     }
+ 
++    // Qwen3.5-4B Q4_K_M FFN projections across the few-row MMA limit and past it
++    for (ggml_type type_a : {GGML_TYPE_Q4_K, GGML_TYPE_Q6_K}) {
++        for (auto [m, k] : std::vector<std::pair<int64_t, int64_t>>{{9216, 2560}, {2560, 9216}}) {
++            for (int bs : {8, 16, 17, 24, 32, 33, 48, 64}) {
++                test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, m, bs, k, {1, 1}, {1, 1}));
++            }
++        }
++    }
++
+     // qwen3-30b-a3b
+     for (int bs : {1, 4, 8, 32, 64, 128, 256, 512}) {
+         for (ggml_type type_a : {GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_Q4_0, GGML_TYPE_Q8_0, GGML_TYPE_Q2_K, GGML_TYPE_Q3_K, GGML_TYPE_Q4_K, GGML_TYPE_Q6_K, GGML_TYPE_IQ2_XS, GGML_TYPE_IQ4_XS}) {
+-- 
+2.43.0
+
