@@ -116,3 +116,14 @@ pub fn run(output: &mut dyn std::io::Write, diagnostics: &mut dyn std::io::Write
     diagnostics.flush()?;
     Ok(())
 }
+
+#[cfg(all(test, debug_assertions))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cli_definition_is_internally_consistent() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+    }
+}

@@ -26,6 +26,7 @@ WINDOWS_HOST = {
     "ucrtbase.dll",
     "user32.dll",
     "version.dll",
+    "vcomp140.dll",
     "vcruntime140.dll",
     "vcruntime140_1.dll",
     "vulkan-1.dll",
@@ -54,6 +55,7 @@ ELF_HOST = {
     "libz.so.1",
     "libcuda.so",
     "libcuda.so.1",
+    "libvulkan.so.1",
 }
 
 NATIVE_TARGETS = {
@@ -98,9 +100,24 @@ def host_owned(name, kind):
     return name in ELF_HOST or name.startswith(("libnvidia-", "linux-vdso"))
 
 
+def rocm_host_library(name, kind):
+    return kind == "elf" and name in {
+        "libamdhip64.so.7", "libhipblas.so.3", "librocblas.so.5", "libhsa-runtime64.so.1",
+    }
+
+
 def admit_cuda(name, major):
     if major not in {"12", "13"}:
         raise ValueError("unsupported CUDA toolkit major")
     if not any(name == stem + major or name.startswith(stem + major + ".")
                for stem in ("libcudart.so.", "libcublas.so.", "libcublasLt.so.", "libnvJitLink.so.")):
+        raise ValueError(f"unreviewed CUDA redistributable: {name}")
+
+
+def admit_windows_cuda(name, major):
+    lower = name.lower()
+    if lower.startswith(("cudart", "cublas", "nvjitlink", "nvrtc", "nvblas")) and lower not in {
+        f"cudart64_{major}.dll", f"cublas64_{major}.dll", f"cublaslt64_{major}.dll",
+        f"nvjitlink_{major}0_0.dll",
+    }:
         raise ValueError(f"unreviewed CUDA redistributable: {name}")

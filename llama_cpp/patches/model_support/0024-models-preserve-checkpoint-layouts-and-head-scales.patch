@@ -1,0 +1,89 @@
+From 0bcd0c8c941e3c9117ddbfb20a0c31502e5a5ac6 Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Wed, 25 Nov 2026 11:11:17 +1100
+Subject: [PATCH] models: preserve checkpoint layouts and head scales
+
+---
+ src/models/granite-swa.cpp    |  8 +++++---
+ src/models/granite-switch.cpp | 18 ++++++++++++------
+ src/models/minimax-m3.cpp     |  2 +-
+ src/models/nemotron-h-moe.cpp |  2 +-
+ 4 files changed, 19 insertions(+), 11 deletions(-)
+
+diff --git a/src/models/granite-swa.cpp b/src/models/granite-swa.cpp
+index fcbeb5a70..21a7ad401 100644
+--- a/src/models/granite-swa.cpp
++++ b/src/models/granite-swa.cpp
+@@ -107,9 +107,11 @@ void llama_model_granite_swa::load_arch_tensors(llama_model_loader & ml) {
+ 
+             // For Granite MoE Shared - gate+up kept fused in ffn_up_shexp (see LLM_FFN_SWIGLU below)
+             if (hparams.n_ff_shexp > 0) {
+-                const ggml_tensor * shexp_meta =
+-                    ml.get_tensor_meta(tn(LLM_TENSOR_FFN_UP_SHEXP, "weight", i).str().c_str());
+-                if (shexp_meta != nullptr && shexp_meta->ne[1] == 2*hparams.n_ff_shexp) {
++                // A metadata-only carrier declares every layer, even when its
++                // payload part omits this stage's nonresident shared expert.
++                const int64_t shexp_id = gguf_find_tensor(ml.metadata,
++                    tn(LLM_TENSOR_FFN_UP_SHEXP, "weight", i).str().c_str());
++                if (shexp_id >= 0 && gguf_get_tensor_ne(ml.metadata, shexp_id)[1] == 2*hparams.n_ff_shexp) {
+                     layer.ffn_up_shexp   = create_tensor(tn(LLM_TENSOR_FFN_UP_SHEXP,   "weight", i), {n_embd, 2*hparams.n_ff_shexp}, 0);
+                     layer.ffn_down_shexp = create_tensor(tn(LLM_TENSOR_FFN_DOWN_SHEXP, "weight", i), {hparams.n_ff_shexp, n_embd}, 0);
+                 } else {
+diff --git a/src/models/granite-switch.cpp b/src/models/granite-switch.cpp
+index a84743b7e..8cf7fef89 100644
+--- a/src/models/granite-switch.cpp
++++ b/src/models/granite-switch.cpp
+@@ -122,12 +122,18 @@ void llama_model_granite_switch::load_arch_tensors(llama_model_loader &) {
+ 
+         auto & sl = layer.switch_lora;
+ 
+-        sl.a_q = create_tensor(tn(LLM_TENSOR_ATTN_QKV, "lora_a_q", i), {n_embd,  n_rank, n_slots}, 0);
+-        sl.b_q = create_tensor(tn(LLM_TENSOR_ATTN_QKV, "lora_b_q", i), {n_rank, n_embd_q, n_slots}, 0);
+-        sl.a_k = create_tensor(tn(LLM_TENSOR_ATTN_QKV, "lora_a_k", i), {n_embd,  n_rank, n_slots}, 0);
+-        sl.b_k = create_tensor(tn(LLM_TENSOR_ATTN_QKV, "lora_b_k", i), {n_rank, n_embd_kv, n_slots}, 0);
+-        sl.a_v = create_tensor(tn(LLM_TENSOR_ATTN_QKV, "lora_a_v", i), {n_embd,  n_rank, n_slots}, 0);
+-        sl.b_v = create_tensor(tn(LLM_TENSOR_ATTN_QKV, "lora_b_v", i), {n_rank, n_embd_kv, n_slots}, 0);
++        const auto has_packed = [&](const char * suffix) {
++            return gguf_find_tensor(ml->metadata, tn(LLM_TENSOR_ATTN_QKV, suffix, i).str().c_str()) >= 0;
++        };
++        const bool packed = has_packed("lora_a_q") && has_packed("lora_b_q") &&
++                            has_packed("lora_a_k") && has_packed("lora_b_k") &&
++                            has_packed("lora_a_v") && has_packed("lora_b_v");
++        sl.a_q = create_tensor(tn(packed ? LLM_TENSOR_ATTN_QKV : LLM_TENSOR_ATTN_Q, packed ? "lora_a_q" : "lora_a", i), {n_embd,  n_rank, n_slots}, 0);
++        sl.b_q = create_tensor(tn(packed ? LLM_TENSOR_ATTN_QKV : LLM_TENSOR_ATTN_Q, packed ? "lora_b_q" : "lora_b", i), {n_rank, n_embd_q, n_slots}, 0);
++        sl.a_k = create_tensor(tn(packed ? LLM_TENSOR_ATTN_QKV : LLM_TENSOR_ATTN_K, packed ? "lora_a_k" : "lora_a", i), {n_embd,  n_rank, n_slots}, 0);
++        sl.b_k = create_tensor(tn(packed ? LLM_TENSOR_ATTN_QKV : LLM_TENSOR_ATTN_K, packed ? "lora_b_k" : "lora_b", i), {n_rank, n_embd_kv, n_slots}, 0);
++        sl.a_v = create_tensor(tn(packed ? LLM_TENSOR_ATTN_QKV : LLM_TENSOR_ATTN_V, packed ? "lora_a_v" : "lora_a", i), {n_embd,  n_rank, n_slots}, 0);
++        sl.b_v = create_tensor(tn(packed ? LLM_TENSOR_ATTN_QKV : LLM_TENSOR_ATTN_V, packed ? "lora_b_v" : "lora_b", i), {n_rank, n_embd_kv, n_slots}, 0);
+ 
+         sl.a_o = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "lora_a", i), {n_embd_q, n_rank, n_slots}, 0);
+         sl.b_o = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "lora_b", i), {n_rank,   n_embd, n_slots}, 0);
+diff --git a/src/models/minimax-m3.cpp b/src/models/minimax-m3.cpp
+index eca20f30a..6e4831209 100644
+--- a/src/models/minimax-m3.cpp
++++ b/src/models/minimax-m3.cpp
+@@ -39,7 +39,7 @@ void llama_model_minimax_m3::load_arch_hparams(llama_model_loader & ml) {
+     };
+ 
+     const bool indexer_present = hparams.indexer_n_head > 0 && hparams.indexer_head_size > 0 &&
+-        hparams.indexer_top_k > 0 && hparams.indexer_block_size > 0 && hparams.indexer_local_blocks > 0;
++        hparams.indexer_top_k > 0 && hparams.indexer_block_size > 0;
+     if (!indexer_present) {
+         hparams.indexer_n_head = 0;
+         hparams.indexer_head_size = 0;
+diff --git a/src/models/nemotron-h-moe.cpp b/src/models/nemotron-h-moe.cpp
+index 684aeed66..a5885cca6 100644
+--- a/src/models/nemotron-h-moe.cpp
++++ b/src/models/nemotron-h-moe.cpp
+@@ -155,7 +155,7 @@ llama_model_nemotron_h_moe::graph_mtp::graph_mtp(const llm_graph_params & params
+                         : (model.output                ? model.output
+                         : (trunk                       ? trunk->output : nullptr));
+     ggml_tensor * head_s = layer.nextn.shared_head_head ? layer.nextn.shared_head_head_s
+-                        : (model.output_s              ? model.output_s
++                        : (model.output                ? model.output_s
+                         : (trunk                       ? trunk->output_s : nullptr));
+     GGML_ASSERT(head_w != nullptr && "NEMOTRON_H_MOE MTP requires an output projection (own or shared trunk)");
+     cur = build_lora_mm(head_w, cur, head_s);
+-- 
+2.56.0
+

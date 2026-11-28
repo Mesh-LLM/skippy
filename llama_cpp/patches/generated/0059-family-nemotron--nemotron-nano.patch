@@ -9,7 +9,7 @@ separately and remain outside the primary decoder stage interval.
 
 ---
 diff --git a/src/models/nemotron-h.cpp b/src/models/nemotron-h.cpp
-index 94938f8563030d5a395db0334060a3e819eb9f75..9cd726edaae3601c727da747f846126d6e86d4e9 100644
+index ab312b370681c3c33e2fc5d985237a9943857bfa..8f22bbd0b0350224e97df4540b2f798008eece7a 100644
 --- a/src/models/nemotron-h.cpp
 +++ b/src/models/nemotron-h.cpp
 @@ -221,6 +221,8 @@ llama_model_nemotron_h::graph::graph(const llm_graph_params & params) :

@@ -9,7 +9,7 @@ separately and remain outside the primary decoder stage interval.
 
 ---
 diff --git a/src/models/granite.cpp b/src/models/granite.cpp
-index 0ab9084dae8abfe3d076b3988cbad4c9bc5b8afe..ddb3b627b21013556f46bcd33b9856ce061f045f 100644
+index 0a5dd78eafb60785716365eda4a0d8f7ed6fa770..ab07182b86aa738aaa8aa7853e6602e8cd772e83 100644
 --- a/src/models/granite.cpp
 +++ b/src/models/granite.cpp
 @@ -142,6 +142,8 @@ llama_model_granite::graph::graph(const llm_graph_params & params) : llm_graph_c

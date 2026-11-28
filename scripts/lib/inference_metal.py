@@ -37,4 +37,4 @@ def available_memory(stats, budget):
 
 
 def offload(log, server):
-    require_device([log], server, time.monotonic() + 5, prefixes=("MTL",))
+    require_device([log], server, time.monotonic() + 5, backend="metal")

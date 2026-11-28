@@ -14,6 +14,8 @@ from lib.ci_artifacts import read_json, write_json
 from lib.ci_process import cancel_on_signal
 from lib.inference_ladder import matrix, plan
 from lib.inference_nightly_metrics import collect_measurements
+from lib.inference_logs import NativeLogs
+from lib.inference_peer_evidence import verify_split_peer
 from lib.inference_throughput import collect
 from lib.jy_qualification import Pilot, placement
 
@@ -81,24 +83,40 @@ def launch(pilot, path, body, deadline, split):
     raise RuntimeError("JY qualification timed out waiting for placement")
 
 
-def wait(pilot, handle, row, sha, output, deadline):
+def wait(pilot, handle, row, sha, output, deadline, execution_seconds=None):
+    logs = NativeLogs(pilot, row, output)
+    phase = "waiting for native execution" if execution_seconds is not None else "waiting for completion"
     if handle.startswith("frm_"):
-        formation = pilot.api("GET", f"/v1/formations/{handle}")
+        formation = pilot.api("GET", f"/v1/formations/{handle}", status_deadline=deadline)
         leader = next((member for member in formation["members"] if member.get("role") == "leader"), {})
         handle = resource_id(leader.get("job_id"))
     while time.monotonic() < deadline:
-        job = pilot.api("GET", f"/v1/jobs/{handle}")
+        job = pilot.api("GET", f"/v1/jobs/{handle}", status_deadline=deadline)
         write_json(output / f"{row}-job.json", job)
         status = job["status"]
+        formation = None
+        if job.get("formation_id"):
+            formation_id = resource_id(job["formation_id"])
+            formation = pilot.api("GET", f"/v1/formations/{formation_id}", status_deadline=deadline)
+            write_json(output / f"{row}-formation.json", formation)
+        # Start the PR execution clock once either split member starts. The
+        # native lease still enforces its 30-minute limit plus 60-second grace;
+        # a long queue must not make the controller cancel that lease early.
+        if execution_seconds is not None and (
+                status == "running" or any(member.get("status") == "running"
+                                          for member in (formation or {}).get("members", []))):
+            deadline = time.monotonic() + execution_seconds
+            execution_seconds = None
+            phase = "during native execution"
+            print(f"{row}: native execution started; controller budget 31 minutes", flush=True)
+        finished = status in TERMINAL and (not formation or formation.get("status") in TERMINAL)
+        logs.capture(job, formation, deadline, final=finished or status in FAILURE)
         if status in FAILURE:
             raise RuntimeError(f"{row} failed: {status}")
         if status == "succeeded":
             if job["repo_rev"] != sha:
                 raise ValueError("JY result source SHA mismatch")
-            if job.get("formation_id"):
-                formation_id = resource_id(job["formation_id"])
-                formation = pilot.api("GET", f"/v1/formations/{formation_id}")
-                write_json(output / f"{row}-formation.json", formation)
+            if formation:
                 if formation.get("status") in FAILURE:
                     raise RuntimeError("split formation failed")
                 if formation.get("status") != "succeeded":
@@ -106,7 +124,7 @@ def wait(pilot, handle, row, sha, output, deadline):
                     continue
             return job
         time.sleep(15)
-    raise RuntimeError("JY qualification timed out")
+    raise RuntimeError(f"JY qualification timed out {phase}")
 
 
 def record(ledger, identifiers):
@@ -121,7 +139,8 @@ def record(ledger, identifiers):
 
 def dispatch(pilot, profile, sha, output, configuration, collect_metrics=False, *, backend="cuda"):
     result = plan(profile, sha)
-    result["rows"] = matrix(profile, sha, backend=backend)
+    if backend != "cuda":
+        result["rows"] = matrix(profile, sha, backend=backend)
     if configuration is not None:
         result["rows"] = [row for row in result["rows"] if row["id"] == configuration]
         if len(result["rows"]) != 1:
@@ -131,9 +150,8 @@ def dispatch(pilot, profile, sha, output, configuration, collect_metrics=False, 
     ledger = output / "jobs.json"
     identifiers = []
     record(ledger, identifiers)
-    # Manual qualification may queue behind another PR's atomic Spark pair;
-    # a PR profile waits for placement instead of failing fast, and the job
-    # timeout in inference.yml carries the same headroom.
+    # The PR placement/queue budget is separate from its native execution
+    # budget. Keep non-PR profiles' existing total deadline.
     deadline = time.monotonic() + (5400 if profile == "pr" else 21000)
     try:
         for row in result["rows"]:
@@ -158,7 +176,10 @@ def dispatch(pilot, profile, sha, output, configuration, collect_metrics=False, 
             identifiers.append(handle)
             record(ledger, identifiers)
             write_json(output / f"{identity}-launch.json", launched)
-            job = wait(pilot, handle, identity, sha, output, deadline)
+            job = wait(pilot, handle, identity, sha, output, deadline,
+                       execution_seconds=1860 if profile == "pr" else None)
+            if mode == "split":
+                verify_split_peer(pilot, job, row, sha, profile, output)
             if collect_metrics:
                 collect_measurements(pilot, job, row, sha, output, model_key, profile)
             elif profile == "pr":

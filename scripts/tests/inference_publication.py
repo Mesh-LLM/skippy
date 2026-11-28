@@ -72,6 +72,19 @@ class PublicationTests(unittest.TestCase):
             for index in range(1, 4):
                 self.assertEqual((Path(directory) / image_path(index)).read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
 
+    def test_png_export_retains_history_when_current_measurement_is_missing(self):
+        from inference_markdown import history
+        from lib.inference_charts import dataset_charts
+        from lib.inference_png import export_charts
+        report = history()
+        for row in report["runs"][-1]["configurations"][0]["metrics"]:
+            row["measured"] = None
+        with TemporaryDirectory() as directory:
+            charts = dataset_charts(report)
+            self.assertIsNone(charts[0].panels[0].current)
+            export_charts(charts, Path(directory))
+            self.assertTrue((Path(directory) / "charts/qualification-1.png").is_file())
+
     def test_run_charts_select_the_run_even_when_start_times_are_reversed(self):
         publish = run_path(str(PR_PATH))["publish"]
         export = publish.__globals__["export_charts"]

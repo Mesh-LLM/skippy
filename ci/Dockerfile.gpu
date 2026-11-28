@@ -67,11 +67,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       rustup xz-utils zlib1g-dev zstd \
     && rm -rf /var/lib/apt/lists/*
 
+# Copying the ROCm toolkit tree omits the host libraries its HSA runtime needs.
+ARG BACKEND
+RUN if [ "$BACKEND" = rocm ]; then \
+      apt-get update \
+      && apt-get install -y --no-install-recommends libdrm-amdgpu1 libdrm2 libelf1t64 libnuma1 \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
+
 # Copy the pruned vendor trees after installing the common host packages.
 COPY --from=toolkit /usr/local/ /usr/local/
 COPY --from=toolkit /opt/ /opt/
 
-ARG BACKEND
 ARG TOOLKIT_VERSION
 ARG TARGETARCH
 
@@ -149,7 +156,10 @@ RUN --network=none image_probe_dir="$(mktemp -d)" \
          && /usr/local/cuda-13.1/bin/nvcc -arch=sm_80 "$image_probe_dir/gpu.cu" -o "$image_probe_dir/gpu-probe"; \
        elif [ "$BACKEND" = rocm ]; then \
          printf '#include <hip/hip_runtime.h>\n__global__ void probe() {}\nint main() { return 0; }\n' > "$image_probe_dir/gpu.hip" \
-         && hipcc --offload-arch=gfx942 "$image_probe_dir/gpu.hip" -o "$image_probe_dir/gpu-probe"; \
+         && hipcc --offload-arch=gfx942 "$image_probe_dir/gpu.hip" -o "$image_probe_dir/gpu-probe" \
+         && dependencies="$(ldd "$ROCM_PATH/lib/libamdhip64.so")" \
+         && printf '%s\n' "$dependencies" \
+         && ! printf '%s\n' "$dependencies" | grep -F '=> not found'; \
        else echo "unsupported GPU backend: $BACKEND" >&2; exit 1; fi \
     && rm -rf "$image_probe_dir"
 

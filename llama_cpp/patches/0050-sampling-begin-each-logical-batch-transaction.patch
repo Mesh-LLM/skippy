@@ -1,0 +1,120 @@
+From 7e6b8d2fb249d309fa031924dbe58379e53897aa Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Wed, 25 Nov 2026 07:49:52 +1100
+Subject: [PATCH] sampling: begin each logical batch transaction
+
+---
+ src/llama-context.cpp                         |  6 ++
+ src/skippy/tests/backend_sample_capacity.cpp  |  3 +
+ .../tests/backend_transaction_regression.h    | 61 +++++++++++++++++++
+ 3 files changed, 70 insertions(+)
+ create mode 100644 src/skippy/tests/backend_transaction_regression.h
+
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index 6bcb9a71c..c301d67a8 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -2502,6 +2502,12 @@ int llama_context::decode(
+     };
+     output_trace.end();
+ 
++    // Each logical batch starts from committed sampling state; rejected draws
++    // from the preceding transaction must not advance this batch's RNG.
++    for (const auto & entry : sampling.samplers) {
++        llama_sampler_backend_begin(entry.second);
++    }
++
+     int64_t n_outputs_prev = 0;
+     int64_t n_tokens_prev  = 0;
+ 
+diff --git a/src/skippy/tests/backend_sample_capacity.cpp b/src/skippy/tests/backend_sample_capacity.cpp
+index b234872a7..f0341b7b0 100644
+--- a/src/skippy/tests/backend_sample_capacity.cpp
++++ b/src/skippy/tests/backend_sample_capacity.cpp
+@@ -211,6 +211,8 @@ void readout_detaches_only_its_lane(skippy_session * a, skippy_session * b) {
+ 
+ } // namespace
+ 
++#include "backend_transaction_regression.h"
++
+ int main(int argc, char ** argv) {
+     CHECK(argc == 2);
+     auto config = skippy_runtime_config_default();
+@@ -225,6 +227,7 @@ int main(int argc, char ** argv) {
+     skippy_error * error = nullptr;
+     auto status = skippy_model_open(argv[1], &config, &model, &error);
+     ok(status, error);
++    check_rejected_backend_draws(model->model);
+     CHECK(model->ctx->get_cparams().n_outputs_max >= 32);
+     CHECK(model->ctx->get_cparams().n_outputs_max_per_seq == 1);
+     auto * a = create(model);
+diff --git a/src/skippy/tests/backend_transaction_regression.h b/src/skippy/tests/backend_transaction_regression.h
+new file mode 100644
+index 000000000..7f4e8fce7
+--- /dev/null
++++ b/src/skippy/tests/backend_transaction_regression.h
+@@ -0,0 +1,61 @@
++#include <memory>
++#include "llama-sampler.h"
++
++// Rejecting one row of a multi-output batch must not consume its RNG draw.
++static void check_rejected_backend_draws(llama_model * model) {
++    auto make_sampler = []() {
++        auto * sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
++        llama_sampler_chain_add(sampler, llama_sampler_init_temp(1000.0f));
++        llama_sampler_chain_add(sampler, llama_sampler_init_dist(1234));
++        return std::unique_ptr<llama_sampler, decltype(&llama_sampler_free)>(sampler, llama_sampler_free);
++    };
++    auto a_sampler = make_sampler();
++    auto b_sampler = make_sampler();
++    auto make_context = [&](llama_sampler * sampler) {
++        auto params = llama_context_default_params();
++        params.n_ctx = 128;
++        params.n_batch = params.n_ubatch = 8;
++        params.n_seq_max = 1;
++        params.n_outputs_max = params.n_outputs_max_per_seq = 2;
++        params.n_threads = params.n_threads_batch = 1;
++        params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
++        llama_sampler_seq_config config = {0, sampler};
++        params.samplers = &config;
++        params.n_samplers = 1;
++        return std::unique_ptr<llama_context, decltype(&llama_free)>(
++                llama_init_from_model(model, params), llama_free);
++    };
++    auto a = make_context(a_sampler.get());
++    auto b = make_context(b_sampler.get());
++    CHECK(a && b);
++    auto process = [](llama_context * ctx, llama_pos first, int count, bool second_output) {
++        std::unique_ptr<llama_batch_ext, decltype(&llama_batch_ext_free)> batch(
++                llama_batch_ext_init(ctx), llama_batch_ext_free);
++        CHECK(batch != nullptr);
++        for (int i = 0; i < count; ++i) {
++            const int32_t index = llama_batch_ext_add_token(batch.get(), 0, 7 + first + i);
++            CHECK(index >= 0);
++            const llama_pos pos = first + i;
++            CHECK(llama_batch_ext_set_pos(batch.get(), index, &pos));
++            CHECK(llama_batch_ext_set_output_logits(batch.get(), index, i == 0 || second_output));
++        }
++        CHECK(llama_process(ctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0);
++        CHECK(llama_get_sampled_token_ith(ctx, 0) != LLAMA_TOKEN_NULL);
++    };
++    process(a.get(), 0, 2, true);
++    // The reference stream starts each transaction explicitly.
++    llama_sampler_backend_begin(b_sampler.get());
++    process(b.get(), 0, 2, false);
++    CHECK(llama_get_sampled_token_ith(a.get(), 1) != LLAMA_TOKEN_NULL);
++    CHECK(llama_sampler_sample(a_sampler.get(), a.get(), 0) ==
++            llama_sampler_sample(b_sampler.get(), b.get(), 0));
++    // A's second row was drawn but never accepted. Both streams must now
++    // continue from the same committed distribution state.
++    for (llama_pos pos = 2; pos < 18; pos += 2) {
++        process(a.get(), pos, 2, true);
++        llama_sampler_backend_begin(b_sampler.get());
++        process(b.get(), pos, 2, false);
++        CHECK(llama_sampler_sample(a_sampler.get(), a.get(), 0) ==
++                llama_sampler_sample(b_sampler.get(), b.get(), 0));
++    }
++}
+-- 
+2.56.0
+

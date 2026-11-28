@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, ffi::OsString, num::NonZeroUsize, path::PathBuf};
 
-use process_supervision::{
+use skippy_subprocess::{
     Completion, Limits, Outcome, ProcessSpec, RawCaptureOptions, Readiness, Value, supervise_raw,
 };
 
