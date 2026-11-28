@@ -1,0 +1,27 @@
+From 156b88036661dbac801155950d2b1bfacb675297 Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Wed, 25 Nov 2026 07:49:52 +1100
+Subject: [PATCH] lora: retain the primal activation for adapter deltas
+
+---
+ src/llama-graph.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
+index 6641a9ace..de693bf4b 100644
+--- a/src/llama-graph.cpp
++++ b/src/llama-graph.cpp
+@@ -2297,8 +2297,8 @@ ggml_tensor * llm_graph_context::build_lora_mm(
+     }
+ 
+     // a Hadamard-folded weight reads the transformed input; a LoRA delta lives in the primal basis and reads `cur`
+-    cur = build_hadamard_input(w, cur);
+-    ggml_tensor * res = ggml_mul_mat(ctx0, w, cur);
++    ggml_tensor * cur_mm = build_hadamard_input(w, cur);
++    ggml_tensor * res = ggml_mul_mat(ctx0, w, cur_mm);
+ 
+     if (w->type == GGML_TYPE_NVFP4) {
+         ggml_prec_set_acc(res, GGML_PREC_BF16);
+-- 
+2.56.0
+

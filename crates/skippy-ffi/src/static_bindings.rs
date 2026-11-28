@@ -403,46 +403,34 @@ pub unsafe extern "C" fn ggml_backend_dev_by_name(name: *const c_char) -> *mut O
     unsafe { llama::ggml_backend_dev_by_name(name).cast() }
 }
 
-// `src/llama-ext.h` is a C++ staging header, so these keep C++ linkage and are
-// bound by their decorated names: Itanium for GCC, Clang and MinGW, MSVC for
-// MSVC-ABI Windows. Both encode the parameter types, so an upstream signature
-// change fails to link instead of miscalling.
+// `include/llama.h` binds inside `extern "C"`, so these upstream entry points
+// resolve by their undecorated names on every platform. The pinned upstream
+// moved them there from the C++ staging header `src/llama-ext.h`; the
+// undecorated names stay stable; keep these parameter types synchronized with
+// the generated bindings because C symbol names do not encode signatures.
+unsafe extern "C" {
+    pub fn llama_set_embeddings_nextn(ctx: *mut Opaque, value: bool, masked: bool);
+    pub fn llama_get_embeddings_nextn(ctx: *mut Opaque) -> *mut f32;
+    pub fn llama_set_embeddings_layer_inp(ctx: *mut Opaque, lid: u32, value: bool);
+    pub fn llama_get_embeddings_layer_inp(ctx: *mut Opaque, lid: u32) -> *mut f32;
+    pub fn llama_model_target_layer_ids(model: *const Opaque) -> *const i32;
+    pub fn llama_model_target_layer_ids_n(model: *const Opaque) -> u32;
+    pub fn llama_model_dflash_selector_top_k(model: *const Opaque) -> i32;
+}
+
+// `src/llama-ext.h` is a C++ staging header, so its entry points keep C++
+// linkage and are bound by their decorated names: Itanium for GCC, Clang and
+// MinGW, MSVC for MSVC-ABI Windows. Both decorations encode the parameter
+// types, so parameter changes fail to link. Itanium names omit the return type;
+// keep it synchronized with the upstream declaration separately.
 #[cfg(not(target_env = "msvc"))]
 unsafe extern "C" {
-    #[link_name = "_Z26llama_set_embeddings_nextnP13llama_contextbb"]
-    pub fn llama_set_embeddings_nextn(ctx: *mut Opaque, value: bool, masked: bool);
-    #[link_name = "_Z26llama_get_embeddings_nextnP13llama_context"]
-    pub fn llama_get_embeddings_nextn(ctx: *mut Opaque) -> *mut f32;
-    #[link_name = "_Z30llama_set_embeddings_layer_inpP13llama_contextjb"]
-    pub fn llama_set_embeddings_layer_inp(ctx: *mut Opaque, lid: u32, value: bool);
-    #[link_name = "_Z30llama_get_embeddings_layer_inpP13llama_contextj"]
-    pub fn llama_get_embeddings_layer_inp(ctx: *mut Opaque, lid: u32) -> *mut f32;
     #[link_name = "_Z25llama_layer_inp_publishedP13llama_contextj"]
     pub fn llama_layer_inp_published(ctx: *mut Opaque, lid: u32) -> bool;
-    #[link_name = "_Z28llama_model_target_layer_idsPK11llama_model"]
-    pub fn llama_model_target_layer_ids(model: *const Opaque) -> *const i32;
-    #[link_name = "_Z30llama_model_target_layer_ids_nPK11llama_model"]
-    pub fn llama_model_target_layer_ids_n(model: *const Opaque) -> u32;
-    #[link_name = "_Z33llama_model_dflash_selector_top_kPK11llama_model"]
-    pub fn llama_model_dflash_selector_top_k(model: *const Opaque) -> i32;
 }
 
 #[cfg(target_env = "msvc")]
 unsafe extern "C" {
-    #[link_name = "?llama_set_embeddings_nextn@@YAXPEAUllama_context@@_N1@Z"]
-    pub fn llama_set_embeddings_nextn(ctx: *mut Opaque, value: bool, masked: bool);
-    #[link_name = "?llama_get_embeddings_nextn@@YAPEAMPEAUllama_context@@@Z"]
-    pub fn llama_get_embeddings_nextn(ctx: *mut Opaque) -> *mut f32;
-    #[link_name = "?llama_set_embeddings_layer_inp@@YAXPEAUllama_context@@I_N@Z"]
-    pub fn llama_set_embeddings_layer_inp(ctx: *mut Opaque, lid: u32, value: bool);
-    #[link_name = "?llama_get_embeddings_layer_inp@@YAPEAMPEAUllama_context@@I@Z"]
-    pub fn llama_get_embeddings_layer_inp(ctx: *mut Opaque, lid: u32) -> *mut f32;
     #[link_name = "?llama_layer_inp_published@@YA_NPEAUllama_context@@I@Z"]
     pub fn llama_layer_inp_published(ctx: *mut Opaque, lid: u32) -> bool;
-    #[link_name = "?llama_model_target_layer_ids@@YAPEBHPEBUllama_model@@@Z"]
-    pub fn llama_model_target_layer_ids(model: *const Opaque) -> *const i32;
-    #[link_name = "?llama_model_target_layer_ids_n@@YAIPEBUllama_model@@@Z"]
-    pub fn llama_model_target_layer_ids_n(model: *const Opaque) -> u32;
-    #[link_name = "?llama_model_dflash_selector_top_k@@YAHPEBUllama_model@@@Z"]
-    pub fn llama_model_dflash_selector_top_k(model: *const Opaque) -> i32;
 }

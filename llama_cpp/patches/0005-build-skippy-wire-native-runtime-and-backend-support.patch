@@ -1,7 +1,7 @@
-From cd9d11ee766add664032e1b29966215260bc54e7 Mon Sep 17 00:00:00 2001
+From a5da1f74c07e340b0716f6a1f99cc7ec5f00f6ef Mon Sep 17 00:00:00 2001
 From: James Dumay <james@generalinference.xyz>
 Date: Tue, 13 Oct 2026 22:06:42 +1100
-Subject: [PATCH 05/32] build(skippy): wire native runtime and backend support
+Subject: [PATCH] build(skippy): wire native runtime and backend support
 
 ---
  CMakeLists.txt                             |  17 +
@@ -13,9 +13,9 @@ Subject: [PATCH 05/32] build(skippy): wire native runtime and backend support
  common/chat.cpp                            |  36 +-
  common/chat.h                              |   6 +-
  common/ngram-cache.cpp                     | 158 ++++-
- common/peg-parser.cpp                      | 337 +++++++++++
+ common/peg-parser.cpp                      | 395 ++++++++++++
  common/peg-parser.h                        |   8 +
- common/reasoning-budget.cpp                | 138 +++--
+ common/reasoning-budget.cpp                | 142 +++--
  common/reasoning-budget.h                  |  16 +-
  common/stage-chat.cpp                      | 363 +++++++++++
  ggml/cmake/common.cmake                    |   9 +-
@@ -24,7 +24,7 @@ Subject: [PATCH 05/32] build(skippy): wire native runtime and backend support
  ggml/src/ggml-cuda/cachegen.cu             | 223 +++++++
  ggml/src/ggml-cuda/cachegen.cuh            |  27 +
  ggml/src/ggml-cuda/ggml-cuda.cu            | 344 ++++++++++-
- ggml/src/ggml-cuda/vendors/hip.h           |   1 +
+ ggml/src/ggml-cuda/vendors/hip.h           |   6 +
  ggml/src/ggml-metal/CMakeLists.txt         |   1 +
  ggml/src/ggml-metal/ggml-metal-device.h    |   7 +
  ggml/src/ggml-metal/ggml-metal-device.m    | 482 ++++++++++++++-
@@ -35,14 +35,14 @@ Subject: [PATCH 05/32] build(skippy): wire native runtime and backend support
  tools/mtmd/mtmd-helper.cpp                 |  47 +-
  tools/mtmd/mtmd-helper.h                   |  29 +
  tools/mtmd/mtmd-subcontext.cpp             |   4 +
- 31 files changed, 3142 insertions(+), 152 deletions(-)
+ 31 files changed, 3205 insertions(+), 156 deletions(-)
  create mode 100644 common/stage-chat.cpp
  create mode 100644 ggml/src/ggml-cuda/cachegen.cu
  create mode 100644 ggml/src/ggml-cuda/cachegen.cuh
  create mode 100644 ggml/src/ggml-metal/kernels/cachegen.metal
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index b8b40e75f..f99407170 100644
+index 7be920fbb..53e7d0e25 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -2,6 +2,18 @@ cmake_minimum_required(VERSION 3.14...3.28) # for add_link_options and implicit
@@ -62,8 +62,8 @@ index b8b40e75f..f99407170 100644
 +endif()
 +
  ### llama.cpp version
- set(LLAMA_VERSION_MAJOR 0)
- set(LLAMA_VERSION_MINOR 9)
+ set(LLAMA_VERSION_MAJOR 1)
+ set(LLAMA_VERSION_MINOR 0)
 @@ -285,6 +297,7 @@ set(LLAMA_BIN_INSTALL_DIR     ${CMAKE_INSTALL_BINDIR}     CACHE PATH "Location o
  
  set(LLAMA_PUBLIC_HEADERS
@@ -159,7 +159,7 @@ index e38485ca0..3c2b9b7ba 100644
  
  if (CMAKE_SYSTEM_NAME MATCHES "AIX")
 diff --git a/common/chat-auto-parser-generator.cpp b/common/chat-auto-parser-generator.cpp
-index 9b918b366..fbb39cb3a 100644
+index 220889367..6a60eb489 100644
 --- a/common/chat-auto-parser-generator.cpp
 +++ b/common/chat-auto-parser-generator.cpp
 @@ -13,6 +13,18 @@
@@ -181,16 +181,16 @@ index 9b918b366..fbb39cb3a 100644
  namespace autoparser {
  
  parser_build_context::parser_build_context(common_chat_peg_builder & p, const generation_params & inputs) :
-@@ -83,7 +95,7 @@ common_chat_params peg_generator::generate_parser(const common_chat_template &
+@@ -95,7 +107,7 @@ common_chat_params peg_generator::generate_parser(const common_chat_template &
          // Set grammar triggers based on tool section markers (fall back to per-call markers)
          if (data.grammar_lazy) {
-             data.grammar_triggers = {
--                { COMMON_GRAMMAR_TRIGGER_TYPE_WORD, trigger_marker }
-+                { COMMON_GRAMMAR_TRIGGER_TYPE_WORD, lazy_trigger_marker(trigger_marker) }
-             };
-             if (autoparser.tools.format.openai_wrapper_trigger) {
-                 // model emits the OpenAI function wrapper, trigger on it
-@@ -367,7 +379,9 @@ common_peg_parser analyze_tools::build_tool_parser_tag_tagged(parser_build_conte
+             if (!trigger_marker.empty()) {
+-                data.grammar_triggers = { { COMMON_GRAMMAR_TRIGGER_TYPE_WORD, trigger_marker } };
++                data.grammar_triggers = { { COMMON_GRAMMAR_TRIGGER_TYPE_WORD, lazy_trigger_marker(trigger_marker) } };
+             } else {
+                 data.grammar_triggers = { { COMMON_GRAMMAR_TRIGGER_TYPE_PATTERN, trigger_pattern } };
+             }
+@@ -383,7 +395,9 @@ common_peg_parser analyze_tools::build_tool_parser_tag_tagged(parser_build_conte
          const auto & func = tool.at("function");
          std::string  name = func.at("name");
  
@@ -201,7 +201,7 @@ index 9b918b366..fbb39cb3a 100644
          std::vector<common_peg_parser> required_parsers;
          std::vector<common_peg_parser> optional_parsers;
          foreach_parameter(func, [&](size_t param_index, const common_chat_schema_property & param, const common_chat_schema_document_ptr & doc) {
-@@ -390,22 +404,33 @@ common_peg_parser analyze_tools::build_tool_parser_tag_tagged(parser_build_conte
+@@ -406,22 +420,33 @@ common_peg_parser analyze_tools::build_tool_parser_tag_tagged(parser_build_conte
              }
          });
  
@@ -288,7 +288,7 @@ index a7e370578..39ffa20f1 100644
  
      template_params params_content_only;
 diff --git a/common/chat-peg-parser.cpp b/common/chat-peg-parser.cpp
-index 968cbfa98..cf49e3cf0 100644
+index 56938d5ef..9106d24dd 100644
 --- a/common/chat-peg-parser.cpp
 +++ b/common/chat-peg-parser.cpp
 @@ -393,11 +393,12 @@ void common_chat_peg_mapper::map(const common_peg_ast_node & node) {
@@ -305,7 +305,7 @@ index 968cbfa98..cf49e3cf0 100644
          ++arg_count;
  
          auto & target = args_target();
-@@ -679,10 +680,10 @@ common_peg_parser common_chat_peg_builder::build_json_tools_function_is_key(
+@@ -692,10 +693,10 @@ common_peg_parser common_chat_peg_builder::build_json_tools_function_is_key(
          // Arguments — either wrapped in args_key or parsed directly
          common_peg_parser args_parser = eps();
          if (args_key.empty()) {
@@ -318,7 +318,7 @@ index 968cbfa98..cf49e3cf0 100644
          }
          inner_fields.push_back(args_parser);
  
-@@ -744,7 +745,7 @@ common_peg_parser common_chat_peg_builder::build_json_tools_nested_keys(
+@@ -757,7 +758,7 @@ common_peg_parser common_chat_peg_builder::build_json_tools_nested_keys(
          auto nested_name = literal("\"" + nested_name_field + "\"") + space() + literal(":") + space() +
                            atomic(literal("\"") + tool_name(literal(name)) + literal("\""));
          auto nested_args = literal("\"" + nested_args_field + "\"") + space() + literal(":") + space() +
@@ -327,7 +327,7 @@ index 968cbfa98..cf49e3cf0 100644
  
          auto nested_object = literal("{") + space() +
                              nested_name + space() + literal(",") + space() +
-@@ -800,7 +801,9 @@ common_peg_parser common_chat_peg_builder::build_json_tools_flat_keys(
+@@ -813,7 +814,9 @@ common_peg_parser common_chat_peg_builder::build_json_tools_flat_keys(
  
      auto tool_choices    = choice();
      auto name_key_parser = literal("\"" + effective_name_key + "\"");
@@ -338,7 +338,7 @@ index 968cbfa98..cf49e3cf0 100644
  
      for (size_t i = 0; i < tools.size(); i++) {
          const auto & tool_def = tools[i];
-@@ -814,7 +817,7 @@ common_peg_parser common_chat_peg_builder::build_json_tools_flat_keys(
+@@ -827,7 +830,7 @@ common_peg_parser common_chat_peg_builder::build_json_tools_flat_keys(
          auto tool_name_ = name_key_parser + space() + literal(":") + space() +
                           atomic(literal("\"") + tool_name(literal(name)) + literal("\""));
          auto tool_args_ = args_key_parser + space() + literal(":") + space() +
@@ -348,7 +348,7 @@ index 968cbfa98..cf49e3cf0 100644
          // Build ID parsers if keys are provided
          common_peg_parser id_parser = eps();
 diff --git a/common/chat-peg-parser.h b/common/chat-peg-parser.h
-index b827b60b0..9272d698d 100644
+index b39607e5c..59fba313d 100644
 --- a/common/chat-peg-parser.h
 +++ b/common/chat-peg-parser.h
 @@ -5,6 +5,7 @@
@@ -359,7 +359,7 @@ index b827b60b0..9272d698d 100644
  #include <vector>
  
  class common_chat_peg_mapper {
-@@ -118,7 +119,6 @@ class common_chat_peg_builder : public common_peg_parser_builder {
+@@ -121,7 +122,6 @@ class common_chat_peg_builder : public common_peg_parser_builder {
      common_peg_parser tool_arg_string_value(const common_peg_parser & p) { return tag(TOOL_ARG_STRING_VALUE, p); }
      common_peg_parser tool_arg_json_value(const common_peg_parser & p) { return tag(TOOL_ARG_VALUE, p); }
  
@@ -368,7 +368,7 @@ index b827b60b0..9272d698d 100644
      common_peg_parser permute(const std::string & rule_prefix, const std::vector<common_peg_parser> & parsers);
  
 diff --git a/common/chat.cpp b/common/chat.cpp
-index da29cd671..f2e3ad37b 100644
+index 3cff920cf..bb94efd04 100644
 --- a/common/chat.cpp
 +++ b/common/chat.cpp
 @@ -204,6 +204,11 @@ json common_chat_msg::to_json_oaicompat(bool concat_typed_text) const {
@@ -383,7 +383,7 @@ index da29cd671..f2e3ad37b 100644
      } else {
          jmsg["content"] = "";
      }
-@@ -369,6 +374,7 @@ std::vector<common_chat_msg> common_chat_msgs_parse_oaicompat(const json & messa
+@@ -371,6 +376,7 @@ std::vector<common_chat_msg> common_chat_msgs_parse_oaicompat(const json & messa
  
              auto has_content    = message.contains("content");
              auto has_tool_calls = message.contains("tool_calls");
@@ -391,7 +391,7 @@ index da29cd671..f2e3ad37b 100644
              if (has_content) {
                  const auto & content = message.at("content");
                  if (content.is_string()) {
-@@ -391,7 +397,9 @@ std::vector<common_chat_msg> common_chat_msgs_parse_oaicompat(const json & messa
+@@ -393,7 +399,9 @@ std::vector<common_chat_msg> common_chat_msgs_parse_oaicompat(const json & messa
                          }
                          msg.content_parts.push_back(msg_part);
                      }
@@ -402,7 +402,7 @@ index da29cd671..f2e3ad37b 100644
                      throw std::invalid_argument("Invalid 'content' type: expected string or array, got " +
                                                  content.dump() +
                                                  " (ref: https://github.com/ggml-org/llama.cpp/issues/8367)");
-@@ -427,11 +435,6 @@ std::vector<common_chat_msg> common_chat_msgs_parse_oaicompat(const json & messa
+@@ -429,11 +437,6 @@ std::vector<common_chat_msg> common_chat_msgs_parse_oaicompat(const json & messa
                      msg.tool_calls.push_back(tc);
                  }
              }
@@ -414,7 +414,7 @@ index da29cd671..f2e3ad37b 100644
              if (message.contains("reasoning_content")) {
                  msg.reasoning_content = message.at("reasoning_content");
              }
-@@ -797,6 +800,23 @@ std::string common_chat_format_example(const struct common_chat_templates *
+@@ -799,6 +802,23 @@ std::string common_chat_format_example(const struct common_chat_templates *
      "  {{- '<|im_start|>assistant\n' -}}\n"                                               \
      "{%- endif -%}"
  
@@ -438,7 +438,7 @@ index da29cd671..f2e3ad37b 100644
  void common_chat_templates_free(struct common_chat_templates * tmpls) {
      delete tmpls;
  }
-@@ -936,6 +956,10 @@ common_chat_templates_ptr common_chat_templates_init(const struct llama_model *
+@@ -960,6 +980,10 @@ common_chat_templates_ptr common_chat_templates_init(const struct llama_model *
      } else {
          default_template_src = chat_template_override;
      }
@@ -450,7 +450,7 @@ index da29cd671..f2e3ad37b 100644
          if (!template_tool_use_src.empty()) {
              default_template_src = template_tool_use_src;
 diff --git a/common/chat.h b/common/chat.h
-index 304ccf9ec..0c7aa4971 100644
+index ca324d812..22b6bae06 100644
 --- a/common/chat.h
 +++ b/common/chat.h
 @@ -98,6 +98,9 @@ struct common_chat_msg {
@@ -681,10 +681,10 @@ index 419a0ebc9..2c844ba2f 100644
          if (drafted_token == LLAMA_TOKEN_NULL) {
              drafted_token = try_draft(nc_static, ngram_static);
 diff --git a/common/peg-parser.cpp b/common/peg-parser.cpp
-index e2ccb77bb..0fb48ab5c 100644
+index 924289097..8de366170 100644
 --- a/common/peg-parser.cpp
 +++ b/common/peg-parser.cpp
-@@ -1827,6 +1827,343 @@ void common_peg_arena::build_grammar(const common_grammar_builder & builder, boo
+@@ -2255,6 +2255,401 @@ void common_peg_arena::build_grammar(const common_grammar_builder & builder, boo
      }
  }
  
@@ -738,7 +738,20 @@ index e2ccb77bb..0fb48ab5c 100644
 +        } else if constexpr (std::is_same_v<T, common_peg_string_parser>) {
 +            return json{{"type", "string"}, {"delimiter", std::string(1, p.delimiter)}};
 +        } else if constexpr (std::is_same_v<T, common_peg_until_parser>) {
-+            return json{{"type", "until"}, {"delimiters", p.delimiters}};
++            auto branches = common_json::array();
++            for (const auto & b : p.branches) {
++                branches.push_back(json{
++                    {"delimiter", b.delimiter},
++                    {"rest",      b.rest}
++                });
++            }
++            return json{
++                {"type",     "until"},
++                {"branches", branches},
++                {"include",  p.include},
++                {"optional", p.optional},
++                {"content",  p.content}
++            };
 +        } else if constexpr (std::is_same_v<T, common_peg_schema_parser>) {
 +            return json{
 +                {"type", "schema"},
@@ -765,8 +778,10 @@ index e2ccb77bb..0fb48ab5c 100644
 +            };
 +        } else if constexpr (std::is_same_v<T, common_peg_gbnf_parser>) {
 +            return json{{"type", "gbnf"}, {"child", p.child}, {"grammar", p.grammar}};
-+        } else if constexpr (std::is_same_v<T, common_peg_ac_parser>) {
-+            return json{{"type", "ac"}, {"child", p.child}, {"delimiters", p.delimiters}};
++        } else if constexpr (std::is_same_v<T, common_peg_token_parser>) {
++            return json{{"type", "token"}, {"token", p.token}, {"piece", p.piece}};
++        } else if constexpr (std::is_same_v<T, common_peg_token_not_parser>) {
++            return json{{"type", "token_not"}, {"tokens", p.tokens}};
 +        }
 +    }, variant);
 +}
@@ -776,10 +791,19 @@ index e2ccb77bb..0fb48ab5c 100644
 +    for (const auto & parser : parsers_) {
 +        parsers.push_back(serialize_parser_variant(parser));
 +    }
++    auto rules = common_json::object();
++    for (const auto & [name, id] : rules_) {
++        rules[name] = id;
++    }
++    auto tokens = common_json::object();
++    for (const auto & [text, tok] : tokens_.ids) {
++        tokens[text] = tok;
++    }
 +    return common_json{
 +        {"parsers", parsers},
-+        {"rules", rules_},
-+        {"root", root_}
++        {"rules", rules},
++        {"root", root_},
++        {"tokens", tokens}
 +    };
 +}
 +
@@ -877,10 +901,20 @@ index e2ccb77bb..0fb48ab5c 100644
 +        return common_peg_string_parser{delimiter[0]};
 +    }
 +    if (type == "until") {
-+        if (!j.contains("delimiters") || !j["delimiters"].is_array()) {
-+            throw std::runtime_error("until parser missing or invalid 'delimiters' field");
++        if (!j.contains("branches") || !j["branches"].is_array()) {
++            throw std::runtime_error("until parser missing or invalid 'branches' field");
 +        }
-+        return common_peg_until_parser{j["delimiters"].get<std::vector<std::string>>()};
++        common_peg_until_parser parser;
++        for (const auto & b : j["branches"]) {
++            parser.branches.push_back(common_peg_until_branch{
++                b["delimiter"].get<common_peg_parser_id>(),
++                b.value("rest", COMMON_PEG_INVALID_PARSER_ID)
++            });
++        }
++        parser.include  = j.value("include",  false);
++        parser.optional = j.value("optional", false);
++        parser.content  = j.value("content",  COMMON_PEG_INVALID_PARSER_ID);
++        return parser;
 +    }
 +    if (type == "schema") {
 +        if (!j.contains("child") || !j.contains("name") || !j.contains("raw")) {
@@ -936,14 +970,11 @@ index e2ccb77bb..0fb48ab5c 100644
 +        };
 +    }
 +
-+    if (type == "ac") {
-+        if (!j.contains("child") || !j.contains("delimiters") || !j["delimiters"].is_array() || j["delimiters"].empty()) {
-+            throw std::runtime_error("ac parser requires 'child' and a non-empty 'delimiters' array");
-+        }
-+        return common_peg_ac_parser{
-+            j["child"].get<common_peg_parser_id>(),
-+            j["delimiters"].get<std::vector<std::string>>(),
-+        };
++    if (type == "token") {
++        return common_peg_token_parser{j.value("token", (llama_token) -1), j["piece"].get<std::string>()};
++    }
++    if (type == "token_not") {
++        return common_peg_token_not_parser{j["tokens"].get<std::vector<llama_token>>()};
 +    }
 +
 +    throw std::runtime_error("Unknown parser type: " + type);
@@ -968,7 +999,9 @@ index e2ccb77bb..0fb48ab5c 100644
 +        arena.parsers_.push_back(deserialize_parser_variant(parser_json));
 +    }
 +
-+    arena.rules_ = j["rules"].get<std::unordered_map<std::string, common_peg_parser_id>>();
++    for (const auto & [name, val] : j["rules"].items()) {
++        arena.rules_[name] = val.get<int>();
++    }
 +
 +    for (const auto & [name, id] : arena.rules_) {
 +        if (id >= arena.parsers_.size()) {
@@ -979,6 +1012,22 @@ index e2ccb77bb..0fb48ab5c 100644
 +    arena.root_ = j["root"].get<common_peg_parser_id>();
 +    if (arena.root_ != COMMON_PEG_INVALID_PARSER_ID && arena.root_ >= arena.parsers_.size()) {
 +        throw std::runtime_error("Root references invalid parser ID: " + std::to_string(arena.root_));
++    }
++
++    if (j.contains("tokens") && j["tokens"].is_object()) {
++        for (const auto & [text, val] : j["tokens"].items()) {
++            const llama_token tok = val.get<int>();
++            arena.tokens_.ids[text] = tok;
++            arena.tokens_.tokens[tok] = common_peg_token{text};
++        }
++    }
++
++    // The until matcher is derived state: rebuild it exactly as the builder does now
++    // that every referenced parser exists.
++    for (auto & parser : arena.parsers_) {
++        if (auto * until = std::get_if<common_peg_until_parser>(&parser)) {
++            until->matcher = build_until_matcher(arena, until->branches, until->include);
++        }
 +    }
 +
 +    // Validate every child ID stored inside parser variants and every ref target name: rule and root
@@ -1003,9 +1052,18 @@ index e2ccb77bb..0fb48ab5c 100644
 +                                 std::is_same_v<T, common_peg_rule_parser> ||
 +                                 std::is_same_v<T, common_peg_atomic_parser> ||
 +                                 std::is_same_v<T, common_peg_tag_parser> ||
-+                                 std::is_same_v<T, common_peg_gbnf_parser> ||
-+                                 std::is_same_v<T, common_peg_ac_parser>) {
++                                 std::is_same_v<T, common_peg_gbnf_parser>) {
 +                validate_child(p.child, "child parser");
++            } else if constexpr (std::is_same_v<T, common_peg_until_parser>) {
++                for (const auto & b : p.branches) {
++                    validate_child(b.delimiter, "until delimiter parser");
++                    if (b.rest != COMMON_PEG_INVALID_PARSER_ID) {
++                        validate_child(b.rest, "until rest parser");
++                    }
++                }
++                if (p.content != COMMON_PEG_INVALID_PARSER_ID) {
++                    validate_child(p.content, "until content parser");
++                }
 +            } else if constexpr (std::is_same_v<T, common_peg_ref_parser>) {
 +                if (arena.rules_.find(p.name) == arena.rules_.end()) {
 +                    throw std::runtime_error("ref parser references unknown rule: " + p.name);
@@ -1029,10 +1087,10 @@ index e2ccb77bb..0fb48ab5c 100644
      common_peg_parser_builder builder;
      builder.set_root(fn(builder));
 diff --git a/common/peg-parser.h b/common/peg-parser.h
-index 46df99875..5b41e7eba 100644
+index b7e97083b..fbf4b6f7b 100644
 --- a/common/peg-parser.h
 +++ b/common/peg-parser.h
-@@ -365,6 +365,14 @@ class common_peg_arena {
+@@ -404,6 +404,14 @@ class common_peg_arena {
  
      std::string dump(common_peg_parser_id id) const;
  
@@ -1048,7 +1106,7 @@ index 46df99875..5b41e7eba 100644
  
    private:
 diff --git a/common/reasoning-budget.cpp b/common/reasoning-budget.cpp
-index 81b7c3e56..674bb914d 100644
+index ac2cd261d..674bb914d 100644
 --- a/common/reasoning-budget.cpp
 +++ b/common/reasoning-budget.cpp
 @@ -1,9 +1,4 @@
@@ -1086,29 +1144,32 @@ index 81b7c3e56..674bb914d 100644
          for (const auto & seq : seqs) {
              if (!seq.empty() && std::find(res.begin(), res.end(), seq) == res.end()) {
                  res.push_back(seq);
-@@ -28,33 +27,66 @@ struct token_matcher {
+@@ -28,37 +27,66 @@ struct token_matcher {
          return res;
      }
  
 -    static common_trie build_trie(const std::vector<llama_tokens> & seqs) {
 -        common_trie t;
 -        for (const auto & seq : seqs) {
--            t.insert(std::vector<uint32_t>(seq.begin(), seq.end()));
+-            std::vector<common_trie::symbol> symbols;
+-            for (llama_token token : seq) {
+-                symbols.push_back(common_trie::symbol::token(token));
+-            }
+-            t.insert(symbols);
 -        }
 -        return t;
 -    }
 -
      // returns the index into seqs of the longest sequence ending at this token, or -1
      int32_t advance(llama_token token) {
--        state = ac.next(state, (uint32_t) token);
+-        state = ac.next(state, common_trie::symbol::token(token));
 -        const int32_t p = ac.match_pattern(state);
 -        if (p >= 0) {
 -            state = 0;
 +        recent.push_back(token);
 +        if (recent.size() > max_length) {
 +            recent.erase(recent.begin());
-         }
--        return p;
++        }
 +        int32_t match = -1;
 +        size_t match_length = 0;
 +        for (size_t i = 0; i < seqs.size(); ++i) {
@@ -1121,7 +1182,8 @@ index 81b7c3e56..674bb914d 100644
 +        }
 +        if (match >= 0) {
 +            recent.clear();
-+        }
+         }
+-        return p;
 +        return match;
      }
  
@@ -1168,7 +1230,7 @@ index 81b7c3e56..674bb914d 100644
  
      int32_t budget;           // maximum tokens in reasoning block
      int32_t remaining;        // tokens remaining in budget
-@@ -63,6 +95,7 @@ struct common_reasoning_budget_ctx {
+@@ -67,6 +95,7 @@ struct common_reasoning_budget_ctx {
  
      // for forcing
      size_t force_pos;         // next position in forced_tokens to force
@@ -1176,7 +1238,7 @@ index 81b7c3e56..674bb914d 100644
  
      int32_t end_match;        // index into end_matcher.seqs of the sequence that transitioned to DONE, -1 if none
  };
-@@ -80,12 +113,10 @@ static void common_reasoning_budget_accept(struct llama_sampler * smpl, llama_to
+@@ -84,12 +113,10 @@ static void common_reasoning_budget_accept(struct llama_sampler * smpl, llama_to
              if (ctx->start_matcher.advance(token) >= 0) {
                  ctx->state = REASONING_BUDGET_COUNTING;
                  ctx->remaining = ctx->budget;
@@ -1190,7 +1252,7 @@ index 81b7c3e56..674bb914d 100644
                  }
              }
              break;
-@@ -97,22 +128,21 @@ static void common_reasoning_budget_accept(struct llama_sampler * smpl, llama_to
+@@ -101,22 +128,21 @@ static void common_reasoning_budget_accept(struct llama_sampler * smpl, llama_to
              if (match >= 0) {
                  ctx->state = REASONING_BUDGET_DONE;
                  ctx->end_match = match;
@@ -1216,7 +1278,7 @@ index 81b7c3e56..674bb914d 100644
                  }
              } else if (ctx->state == REASONING_BUDGET_COUNTING) {
                  ctx->remaining--;
-@@ -120,12 +150,11 @@ static void common_reasoning_budget_accept(struct llama_sampler * smpl, llama_to
+@@ -124,12 +150,11 @@ static void common_reasoning_budget_accept(struct llama_sampler * smpl, llama_to
                      if (utf8_complete) {
                          ctx->state = REASONING_BUDGET_FORCING;
                          ctx->force_pos = 0;
@@ -1230,7 +1292,7 @@ index 81b7c3e56..674bb914d 100644
                      }
                  }
              }
-@@ -136,11 +165,12 @@ static void common_reasoning_budget_accept(struct llama_sampler * smpl, llama_to
+@@ -140,11 +165,12 @@ static void common_reasoning_budget_accept(struct llama_sampler * smpl, llama_to
              // track the end sequence within forced_tokens so it is also reported on DONE
              const int32_t match = ctx->end_matcher.advance(token);
              ctx->force_pos++;
@@ -1247,7 +1309,7 @@ index 81b7c3e56..674bb914d 100644
              }
              break;
          }
-@@ -152,12 +182,10 @@ static void common_reasoning_budget_accept(struct llama_sampler * smpl, llama_to
+@@ -156,12 +182,10 @@ static void common_reasoning_budget_accept(struct llama_sampler * smpl, llama_to
                  ctx->remaining = ctx->budget;
                  ctx->end_matcher.reset();
                  ctx->end_match = -1;
@@ -1261,7 +1323,7 @@ index 81b7c3e56..674bb914d 100644
                  }
              }
              break;
-@@ -176,6 +204,7 @@ static void common_reasoning_budget_apply(struct llama_sampler * smpl, llama_tok
+@@ -180,6 +204,7 @@ static void common_reasoning_budget_apply(struct llama_sampler * smpl, llama_tok
          return;
      }
  
@@ -1269,7 +1331,7 @@ index 81b7c3e56..674bb914d 100644
      const llama_token forced = ctx->forced_tokens[ctx->force_pos];
  
      // set all logits to -inf except the forced token
-@@ -193,12 +222,13 @@ static void common_reasoning_budget_reset(struct llama_sampler * smpl) {
+@@ -197,12 +222,13 @@ static void common_reasoning_budget_reset(struct llama_sampler * smpl) {
      ctx->start_matcher.reset();
      ctx->end_matcher.reset();
      ctx->force_pos = 0;
@@ -1285,7 +1347,7 @@ index 81b7c3e56..674bb914d 100644
          int32_t budget, common_reasoning_budget_state initial_state);
  
  static struct llama_sampler * common_reasoning_budget_clone(const struct llama_sampler * smpl);
-@@ -233,9 +263,9 @@ static struct llama_sampler * common_reasoning_budget_clone(const struct llama_s
+@@ -237,9 +263,9 @@ static struct llama_sampler * common_reasoning_budget_clone(const struct llama_s
  
  static struct llama_sampler * common_reasoning_budget_init_state(
          const struct llama_vocab        * vocab,
@@ -1298,7 +1360,7 @@ index 81b7c3e56..674bb914d 100644
          int32_t                           budget,
          common_reasoning_budget_state     initial_state) {
      // promote COUNTING with budget <= 0 to FORCING
-@@ -254,6 +284,7 @@ static struct llama_sampler * common_reasoning_budget_init_state(
+@@ -258,6 +284,7 @@ static struct llama_sampler * common_reasoning_budget_init_state(
              /* .remaining     = */ budget,
              /* .state         = */ initial_state,
              /* .force_pos     = */ 0,
@@ -1306,7 +1368,7 @@ index 81b7c3e56..674bb914d 100644
              /* .end_match     = */ -1,
          }
      );
-@@ -261,9 +292,9 @@ static struct llama_sampler * common_reasoning_budget_init_state(
+@@ -265,9 +292,9 @@ static struct llama_sampler * common_reasoning_budget_init_state(
  
  struct llama_sampler * common_reasoning_budget_init(
          const struct llama_vocab        * vocab,
@@ -1319,7 +1381,7 @@ index 81b7c3e56..674bb914d 100644
          int32_t                           budget,
          common_reasoning_budget_state     initial_state) {
      return common_reasoning_budget_init_state(vocab, start_seqs, end_seqs, forced_tokens, budget, initial_state);
-@@ -276,13 +307,13 @@ common_reasoning_budget_state common_reasoning_budget_get_state(const struct lla
+@@ -280,13 +307,13 @@ common_reasoning_budget_state common_reasoning_budget_get_state(const struct lla
      return ((const common_reasoning_budget_ctx *)smpl->ctx)->state;
  }
  
@@ -1335,7 +1397,7 @@ index 81b7c3e56..674bb914d 100644
          return nullptr;
      }
  
-@@ -304,8 +335,7 @@ bool common_reasoning_budget_force(struct llama_sampler * smpl) {
+@@ -308,8 +335,7 @@ bool common_reasoning_budget_force(struct llama_sampler * smpl) {
  
      ctx->state = REASONING_BUDGET_FORCING;
      ctx->force_pos = 0;
@@ -1814,7 +1876,7 @@ index afb86338a..0427fda49 100644
      // Backend registry
      //
 diff --git a/ggml/src/ggml-backend.cpp b/ggml/src/ggml-backend.cpp
-index b70d0d874..82e5eebc9 100644
+index d598ca3d8..1b65dceaf 100644
 --- a/ggml/src/ggml-backend.cpp
 +++ b/ggml/src/ggml-backend.cpp
 @@ -1486,14 +1486,30 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
@@ -1850,7 +1912,7 @@ index b70d0d874..82e5eebc9 100644
      sched->ctx = ggml_init(params);
      if (sched->ctx == NULL) {
          GGML_ABORT("%s: failed to initialize context\n", __func__);
-@@ -2339,8 +2355,9 @@ ggml_backend_sched_t ggml_backend_sched_new(
+@@ -2342,8 +2358,9 @@ ggml_backend_sched_t ggml_backend_sched_new(
      sched->graph_size      = 0;
      sched->prev_graph_size = 0;
  
@@ -2125,18 +2187,18 @@ index 000000000..7118c9aa9
 +
 +#endif // !defined(GGML_USE_MUSA)
 diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
-index 28073a17f..4b4193075 100644
+index 3e1f167e9..1dd8e68e2 100644
 --- a/ggml/src/ggml-cuda/ggml-cuda.cu
 +++ b/ggml/src/ggml-cuda/ggml-cuda.cu
 @@ -12,6 +12,7 @@
  #include "ggml-cuda/argsort.cuh"
- #include "ggml-cuda/batch-get.cuh"
+ #include "ggml-cuda/batch-copy.cuh"
  #include "ggml-cuda/binbcast.cuh"
 +#include "ggml-cuda/cachegen.cuh"
  #include "ggml-cuda/clamp.cuh"
  #include "ggml-cuda/col2im-1d.cuh"
  #include "ggml-cuda/concat.cuh"
-@@ -90,6 +91,7 @@
+@@ -91,6 +92,7 @@
  #include <map>
  #include <memory>
  #include <mutex>
@@ -2144,7 +2206,7 @@ index 28073a17f..4b4193075 100644
  #include <cstdarg>
  #include <cstdio>
  #include <cstdlib>
-@@ -6451,7 +6453,12 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
+@@ -6598,7 +6600,12 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                  return false;
              }
          case GGML_OP_DUP:
@@ -2158,7 +2220,7 @@ index 28073a17f..4b4193075 100644
          case GGML_OP_ARGMAX:
          case GGML_OP_COUNT_EQUAL:
              return true;
-@@ -6810,7 +6817,12 @@ static ggml_backend_feature * ggml_backend_cuda_get_features(ggml_backend_reg_t
+@@ -6968,7 +6975,12 @@ static ggml_backend_feature * ggml_backend_cuda_get_features(ggml_backend_reg_t
      #endif
  
      #ifdef GGML_CUDA_FA_QUANTS
@@ -2172,7 +2234,7 @@ index 28073a17f..4b4193075 100644
      #endif
  
      {
-@@ -6845,6 +6857,329 @@ static ggml_backend_feature * ggml_backend_cuda_get_features(ggml_backend_reg_t
+@@ -7003,6 +7015,329 @@ static ggml_backend_feature * ggml_backend_cuda_get_features(ggml_backend_reg_t
      GGML_UNUSED(reg);
  }
  
@@ -2502,7 +2564,7 @@ index 28073a17f..4b4193075 100644
  static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, const char * name) {
      GGML_UNUSED(reg);
      if (strcmp(name, "ggml_backend_comm_init") == 0) {
-@@ -6870,6 +7205,11 @@ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, con
+@@ -7028,6 +7363,11 @@ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, con
      if (strcmp(name, "ggml_backend_get_features") == 0) {
          return (void *)ggml_backend_cuda_get_features;
      }
@@ -2515,17 +2577,22 @@ index 28073a17f..4b4193075 100644
  }
  
 diff --git a/ggml/src/ggml-cuda/vendors/hip.h b/ggml/src/ggml-cuda/vendors/hip.h
-index da159dea1..23a2f7ba1 100644
+index a43814799..ed061411c 100644
 --- a/ggml/src/ggml-cuda/vendors/hip.h
 +++ b/ggml/src/ggml-cuda/vendors/hip.h
-@@ -30,6 +30,7 @@
+@@ -32,6 +32,12 @@ typedef uint64_t ggml_cuda_thread_mask_t;
+ #define CU_MEM_LOCATION_TYPE_DEVICE hipMemLocationTypeDevice
  #define CU_MEM_ACCESS_FLAGS_PROT_READWRITE hipMemAccessFlagsProtReadWrite
  #define CU_CHECK(fn) {hipError_t err = fn; if(err != hipSuccess) { GGML_ABORT("HipVMM Failure: %s\n", hipGetErrorString(err)); }}
- #define __shfl_sync(mask, var, laneMask, width) __shfl(var, laneMask, width)
++#define __shfl_sync(mask, var, laneMask, width) __shfl(var, laneMask, width)
 +#define __shfl_down_sync(mask, var, delta, width) __shfl_down(var, delta, width)
- #define __shfl_up_sync(mask, var, laneMask, width) __shfl_up(var, laneMask, width)
- #define __shfl_xor_sync(mask, var, laneMask, width) __shfl_xor(var, laneMask, width)
- #define __all_sync(mask, var) __all(var)
++#define __shfl_up_sync(mask, var, laneMask, width) __shfl_up(var, laneMask, width)
++#define __shfl_xor_sync(mask, var, laneMask, width) __shfl_xor(var, laneMask, width)
++#define __all_sync(mask, var) __all(var)
++#define __any_sync(mask, var) __any(var)
+ #define cublasStrsmBatched hipblasStrsmBatched
+ #define cublasCreate hipblasCreate
+ #define cublasDestroy hipblasDestroy
 diff --git a/ggml/src/ggml-metal/CMakeLists.txt b/ggml/src/ggml-metal/CMakeLists.txt
 index 91691b223..a6d145e69 100644
 --- a/ggml/src/ggml-metal/CMakeLists.txt
@@ -2539,7 +2606,7 @@ index 91691b223..a6d145e69 100644
      kernels/fa_f16.metal
      kernels/fa_f32.metal
 diff --git a/ggml/src/ggml-metal/ggml-metal-device.h b/ggml/src/ggml-metal/ggml-metal-device.h
-index 4053a624e..56b795790 100644
+index c0466d62f..fa3e364bc 100644
 --- a/ggml/src/ggml-metal/ggml-metal-device.h
 +++ b/ggml/src/ggml-metal/ggml-metal-device.h
 @@ -1,6 +1,7 @@
@@ -2550,7 +2617,7 @@ index 4053a624e..56b795790 100644
  
  #ifdef __cplusplus
  extern "C" {
-@@ -379,6 +380,12 @@ void   ggml_metal_buffer_clear        (ggml_metal_buffer_t buf, uint8_t value);
+@@ -381,6 +382,12 @@ void   ggml_metal_buffer_clear        (ggml_metal_buffer_t buf, uint8_t value);
  //
  struct ggml_metal_buffer_id ggml_metal_buffer_get_id(ggml_metal_buffer_t buf, const struct ggml_tensor * t);
  
@@ -2564,7 +2631,7 @@ index 4053a624e..56b795790 100644
  }
  #endif
 diff --git a/ggml/src/ggml-metal/ggml-metal-device.m b/ggml/src/ggml-metal/ggml-metal-device.m
-index 0a07a76bf..9ab481093 100644
+index 2e085453a..3a009e410 100644
 --- a/ggml/src/ggml-metal/ggml-metal-device.m
 +++ b/ggml/src/ggml-metal/ggml-metal-device.m
 @@ -11,6 +11,8 @@
@@ -2584,7 +2651,7 @@ index 0a07a76bf..9ab481093 100644
      X(FA_AUX,          fa_aux)         \
      X(FA_F16,          fa_f16)         \
      X(FA_F32,          fa_f32)         \
-@@ -180,6 +183,11 @@ int ggml_metal_pipeline_max_theads_per_threadgroup(struct ggml_metal_pipeline_wi
+@@ -180,6 +183,11 @@ struct ggml_metal_library {
      ggml_metal_device_t dev;
      ggml_metal_pipelines_t pipelines; // cache of compiled pipelines
  
@@ -2890,7 +2957,7 @@ index 0a07a76bf..9ab481093 100644
  
          [mtl_function release];
  
-@@ -1805,6 +1995,31 @@ bool ggml_metal_device_supports_op(ggml_metal_device_t dev, const struct ggml_te
+@@ -1806,6 +1996,31 @@ bool ggml_metal_device_supports_op(ggml_metal_device_t dev, const struct ggml_te
              if (op->src[1]->type != op->src[2]->type) {
                  return false;
              }
@@ -2922,7 +2989,7 @@ index 0a07a76bf..9ab481093 100644
              switch (op->src[1]->type) {
                  case GGML_TYPE_F32:
                  case GGML_TYPE_F16:
-@@ -2780,3 +2995,262 @@ struct ggml_metal_buffer_id ggml_metal_buffer_get_id(ggml_metal_buffer_t buf, co
+@@ -2781,3 +2996,262 @@ struct ggml_metal_buffer_id ggml_metal_buffer_get_id(ggml_metal_buffer_t buf, co
  
      return res;
  }
@@ -3186,10 +3253,10 @@ index 0a07a76bf..9ab481093 100644
 +    return true;
 +}
 diff --git a/ggml/src/ggml-metal/ggml-metal.cpp b/ggml/src/ggml-metal/ggml-metal.cpp
-index 9bed6421b..528853974 100644
+index 9a1bd2c77..fcb9d7558 100644
 --- a/ggml/src/ggml-metal/ggml-metal.cpp
 +++ b/ggml/src/ggml-metal/ggml-metal.cpp
-@@ -1016,6 +1016,9 @@ static void * ggml_backend_metal_get_proc_address(ggml_backend_reg_t reg, const
+@@ -1020,6 +1020,9 @@ static void * ggml_backend_metal_get_proc_address(ggml_backend_reg_t reg, const
      if (strcmp(name, "ggml_backend_get_features") == 0) {
          return (void *)ggml_backend_metal_get_features;
      }
@@ -4107,10 +4174,10 @@ index 426c48741..2bc7d6f6e 100644
 +    target_link_libraries(llama PRIVATE ${SKIPPY_ACCELERATE_FRAMEWORK})
 +endif()
 diff --git a/tools/mtmd/mtmd-audio.h b/tools/mtmd/mtmd-audio.h
-index 1175ad624..5ffeca401 100644
+index 6d282721d..3710f7c54 100644
 --- a/tools/mtmd/mtmd-audio.h
 +++ b/tools/mtmd/mtmd-audio.h
-@@ -69,6 +69,7 @@ struct mtmd_audio_mel_config {
+@@ -75,6 +75,7 @@ struct mtmd_audio_mel_config {
      float   mel_floor        = 5.960464477539063e-08f;
      bool    mel_floor_add    = false;  // log(x + floor) instead of log(max(x, floor))
      bool    std_eps_after_sqrt = false;  // std + eps instead of sqrt(var + eps)
@@ -4119,10 +4186,10 @@ index 1175ad624..5ffeca401 100644
  
      const mtmd_audio_cache * cache = nullptr;
 diff --git a/tools/mtmd/mtmd-helper.cpp b/tools/mtmd/mtmd-helper.cpp
-index aefe504b2..da2c782d6 100644
+index 165936d80..9a27d955a 100644
 --- a/tools/mtmd/mtmd-helper.cpp
 +++ b/tools/mtmd/mtmd-helper.cpp
-@@ -141,6 +141,11 @@ int32_t mtmd_helper_decode_image_chunk(
+@@ -132,6 +132,11 @@ int32_t mtmd_helper_decode_image_chunk(
      int n_pos_per_embd = mtmd_decode_use_mrope(ctx) ? 4 : 1;
  
      int32_t n_tokens = mtmd_input_chunk_get_n_tokens(chunk);
@@ -4134,7 +4201,7 @@ index aefe504b2..da2c782d6 100644
      int32_t i_batch = 0;
      int32_t n_img_batches = (n_tokens + n_batch - 1) / n_batch;
      decode_embd_batch batch_embd(encoded_embd, n_tokens, n_pos_per_embd, n_mmproj_embd);
-@@ -165,7 +170,6 @@ int32_t mtmd_helper_decode_image_chunk(
+@@ -156,7 +161,6 @@ int32_t mtmd_helper_decode_image_chunk(
          batch_embd.set_position_normal(n_past, seq_id);
      }
  
@@ -4142,7 +4209,7 @@ index aefe504b2..da2c782d6 100644
      const scope_non_causal non_causal(lctx, use_non_causal);
  
      while (i_batch < n_img_batches) { // split into batches
-@@ -201,6 +205,12 @@ int32_t mtmd_helper_decode_image_chunk(
+@@ -192,6 +196,12 @@ int32_t mtmd_helper_decode_image_chunk(
      return 0;
  }
  
@@ -4155,7 +4222,7 @@ index aefe504b2..da2c782d6 100644
  int32_t mtmd_helper_eval_chunk_single(mtmd_context * ctx,
          struct llama_context * lctx,
          const mtmd_input_chunk * chunk,
-@@ -209,6 +219,25 @@ int32_t mtmd_helper_eval_chunk_single(mtmd_context * ctx,
+@@ -200,6 +210,25 @@ int32_t mtmd_helper_eval_chunk_single(mtmd_context * ctx,
          int32_t n_batch,
          bool logits_last,
          llama_pos * new_n_past) {
@@ -4181,7 +4248,7 @@ index aefe504b2..da2c782d6 100644
      GGML_ASSERT(n_batch > 0);
      int32_t ret;
      auto chunk_type = mtmd_input_chunk_get_type(chunk);
-@@ -239,6 +268,9 @@ int32_t mtmd_helper_eval_chunk_single(mtmd_context * ctx,
+@@ -230,6 +259,9 @@ int32_t mtmd_helper_eval_chunk_single(mtmd_context * ctx,
                  LOG_ERR("failed to decode text\n");
                  return ret;
              }
@@ -4191,7 +4258,7 @@ index aefe504b2..da2c782d6 100644
              *new_n_past += n_added;
          }
  
-@@ -257,7 +289,18 @@ int32_t mtmd_helper_eval_chunk_single(mtmd_context * ctx,
+@@ -248,7 +280,18 @@ int32_t mtmd_helper_eval_chunk_single(mtmd_context * ctx,
          LOG_INF("%s slice encoded in %" PRId64 " ms\n", name, ggml_time_ms() - t0);
  
          float * embd = mtmd_get_output_embd(ctx);
@@ -4212,10 +4279,10 @@ index aefe504b2..da2c782d6 100644
              LOG_ERR("failed to decode %s\n", name);
              return ret;
 diff --git a/tools/mtmd/mtmd-helper.h b/tools/mtmd/mtmd-helper.h
-index 7d72fdb99..4a5b6e5a6 100644
+index c20cb0a20..6f8c7475f 100644
 --- a/tools/mtmd/mtmd-helper.h
 +++ b/tools/mtmd/mtmd-helper.h
-@@ -128,6 +128,35 @@ MTMD_API int32_t mtmd_helper_eval_chunk_single(mtmd_context * ctx,
+@@ -183,6 +183,35 @@ MTMD_API int32_t mtmd_helper_eval_chunk_single(mtmd_context * ctx,
                                                 bool logits_last,
                                                 llama_pos * new_n_past);
  
@@ -4252,7 +4319,7 @@ index 7d72fdb99..4a5b6e5a6 100644
  struct mtmd_helper_embd_batch {
      int32_t n_tokens;
 diff --git a/tools/mtmd/mtmd-subcontext.cpp b/tools/mtmd/mtmd-subcontext.cpp
-index 7f13b7f62..64eb1b690 100644
+index 078f154c7..d3564ed1a 100644
 --- a/tools/mtmd/mtmd-subcontext.cpp
 +++ b/tools/mtmd/mtmd-subcontext.cpp
 @@ -323,6 +323,10 @@ bool mtmd_audio_log_mel(const mtmd_audio_mel_config & config, const float * samp
@@ -4266,3 +4333,6 @@ index 7f13b7f62..64eb1b690 100644
          if (config.use_magnitude) {
              cur = ggml_sqrt(ctx0, cur);
          }
+-- 
+2.56.1
+

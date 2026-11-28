@@ -1,8 +1,7 @@
-From 2b2d1e997e8061b63aa771babfe69479a54f2229 Mon Sep 17 00:00:00 2001
+From 94f5f2eedf126a11b9bb6bed8ed87edfda5cf49a Mon Sep 17 00:00:00 2001
 From: Mesh-LLM CI <ci@mesh-llm.local>
 Date: Mon, 9 Nov 2026 09:20:42 +1100
-Subject: [PATCH 30/32] test(skippy): cover head-input publication and stage
- capture
+Subject: [PATCH] test(skippy): cover head-input publication and stage capture
 
 DeepSeek-V4 publishes the head input as the mean of its hyper-connection
 streams, so the final stage of a split must keep it: its stage capture
@@ -16,7 +15,7 @@ case runs in native-rollback mode.
  3 files changed, 134 insertions(+), 17 deletions(-)
 
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 5d29fb944..3a58c962d 100644
+index e76959a26..316c866f6 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -521,6 +521,9 @@ if (LLAMA_STAGE_BUILD_TESTS)
@@ -29,7 +28,7 @@ index 5d29fb944..3a58c962d 100644
      add_executable(skippy-backend-sample-capacity skippy/tests/backend_sample_capacity.cpp)
      target_include_directories(skippy-backend-sample-capacity PRIVATE .)
      target_compile_features(skippy-backend-sample-capacity PRIVATE cxx_std_17)
-@@ -833,6 +836,19 @@ if (LLAMA_STAGE_BUILD_TESTS)
+@@ -834,6 +837,19 @@ if (LLAMA_STAGE_BUILD_TESTS)
      set_tests_properties(skippy_noalloc_graph_planning_recurrent_rollback PROPERTIES
          FIXTURES_REQUIRED skippy-noalloc-nemotron-h-fixture)
  
@@ -267,3 +266,6 @@ index 0d1bbf6e7..fdcdc631f 100644
 +    "${SKIPPY_MODEL_FIXTURE_DIR}/contract-qwen3-dense/graph-contract.gguf" 0)
 +set_tests_properties(skippy_qwen3_head_input_not_published PROPERTIES
 +    FIXTURES_REQUIRED contract-qwen3-dense TIMEOUT 900)
+-- 
+2.56.1
+

@@ -1,4 +1,4 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From e2d9072737d3ffac66e04c599eaca8f8b4965c4c Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@generalinference.dev>
 Date: Tue, 17 Nov 2026 22:23:21 +1100
 Subject: [PATCH] skippy: release temporary MTP planning contexts
@@ -23,5 +23,5 @@ index 380e1eaad..0c4ab443b 100644
      }
      plan.guarded.resident_parameter_identities.assign(residents.begin(), residents.end());
 -- 
-2.54.0 (Apple Git-157)
+2.56.1
 

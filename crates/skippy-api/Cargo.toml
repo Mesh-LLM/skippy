@@ -2,10 +2,10 @@
 name = "skippy-api"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Shared Skippy model preparation and serving lifecycle API"
-repository = "https://github.com/general-inference/skippy"
+repository = "https://github.com/Mesh-LLM/skippy"
 readme = "README.md"
 
 [features]
@@ -15,6 +15,9 @@ dynamic-native-runtime = ["skippy-runtime/dynamic-native-runtime", "skippy-servi
 [dependencies]
 skippy-topology = { path = "../skippy-topology", version = "0.80.0" }
 skippy-coordinator = { path = "../skippy-coordinator", version = "0.80.0" }
+skippy-subprocess = { path = "../../tools/process-supervision", version = "0.80.0" }
+thiserror = "2"
+tempfile = "3"
 reqwest = { version = "0.13", features = ["json"] }
 tokio = { version = "1", features = ["macros", "net", "rt", "sync", "time"] }
 skippy-config = { path = "../skippy-config", version = "0.80.0" }
@@ -42,14 +45,10 @@ skippy-model-hf = { path = "../skippy-model-hf", version = "0.80.0" }
 hf_hub = { package = "skippy-hf-hub", path = "../skippy-hf-hub", version = "0.80.0", default-features = false, features = ["blocking"] }
 same-file = "1.0.6"
 
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
-
 [dev-dependencies]
 async-trait = "0.1"
 futures-util = "0.3"
 tokio = { version = "1", features = ["macros", "rt", "net", "io-util"] }
-tempfile = "3"
 
 [build-dependencies]
 serde_json = "1"

@@ -16,7 +16,10 @@ use crate::cli::{AnalyticsCommand, Command};
 /// `skippy analytics` itself never starts it: asking what is collected, or
 /// turning it off, must not report anything or create an identifier.
 pub fn init(command: &Command) {
-    if matches!(command, Command::Analytics { .. }) {
+    if matches!(
+        command,
+        Command::Analytics { .. } | Command::TuneTrial { .. }
+    ) {
         return;
     }
     let preference = skippy_analytics::state_dir()
@@ -33,6 +36,8 @@ pub fn family(command: &Command) -> &'static str {
         Command::GpuBenchmark { .. } => "gpu_benchmark",
         Command::Prompt(_) => "prompt",
         Command::Serve(_) => "serve",
+        Command::Tune(_) => "tune",
+        Command::TuneTrial { .. } => "tune_trial",
         #[cfg(unix)]
         Command::ServeManaged(_) => "serve_managed",
         #[cfg(unix)]

@@ -2,6 +2,7 @@
 
 import ctypes
 import subprocess
+import time
 from ctypes import wintypes
 
 kernel = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -131,6 +132,11 @@ class JobProcess(subprocess.Popen):
 
     def force_stop(self):
         check(terminate(self.job, 1))
+        deadline = time.monotonic() + 10
+        while self.group_alive():
+            if time.monotonic() >= deadline:
+                raise RuntimeError("Windows job still has active processes after termination")
+            time.sleep(0.05)
 
     def __exit__(self, *exc):
         self.close_job()

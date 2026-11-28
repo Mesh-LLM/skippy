@@ -1,4 +1,4 @@
-From 93b47b2b8f917d1de748a2ffb0191ee16c6d3a33 Mon Sep 17 00:00:00 2001
+From 00900834f6b76d11f2bbbea6f1d2bfe48af4df63 Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Fri, 20 Nov 2026 08:08:55 +1100
 Subject: [PATCH] test-skippy: admit separate resident capability components
@@ -8,10 +8,10 @@ Subject: [PATCH] test-skippy: admit separate resident capability components
  1 file changed, 11 insertions(+), 7 deletions(-)
 
 diff --git a/tests/test-skippy-kv-page-export.cpp b/tests/test-skippy-kv-page-export.cpp
-index 0fb9f036a..8c109c1e9 100644
+index 30c88b490..d5e26d984 100644
 --- a/tests/test-skippy-kv-page-export.cpp
 +++ b/tests/test-skippy-kv-page-export.cpp
-@@ -42,12 +42,15 @@ static bool graph_cache_capabilities_cover_complete_state() {
+@@ -38,12 +38,15 @@ static bool graph_cache_capabilities_cover_complete_state() {
          });
          return skippy_graph_cache_capabilities(result);
      };
@@ -32,7 +32,7 @@ index 0fb9f036a..8c109c1e9 100644
              capabilities(skippy_state_kind::derived_persistent) != SKIPPY_MEMORY_CACHE_FULL_STATE) {
          return false;
      }
-@@ -70,7 +73,7 @@ static bool graph_cache_capabilities_cover_complete_state() {
+@@ -66,7 +69,7 @@ static bool graph_cache_capabilities_cover_complete_state() {
          {skippy_block_boundary_kind::entry, 0, input},
          {skippy_block_boundary_kind::exit, 0, stateless_output},
      };
@@ -41,7 +41,7 @@ index 0fb9f036a..8c109c1e9 100644
  
      // Context-owned cross-attention state is missing even from full memory
      // snapshots. Each input owner declares that fact without a family lookup.
-@@ -176,7 +179,8 @@ int main() {
+@@ -118,7 +121,8 @@ int main() {
              {});
  
      if (skippy_memory_cache_capabilities(&kv) !=
@@ -52,5 +52,5 @@ index 0fb9f036a..8c109c1e9 100644
          return 1;
      }
 -- 
-2.56.0
+2.56.1
 

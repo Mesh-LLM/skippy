@@ -20,6 +20,88 @@ if [[ ! -d "$PATCH_DIR" ]]; then
   exit 1
 fi
 
+mkdir -p "$(dirname "$LLAMA_WORKDIR")"
+
+# All git operations below run as `git -C "$LLAMA_WORKDIR"`. `git -C` only
+# changes directory; it does NOT pin git to that directory. If $LLAMA_WORKDIR
+# has no valid .git (e.g. an interrupted/partial clone), git's normal upward
+# repository discovery walks PAST it to the nearest enclosing .git. When
+# Skippy is vendored inside another git repo's working tree (cargo/hermit git
+# checkouts do exactly this), that enclosing repo gets mutated instead -- its
+# origin rewritten by `remote set-url`, its HEAD clobbered by `git am`. Pin the
+# ceiling to the workdir's parent so discovery can never escape upward: a
+# missing .git then errors loudly here instead of corrupting the parent repo.
+# This is transparent to a normal build, where $LLAMA_WORKDIR has its own .git
+# at or below this ceiling.
+#
+# Resolve to a physical path (pwd -P): git compares GIT_CEILING_DIRECTORIES
+# against symlink-resolved paths, so a logical path could silently fail to
+# match and let discovery escape. Fail loudly if resolution fails rather than
+# exporting an empty ceiling, which would disable the guard entirely.
+LLAMA_WORKDIR_PARENT="$(cd "$(dirname "$LLAMA_WORKDIR")" && pwd -P)" || {
+  echo "error: cannot resolve parent directory of LLAMA_WORKDIR ($LLAMA_WORKDIR)" >&2
+  exit 1
+}
+export GIT_CEILING_DIRECTORIES="$LLAMA_WORKDIR_PARENT"
+
+git_retry() {
+  local attempt=1
+  local max_attempts="${LLAMA_GIT_MAX_ATTEMPTS:-4}"
+  local delay="${LLAMA_GIT_RETRY_DELAY_SECONDS:-10}"
+  local status=0
+
+  while (( attempt <= max_attempts )); do
+    if "$@"; then
+      return 0
+    else
+      status=$?
+    fi
+
+    if (( attempt == max_attempts )); then
+      return "$status"
+    fi
+
+    echo "git command failed (attempt $attempt/$max_attempts): $*" >&2
+    echo "retrying in ${delay}s..." >&2
+    sleep "$delay"
+    attempt=$((attempt + 1))
+    delay=$((delay * 2))
+  done
+}
+
+clone_llama_workdir() {
+  local attempt=1
+  local max_attempts="${LLAMA_GIT_MAX_ATTEMPTS:-4}"
+  local delay="${LLAMA_GIT_RETRY_DELAY_SECONDS:-10}"
+  local status=0
+
+  while (( attempt <= max_attempts )); do
+    rm -rf "$LLAMA_WORKDIR"
+    if git clone "$LLAMA_UPSTREAM_URL" "$LLAMA_WORKDIR"; then
+      return 0
+    else
+      status=$?
+    fi
+
+    if (( attempt == max_attempts )); then
+      return "$status"
+    fi
+
+    echo "llama.cpp clone failed (attempt $attempt/$max_attempts)" >&2
+    echo "retrying in ${delay}s..." >&2
+    sleep "$delay"
+    attempt=$((attempt + 1))
+    delay=$((delay * 2))
+  done
+}
+
+is_partial_llama_workdir() {
+  local promisor
+  promisor="$(git -C "$LLAMA_WORKDIR" config --bool --get remote.origin.promisor 2>/dev/null || true)"
+  [[ "$promisor" == "true" ]] ||
+    [[ -n "$(git -C "$LLAMA_WORKDIR" config --get extensions.partialClone 2>/dev/null || true)" ]]
+}
+
 PATCHES=()
 while IFS= read -r patch; do
   PATCHES+=("$patch")
@@ -166,88 +248,6 @@ if [[ "$MODE" == --patch-digest ]]; then
   exit 0
 fi
 
-mkdir -p "$(dirname "$LLAMA_WORKDIR")"
-
-# All git operations below run as `git -C "$LLAMA_WORKDIR"`. `git -C` only
-# changes directory; it does NOT pin git to that directory. If $LLAMA_WORKDIR
-# has no valid .git (e.g. an interrupted/partial clone), git's normal upward
-# repository discovery walks PAST it to the nearest enclosing .git. When
-# Skippy is vendored inside another git repo's working tree (cargo/hermit git
-# checkouts do exactly this), that enclosing repo gets mutated instead -- its
-# origin rewritten by `remote set-url`, its HEAD clobbered by `git am`. Pin the
-# ceiling to the workdir's parent so discovery can never escape upward: a
-# missing .git then errors loudly here instead of corrupting the parent repo.
-# This is transparent to a normal build, where $LLAMA_WORKDIR has its own .git
-# at or below this ceiling.
-#
-# Resolve to a physical path (pwd -P): git compares GIT_CEILING_DIRECTORIES
-# against symlink-resolved paths, so a logical path could silently fail to
-# match and let discovery escape. Fail loudly if resolution fails rather than
-# exporting an empty ceiling, which would disable the guard entirely.
-LLAMA_WORKDIR_PARENT="$(cd "$(dirname "$LLAMA_WORKDIR")" && pwd -P)" || {
-  echo "error: cannot resolve parent directory of LLAMA_WORKDIR ($LLAMA_WORKDIR)" >&2
-  exit 1
-}
-export GIT_CEILING_DIRECTORIES="$LLAMA_WORKDIR_PARENT"
-
-git_retry() {
-  local attempt=1
-  local max_attempts="${LLAMA_GIT_MAX_ATTEMPTS:-4}"
-  local delay="${LLAMA_GIT_RETRY_DELAY_SECONDS:-10}"
-  local status=0
-
-  while (( attempt <= max_attempts )); do
-    if "$@"; then
-      return 0
-    else
-      status=$?
-    fi
-
-    if (( attempt == max_attempts )); then
-      return "$status"
-    fi
-
-    echo "git command failed (attempt $attempt/$max_attempts): $*" >&2
-    echo "retrying in ${delay}s..." >&2
-    sleep "$delay"
-    attempt=$((attempt + 1))
-    delay=$((delay * 2))
-  done
-}
-
-clone_llama_workdir() {
-  local attempt=1
-  local max_attempts="${LLAMA_GIT_MAX_ATTEMPTS:-4}"
-  local delay="${LLAMA_GIT_RETRY_DELAY_SECONDS:-10}"
-  local status=0
-
-  while (( attempt <= max_attempts )); do
-    rm -rf "$LLAMA_WORKDIR"
-    if git clone "$LLAMA_UPSTREAM_URL" "$LLAMA_WORKDIR"; then
-      return 0
-    else
-      status=$?
-    fi
-
-    if (( attempt == max_attempts )); then
-      return "$status"
-    fi
-
-    echo "llama.cpp clone failed (attempt $attempt/$max_attempts)" >&2
-    echo "retrying in ${delay}s..." >&2
-    sleep "$delay"
-    attempt=$((attempt + 1))
-    delay=$((delay * 2))
-  done
-}
-
-is_partial_llama_workdir() {
-  local promisor
-  promisor="$(git -C "$LLAMA_WORKDIR" config --bool --get remote.origin.promisor 2>/dev/null || true)"
-  [[ "$promisor" == "true" ]] ||
-    [[ -n "$(git -C "$LLAMA_WORKDIR" config --get extensions.partialClone 2>/dev/null || true)" ]]
-}
-
 # Re-clone unless $LLAMA_WORKDIR is genuinely its own complete git repository.
 # A bare `[[ ! -d "$LLAMA_WORKDIR/.git" ]]` check passes a partial/corrupt
 # checkout (dir present, .git missing or incomplete) straight through to the
@@ -277,6 +277,17 @@ case "$MODE" in
     TARGET_SHA="$MODE"
     ;;
 esac
+
+
+# Runtime identity files must never enter a repair commit via git add -A.
+exclude_file="$(git -C "$LLAMA_WORKDIR" rev-parse --git-path info/exclude)"
+if [[ "$exclude_file" != /* ]]; then
+  exclude_file="$LLAMA_WORKDIR/$exclude_file"
+fi
+mkdir -p "$(dirname "$exclude_file")"
+if ! grep -qxF '/.skippy-*' "$exclude_file" 2>/dev/null; then
+  printf '\n/.skippy-*\n' >> "$exclude_file"
+fi
 
 if [[ -f "$LLAMA_WORKDIR/.skippy-upstream-sha" &&
       -f "$LLAMA_WORKDIR/.skippy-patched-sha" &&

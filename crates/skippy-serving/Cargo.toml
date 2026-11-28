@@ -2,11 +2,11 @@
 name = "skippy-serving"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Embedded Skippy staged runtime server"
-repository = "https://github.com/general-inference/skippy"
-homepage = "https://github.com/general-inference/skippy"
+repository = "https://github.com/Mesh-LLM/skippy"
+homepage = "https://github.com/Mesh-LLM/skippy"
 
 [lib]
 name = "skippy_serving"
@@ -50,6 +50,9 @@ tonic = "0.14"
 tracing = "0.1"
 tracy-client = { version = "0.18", optional = true, default-features = false, features = ["enable", "fibers", "ondemand", "only-localhost"] }
 uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }

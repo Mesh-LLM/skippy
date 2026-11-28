@@ -5,14 +5,14 @@ the matched vanilla comparison is complete as a fixed-budget observation, with o
 
 ## Matched comparison
 
-The confirmed table compares Skippy main and the candidate PR; the separate three-way table below includes vanilla llama.cpp.
+The tables below are historical comparisons of the explicitly pinned snapshots, not measurements of the current PR against its immediate base. The separate three-way table includes vanilla llama.cpp.
 Vanilla uses the same llama.cpp upstream pin, not the Skippy native patch queue.
 An empty hardware/model cell is unmeasured, never an inferred number.
 
 Hardware: one 256 GB Apple M3 Ultra, macOS 26.7.1. Skippy main is
 `fbc3349cd406786e43f6579590c9a12b0cd49c05`. The measured candidate snapshot is
-`c2055c4a3bb20f601f0074e6fe06a7c85efef01d`; its product source matches this
-PR, with subsequent evidence/documentation edits only. Both use llama.cpp
+`c2055c4a3bb20f601f0074e6fe06a7c85efef01d`. The current PR has subsequent
+engine and scheduler changes; these rates must not be attributed to its current head. Both use llama.cpp
 `8954f194837d2ec4d5f67f20c81b84abe63883ba`. The candidate includes the earlier
 Mesh-hosted/Jared native work and subsequent engine changes, ported into the
 standalone repository. These numbers do not isolate each contributor's changes.
@@ -222,3 +222,82 @@ campaign on a separate hardware/compiler cohort, not a serving-table update.
 The candidate remains excluded from this PR: the kernel win did not produce a
 native decode gain. Pins and audit hashes are in
 [`metal-decode-q8-pair-rejected.json`](evidence/metal-decode-q8-pair-rejected.json).
+
+## Review follow-up: scheduler and rollback movement
+
+The follow-up to Jared's review starts from PR head `1ebce5e`. It removes
+empty verification waits, interrupts direct gathering for ready speculative work,
+uses the configured batch policy's decode wait capped at 300 microseconds for
+shared gathering, and types draft operations independently of diagnostic labels.
+Native rollback relocation now skips identity rows and uses backend-to-backend
+copies for non-overlapping groups. Aliased groups still gather before scattering;
+`native.recurrent_rollback_copy` records their `host_staging_bytes` and duration.
+Synthetic CPU/Metal copy checks and peer rollback tests establish correctness,
+not serving TPS. No replacement headline is established by these changes alone.
+
+### Metal qualification boundaries
+
+The retained defaults are deliberately distinct from capability eligibility.
+`GGML_METAL_ROUTED_U32=1` / `GGML_METAL_ROUTED_U32_R4=1` can now exercise safe,
+bounded geometry on M3 Ultra; the normal defaults are unchanged. Host greedy
+can be tested on any shared-buffer device with `GGML_METAL_HOST_GREEDY=1`;
+private buffers remain ineligible. `GGML_METAL_ROUTED_ROWS=1` tests the narrow
+Q4_1 rule on Apple families 7–9 and the general rule on Apple10 and newer;
+`0` disables the diagnostic row tuning. Normal row defaults stay unchanged.
+
+The retained evidence does not establish that M4 u32 or M5 Max R4 are slower;
+those defaults remain unpromoted pending qualification. This report contains no
+retained cross-chip host-greedy comparison beyond the M5 Max qualification, nor
+an attributable broad Q4_K row-rule comparison on M1 Ultra/M4. The M3 Ultra
+historical tables did not exercise the old chip-gated host-greedy/routed paths.
+Do not infer those patches' gains from the combined tables. Broader defaults
+require new per-device numerical and matched serving results.
+
+## Matched review-fix pilot against current main
+
+The source-bound [measurement job](https://pilot.jianyang.cloud/jobs/job_gf030kdnqjk30wq)
+compares candidate `ab0dd87` with main `5008074` and separately with pre-fix
+PR #9 `1ebce5e`. All three use the same upstream pin `8954f194`, target/draft
+bytes and serving settings. The later follow-ups add test wiring and backport
+main's deterministic telemetry test; these rates remain attributed to `ab0dd87`.
+
+| Serving mode | Main `5008074` TPS | Candidate `ab0dd87` TPS | Change |
+| --- | ---: | ---: | ---: |
+| Plain, concurrency 1 | 94.84 | 99.56 | +4.97% |
+| Plain, concurrency 2, aggregate | 150.46 | 161.93 | +7.62% |
+| DFlash, concurrency 1 | 162.63 | 164.79 | +1.33% |
+| DFlash, concurrency 2, aggregate | 157.72 | 207.70 | +31.69% |
+
+The separate before/after review-fix pilot measured concurrent DFlash at
+205.70 → 208.07 TPS (+1.15%); other modes changed by +0.38% to +0.53%.
+Do not pool the two comparisons: their requests and process lifetimes are separate.
+The large main comparison reflects all PR #9 work; it is not a gain attributable
+to these review fixes alone or evidence of a hundreds-of-milliseconds copy penalty.
+
+Each mode/comparison has one fresh-process campaign, three warm cycles and three
+measured cycles at concurrency one and two. All 288 accepted requests per
+comparison obeyed the 128-token budget, had zero prompt-cache hits and matched
+response hashes. Complete ABBA blocks with interference were rejected. Rates
+include HTTP/prefill time. Four independent audits were rerun locally against
+downloaded raw evidence and match the remote audits. This is a provisional pilot:
+`promotion_allowed` remains false until further fresh-process confirmation.
+
+The [raw-evidence job](https://pilot.jianyang.cloud/jobs/job_0ec18ww6y3e96qe)
+retains four flat archives named `{main,previous}-vs-candidate-{plain,dflash}.tar.gz`
+and `evidence-manifest.json`. Each archive contains responses, batch timings,
+commands, provenance, loaded-library paths and load/thermal observations. Archive
+SHA-256 hashes, exact source/CLI identities and independent rates are recorded in
+[evidence/pr9-review-fixes-m3.json](evidence/pr9-review-fixes-m3.json).
+
+The source-pinned [M3 Ultra native diagnostic job](https://pilot.jianyang.cloud/jobs/job_947w4gdfrhnad3x)
+also passed CPU/Metal copy contracts, 40 routed native cases (80 paired outputs,
+160 FP64 oracle checks, both R8 and R4 pipeline execution), and GPU peer rollback
+modes 0/1/2/7. It tests the opt-in row diagnostic and bounded u32 eligibility;
+it does not promote broader performance defaults. Log hashes are in the same
+evidence manifest.
+
+Local validation of the follow-up passed 1,374 serving tests (32 opt-in tests
+ignored), documentation tests and warning-denying all-target Clippy. The combined
+native replay/resume recorded 335 distinct passes; `skippy_graph_contract_glm4-expansion`
+timed out and `skippy_resident_checkpoint_gpu_long` remained an opt-in skip. This
+is not a clean unrestricted full-replay pass.

@@ -2,11 +2,11 @@
 name = "skippy-config"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Standalone Skippy settings for model, runtime and worker configuration"
 readme = "README.md"
-repository = "https://github.com/general-inference/skippy"
+repository = "https://github.com/Mesh-LLM/skippy"
 
 [dependencies]
 anyhow.workspace = true

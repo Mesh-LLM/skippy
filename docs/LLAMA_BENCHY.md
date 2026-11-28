@@ -170,3 +170,56 @@ mode is active server-side.
   default greedy requests do not include sampling fields or logit-bias entries.
 - Token-array prompts for `/v1/completions` parse but are rejected until a
   backend can honor token IDs directly.
+
+## Isolated local settings sweep
+
+`skippy tune --config sweep.json` runs each target and candidate in a fresh
+Skippy process, with explicit runtime and GPU selection. It reports successful
+measurements, failures, and the fastest successful candidate for each target
+by completion tokens per elapsed second. Identically scored candidates keep
+their input ordering. The timed portion includes the model's request work and
+excludes native load and warmup. Trials use a fixed seed, zero temperature,
+and a disabled prefix cache.
+
+For example, save this shape as `sweep.json` and substitute your verified
+runtime bundle, artifact ID, visible device information, and local model:
+
+```json
+{
+  "targets": [{"id":"example","path":"/absolute/model.gguf"}],
+  "runtime": {
+    "bundle_dirs": ["/absolute/runtime-bundle"],
+    "cache_dir": "/absolute/runtime-cache",
+    "release": null,
+    "selection": null,
+    "identity": "runtime-artifact-id"
+  },
+  "hardware": {"identity":"visible GPU and driver identity","backend_device":null},
+  "workload": {
+    "prompts":["Explain why this workload uses an isolated process."],
+    "warmup_runs":1,
+    "repetitions":3,
+    "max_tokens":64,
+    "seed":42
+  },
+  "candidates": [
+    {"context":4096,"batch":512,"microbatch":128,"mmap":true,"mlock":false,
+     "flash_attention":"auto","speculative":{"strategy":"disabled"}},
+    {"context":4096,"batch":1024,"microbatch":256,"mmap":true,"mlock":false,
+     "flash_attention":"enabled","speculative":{"strategy":"auto"}}
+  ],
+  "timeout_secs":180
+}
+```
+
+Run on the target hardware with a verified bundle to qualify measured
+throughput. A timeout or interrupt cleans up the trial process and scratch
+directory. By default the sweep only reports. For a single model,
+`--apply serving.toml` replaces the measured settings in an existing
+single-model standalone configuration. Existing values outside the selected settings are
+retained. A cancelled sweep or one without a successful recommendation
+cannot apply.
+
+Mesh can call `skippy_api::tuning::run` with `ProcessTrialRunner` and the
+matching Skippy executable, then map the typed patch into its own
+configuration.

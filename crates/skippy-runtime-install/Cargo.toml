@@ -2,11 +2,11 @@
 name = "skippy-runtime-install"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Skippy native runtime discovery, download, installation, and cache management"
-repository = "https://github.com/general-inference/skippy"
-homepage = "https://github.com/general-inference/skippy"
+repository = "https://github.com/Mesh-LLM/skippy"
+homepage = "https://github.com/Mesh-LLM/skippy"
 readme = "README.md"
 
 [lints]

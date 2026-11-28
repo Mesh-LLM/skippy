@@ -64,9 +64,9 @@ where changing them would invalidate existing packages or clients.
 
 ## Health
 
-[![CI](https://github.com/general-inference/skippy/actions/workflows/ci.yml/badge.svg)](https://github.com/general-inference/skippy/actions/workflows/ci.yml)
-[![Inference qualification](https://github.com/general-inference/skippy/actions/workflows/inference.yml/badge.svg?event=schedule)](https://github.com/general-inference/skippy/actions/workflows/inference.yml)
-[![Release](https://github.com/general-inference/skippy/actions/workflows/release.yml/badge.svg)](https://github.com/general-inference/skippy/actions/workflows/release.yml)
-[![Documentation](https://github.com/general-inference/skippy/actions/workflows/docs.yml/badge.svg)](https://github.com/general-inference/skippy/actions/workflows/docs.yml)
-[![Llama upgrade](https://github.com/general-inference/skippy/actions/workflows/llama-upgrade.yml/badge.svg)](https://github.com/general-inference/skippy/actions/workflows/llama-upgrade.yml)
-[![CI images](https://github.com/general-inference/skippy/actions/workflows/ci-images.yml/badge.svg)](https://github.com/general-inference/skippy/actions/workflows/ci-images.yml)
+[![CI](https://github.com/Mesh-LLM/skippy/actions/workflows/ci.yml/badge.svg)](https://github.com/Mesh-LLM/skippy/actions/workflows/ci.yml)
+[![Inference qualification](https://github.com/Mesh-LLM/skippy/actions/workflows/inference.yml/badge.svg?event=schedule)](https://github.com/Mesh-LLM/skippy/actions/workflows/inference.yml)
+[![Release](https://github.com/Mesh-LLM/skippy/actions/workflows/release.yml/badge.svg)](https://github.com/Mesh-LLM/skippy/actions/workflows/release.yml)
+[![Documentation](https://github.com/Mesh-LLM/skippy/actions/workflows/docs.yml/badge.svg)](https://github.com/Mesh-LLM/skippy/actions/workflows/docs.yml)
+[![Llama upgrade](https://github.com/Mesh-LLM/skippy/actions/workflows/llama-upgrade.yml/badge.svg)](https://github.com/Mesh-LLM/skippy/actions/workflows/llama-upgrade.yml)
+[![CI images](https://github.com/Mesh-LLM/skippy/actions/workflows/ci-images.yml/badge.svg)](https://github.com/Mesh-LLM/skippy/actions/workflows/ci-images.yml)

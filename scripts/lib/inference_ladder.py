@@ -1,4 +1,4 @@
-"""Materialize the source-bound inference qualification matrix."""
+"""Define the source-bound inference qualification matrix and split admission policy."""
 
 import re
 from pathlib import Path
@@ -19,7 +19,8 @@ def plan(profile, sha):
     models = ladder["models"]
     if ladder["schema_version"] != 1 or not isinstance(models, list) or not models:
         raise ValueError("unsupported or empty inference ladder")
-    checks = (["gpu-startup", "scored-quality", "streaming-smoke"] if profile == "pr"
+    checks = (["gpu-startup", "scored-quality", "streaming-smoke",
+               "bounded-throughput-probes"] if profile == "pr"
               else ["correctness", "scored-quality", "agentx-performance"])
     rows, ids, names = [], set(), set()
     for model in models:
@@ -50,3 +51,16 @@ def plan(profile, sha):
                               else "extended-qualification-requires-pinned-harness-and-repeats"),
         "rows": rows,
     }
+
+
+def matrix(profile, sha, include_smoke=False):
+    rows = [{**row, "configuration": row["id"], "profile": profile}
+            for row in plan(profile, sha)["rows"]]
+    if include_smoke:
+        if profile != "nightly":
+            raise ValueError("the additional smoke matrix requires the nightly profile")
+        rows.extend(
+            {**row, "id": f'smoke-{row["id"]}', "configuration": row["id"], "profile": "pr"}
+            for row in plan("pr", sha)["rows"]
+        )
+    return rows
