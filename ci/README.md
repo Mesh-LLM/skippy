@@ -268,8 +268,10 @@ adds the SHA-256-pinned ROCm 7.2.4 BLAS libraries to a job-local prefix for
 compilation and packaged GPU inference smoke.
 Windows users need the Microsoft Visual C++ x64 Redistributable and, for CUDA,
 a compatible NVIDIA driver. Linux ROCm users need a matching ROCm runtime
-visible to the system loader. Inference qualification is pending for the five
-Windows variants.
+visible to the system loader. The three Windows CUDA/ROCm variants require real Windows inference in two native
+JY VM jobs: CUDA 12 and 13 share a guest, and ROCm runs independently after its
+archive builds. Full CI requires both results. Windows CPU and Vulkan retain archive-only
+verification. See [Windows GPU smoke](windows-gpu-smoke.md) for profiles and recovery.
 
 ## Vulkan packages and device smoke
 
@@ -320,8 +322,10 @@ The job remains full-only: nightly, manual full CI, release candidates and
 llama-upgrade full validation require it; routine PR and main-push checks do
 not run it. The short plan retains eight runtimes and full CI retains fifteen.
 `full_only` selects scheduling independently of the manifest's `validation`
-evidence requirement. Linux ROCm requires inference evidence; the five Windows
-runtimes remain archive-only. ROCm needs no separate device job; the standalone rehearsal workflow has been removed.
+evidence requirement. Linux ROCm requires inference evidence within its package
+job. Windows CUDA/ROCm runtimes require detached inference evidence from the two
+full-only Windows VM jobs. Windows CPU and Vulkan remain archive-only. Neither
+backend retains a standalone rehearsal workflow.
 
 The existing plan resolves the ROCm compiler image to a digest. The ROCm job
 uses that image in an Actions job container with `/dev/kfd` and `/dev/dri`,
@@ -651,7 +655,8 @@ smoke commands use Python 3.9 or later. Release inventory uses Python
 on the interpreter `.python-version` names. Set `SKIPPY_PYTHON` to select
 another. The shell scripts read it too. Both profiles validate the full
 manifest. The short plan lists eight runtimes; the full plan adds seven
-`full_only` rows: Linux ROCm and Vulkan with GPU inference and five Windows archive checks.
+`full_only` rows: Linux ROCm and Vulkan with GPU inference and five Windows packages.
+The three Windows CUDA/ROCm archives additionally require the two full-only Windows VM smoke jobs.
 When package checks are selected, short CI builds and runs device smoke for macOS ARM64 Metal and Linux
 ARM64 CUDA 13. The Linux x64 CUDA packages build in full CI and receive device
 smoke during release validation.
@@ -673,11 +678,12 @@ workflow and roster from the same protected revision.
    run inference, and upload `release-device-evidence-*`. Release verification
    checks each result against the SHA-256 of the corresponding product archive.
    Linux ROCm supplies inference evidence in its product artifact, without a
-   separate device job. The five Windows variants supply archive smoke evidence.
+   separate device job. Windows CUDA/ROCm jobs upload the same detached device evidence
+   for their exact archives in nightly, full CI, upgrades and releases. Windows
+   CPU and Vulkan supply archive smoke evidence.
 4. Release verification prepares the complete asset directory once. The publisher
    checks its roster, hashes, and catalog against the separately transferred
-   candidate receipt before promotion. Release notes identify the five Windows variants
-   awaiting inference qualification.
+   candidate receipt before promotion. Release notes identify Windows CPU and Vulkan as awaiting inference qualification.
 5. The hosted CI gate reads the dependency results and the validated plan
    without checkout or Rust setup. Required work must pass and unselected work
    must report a skip.

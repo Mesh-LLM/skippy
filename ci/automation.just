@@ -1,5 +1,8 @@
 # Offline automation and reporting recipes; no native build inputs.
 
+ci-windows-vm-contracts:
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/tests/ci_windows_vm_variants.ps1
+
 # Explicit hardware rehearsal; never a dependency of offline checks.
 ci-rocm-preflight:
     @bash scripts/ci-rocm-preflight.sh
@@ -26,9 +29,11 @@ ci-vulkan-sdk version:
 automation-contracts: inference-contracts ci-vulkan-contracts
     @"{{ automation_python }}" scripts/tests/ci_cuda_license.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_windows_cuda.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_windows_vm_profile.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_process_environment.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/automation_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_process_contracts.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_smoke_readiness.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_product_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_publisher_config.py
