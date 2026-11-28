@@ -9,7 +9,7 @@ from pathlib import Path
 from .ci_artifacts import read_json, write_json
 from .ci_process import command
 from .ci_smoke import curl
-from .inference_inputs import downloaded_path, safe_relative
+from .inference_inputs import BINARY_DIR, downloaded_path, safe_relative
 
 ENDPOINT = "http://127.0.0.1:9337"
 
@@ -18,7 +18,7 @@ def numerical(model, coordinate, fixture, output):
     layers = fixture["layers"]
     for kind in ("chain", "state-handoff"):
         args = [
-            "target/debug/skippy-correctness", kind, "--model", str(model), "--model-id",
+            str(BINARY_DIR / "skippy-correctness"), kind, "--model", str(model), "--model-id",
             coordinate, "--layer-end", str(layers), "--n-gpu-layers", "0", "--ctx-size", "512",
             "--report-out", str(output / f"{kind}.json"),
         ]

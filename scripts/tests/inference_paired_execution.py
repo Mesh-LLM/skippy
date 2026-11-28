@@ -63,11 +63,17 @@ class ExecutionTests(unittest.TestCase):
                 (directory / "target").mkdir()
                 for name in ("inference-artifacts.json", "inference-quality.json"):
                     write_json(directory / "ci" / name, {})
-                write_json(directory / "target/inference-build.json", {"stack_commit": sha})
+                write_json(directory / "target/inference-build.json", {
+                    "stack_commit": sha, "build_inputs": {"policy": {"cargo_profile": "release"}}})
             command = Mock()
             with patch.dict(prepare.__globals__, ROOT=candidate, command=command):
                 prepare(main, BASELINE, CANDIDATE, output)
-                command.assert_called_once_with(["just", "inference-build"], timeout=7200)
+                command.assert_called_once_with(["just", "--justfile", str(candidate / "Justfile"),
+                                                 "--working-directory", str(main), "inference-build"], timeout=7200)
+                write_json(main / "target/inference-build.json", {
+                    "stack_commit": BASELINE, "build_inputs": {"policy": {"cargo_profile": "dev"}}})
+                with self.assertRaisesRegex(ValueError, "build policies"):
+                    prepare(main, BASELINE, CANDIDATE, output)
                 write_json(main / "ci/inference-artifacts.json", {"changed": True})
                 command.reset_mock()
                 with self.assertRaisesRegex(ValueError, "fixtures changed"):

@@ -209,12 +209,12 @@ inference-cancel ledger="target/ci-evidence/inference/jobs.json":
     @"{{ automation_python }}" scripts/inference-dispatch.py cancel "$@"
 
 inference-build:
-    @"{{ automation_python }}" scripts/inference-build.py
+    @"{{ automation_python }}" "{{ justfile_directory() }}/scripts/inference-build.py"
 
 inference-build-uncached:
     @command -v hf uv nvidia-smi
     @SCCACHE_BASEDIRS="$PWD" LLAMA_STAGE_BACKEND=cuda LLAMA_STAGE_CUDA_ARCHITECTURES=121 LLAMA_STAGE_LINK_MODE=static just llama-build
-    @LLAMA_STAGE_BACKEND=cuda LLAMA_STAGE_CUDA_ARCHITECTURES=121 LLAMA_STAGE_LINK_MODE=static cargo build --locked -p skippy-cli -p skippy-correctness
+    @LLAMA_STAGE_BACKEND=cuda LLAMA_STAGE_CUDA_ARCHITECTURES=121 LLAMA_STAGE_LINK_MODE=static cargo build --release --locked -p skippy-cli -p skippy-correctness
 
 # Linux diagnostic: retain all MiMo2 graph assertions and report peak memory.
 native-contract-build: llama-prepare

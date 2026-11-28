@@ -17,7 +17,7 @@ INPUT_MANIFESTS = {
     "client_lock_sha256": "ci/aiperf-requirements.lock",
     "corpus_manifest_sha256": "ci/inference-corpus.json",
 }
-DEBUG_DIR = Path("target/debug")
+BINARY_DIR = Path("target/inference-bin")
 BUILD_IDENTITY = Path("target/inference-build.json")
 
 
@@ -41,8 +41,8 @@ def check_executables(directory, identity, sha):
 
 def record(output, sha):
     identity = read_json(BUILD_IDENTITY)
-    check_executables(DEBUG_DIR, identity, sha)
-    identity.update(input_hashes(), harness="aiperf-0.13.0-python-3.12")
+    check_executables(BINARY_DIR, identity, sha)
+    identity.update(input_hashes(), harness="skippy-native-qualification-v3")
     write_json(output / "provenance.json", identity)
 
 
@@ -64,9 +64,9 @@ def identity(sha):
     return {
         "stack_commit": sha, "native_upstream": Path("llama_cpp/upstream.txt").read_text().strip(),
         "native_tree": capture(["git", "-C", ".deps/llama.cpp", "rev-parse", "HEAD^{tree}"]).strip(),
-        "native_abi": abi, "harness": "aiperf-0.13.0-python-3.12",
+        "native_abi": abi, "harness": "skippy-native-qualification-v3",
         "cuda_compiler": capture([compiler, "--version"]), **input_hashes(),
-        **{field: digest(DEBUG_DIR / name) for name, field in BINARIES.items()},
+        **{field: digest(BINARY_DIR / name) for name, field in BINARIES.items()},
     }
 
 

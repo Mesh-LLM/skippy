@@ -10,11 +10,27 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 
 from lib.ci_artifacts import digest, read_json, write_json
 from lib.ci_process import cancel_on_signal, capture, command
-from lib.inference_inputs import BINARIES, BUILD_IDENTITY, DEBUG_DIR, check_executables, identity, lock
+from lib.inference_inputs import BINARIES, BUILD_IDENTITY, BINARY_DIR, check_executables, identity, lock
+
+HARNESS_ROOT = Path(__file__).resolve().parents[1]
+
+
+def build_policy():
+    files = ("Justfile", "scripts/inference-build.py", "scripts/lib/inference_inputs.py")
+    hashes = {name: digest(HARNESS_ROOT / name) for name in files}
+    release = tomllib.loads(Path("Cargo.toml").read_text()).get("profile", {}).get("release", {})
+    overrides = {k: v for k, v in os.environ.items() if k.startswith("CARGO_PROFILE_RELEASE_")}
+    if str(overrides.get("CARGO_PROFILE_RELEASE_OPT_LEVEL", release.get("opt-level", 3))) != "3":
+        raise ValueError("inference qualification requires release opt-level 3")
+    return {"cargo_profile": "release", "rust_features": [], "native_link": "static",
+            "rust_release": release, "release_overrides": overrides,
+            "harness_commit": capture(["git", "-C", str(HARNESS_ROOT), "rev-parse", "HEAD"]).strip(),
+            "harness_sha256": cache_key(hashes)}
 
 
 def cache_key(inputs):
@@ -32,37 +48,40 @@ def native_inputs():
 
 
 def dependency_key(inputs):
-    return cache_key({name: value for name, value in inputs.items() if name != "source"})
+    dependencies = {name: value for name, value in inputs.items() if name != "source"}
+    if "policy" in dependencies:
+        dependencies["policy"] = {k: v for k, v in dependencies["policy"].items() if k != "harness_commit"}
+    return cache_key(dependencies)
 
 
 def source_inputs(sha):
     environment = {
         name: value for name, value in os.environ.items()
-        if name.startswith(("LLAMA_", "SKIPPY_")) or name in {
+        if name.startswith(("LLAMA_", "SKIPPY_", "CARGO_PROFILE_")) or name in {
             "CC", "CXX", "CUDACXX", "CFLAGS", "CXXFLAGS", "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS"
         }
     }
     return {
-        "schema": 2, "native_inputs_sha256": native_inputs(), "source": sha,
+        "schema": 3, "native_inputs_sha256": native_inputs(), "source": sha, "policy": build_policy(),
         "os": platform.system().lower(), "arch": platform.machine(),
         "compiler_extra_files": {path: digest(Path(path)) for path in
                                  filter(None, os.environ.get("SCCACHE_EXTRAFILES", "").split(os.pathsep))},
         "cargo_lock_sha256": digest(Path("Cargo.lock")), "rust": capture(["rustc", "-vV"]),
         "cuda": capture(["nvcc", "--version"]), "cxx": capture(["c++", "--version"]),
         "cmake": capture(["cmake", "--version"]), "backend": "cuda", "architectures": "121",
-        "link": "static", "debug": 0, "environment": environment,
+        "link": "static", "profile": "release", "environment": environment,
     }
 
 
 def install_binaries(directory):
-    DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+    BINARY_DIR.mkdir(parents=True, exist_ok=True)
     for name in BINARIES:
-        shutil.copy(directory / name, DEBUG_DIR / name)
+        shutil.copy(directory / name, BINARY_DIR / name)
 
 
 def build(sha, root, inputs, key, cached):
     dependencies = dependency_key(inputs)
-    cargo_root = root.parent / "cargo-v2"
+    cargo_root = root.parent / "cargo-v3"
     cargo_root.mkdir(parents=True, exist_ok=True)
     with lock(cargo_root / f"{dependencies}.lock"):
         cargo_target = cargo_root / dependencies
@@ -74,7 +93,7 @@ def build(sha, root, inputs, key, cached):
         environment = {
             "CARGO_TARGET_DIR": str(cargo_target), "SCCACHE_DIR": str(root.parent / "compiler"),
             "SCCACHE_BASEDIRS": str(Path.cwd()), "CARGO_INCREMENTAL": "0", "SCCACHE_SERVER_PORT": "4227",
-            "SCCACHE_CACHE_SIZE": "20G", "CARGO_PROFILE_DEV_DEBUG": "0",
+            "SCCACHE_CACHE_SIZE": "20G",
             "SCCACHE_EXTRAFILES": os.pathsep.join(extra_files),
         }
         sccache = shutil.which("sccache")
@@ -85,8 +104,10 @@ def build(sha, root, inputs, key, cached):
             except subprocess.CalledProcessError:
                 pass
             command([sccache, "--start-server"], overrides=environment, timeout=30)
-        command(["just", "inference-build-uncached"], overrides=environment, timeout=7200)
-        install_binaries(cargo_target / "debug")
+        command(["just", "--justfile", str(HARNESS_ROOT / "Justfile"),
+                 "--working-directory", str(Path.cwd()), "inference-build-uncached"],
+                overrides=environment, timeout=7200)
+        install_binaries(cargo_target / "release")
         build_id = identity(sha)
         build_id.update(cache_key=key, dependency_cache_key=dependencies, build_inputs=inputs, cache_hit=False)
         write_json(BUILD_IDENTITY, build_id)
@@ -94,7 +115,7 @@ def build(sha, root, inputs, key, cached):
             stage = Path(tmp) / "entry"
             stage.mkdir()
             for name in BINARIES:
-                shutil.copy(DEBUG_DIR / name, stage / name)
+                shutil.copy(BINARY_DIR / name, stage / name)
             write_json(stage / "identity.json", build_id)
             stage.rename(cached)
         if sccache:
@@ -108,7 +129,8 @@ def main():
     command(["git", "diff", "--exit-code", "HEAD"], timeout=30)
     inputs = source_inputs(sha)
     key = cache_key(inputs)
-    root = Path(os.environ["HOME"]) / ".cache/skippy/inference-build-v2"
+    command(["git", "-C", str(HARNESS_ROOT), "diff", "--exit-code", "HEAD"], timeout=30)
+    root = Path(os.environ["HOME"]) / ".cache/skippy/inference-build-v3"
     root.mkdir(parents=True, exist_ok=True)
     cached = root / key
     with lock(root / f"{key}.lock"):

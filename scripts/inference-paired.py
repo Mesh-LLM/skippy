@@ -87,11 +87,15 @@ def prepare(main, baseline, candidate, output):
         if digest(ROOT / path) != digest(main / path):
             raise ValueError("paired comparison model or quality fixtures changed")
     with revision(main, baseline, output):
-        command(["just", "inference-build"], timeout=7200)
+        command(["just", "--justfile", str(ROOT / "Justfile"),
+                 "--working-directory", str(main), "inference-build"], timeout=7200)
     identities = {"main": read_json(main / "target/inference-build.json"),
                   "candidate": read_json(ROOT / "target/inference-build.json")}
     if identities["main"]["stack_commit"] != baseline or identities["candidate"]["stack_commit"] != candidate:
         raise ValueError("paired comparison executable source mismatch")
+    policies = [identity["build_inputs"]["policy"] for identity in identities.values()]
+    if policies[0] != policies[1] or policies[0]["cargo_profile"] != "release":
+        raise ValueError("paired comparison build policies differ or are not release")
     return identities
 
 

@@ -229,6 +229,15 @@ run inside the same exclusive job or atomic two-Spark formation. The two roles
 keep their placement and wait at a barrier after each restarted server arm.
 Build hashes, source commits, host/kernel/driver identities, raw responses and
 client timings remain in the lab evidence. All builds finish before measurement.
+Both source trees use the candidate's pinned qualification build driver and
+Just recipes, with each tree supplying its own source and native inputs. Rust
+uses the release profile at opt-level 3; the CUDA native libraries retain their
+Release/static configuration. Executables are installed in
+`target/inference-bin`, and the v3 cache identity records the shared driver hash,
+source, release settings, features, linkage and environment overrides. Different
+main/candidate build policies fail admission. This qualifies the source-built
+static CUDA configuration; it does not qualify a shipped dynamic runtime package.
+Earlier dev-profile receipts retain their original source and diagnostic scope.
 Each arm has a top-level evidence archive because JY does not upload nested
 directories. Collection requires every arm archive in the uploaded manifest,
 including the worker's archives for split runs, and retains their hashes.
@@ -268,7 +277,7 @@ enables existing native OTLP phase spans on both roles. It retains
 `noise-profile.json` and per-arm `phases.jsonl` for correlating chunk counts,
 runtime locks, compute, writes and downstream waits. Instrumentation changes
 timing; this experiment likewise cannot produce performance qualification.
-The v2 diagnostic explicitly sets `--telemetry-level debug`; a file sink alone
+The phase diagnostic explicitly sets `--telemetry-level debug`; a file sink alone
 preserves the server's summary level. Every leader request must have one matching
 prefill span with its phase breakdown and response timing. Worker traces must
 contain binary decode and message timing spans. Missing detailed spans fail the
