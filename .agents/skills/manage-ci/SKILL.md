@@ -188,6 +188,10 @@ contract; no downstream product's workflow topology applies here.
 - Ordinary tests are offline. Model admission is explicit and digest-bound.
   GPU qualification requires a real matching device; missing fixtures, devices,
   capacity, or evidence fail or queue, never become passing skips.
+  Split qualification must bind readiness and acknowledged completion to its
+  own JY formation/source/model/profile/role/attempt identities. Require both
+  members' receipts and overlapping successful execution on the distinct
+  reserved nodes; a listening port or a leader-only pass is insufficient.
 - Split admission is established by actual native stage plans, tensor closures,
   activation frontiers, artifact identities and backend compatibility. Qualification
   records exact tested configurations. There is no architecture certification
