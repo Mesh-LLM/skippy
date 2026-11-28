@@ -68,6 +68,7 @@ NATIVE_TARGETS = {
     "armv7-unknown-linux-gnueabihf": ("linux", "arm"),
     "armv7-linux-androideabi": ("linux", "arm"),
     "x86_64-pc-windows-msvc": ("windows", "x86_64"),
+    "aarch64-pc-windows-msvc": ("windows", "aarch64"),
 }
 
 HOST_TARGETS = {
@@ -75,6 +76,7 @@ HOST_TARGETS = {
     "linux-x86_64": ("elf", "x86_64"),
     "linux-aarch64": ("elf", "aarch64"),
     "windows-x86_64": ("pe", "x86_64"),
+    "windows-aarch64": ("pe", "aarch64"),
 }
 
 

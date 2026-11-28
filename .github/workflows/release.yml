@@ -89,6 +89,7 @@ jobs:
   verify:
     outputs:
       artifact_only: ${{ steps.inventory.outputs.artifact_only }}
+      package_only: ${{ steps.inventory.outputs.package_only }}
     needs: [admission, validation, inference, documentation_validation]
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 120
@@ -237,11 +238,15 @@ jobs:
           RELEASE_TAG: ${{ needs.admission.outputs.tag }}
           SOURCE_SHA: ${{ needs.admission.outputs.source }}
           ARTIFACT_ONLY: ${{ needs.verify.outputs.artifact_only }}
+          PACKAGE_ONLY: ${{ needs.verify.outputs.package_only }}
           PRERELEASE: ${{ needs.admission.outputs.prerelease }}
         run: |
           notes="Skippy source: $SOURCE_SHA"
           if [[ -n "$ARTIFACT_ONLY" ]]; then
             notes+=$'\n\n'"Build and archive checks only. Inference qualification is pending for $ARTIFACT_ONLY."
+          fi
+          if [[ -n "$PACKAGE_ONLY" ]]; then
+            notes+=$'\n\n'"Package verification only for $PACKAGE_ONLY."
           fi
           gh release edit "$RELEASE_TAG" --draft=false --prerelease="$PRERELEASE" --notes "$notes"
   publish_crates:

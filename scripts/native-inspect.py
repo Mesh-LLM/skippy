@@ -113,11 +113,19 @@ def verify_directory(root, resolve_rocm):
     if (not isinstance(libraries, list) or primary not in libraries or primary not in files
             or files[primary] != build["library_sha256"]):
         raise ValueError("invalid native primary library")
-    for name in [*libraries, *tools]:
+    binaries = dict.fromkeys([*libraries, *tools])
+    if platform["os"] == "windows":
+        binaries.update(dict.fromkeys(name for name in files if Path(name).suffix.lower() in {".dll", ".exe"}))
+        for folder in ("lib", "tools"):
+            binaries.update(dict.fromkeys(
+                path.relative_to(root).as_posix() for path in (root / folder).rglob("*")
+                if path.is_file() and path.suffix.lower() in {".dll", ".exe"}
+            ))
+    for name in binaries:
         if name not in files and name not in tools:
             raise ValueError(f"unhashed runtime library: {name}")
         image = inspect(contained_file(root, name))
-        if image.arch != platform["arch"]:
+        if image.arch != platform["arch"] or (platform["os"] == "windows" and image.kind != "pe"):
             raise ValueError(f"runtime architecture mismatch: {name}")
         external_rocm = False
         for imported in image.imports:

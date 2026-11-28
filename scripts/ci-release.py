@@ -149,7 +149,7 @@ def inventory(tag, input_dir, source):
             if runtime["backend"] == "vulkan" and runtime["validation"] == "inference":
                 for vendor in ("nvidia", "amd"):
                     verify_smoke(input_dir, variant, source, "vulkan", assets[file.name], vendor=vendor)
-            else:
+            elif runtime["validation"] != "package":
                 verify_smoke(input_dir, variant, source, runtime["backend"], assets[file.name],
                              artifact_only=runtime["validation"] == "artifact")
             artifacts.write_checksum(file)
@@ -169,6 +169,9 @@ def inventory(tag, input_dir, source):
         stage.rename(output)
     github_output("artifact_only", ", ".join(
         variant for variant, runtime in runtimes.items() if runtime["validation"] == "artifact"
+    ))
+    github_output("package_only", ", ".join(
+        variant for variant, runtime in runtimes.items() if runtime["validation"] == "package"
     ))
 
 

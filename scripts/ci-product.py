@@ -28,6 +28,10 @@ def build_host(host):
             sys.executable, "scripts/native-inspect.py", "verify-host-dependencies", str(executable),
             "--bind-sha256", "--report", str(stage / "host-imports.json"),
         ])
+        command([
+            sys.executable, "scripts/native-inspect.py", "skippy-cli-input",
+            str(stage / "host-imports.json"), str(executable), host["id"],
+        ])
         artifacts.receipt(stage, "host", host["target"], "")
         artifacts.archive(stage, Path("dist/hosts") / host["id"] / "host.tar.gz")
 

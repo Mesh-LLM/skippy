@@ -141,7 +141,7 @@ concurrency coalescing. If prior coverage cannot be verified, require both
 device smokes and Graph Contracts. The gate rejects missing, skipped, failed
 or cancelled selected jobs. Exact promoted-release receipt reuse avoids
 repeating validated work. Scheduled, manual and reusable full validation
-require all fifteen packages and Graph Contracts. Main merges do not start the
+require all sixteen packages and Graph Contracts. Main merges do not start the
 separate Spark qualification ladder.
 
 The protected inference workflow has its own qualification paths, separate from
@@ -269,7 +269,7 @@ for the Linux ARM64 CUDA 13 device job. Compiler-only CUDA builds always use the
 manifest architecture lists. The only source override is the immutable bundle
 produced by the protected-main llama upgrade workflow.
 
-`targets.json` defines four hosts and fifteen active runtimes. After the
+`targets.json` defines five hosts and sixteen active runtimes. After the
 automation checks and Quality canary, each CPU job builds and verifies its
 runtime and the shared CLI for that platform. Linux x64 builds its shared CLI
 on Ubuntu 24.04 for compatibility with the compiler images. Each backend
@@ -284,9 +284,11 @@ CUDA device job uses the existing ARM64 CUDA 13 runner group to use the larger
 Spark pool; x64 CUDA 13 device coverage remains required for releases. The full
 CI gate matches all package jobs to the plan and checks required device results.
 
-Full CI and releases also require archive checks for Windows x64 CPU, CUDA 12,
-CUDA 13 and ROCm 7.2.0. The Windows jobs use Windows
-Server 2022 for the pinned SDKs and compatible MSVC toolset. CUDA
+Full CI and releases also package Windows ARM64 CPU on Windows 11 ARM64
+and verify the CLI and runtime archive inputs without running smoke.
+Windows x64 CPU, CUDA 12, CUDA 13, ROCm 7.2.0 and Vulkan require archive smoke.
+The x64 Windows jobs use Windows Server 2022 for the pinned SDKs and
+compatible MSVC toolset. CUDA
 components and the HIP SDK are downloaded from checksum-pinned inputs. The
 Windows CUDA installer includes the NVML development component for both pinned
 toolkits and requires a nonempty `include/nvml.h` before exposing the toolkit
@@ -294,11 +296,11 @@ to package builds. This supplies headers for llama.cpp's driver-library lookup.
 The Linux ROCm job uses the published compiler image resolved to a digest and
 adds the SHA-256-pinned ROCm 7.2.4 BLAS libraries to a job-local prefix for
 compilation and packaged GPU inference smoke.
-Windows users need the Microsoft Visual C++ x64 Redistributable and, for CUDA,
-a compatible NVIDIA driver. Linux ROCm users need a matching ROCm runtime
+Windows users need the Microsoft Visual C++ Redistributable for their
+architecture and, for CUDA, a compatible NVIDIA driver. Linux ROCm users need a matching ROCm runtime
 visible to the system loader. The three Windows CUDA/ROCm variants require real Windows inference in two native
 JY VM jobs: CUDA 12 and 13 share a guest, and ROCm runs independently after its
-archive builds. Full CI requires both results. Windows CPU and Vulkan retain archive-only
+archive builds. Full CI requires both results. Windows x64 CPU and Vulkan retain archive-only
 verification. See [Windows GPU smoke](windows-gpu-smoke.md) for profiles and recovery.
 
 ## Vulkan packages and device smoke
@@ -307,7 +309,7 @@ Full CI, scheduled nightly CI, release validation and llama-upgrade full CI
 build Linux x64 and Windows x64 Vulkan packages with Vulkan SDK 1.4.328.1.
 Both reuse the existing platform CLI producer. SDK version, header hash and
 shader compiler identity travel inside the source-bound runtime receipt. The short PR/main profile stays
-at eight runtimes; the full roster has fifteen.
+at eight runtimes. The full roster has sixteen.
 
 The Linux archive is built on hosted Ubuntu 24.04, then the same bytes run
 on the existing x64 CUDA 13 NVIDIA pool and the x64 ROCm AMD pool. Both literal-pool device
@@ -354,11 +356,11 @@ Native runners carry `self-hosted`, `Linux`, `X64`, `skippy-ephemeral`, and
 
 The job remains full-only: nightly, manual full CI, release candidates and
 llama-upgrade full validation require it; routine PR and main-push checks do
-not run it. The short plan retains eight runtimes and full CI retains fifteen.
+not run it. The short plan retains eight runtimes and full CI retains sixteen.
 `full_only` selects scheduling independently of the manifest's `validation`
 evidence requirement. Linux ROCm requires inference evidence within its package
 job. Windows CUDA/ROCm runtimes require detached inference evidence from the two
-full-only Windows VM jobs. Windows CPU and Vulkan remain archive-only. Neither
+full-only Windows VM jobs. Windows x64 CPU and Vulkan remain archive-only. Neither
 backend retains a standalone rehearsal workflow.
 
 The existing plan resolves the ROCm compiler image to a digest. The ROCm job

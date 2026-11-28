@@ -3,7 +3,8 @@ param(
     [string]$CudaArch = "",
     [string]$RocmArch = "",
     [ValidateSet("debug", "dev", "release")][string]$BuildProfile = "debug",
-    [ValidateSet("x86_64-pc-windows-msvc")][string]$Target = "x86_64-pc-windows-msvc",
+    [ValidateSet("", "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")][string]$Target = "",
+    [ValidateSet("", "x64", "arm64")][string]$TargetArch = "",
     [switch]$RuntimeOnly
 )
 $ErrorActionPreference = "Stop"
@@ -64,15 +65,8 @@ function Get-MissingCommands {
     return $missing
 }
 
-function Ensure-MsvcToolchain {
-    $requiredTools = @("cl", "link", "lib", "rc", "mt")
-    $missingTools = @(Get-MissingCommands -Commands $requiredTools)
-    if ($missingTools.Count -eq 0) {
-        return
-    }
-
-    Write-Host "MSVC/Windows SDK tools missing before vcvars64 import: $($missingTools -join ', ')"
-
+function Resolve-Vcvars {
+    param([string]$Component)
     $programFilesX86 = ${env:ProgramFiles(x86)}
     $vswhereCandidates = @()
     if ($programFilesX86) {
@@ -86,41 +80,51 @@ function Ensure-MsvcToolchain {
         $vswhereCandidates += $vswhereFromPath
     }
 
-    $vcvars64 = $null
     $vswhere = $vswhereCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique -First 1
     if ($vswhere) {
-        $installationPathOutput = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
+        $installationPathOutput = & $vswhere -latest -products * -requires $Component -property installationPath | Select-Object -First 1
         $installationPath = if ($installationPathOutput) { $installationPathOutput.Trim() } else { "" }
         if ($installationPath) {
-            $candidate = Join-Path $installationPath "VC\Auxiliary\Build\vcvars64.bat"
+            $candidate = Join-Path $installationPath "VC\Auxiliary\Build\vcvarsall.bat"
             if (Test-Path $candidate) {
-                $vcvars64 = $candidate
+                return $candidate
             }
         }
     }
 
-    if (-not $vcvars64) {
-        $searchRoots = @($programFilesX86, $env:ProgramFiles) | Where-Object { $_ } | Select-Object -Unique
-        foreach ($searchRoot in $searchRoots) {
-            $candidate = Get-ChildItem -Path $searchRoot -Filter vcvars64.bat -Recurse -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -like '*Microsoft Visual Studio*VC\Auxiliary\Build\vcvars64.bat' } |
-                Select-Object -First 1
-            if ($candidate) {
-                $vcvars64 = $candidate.FullName
-                break
-            }
+    $searchRoots = @($programFilesX86, $env:ProgramFiles) | Where-Object { $_ } | Select-Object -Unique
+    foreach ($searchRoot in $searchRoots) {
+        $candidate = Get-ChildItem -Path $searchRoot -Filter vcvarsall.bat -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like '*Microsoft Visual Studio*VC\Auxiliary\Build\vcvarsall.bat' } |
+            Select-Object -First 1
+        if ($candidate) {
+            return $candidate.FullName
         }
     }
+    throw "Visual Studio Build Tools with $Component and vcvarsall.bat are required."
+}
 
-    if (-not (Test-Path $vcvars64)) {
-        throw "Visual Studio Build Tools with vcvars64.bat were not found on this Windows runner."
+function Ensure-MsvcToolchain {
+    param([string]$Architecture, [bool]$ArmHost)
+
+    $requiredTools = @("cl", "link", "lib", "rc", "mt")
+    $missingTools = @(Get-MissingCommands -Commands $requiredTools)
+    if ($missingTools.Count -eq 0 -and $env:VSCMD_ARG_TGT_ARCH -eq $Architecture) {
+        return
     }
 
-    Import-CmdEnvironment "`"$vcvars64`" >nul"
+    $component = if ($Architecture -eq "arm64") { "Microsoft.VisualStudio.Component.VC.Tools.ARM64" } else { "Microsoft.VisualStudio.Component.VC.Tools.x86.x64" }
+    $vcvars = Resolve-Vcvars $component
+    $argument = if ($Architecture -eq "arm64") {
+        if ($ArmHost) { "arm64" } else { "amd64_arm64" }
+    } else {
+        "amd64"
+    }
+    Import-CmdEnvironment "`"$vcvars`" $argument >nul"
 
     $missingTools = @(Get-MissingCommands -Commands $requiredTools)
-    if ($missingTools.Count -gt 0) {
-        throw "MSVC toolchain initialization completed, but required Visual Studio/Windows SDK tools are still unavailable in PATH: $($missingTools -join ', '). Install the Windows SDK and Visual Studio Build Tools on this runner."
+    if ($missingTools.Count -gt 0 -or $env:VSCMD_ARG_TGT_ARCH -ne $Architecture) {
+        throw "MSVC must target $Architecture. Active target: '$env:VSCMD_ARG_TGT_ARCH'. Missing tools: $($missingTools -join ', ')."
     }
 }
 
@@ -181,10 +185,42 @@ function Invoke-NativeCommand {
         throw "Command failed with exit code ${LASTEXITCODE}: $Command$argString"
     }
 }
+$machineIsArm64 = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq "Arm64"
+if ($TargetArch) {
+    $archTarget = if ($TargetArch -eq "arm64") { "aarch64-pc-windows-msvc" } else { "x86_64-pc-windows-msvc" }
+    if ($Target -and $Target -ne $archTarget) { throw "-Target and -TargetArch must select the same architecture." }
+    $Target = $archTarget
+}
+if ($env:CARGO_BUILD_TARGET) {
+    if ($env:CARGO_BUILD_TARGET -notin @("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")) {
+        throw "Unsupported Windows Cargo target '$env:CARGO_BUILD_TARGET'."
+    }
+    if ($Target -and $Target -ne $env:CARGO_BUILD_TARGET) {
+        throw "The requested target '$Target' conflicts with CARGO_BUILD_TARGET '$env:CARGO_BUILD_TARGET'."
+    }
+    $Target = $env:CARGO_BUILD_TARGET
+}
+if (-not $Target) {
+    $Target = if ($machineIsArm64) { "aarch64-pc-windows-msvc" } else { "x86_64-pc-windows-msvc" }
+}
+$architecture = if ($Target -eq "aarch64-pc-windows-msvc") { "arm64" } else { "x64" }
+if (-not $Backend) { $Backend = "cpu" }
+if ($architecture -eq "arm64" -and $Backend -ne "cpu") { throw "Windows ARM64 supports the CPU runtime only." }
+
+$savedEnvironment = @{}
+Get-ChildItem Env: | ForEach-Object { $savedEnvironment[$_.Name] = $_.Value }
 Push-Location $repoRoot
 try {
-    Ensure-MsvcToolchain
-    if (-not $Backend) { $Backend = "cpu" }
+    Ensure-MsvcToolchain $architecture $machineIsArm64
+    if ($architecture -eq "arm64" -and -not (Resolve-CommandPath "clang")) {
+        if ($env:VCINSTALLDIR) {
+            Add-ToPath (Join-Path $env:VCINSTALLDIR "Tools\Llvm\ARM64\bin")
+            Add-ToPath (Join-Path $env:VCINSTALLDIR "Tools\Llvm\x64\bin")
+        }
+        if (-not (Resolve-CommandPath "clang")) {
+            throw "Install Microsoft.VisualStudio.Component.VC.Llvm.Clang and add clang to PATH."
+        }
+    }
     if ($Backend -eq "cuda") { Ensure-CudaToolchain }
     $bash = Resolve-PackagingBash
     if (-not $env:CC) { $env:CC = "cl" }
@@ -193,13 +229,33 @@ try {
     if ($CudaArch) { $env:LLAMA_STAGE_CUDA_ARCHITECTURES = $CudaArch }
     if ($RocmArch) { $env:LLAMA_STAGE_AMDGPU_TARGETS = $RocmArch }
     $profile = if ($BuildProfile -eq "release") { "release" } else { "debug" }
-    $runtimeOut = if ($RuntimeOnly) { "dist/native-runtimes" } else { "target/$profile/native-runtimes" }
+    $runtimeOut = "dist/native-runtimes"
+    if (-not $RuntimeOnly) {
+        $cargoMetadata = & cargo metadata --locked --no-deps --format-version 1
+        if ($LASTEXITCODE -ne 0) { throw "cargo metadata failed with exit code $LASTEXITCODE" }
+        $targetDir = ($cargoMetadata | ConvertFrom-Json).target_directory
+        # Use the same explicit triple for Cargo and the packaged runtime,
+        # including when a Cargo configuration supplies a different default.
+        $env:CARGO_BUILD_TARGET = $Target
+        $targetDir = Join-Path $targetDir $Target
+        $productDir = Join-Path $targetDir $profile
+        $nativePath = Join-Path $productDir "native-runtimes"
+        $runtimeOut = (& $bash -c 'cygpath -au "$1"' bash $nativePath | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or -not $runtimeOut) { throw "Cannot convert $nativePath for the packaging shell." }
+    }
     Invoke-NativeCommand $bash @("scripts/package-native-runtime.sh", "--build", "--backend", $Backend, "--target", $Target, "--out", $runtimeOut)
     if (-not $RuntimeOnly) {
         $recipe = if ($BuildProfile -eq "release") { "skippy-cli-release-build" } else { "skippy-cli-build" }
         Invoke-NativeCommand "just" @($recipe)
-        Write-Host "Built Skippy: target/$profile/skippy.exe"
+        Write-Host "Built Skippy: $(Join-Path $productDir 'skippy.exe')"
     }
 } finally {
     Pop-Location
+    Get-ChildItem Env: | Where-Object { -not $savedEnvironment.ContainsKey($_.Name) } |
+        ForEach-Object { Remove-Item -LiteralPath "env:$($_.Name)" }
+    foreach ($name in $savedEnvironment.Keys) {
+        if ([Environment]::GetEnvironmentVariable($name) -cne $savedEnvironment[$name]) {
+            Set-Item -LiteralPath "env:$name" -Value $savedEnvironment[$name]
+        }
+    }
 }

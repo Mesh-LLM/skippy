@@ -5,12 +5,14 @@ import importlib.util
 import io
 import json
 import os
+import struct
 import subprocess
 import sys
 import tarfile
 import tempfile
 import tomllib
 import unittest
+from contextlib import chdir
 from pathlib import Path
 from unittest.mock import patch
 
@@ -78,7 +80,93 @@ class CrateReleaseContract(unittest.TestCase):
         self.assertIsNone(self.release.retry_delay("401 Unauthorized"))
 
 
+class WindowsRuntimeArtifactContract(unittest.TestCase):
+    @staticmethod
+    def pe_image(machine):
+        image = bytearray(256)
+        image[:2] = b"MZ"
+        struct.pack_into("<I", image, 60, 64)
+        image[64:68] = b"PE\0\0"
+        struct.pack_into("<H", image, 68, machine)
+        struct.pack_into("<H", image, 84, 112)
+        struct.pack_into("<H", image, 88, 0x20B)
+        return bytes(image)
+
+    def test_windows_arm64_rejects_wrong_machine_in_every_declared_binary(self):
+        verify = release_script("native-inspect").verify_directory
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            files = {"lib/llama.dll": self.pe_image(0xAA64),
+                     "tools/runner.exe": self.pe_image(0xAA64),
+                     "extras/helper.dll": self.pe_image(0xAA64)}
+            manifest = {
+                "schema_version": 2,
+                "runtime": {
+                    "id": "skippy-native-runtime-windows-aarch64-cpu",
+                    "release_version": "0.80.0",
+                    "skippy_abi": "0.1.74",
+                    "platform": {"target": "aarch64-pc-windows-msvc", "os": "windows", "arch": "aarch64"},
+                    "backend": {"kind": "cpu"},
+                    "libraries": ["lib/llama.dll"],
+                    "files": {},
+                    "tools": {},
+                },
+                "build": {"llama_upstream_sha": "a" * 40, "llama_patched_sha": "b" * 40,
+                          "llama_patch_digest": "c" * 64, "primary_library": "lib/llama.dll"},
+            }
+            for candidate in (*files, None):
+                for name, arm_image in files.items():
+                    image = self.pe_image(0x8664) if name == candidate else arm_image
+                    path = root / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(image)
+                    group = "tools" if name.endswith(".exe") else "files"
+                    manifest["runtime"][group][name] = hashlib.sha256(image).hexdigest()
+                manifest["build"]["library_sha256"] = manifest["runtime"]["files"]["lib/llama.dll"]
+                (root / "manifest.json").write_text(json.dumps(manifest))
+                if candidate is None:
+                    verify(root, False)
+                else:
+                    with self.assertRaisesRegex(ValueError, "runtime architecture mismatch"):
+                        verify(root, False)
+            (root / "lib" / "unlisted.dll").write_bytes(self.pe_image(0xAA64))
+            with self.assertRaisesRegex(ValueError, "unhashed runtime library"):
+                verify(root, False)
+
+
 class SmokeEvidenceContract(unittest.TestCase):
+    def test_windows_arm64_inventory_accepts_verified_package_without_smoke(self):
+        release = release_script()
+        host_id, variant = "windows-aarch64", "windows-aarch64-cpu"
+        host = {"target": "aarch64-pc-windows-msvc", "os": "windows", "arch": "aarch64"}
+        runtime = {"host": host_id, "backend": "cpu", "validation": "package"}
+        source = "a" * 40
+        with tempfile.TemporaryDirectory() as tmp, chdir(tmp), \
+             patch.object(release, "targets", return_value=({host_id: host}, {variant: runtime})), \
+             patch.object(release.artifacts, "source", return_value=source), \
+             patch.object(release, "version"), patch.object(release, "github_output") as output:
+            Path("llama_cpp").mkdir()
+            Path("llama_cpp/upstream.txt").write_text("b" * 40)
+            product = Path("product")
+            native = product / "native-runtimes" / variant
+            native.mkdir(parents=True)
+            release.artifacts.write_json(native / "manifest.json", {"runtime": {
+                "platform": host, "backend": {"kind": "cpu"},
+                "release_version": TAG[1:], "skippy_abi": "0.1.87",
+            }})
+            release.artifacts.receipt(product, "product", host["target"], variant)
+            artifacts = Path("release-artifacts")
+            archive = artifacts / f"release-product-{variant}" / f"skippy-{variant}.tar.gz"
+            release.artifacts.archive(product, archive)
+
+            release.inventory(TAG, artifacts, source)
+
+            output.assert_any_call("package_only", variant)
+            index = release.artifacts.read_json(Path("dist/release/release.json"))
+            self.assertEqual(index["variants"], [variant])
+            self.assertEqual(index["assets"][f"skippy-{TAG}-{variant}.tar.gz"],
+                             release.artifacts.digest(archive))
+
     def test_linux_rocm_release_policy_rejects_archive_only_evidence(self):
         release = release_script()
         with patch.dict(os.environ, SKIPPY_CI_PROFILE="full", GITHUB_OUTPUT=""):

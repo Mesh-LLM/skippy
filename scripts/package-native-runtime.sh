@@ -153,6 +153,7 @@ default_target_triple() {
         linux/x86_64) printf 'x86_64-unknown-linux-gnu\n' ;;
         linux/aarch64) printf 'aarch64-unknown-linux-gnu\n' ;;
         windows/x86_64) printf 'x86_64-pc-windows-msvc\n' ;;
+        windows/aarch64) printf 'aarch64-pc-windows-msvc\n' ;;
         *) printf '\n' ;;
     esac
 }
@@ -164,6 +165,7 @@ target_platform() {
         x86_64-unknown-linux-gnu) printf 'linux-x86_64\n' ;;
         aarch64-unknown-linux-gnu) printf 'linux-aarch64\n' ;;
         x86_64-pc-windows-msvc) printf 'windows-x86_64\n' ;;
+        aarch64-pc-windows-msvc) printf 'windows-aarch64\n' ;;
         *) printf '%s\n' "$1" | tr '_' '-' ;;
     esac
 }
@@ -730,6 +732,15 @@ if [[ -z "$TARGET_TRIPLE" ]]; then
     exit 1
 fi
 
+llama_stage_target=""
+if [[ "$TARGET_TRIPLE" == aarch64-pc-windows-msvc ]]; then
+    llama_stage_target="$TARGET_TRIPLE"
+    if [[ "$BACKEND" != cpu ]]; then
+        echo "Windows ARM64 supports only the CPU runtime" >&2
+        exit 1
+    fi
+fi
+
 # The build directory is keyed by the checkout's pin stamp, so it can only be
 # resolved after the pin is prepared. Resolving first would key the new pin's
 # build to the previous stamp -- or to no stamp at all on a fresh checkout --
@@ -739,13 +750,14 @@ if [[ "$BUILD" == "1" ]]; then
 fi
 
 if [[ -z "${LLAMA_STAGE_BUILD_DIR:-}" ]]; then
-    LLAMA_STAGE_BUILD_DIR="$(LLAMA_STAGE_LINK_MODE=dynamic LLAMA_STAGE_BACKEND="$(build_backend)" "$SCRIPT_DIR/build-llama.sh" --print-build-dir)"
+    LLAMA_STAGE_BUILD_DIR="$(LLAMA_STAGE_LINK_MODE=dynamic LLAMA_STAGE_BACKEND="$(build_backend)" LLAMA_STAGE_TARGET="$llama_stage_target" "$SCRIPT_DIR/build-llama.sh" --print-build-dir)"
 fi
 
 if [[ "$BUILD" == "1" ]]; then
     env \
         LLAMA_STAGE_LINK_MODE=dynamic \
         LLAMA_STAGE_BACKEND="$(build_backend)" \
+        LLAMA_STAGE_TARGET="$llama_stage_target" \
         LLAMA_BUILD_DIR="$LLAMA_STAGE_BUILD_DIR" \
         LLAMA_STAGE_BUILD_DIR="$LLAMA_STAGE_BUILD_DIR" \
         "$SCRIPT_DIR/build-llama.sh"
@@ -922,6 +934,9 @@ fi
 manifest_args+=(-- "${linux_relocatable_library_paths[@]}")
 
 "${SKIPPY_PYTHON:-python3}" "$SCRIPT_DIR/native-manifest.py" --schema-v2 "${manifest_args[@]}"
+if [[ -n "$llama_stage_target" ]]; then
+    "${SKIPPY_PYTHON:-python3}" "$SCRIPT_DIR/native-inspect.py" verify-runtime-package "$stage_dir"
+fi
 
 cat > "$stage_dir/README.md" <<EOF
 # $artifact_id

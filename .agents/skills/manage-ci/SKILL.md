@@ -48,21 +48,23 @@ contract; no downstream product's workflow topology applies here.
   which runs it expects. Hosted offline
   automation gates Quality canary and package jobs; Quality canary gates package
   jobs whenever source checks apply. Full CI
-  runs Graph Contracts in parallel with fifteen build, package and smoke jobs.
+  runs Graph Contracts in parallel with sixteen package jobs.
   Each CPU job supplies a shared platform CLI to its backend jobs. Routine CI
   uses two device jobs and checks the three remaining CUDA archives on hosted
   compiler-image runners.
   Tagged releases add device smoke on those exact archives, including x64 CUDA 13.
-  Windows x64 CPU retains archive verification. Full CI additionally requires
+  Windows ARM64 CPU is package-only in full CI and releases. Windows x64 CPU
+  retains archive verification. Full CI additionally requires
   two native Windows VM smoke jobs: CUDA 12 and 13 share one guest; ROCm has one.
   Nightly, release and llama-upgrade callers reuse them. GPU manifest rows
-  require source/archive-bound inference receipts; short PR CI skips these jobs. Linux x64 ROCm builds and smokes on the native JY ROCm pool using
+  require source/archive-bound inference receipts. Short PR CI skips these jobs.
+  Linux x64 ROCm builds and smokes on the native JY ROCm pool using
   the digest-pinned compiler container and the CPU job's verified CLI. Its
   inference evidence is embedded in the tested product; no separate smoke
   job or duplicate CLI build is needed. Restore candidate source before HIP
   preflight, retain BLAS device kernels, normalize cached numeric owners, and
   restore native workspace ownership after cache post hooks. The short plan
-  validates the whole manifest and excludes those seven `full_only` jobs
+  validates the whole manifest and excludes the eight `full_only` packages
   independently of their smoke evidence policy. Vulkan Linux x64 and Windows x64 packages use pinned Vulkan SDK tooling.
   Full CI tests the exact Linux Vulkan archive on both existing x64 NVIDIA CUDA 13
   and AMD ROCm pools; both source- and archive-bound vendor receipts are required
@@ -166,7 +168,7 @@ contract; no downstream product's workflow topology applies here.
   require publication credentials. The publisher can publish only the exact
   candidate selected by successful full CI. The four established inference
   models retain their separate PR/manual/nightly/release workflow.
-- `ci/targets.json` owns four host definitions and fifteen runtime definitions.
+- `ci/targets.json` owns five host definitions and sixteen runtime definitions.
   `ci/windows-gpu-smoke.md` documents the public Windows VM recipe, host profiles
   and native restoration contract. Missing AMD unload/task receipts or failed
   native restoration retain quarantine. Keep the temporary rehearsal workflow
