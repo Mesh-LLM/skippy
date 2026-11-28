@@ -15,10 +15,11 @@ LABELS = {None: "New series", "passed": "within tolerance", "improved": "improve
 def panel_axes(ax, panel, chart, mdates):
     color = COLORS[panel.verdict]
     ax.set_title(panel.label, fontsize=11, color=INK, loc="left", pad=38, weight="medium")
-    ax.text(0, 1.12, f"{panel.current * chart.scale:,.2f} {chart.unit}", transform=ax.transAxes,
+    current = "Measurement unavailable" if panel.current is None else f"{panel.current * chart.scale:,.2f} {chart.unit}"
+    ax.text(0, 1.12, current, transform=ax.transAxes,
             fontsize=12, color=INK, weight="bold")
     change = "" if panel.change is None else f"{panel.change:+.2f}% · "
-    ax.text(1, 1.12, change + LABELS[panel.verdict], transform=ax.transAxes, fontsize=8.5,
+    ax.text(1, 1.12, change + ("Missing current sample" if panel.current is None else LABELS[panel.verdict]), transform=ax.transAxes, fontsize=8.5,
             color=color, ha="right")
     dates = [date for date, _ in panel.points]
     pad = max((dates[-1] - dates[0]) / 8, timedelta(minutes=1))

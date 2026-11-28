@@ -1,8 +1,8 @@
-From 64b7766d9ed5c8d133f3762cd6c6fe140bb21a74 Mon Sep 17 00:00:00 2001
+From c37ff6e042995f03ddc29f38998048d8fe774312 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Wed, 18 Nov 2026 20:05:26 +1100
-Subject: [PATCH 38/39] skippy: a helper takes a run's tasks only while that
- run admits it
+Subject: [PATCH] skippy: a helper takes a run's tasks only while that run
+ admits it
 
 A helper woke when its ordinal was below the run's helper limit, released
 the lock, then took the lock again to claim tasks without checking the
@@ -133,5 +133,5 @@ index e9b9284e0..677658b96 100644
      CHECK(skippy_task_pool::shared().helpers() <= skippy_task_pool::shared().ceiling());
      if (failures == 0) {
 -- 
-2.43.0
+2.56.1
 

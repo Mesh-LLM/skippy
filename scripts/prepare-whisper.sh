@@ -9,6 +9,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 WHISPER_UPSTREAM_URL="${WHISPER_UPSTREAM_URL:-https://github.com/ggml-org/whisper.cpp.git}"
+SUPPLIED_WORKDIR="${WHISPER_WORKDIR:-}"
 WHISPER_WORKDIR="${WHISPER_WORKDIR:-$ROOT/.deps/whisper.cpp}"
 PIN_FILE="${WHISPER_PIN_FILE:-$ROOT/llama_cpp/whisper-upstream.txt}"
 
@@ -17,6 +18,23 @@ if [[ ! -f "$PIN_FILE" ]]; then
   exit 1
 fi
 TARGET_SHA="$(tr -d '[:space:]' < "$PIN_FILE")"
+
+# A supplied checkout or linked Git directory belongs to its caller even when
+# it lives at the default location. Read its state without refreshing its index.
+if [[ -n "$SUPPLIED_WORKDIR" || -L "$WHISPER_WORKDIR" || -f "$WHISPER_WORKDIR/.git" ]]; then
+  if [[ ! -e "$WHISPER_WORKDIR/.git" ||
+        "$(git -C "$WHISPER_WORKDIR" rev-parse --verify HEAD 2>/dev/null)" != "$TARGET_SHA" ]]; then
+    echo "supplied whisper.cpp checkout must be at $TARGET_SHA: $WHISPER_WORKDIR" >&2
+    exit 1
+  fi
+  status="$(git --no-optional-locks -C "$WHISPER_WORKDIR" status --porcelain=v1 --untracked-files=all)"
+  if [[ -n "$status" ]]; then
+    echo "supplied whisper.cpp checkout must be clean: $WHISPER_WORKDIR" >&2
+    exit 1
+  fi
+  echo "whisper.cpp already at $TARGET_SHA"
+  exit 0
+fi
 
 mkdir -p "$(dirname "$WHISPER_WORKDIR")"
 # Keep git discovery inside the workdir; see prepare-llama.sh.

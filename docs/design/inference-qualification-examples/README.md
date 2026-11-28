@@ -9,11 +9,11 @@ tags:
 
 **Preview.** Values, dates and commit IDs on this card are illustrative.
 
-**2 regressions · 0 improvements · 0 within tolerance · 0 first measurements**
+**2 regressions · 0 improvements · 1 within tolerance · 0 first measurements**
 
 24 Nov 2026 14:00 UTC · Engine `cccccccccccc` · nightly · Qualification: Failed · **Tolerance: ±1%** · NVIDIA GB10 DGX Spark
 
-1 measured configurations. Counts refer to performance metrics. First measurements establish new series and have no trend verdict.
+2 measured configurations. Counts refer to performance metrics. First measurements establish new series and have no trend verdict.
 
 ## What regressed
 
@@ -38,15 +38,22 @@ Lower is better.
 
 ![Time to first token over time for every measured configuration](charts/qualification-2.png)
 
+### Decode throughput
+
+Higher is better.
+
+![Decode throughput over time for every measured configuration](charts/qualification-3.png)
+
 ## Latest numbers
 
 Current values and signed changes against the saved reference, or the previous comparable measurement when no saved reference exists. Higher throughput and lower latency are better.
 
 ### One Spark
 
-| Model | Output throughput (tok/s) | Time to first token (seconds) | Time between tokens (ms) |
+| Model | Output throughput (tok/s) | Time to first token (seconds) | Decode throughput (tok/s) |
 | --- | --- | --- | --- |
 | Qwen3.5-4B (1 Spark) | 26.71 (-12.20% · Regressed) | 14.53 (+1.37% · Regressed) | — |
+| Qwen3.5-4B (1 Spark) | — | — | 62.95 (-0.58% · Within tolerance) |
 
 
 ## Measurement notes

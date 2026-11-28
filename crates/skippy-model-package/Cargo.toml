@@ -2,7 +2,7 @@
 name = "skippy-model-package"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Model package manifest and materialization helpers for Skippy"
 repository = "https://github.com/Mesh-LLM/skippy"

@@ -1,7 +1,7 @@
 name: Inference qualification
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'crates/**'
       - 'skippy_api/src/**'
@@ -67,6 +67,10 @@ on:
         default: pr
   workflow_call:
     inputs:
+      approved_fork_pr:
+        description: PR number supplied by the protected approved-fork controller.
+        type: string
+        default: ''
       release_candidate:
         description: Exact version commit staged by the protected Release workflow.
         type: string
@@ -82,21 +86,17 @@ permissions:
   pull-requests: read
   statuses: write
 concurrency:
-  group: inference-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
+  group: inference-${{ github.event.pull_request.number || inputs.approved_fork_pr || github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' || github.event_name == 'workflow_run' }}
 jobs:
   plan:
-    # PR qualification is manual: it runs only when the `qualify` label is
-    # present, so atomic Spark pairs are reserved on request rather than by
-    # every inference-path push. The workflow still triggers on path matches
-    # so an intentionally skipped run satisfies the PR checks aggregate.
-    if: >-
-      github.event_name != 'pull_request_target' ||
-      contains(github.event.pull_request.labels.*.name, 'qualify')
+    # Forks wait for the approved-fork controller, not this ungated target event.
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.id == github.event.repository.id
+    # Matching PR paths always require admission and native qualification.
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 20
     outputs:
-      source: ${{ steps.admission.outputs.source || github.event.pull_request.head.sha || github.sha }}
+      source: ${{ steps.admission.outputs.source || github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.sha }}
       profile: ${{ steps.admission.outputs.profile || 'pr' }}
       publication: ${{ steps.admission.outputs.publication }}
       matrix: ${{ steps.matrix.outputs.matrix }}
@@ -116,6 +116,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           QUALIFICATION_PROFILE: ${{ inputs.profile || 'release' }}
           RELEASE_CANDIDATE: ${{ inputs.release_candidate }}
+          APPROVED_FORK_PR: ${{ inputs.approved_fork_pr }}
         run: just inference-admit
       - id: matrix
         env:
@@ -134,7 +135,8 @@ jobs:
       max-parallel: 3
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
-    timeout-minutes: ${{ matrix.profile == 'pr' && 100 || 360 }}
+    # PR: up to 90 minutes queued, 31 minutes executing, plus cleanup/upload.
+    timeout-minutes: ${{ matrix.profile == 'pr' && 130 || 360 }}
     env:
       EVIDENCE: target/ci-evidence/inference-${{ matrix.id }}
     steps:
@@ -259,7 +261,7 @@ jobs:
 
   summary:
     needs: [plan, qualification, nightly_publish, compare]
-    if: always()
+    if: always() && needs.plan.result != 'skipped'
     runs-on: ${{ vars.SKIPPY_DEPOT_RUNNERS_ENABLED == 'true' && 'depot-ubuntu-24.04-4' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
@@ -267,7 +269,8 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ needs.plan.outputs.source || github.event.pull_request.head.sha || github.sha }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source || github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.sha }}
+          PROFILE: ${{ needs.plan.outputs.profile }}
           PLAN: ${{ needs.plan.result }}
           RESULT: ${{ needs.qualification.result }}
           PUBLICATION: ${{ needs.nightly_publish.result }}
@@ -281,12 +284,7 @@ jobs:
             const { SOURCE_SHA: sha, PLAN: plan, RESULT: result, PUBLICATION: publication,
               COMPARISON: comparison, PROFILE: profile, RELEASE_CANDIDATE: candidate, RUN_URL: url } = process.env;
             if (!/^[a-f0-9]{40}$/i.test(sha)) throw new Error('Invalid qualification source SHA');
-            // A skipped plan is an intentional opt-out: the PR carries no
-            // qualify label, so no Spark pair was reserved. Report it green
-            // instead of failing unlabeled PRs.
             const pullRequest = context.eventName === 'pull_request_target';
-            const skipped = plan === 'skipped' && pullRequest &&
-              !(context.payload.pull_request.labels ?? []).some(label => label.name === 'qualify');
             const nightly = process.env.PUBLICATION_REQUIRED === 'true';
             const compare = !nightly && (pullRequest || context.eventName === 'workflow_dispatch') &&
               (profile === 'pr' || profile === 'nightly');
@@ -294,28 +292,24 @@ jobs:
               (!nightly || publication === 'success') && (!compare || comparison === 'success');
             const description = passed
               ? 'Native Spark lab qualification'
-              : skipped
-              ? 'Intentionally skipped (no qualify label)'
               : nightly
               ? 'Nightly qualification or publication incomplete or failed'
               : compare && result === 'success'
               ? 'Published baseline comparison failed or incomplete'
               : 'Inference admission or qualification incomplete or failed';
-            if (skipped || plan !== 'success' || profile === 'release') {
-              const detail = skipped
-                ? 'Spark qualification was intentionally skipped because the PR does not carry the `qualify` label.'
-                : plan !== 'success'
+            if (plan !== 'success' || profile === 'release') {
+              const detail = plan !== 'success'
                 ? 'Qualification did not reach the lab. See the admission job for details.'
                 : 'The release profile runs longer AgentX trials and has no matching published baseline.';
-              const outcome = skipped ? 'Skipped' : passed ? 'Passed' : 'Failed';
+              const outcome = passed ? 'Passed' : 'Failed';
               await core.summary.addHeading('Inference qualification')
                 .addRaw(`**${outcome}** · \`${sha.slice(0, 12)}\`\n\n${detail}\n`, true).write();
             }
             await github.rest.repos.createCommitStatus({
               ...context.repo, sha, context: 'Inference qualification',
-              state: passed || skipped ? 'success' : 'failure', description, target_url: url
+              state: passed ? 'success' : 'failure', description, target_url: url
             });
-            if (!passed && !skipped) core.setFailed(description);
+            if (!passed) core.setFailed(description);
 
   report:
     needs: [plan, qualification, summary]

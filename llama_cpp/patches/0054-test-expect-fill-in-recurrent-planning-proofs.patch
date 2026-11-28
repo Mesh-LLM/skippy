@@ -1,0 +1,49 @@
+From d7ed180f07fde50293ec7007dc2cf4f4ac5b1301 Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Wed, 25 Nov 2026 08:16:42 +1100
+Subject: [PATCH] test: expect native fill operations in recurrent planning
+ proofs
+
+---
+ src/skippy/tests/noalloc_graph_planning.cpp      | 2 +-
+ src/skippy/tests/renamed_multishard_planning.cpp | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/skippy/tests/noalloc_graph_planning.cpp b/src/skippy/tests/noalloc_graph_planning.cpp
+index 7470f3309..19c998e6a 100644
+--- a/src/skippy/tests/noalloc_graph_planning.cpp
++++ b/src/skippy/tests/noalloc_graph_planning.cpp
+@@ -731,7 +731,7 @@ static bool check_state_effects(
+             const ggml_tensor * node = effect.effect_node;
+             const bool batched_conv = rollback_depth > 0 && owner.kind == skippy_state_kind::recurrent_conv &&
+                     layer_classes[owner.layer] == layer_state_class::recurrent && effect.write_ordinal == 2;
+-            const ggml_op expected = effect.write_ordinal == 0 ? GGML_OP_SCALE :
++            const ggml_op expected = effect.write_ordinal == 0 ? GGML_OP_FILL :
+                     batched_conv ? GGML_OP_SET_ROWS : GGML_OP_CPY;
+             if (node->op != expected) {
+                 std::fprintf(stderr, "metadata-only %s state write uses op %d, expected %d\n",
+diff --git a/src/skippy/tests/renamed_multishard_planning.cpp b/src/skippy/tests/renamed_multishard_planning.cpp
+index 720ba457a..9dbebc7b3 100644
+--- a/src/skippy/tests/renamed_multishard_planning.cpp
++++ b/src/skippy/tests/renamed_multishard_planning.cpp
+@@ -726,7 +726,7 @@ bool build_profile(
+                 return false;
+             }
+             // Every declared write must reference its real graph node: CPY,
+-            // batched rollback SET_ROWS, or ordinal-0 SCALE, targeting registered
++            // batched rollback SET_ROWS, or ordinal-0 FILL, targeting registered
+             // storage. A discarded copy node or a non-write tensor registered as
+             // the effect node fails here instead of mis-ordering stage plans.
+             for (const auto & effect : effects) {
+@@ -740,7 +740,7 @@ bool build_profile(
+                 }
+                 const bool rollback_conv = llama_n_rs_seq(context.get()) > 0 &&
+                         effect.kind == skippy_state_kind::recurrent_conv && effect.write_ordinal == 2;
+-                const ggml_op expect = effect.write_ordinal == 0 ? GGML_OP_SCALE :
++                const ggml_op expect = effect.write_ordinal == 0 ? GGML_OP_FILL :
+                         rollback_conv ? GGML_OP_SET_ROWS : GGML_OP_CPY;
+                 if (node->op != expect) {
+                     error = "delta-net state write at layer " + std::to_string(il) +
+-- 
+2.56.0
+

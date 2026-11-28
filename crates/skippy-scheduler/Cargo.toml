@@ -3,7 +3,7 @@ name = "skippy-scheduler"
 version.workspace = true
 edition = { workspace = true }
 license = { workspace = true }
-publish = false
+publish = ["crates-io"]
 description = "Iteration-level scheduler for concurrent staged serving with unified KV"
 repository = "https://github.com/Mesh-LLM/skippy"
 homepage = "https://github.com/Mesh-LLM/skippy"

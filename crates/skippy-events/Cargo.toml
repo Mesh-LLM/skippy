@@ -2,7 +2,7 @@
 name = "skippy-events"
 edition.workspace = true
 license.workspace = true
-publish = false
+publish = ["crates-io"]
 version.workspace = true
 description = "Inference correlation, usage and lifecycle contracts for Skippy"
 repository = "https://github.com/Mesh-LLM/skippy"

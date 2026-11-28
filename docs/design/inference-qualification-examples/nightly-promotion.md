@@ -1,10 +1,10 @@
 # Inference qualification
 
-**0 regressions · 1 improvements · 1 within tolerance · 0 first measurements**
+**0 regressions · 2 improvements · 1 within tolerance · 0 first measurements**
 
 19 Nov 2026 14:00 UTC · Engine `bbbbbbbbbbbb` · nightly · Qualification: Passed · **Tolerance: ±1%** · NVIDIA GB10 DGX Spark
 
-1 measured configurations. Counts refer to performance metrics. First measurements establish new series and have no trend verdict.
+2 measured configurations. Counts refer to performance metrics. First measurements establish new series and have no trend verdict.
 
 ## Performance over time
 
@@ -22,15 +22,22 @@ Lower is better.
 
 ![Time to first token over time for every measured configuration](summaries/nightly-promotion/charts/qualification-2.png)
 
+### Decode throughput
+
+Higher is better.
+
+![Decode throughput over time for every measured configuration](summaries/nightly-promotion/charts/qualification-3.png)
+
 ## Latest numbers
 
 Current values and signed changes against the saved reference, or the previous comparable measurement when no saved reference exists. Higher throughput and lower latency are better.
 
 ### One Spark
 
-| Model | Output throughput (tok/s) | Time to first token (seconds) | Time between tokens (ms) |
+| Model | Output throughput (tok/s) | Time to first token (seconds) | Decode throughput (tok/s) |
 | --- | --- | --- | --- |
 | Qwen3.5-4B (1 Spark) | 30.42 (+15.71% · Improved) | 14.23 (-0.73% · Within tolerance) | — |
+| Qwen3.5-4B (1 Spark) | — | — | 64.01 (+1.09% · Improved) |
 
 
 ## Measurement notes

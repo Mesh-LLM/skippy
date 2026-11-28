@@ -25,5 +25,6 @@ def workload_label(workload):
     return {
         "DGX Spark AgentX nightly v1": "Nightly AgentX (v1)",
         "DGX Spark smoke v1": "Smoke test (v1)",
+        "DGX Spark warm probe v2": "Warm throughput probe (v2)",
         "DGX Spark smoke v1 (experimental split)": "Smoke test (v1, experimental split)",
     }.get(workload, workload)

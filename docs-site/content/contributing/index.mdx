@@ -90,6 +90,55 @@ The pull request should explain the user-visible behavior, relevant contracts,
 test coverage, and benchmark comparison. A missing required fixture or device
 cannot count as successful qualification.
 
+## Investigate inference performance with InferenceKit
+
+[InferenceKit](https://github.com/KittenML/inferencekit) helps investigate
+latency, throughput, quality, and profiling on a specific model and device.
+The repository's Bash wrapper pins `inferencekit-cli==0.1.1`; use it to inspect
+your machine before starting an experiment:
+
+```console
+scripts/inferencekit.sh doctor
+```
+
+Install [uv](https://docs.astral.sh/uv/) and Python 3.10 or newer first. The
+first invocation may download the pinned CLI. To probe a running Skippy server
+through its default OpenAI-compatible address, run these commands from the
+repository root:
+
+```console
+just build
+./target/debug/skippy serve --model /path/to/model.gguf
+# In a second terminal, after the server is ready:
+scripts/inferencekit.sh gates run --base-url http://127.0.0.1:9337
+```
+
+The wrapper invokes the pinned CLI through `uvx` and stores evidence under the
+Git-ignored `target/inferencekit/` directory. Set `INFERENCEKIT_RUNS_DIR` to
+choose another location. On Windows, run the wrapper in a Bash shell or invoke
+`uvx --from 'inferencekit-cli==0.1.1' inferencekit` directly in PowerShell.
+If `doctor` cannot find a profiler or the gates cannot reach a ready server,
+inspect the reported limitation before drawing a performance conclusion.
+
+For agent-guided experiments in Codex, install the
+[InferenceKit plugin](https://github.com/KittenML/inferencekit/blob/main/docs/install.md)
+in your Codex environment:
+
+```console
+codex plugin marketplace add KittenML/inferencekit
+codex plugin add inferencekit@inferencekit
+```
+
+Then select an InferenceKit skill such as `$inferencekit:benchmarking` or
+`$inferencekit:optimizing-inference`. The CLI wrapper also works without the
+agent plugin. Record the exact model artifact, workload, hardware/backend,
+baseline, changed result, and quality evidence when reporting a speedup.
+Profiles and logs can contain credentials and host details, so review them
+before sharing. Local InferenceKit probes are exploratory; Skippy's existing
+model and hardware qualification remains the release gate. See the
+[upstream CLI reference](https://github.com/KittenML/inferencekit#cli-and-mcp-server)
+for commands and options.
+
 ## How changes are evaluated
 
 Review checks correctness and contract preservation first. Benchmarks compare
