@@ -71,6 +71,10 @@ jq -e '.body | contains("Lab Qualification: Passed") and contains("| 500.0 | Una
 grep -q 'POST$' "$fixture/mutation"
 cmp "$GITHUB_STEP_SUMMARY" <(jq -rj .body "$fixture/posted.json")
 
+# In-flight legacy workflows can finish after main deploys, without a baseline pin.
+BASELINE_SHA='' report
+jq -e '.body | contains("Legacy smoke rates are diagnostic only") and contains("| 500.0 | Unavailable | 100.0 | Unavailable |")' "$fixture/posted.json" > /dev/null
+
 # Old protected producers remain readable, but their short answers are never warm TPS.
 jq 'del(.workload) | .decode_tokens=11 | .decode_ms=400' "$fixture/good-rates.json" > "$rates"
 report
@@ -163,4 +167,5 @@ for changed in '.baseline_sha="wrong"' '.source_sha="wrong"' '.run_id="wrong"' '
 done
 cp "$fixture/good-paired.json" "$fixture/evidence/$row-paired.json"
 BASELINE_SHA=main reject 'mutable baseline'
+BASELINE_SHA='' reject 'missing paired baseline'
 printf '%s\n' 'Inference report contracts passed'

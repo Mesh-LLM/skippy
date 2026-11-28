@@ -160,17 +160,19 @@ class PairedTests(unittest.TestCase):
                 arm_archives(pilot, "run_test", data["runs"])
 
     def test_rendezvous_requires_worker_completion_and_propagates_failure(self):
-        with Coordinator("127.0.0.1", port=0) as coordinator:
-            origin = f"http://127.0.0.1:{coordinator.server.server_address[1]}"
-            exchange(origin, "/ready", {"host": "worker"})
-            self.assertEqual(coordinator.wait(lambda s: s["worker"]), {"host": "worker"})
-            coordinator.state["index"] = 2
-            self.assertEqual(exchange(origin, "/state")["index"], 2)
-            exchange(origin, "/done", {"index": 2})
-            self.assertTrue(coordinator.wait(lambda s: s["done"] == 2))
-            exchange(origin, "/error", {"failed": True})
-            with self.assertRaisesRegex(RuntimeError, "worker failed"):
-                coordinator.wait(lambda s: s["done"] == 3)
+        for host, address in (("127.0.0.1", "127.0.0.1"), ("::1", "[::1]")):
+            with self.subTest(host=host):
+                with Coordinator(host, port=0, host=host) as coordinator:
+                    origin = f"http://{address}:{coordinator.server.server_address[1]}"
+                    exchange(origin, "/ready", {"host": "worker"})
+                    self.assertEqual(coordinator.wait(lambda s: s["worker"]), {"host": "worker"})
+                    coordinator.state["index"] = 2
+                    self.assertEqual(exchange(origin, "/state")["index"], 2)
+                    exchange(origin, "/done", {"index": 2})
+                    self.assertTrue(coordinator.wait(lambda s: s["done"] == 2))
+                    exchange(origin, "/error", {"failed": True})
+                    with self.assertRaisesRegex(RuntimeError, "worker failed"):
+                        coordinator.wait(lambda s: s["done"] == 3)
 
     def test_admission_pins_current_main_instead_of_selecting_a_successful_nightly(self):
         module = run_path(str(Path(__file__).resolve().parents[1] / "inference-plan.py"))

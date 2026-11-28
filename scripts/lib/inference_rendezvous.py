@@ -1,11 +1,13 @@
 """Keep split comparison arms in lockstep within one reserved JY formation."""
 
+import ipaddress
 import json
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import URLError
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
 
 from .ci_process import DEADLINE
 
@@ -23,16 +25,17 @@ def await_condition(check, seconds=1800):
 
 
 class Coordinator:
-    def __init__(self, worker_host, port=9913):
+    def __init__(self, worker_host, port=9913, *, host="0.0.0.0"):
         self.state = {"index": -1, "done": -1, "worker": None, "error": None, "complete": False}
         state = self.state
+        worker_address = ipaddress.ip_address(worker_host)
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_args):
                 pass
 
             def do_GET(self):
-                if self.client_address[0] != worker_host or self.path != "/state":
+                if ipaddress.ip_address(self.client_address[0]) != worker_address or self.path != "/state":
                     self.send_error(403)
                     return
                 body = json.dumps(state).encode()
@@ -42,7 +45,7 @@ class Coordinator:
                 self.wfile.write(body)
 
             def do_POST(self):
-                if self.client_address[0] != worker_host or self.path not in {"/ready", "/done", "/error"}:
+                if ipaddress.ip_address(self.client_address[0]) != worker_address or self.path not in {"/ready", "/done", "/error"}:
                     self.send_error(403)
                     return
                 size = int(self.headers.get("Content-Length", "0"))
@@ -59,7 +62,10 @@ class Coordinator:
                 self.send_response(200)
                 self.end_headers()
 
-        self.server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+        class Server(ThreadingHTTPServer):
+            address_family = socket.AF_INET6 if ipaddress.ip_address(host).version == 6 else socket.AF_INET
+
+        self.server = Server((host, port), Handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
     def __enter__(self):
@@ -83,7 +89,7 @@ class Coordinator:
 def exchange(origin, path, value=None):
     data = None if value is None else json.dumps(value).encode()
     request = Request(origin + path, data=data, headers={"Content-Type": "application/json"})
-    with urlopen(request, timeout=5) as response:
+    with build_opener(ProxyHandler({})).open(request, timeout=5) as response:
         body = response.read(65537)
         return json.loads(body) if body else True
 

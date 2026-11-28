@@ -47,7 +47,7 @@ fi
 
 # shellcheck source=scripts/lib/inference-report-baseline.sh
 source "$root/scripts/lib/inference-report-baseline.sh"
-baseline_note=$(prepare_baseline)
+baseline_note=$(prepare_baseline "$directory")
 
 cat > "$temporary/body.md" <<EOF
 $marker

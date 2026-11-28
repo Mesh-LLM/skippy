@@ -14,8 +14,14 @@ validate_rates() {
 }
 
 prepare_baseline() {
-  [[ ${BASELINE_SHA:-} =~ ^[a-f0-9]{40}$ ]] || fail 'Missing admitted immutable main SHA'
-  printf 'Paired reference: protected main commit %s, pinned at admission and rerun on the same reserved hardware.' "$BASELINE_SHA"
+  local pair
+  for pair in "$1"/*-paired.json; do
+    [[ -f $pair ]] || continue
+    [[ ${BASELINE_SHA:-} =~ ^[a-f0-9]{40}$ ]] || fail 'Missing admitted immutable main SHA'
+    printf 'Paired reference: protected main commit %s, pinned at admission and rerun on the same reserved hardware.' "$BASELINE_SHA"
+    return
+  done
+  printf 'Paired comparison unavailable. Legacy smoke rates are diagnostic only; no main delta is reported.'
 }
 
 paired_rows() {

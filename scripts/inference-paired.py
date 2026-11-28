@@ -153,7 +153,8 @@ def execute(key, mode, baseline):
             worker(origin, designs, main, baseline, key, output, {"host": local, "builds": identities})
             return
         remote = next((p["host"] for p in peers if p["role"] == "worker"), None)
-        with Coordinator(remote) if remote else nullcontext() as coordinator:
+        leader_host = next((p["host"] for p in peers if p["role"] == "leader"), None)
+        with Coordinator(remote, host=leader_host) if remote else nullcontext() as coordinator:
             placements = [local]
             builds = [{"role": role, **identities}]
             if coordinator:
