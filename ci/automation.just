@@ -37,6 +37,7 @@ automation-contracts: inference-contracts ci-vulkan-contracts
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_smoke_readiness.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_product_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_contracts.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_abi.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_publisher_config.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_diagnostics.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_verification.py
