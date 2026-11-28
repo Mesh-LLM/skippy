@@ -261,3 +261,5 @@ target matrix and `ci/README.md`. Validate syntax, matrix consistency, relevant
 Rust tests and the actual Just commands. Report unexecuted hardware checks and
 unverified external runner/repository configuration explicitly. Never describe
 workflow syntax validation as a successful build or hardware qualification.
+
+KV cache qualification in this branch runs after exact-package device smoke in the Metal and ARM64 CUDA 13 package jobs: short on selected PR packages, full on full CI. Harness and action inputs select those packages through the shared package filter.

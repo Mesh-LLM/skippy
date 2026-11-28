@@ -55,6 +55,8 @@ uuid = { version = "1", features = ["v4"] }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 skippy-runtime = { path = "../skippy-runtime", version = "0.80.0", features = ["test-support"] }
 tempfile = "3"
+tokio = { version = "1", features = ["process", "time"] }
 tower = { version = "0.5", features = ["util"] }

@@ -22,7 +22,14 @@ impl LocalDiskCacheOptions {
         ) {
             Ok(manager) => manager,
             Err(error) => {
-                tracing::warn!(%error, "disk prompt cache unavailable; using cold prefill");
+                let message = "Skippy L3 disk cache unavailable. Serving continues without L3.";
+                tracing::warn!(%error, "{message}");
+                let _ = skippy_events::diagnostics::emit(
+                    skippy_events::diagnostics::ServingDiagnostic::Warning {
+                        message: message.to_owned(),
+                        context: Some(format!("{error:#}")),
+                    },
+                );
                 None
             }
         }

@@ -13,6 +13,7 @@ use crate::frontend::tool_emulation;
 use crate::frontend::util::openai_backend_error;
 use crate::runtime_state::panic_recovery::lock_runtime;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use skippy_inference_api::ChatMessage;
 use skippy_inference_api::GenerationHookSignals;
 use skippy_inference_api::InferenceError;
@@ -36,6 +37,19 @@ struct RenderedChatPrompt {
     prompt: String,
     media: Vec<MediaInput>,
     metadata_json: String,
+}
+
+fn cache_template_digest(options: &ChatTemplateOptions) -> Option<[u8; 32]> {
+    let template = options.chat_template.as_deref();
+    if template.is_none() && options.use_jinja {
+        return None;
+    }
+    let mut hash = Sha256::new();
+    hash.update([u8::from(options.use_jinja), u8::from(template.is_some())]);
+    if let Some(template) = template {
+        hash.update(template.as_bytes());
+    }
+    Some(hash.finalize().into())
 }
 
 impl StageOpenAiBackend {
@@ -113,6 +127,7 @@ impl StageOpenAiBackend {
 
         // Native path: render with tools and use the template's own metadata.
         let native = self.render_chat_prompt(request, &options, &marker, None, true)?;
+        let cache_template_digest = cache_template_digest(&options);
         let shape =
             crate::generation_stats::RequestShape::of_chat(request, tool_calls_requested(request));
 
@@ -144,6 +159,7 @@ impl StageOpenAiBackend {
                 text: emulated.prompt,
                 media: emulated.media,
                 chat_parse_metadata: Some(emulated.metadata_json),
+                cache_template_digest,
                 recurrent_cache_prefix_text,
                 recurrent_system_prefix_text,
                 shape,
@@ -163,6 +179,7 @@ impl StageOpenAiBackend {
             text: native.prompt,
             media: native.media,
             chat_parse_metadata: Some(native.metadata_json),
+            cache_template_digest,
             recurrent_cache_prefix_text,
             recurrent_system_prefix_text,
             shape,
@@ -744,6 +761,28 @@ mod continuation_tests {
             "thinking_end_tags": ["</think>"],
         })
         .to_string()
+    }
+
+    #[test]
+    fn default_renderer_keeps_the_legacy_namespace_and_explicit_renderers_differ() {
+        let mut options = ChatTemplateOptions {
+            use_jinja: true,
+            ..Default::default()
+        };
+        assert_eq!(cache_template_digest(&options), None);
+        options.chat_template = Some("{{ messages[0].content }}".into());
+        let first = cache_template_digest(&options);
+        assert!(first.is_some());
+        assert_eq!(first, cache_template_digest(&options.clone()));
+        options.use_jinja = false;
+        assert_ne!(first, cache_template_digest(&options));
+        options.use_jinja = true;
+        options
+            .chat_template
+            .as_mut()
+            .unwrap()
+            .push_str("{# equivalent #}");
+        assert_ne!(first, cache_template_digest(&options));
     }
 
     #[test]

@@ -126,7 +126,8 @@ manifest commits, do not. Model unload and shutdown do not promise to flush
 every hot prefix. A refused or failed best-effort offload becomes a cache miss
 and cold prefill, rather than an inference failure.
 
-Durable identity includes the native ABI and state layout. Older serialized
+Durable identity includes the native ABI, runtime device order and placement,
+and state layout. Older serialized
 entries are not imported into the new runtime; they miss and are recomputed.
 No migration of the superseded cache representation is required.
 
@@ -169,3 +170,53 @@ Use uninterrupted continuations as the correctness reference for restored and
 forked state, and compare cache reuse and timings against vanilla llama on the
 same model, prompt tokens, output limits, and concurrency. Report actual native
 and Rust binary provenance with the results.
+
+## Inspect and maintain the disk cache
+
+Standalone Skippy defaults to an automatic L3 budget. It uses at most 64 GiB
+and preserves a 16 GiB filesystem reserve by default. Use `--kv-cache-disk off`
+to disable L3. When Skippy prepares a local model with prefix reuse enabled,
+it allows up to 256 MiB of L2 host RAM by default for serialized disk fills. Use `--prefix-cache-ram off`
+to disable that tier. Prepared stage configurations carry their own L2
+limits.
+
+Pass the settings file used to start Skippy, or use the same disk cache flags
+and environment variables. The commands use the serving settings precedence
+of CLI flags, environment, TOML, and defaults.
+
+```sh
+skippy kv-cache --settings serve.toml status
+skippy --output json kv-cache --settings serve.toml status
+skippy kv-cache --settings serve.toml prune --target 8GiB
+skippy kv-cache --settings serve.toml clear --model-identity "$model_identity" --yes
+```
+
+`status` reports the active disk limits, filesystem free space, usage and
+object counts, activity since the cache opened, startup reconciliation, and
+inventory grouped by model identity. Inventory reports logical state bytes
+per model. The whole-store usage accounts for physical space shared by cached
+entries. JSON emits one result object with `schema_version: 1`. JSONL wraps
+that object in the standard Skippy `result` event.
+
+`prune` trims least-recently-used inactive entries toward a whole-store byte
+target. Omit `--target` to use the active cache budget's low-water mark.
+`--model-identity` restricts which entries can be removed. Copy the complete
+identity printed by `status`. The result reports how much space was freed and
+whether the target was reached. `clear` removes all eligible entries for the
+selected scope. Pinned entries remain available to in-flight requests.
+Mutations prompt for consent in a human terminal. Use `--yes` in scripts.
+
+Each disk cache directory has one live Skippy owner. A replacement can
+reopen the directory after shutdown or process failure. When the directory
+is already owned, a second server logs the conflict and continues serving
+with L3 unavailable. Use separate cache directories for concurrent servers
+that each need L3.
+
+For a running server, maintenance goes through its private, authenticated
+loopback listener. An offline command can open and reconcile the store once
+it holds the exclusive cache root lock. If status reports that the root is
+already owned, use the serving process's cache settings and OS account. If
+the owner is unreachable, stop it before issuing offline maintenance.
+`read_only_low_space` means the store can still serve reads and has stopped
+admitting writes to preserve the filesystem reserve. Free space on that
+filesystem or prune inactive entries, then check status again.

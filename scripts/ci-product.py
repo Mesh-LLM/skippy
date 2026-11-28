@@ -13,7 +13,7 @@ from pathlib import Path
 from lib import ci_artifacts as artifacts
 from lib.ci_process import cancel_on_signal, capture, command
 from lib.ci_targets import require_host, targets, validate_native_identity
-from lib.ci_smoke import artifact_smoke, smoke
+from lib.ci_smoke import artifact_smoke, smoke, unpack_product
 from lib.ci_vulkan import toolchain as vulkan_toolchain
 
 
@@ -158,14 +158,16 @@ def package(host, runtime, host_input, runtime_input):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     actions = parser.add_subparsers(dest="action", required=True)
-    for name in ("host", "runtime", "package", "smoke", "artifact-smoke"):
+    for name in ("host", "runtime", "package", "smoke", "artifact-smoke", "extract-runtime"):
         action = actions.add_parser(name)
         action.add_argument("id")
         if name == "package":
             action.add_argument("host_input", type=Path)
             action.add_argument("runtime_input", type=Path)
-        elif name in ("smoke", "artifact-smoke"):
+        elif name in ("smoke", "artifact-smoke", "extract-runtime"):
             action.add_argument("product_input", type=Path)
+        if name == "extract-runtime":
+            action.add_argument("output", type=Path)
     args = parser.parse_args()
     hosts, runtimes = targets()
     if args.action == "host":
@@ -179,6 +181,9 @@ def main():
             package(host, runtime, args.host_input, args.runtime_input)
         elif args.action == "artifact-smoke":
             artifact_smoke(host, runtime, args.product_input)
+        elif args.action == "extract-runtime":
+            unpack_product(host, runtime, args.product_input, args.output)
+            validate_native_identity(args.output / "native-runtimes" / args.id, host, runtime)
         else:
             smoke(host, runtime, args.product_input)
 

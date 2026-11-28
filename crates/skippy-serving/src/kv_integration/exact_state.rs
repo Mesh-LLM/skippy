@@ -1158,18 +1158,20 @@ impl KvStageIntegration {
             cold_prefill_cost,
             restore_cost,
         );
-        // Re-warm the RAM tier off the request path. A drop is fine: the
-        // disk copy stays authoritative. The fill claim rides along so the
-        // worker releases it only once the entry is radix-resident.
-        if self.records_resident_prefixes() {
-            let tokens = &identity.token_ids[..token_count as usize];
-            runtime.restore_token_history(session_id, tokens)?;
-            let mut prefix = identity.clone();
-            prefix.token_ids = tokens.to_vec();
-            prefix.identity.token_count = token_count;
-            let _ = self.record_resident_prefix(runtime, session_id, &prefix, tokens);
+        let resident = self.records_resident_prefixes();
+        let tokens = &identity.token_ids[..token_count as usize];
+        if resident {
+            self.rewarm_resident_prefix(runtime, session_id, identity, tokens)?;
         }
-        if fill.cachegen_kv || self.records_resident_prefixes() {
+        let l2_promotion_digest = if fill.cachegen_kv {
+            None
+        } else {
+            self.l2.as_ref().and_then(|l2| {
+                l2.consider_l3_fill(&location.manifest_key, token_count, fill.payload.byte_len())
+                    .then(|| location.manifest_key.clone())
+            })
+        };
+        if fill.cachegen_kv || (resident && l2_promotion_digest.is_none()) {
             return Ok(Some(ExactStateRestore {
                 page_id: identity.page_id.clone(),
                 token_count: token_count as usize,
@@ -1191,10 +1193,6 @@ impl KvStageIntegration {
                 rewarm_enqueued: false,
             }));
         }
-        let l2_promotion_digest = self.l2.as_ref().and_then(|l2| {
-            l2.consider_l3_fill(&location.manifest_key, token_count, fill.payload.byte_len())
-                .then(|| location.manifest_key.clone())
-        });
         let rewarm_enqueued = ExactStateAdmissionCredit::acquire(
             &self.admission_outstanding,
             &self.admission_best_effort_outstanding,

@@ -610,9 +610,9 @@ Native jobs separately cache prepared llama.cpp sources by upstream pin, complet
 ordered patch queues and preparation recipe, and whisper.cpp sources by their
 pin and preparation recipe. Existing preparation commands still validate or
 reapply the selected inputs on every run. Explicit source overrides bypass the
-corresponding source cache. Smoke jobs cache the immutable Qwen fixture using its
-admission manifest and fetch recipe; model admission always verifies its size and
-SHA-256, even after a cache hit. A supplied `SKIPPY_CI_MODEL` bypasses that cache.
+corresponding source cache. Smoke and KV jobs use `hf download` with the
+runner's Hugging Face cache. Model admission verifies size and SHA-256,
+including on cache hits. A supplied `SKIPPY_CI_MODEL` is verified directly.
 
 The upgrade candidate and both supported-family passes restore command-runner
 and compiler caches. Family passes may also reuse prepared sources. Each pass
@@ -655,8 +655,8 @@ Sparks. Protected dispatch code verifies trust before sending a pinned source
 SHA. Jobs use the standard JY account and its existing host permissions without publisher credentials,
 fresh workspaces, read-only admitted models, exclusive machine reservations and
 bounded leases. Clean up job processes and workspaces after every outcome;
-quarantine an allocation whose cleanup fails. Fork and other untrusted PRs still
-require isolated ephemeral execution. The `unconfined` capability is not itself
+quarantine an allocation whose cleanup fails. Fork PRs enter native execution only through the protected approved-fork
+controller after maintainer workflow approval; other untrusted work stays isolated. The `unconfined` capability is not itself
 an admission failure; no separate job-account migration is required. Actions
 only orchestrates these jobs, so the 6 GiB runner-container limit does not bound
 model execution. Split jobs reserve both Sparks atomically. This policy does not
@@ -681,7 +681,22 @@ or devices fail the job. Compiler-only CUDA rows validate the extracted package'
 runtime metadata and native dependency closure, then check CLI startup. This
 artifact smoke is recorded separately from inference evidence.
 
+The [cache parity verifier](cache-qualification/PARITY.md) evaluates measured
+candidate and baseline trials against the Phase 1 performance thresholds.
+
 ## Artifact flow
+
+```mermaid
+flowchart LR
+    path["Independent path selection and build plan"] --> automation["Offline automation"]
+    automation --> quality["Source checks when selected"]
+    quality --> metal["Metal package and device smoke"]
+    quality --> arm["ARM64 CUDA 13 package and device smoke"]
+    metal --> metalKv["KV in the same job<br/>Selected short: one fixture; full: four"]
+    arm --> armKv["KV in the same job<br/>Selected short: one fixture; full: four"]
+    metalKv --> gate["CI result gate"]
+    armKv --> gate
+```
 
 `just ci-plan` validates the target matrix with `jq`. The package and
 smoke commands use Python 3.9 or later. Release inventory uses Python
@@ -998,3 +1013,5 @@ Enable the llama schedule only after source regeneration, full candidate CI,
 bounded repair and exact-commit PR publication work in acceptance pilots.
 
 No hosted/hardware capacity or secret configuration is implied by these files.
+
+KV qualification remains attached to both native package jobs (Metal and ARM64 CUDA 13): short checks on selected PR packages and the full four-fixture checks on full CI. Both use the exact packaged runtime after device smoke and retain independent KV evidence. The shared packages filter includes the KV harness and action inputs. CUDA archives use the shared product handoff; no separate duplicate ARM64 package/device job is required.

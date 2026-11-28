@@ -105,7 +105,8 @@ matching official tokenizer revision and layer count. Most fixtures use Q4_K_M;
 Flash-Next uses the four-shard IQ4_XS base model, not similarly named MTP sidecars.
 Admission reserves at least 16 GiB beyond weight bytes and checks available
 unified memory. This floor is not proof every context fits; real allocation
-failures remain failures. Model caches are explicit, hash-verified inputs.
+failures remain failures. Native jobs use `hf download` with the NAS-backed
+Hugging Face cache, verify each shard, and serve from the snapshot paths.
 
 Nightly and release run CPU chain parity and state-handoff checks against native
 monolithic execution (sharing file-backed weights avoids duplicate GPU copies

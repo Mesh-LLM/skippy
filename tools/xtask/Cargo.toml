@@ -1,0 +1,27 @@
+[package]
+name = "xtask"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "Skippy KV cache qualification"
+
+[dependencies]
+process-supervision = { package = "skippy-subprocess", path = "../process-supervision" }
+skippy-model-artifact = { path = "../../crates/skippy-model-artifact" }
+serde.workspace = true
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+sha2.workspace = true
+hex = "0.4"
+tar = "0.4"
+tempfile = "3"
+
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+tokio = { version = "1", features = ["rt", "net", "time", "macros"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+[lints]
+workspace = true

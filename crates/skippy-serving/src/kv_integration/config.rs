@@ -7,7 +7,7 @@ use anyhow::Result;
 use skippy_cache::{
     CacheBlobStore, GeometryBlock, GeometryKind, L3CacheManager, L3Tier, PayloadGeometry,
     ResidentActivationCache, ResidentCacheConfig, SparseCheckpointPolicy, StoreLimits,
-    UnifiedRadixCache, exact_state_identity_for_stage, numerical_model_identity_for_stage,
+    UnifiedRadixCache, numerical_model_identity_for_stage,
 };
 use skippy_protocol::{StageConfig, StageKvCacheCodec, StageKvCacheConfig, StageKvCacheMode};
 use skippy_runtime::{ModelStateKind, RuntimeKvPageDesc};
@@ -24,6 +24,7 @@ use super::{
     exact_state::exact_state_admission_total_for_lanes,
 };
 
+mod durable_identity;
 pub(super) mod durable_spill;
 mod exact_state_limits;
 mod exact_state_retention;
@@ -139,7 +140,16 @@ impl KvStageIntegration {
         } else {
             None
         };
-        if !admitted.resident && cache_config.l2_max_bytes > 0 && l3_manager.is_none() {
+        let durable_payload = l3_manager
+            .as_ref()
+            .and_then(|_| durable_cache_payload(admitted));
+        let l3 = l3_manager
+            .zip(durable_payload)
+            .and_then(|(manager, payload)| {
+                l3_tier_for_manager(config, payload, manager, loaded_model_content.as_deref())
+            });
+        let durable_payload = durable_payload.filter(|_| l3.is_some());
+        if !admitted.resident && cache_config.l2_max_bytes > 0 && l3.is_none() {
             let _ = skippy_events::diagnostics::emit(
                 skippy_events::diagnostics::ServingDiagnostic::Warning {
                     message: "Skippy L2 host-RAM cache disabled for this model stage".to_string(),
@@ -150,27 +160,14 @@ impl KvStageIntegration {
                 },
             );
         }
-        let durable_payload = l3_manager
-            .as_ref()
-            .and_then(|_| durable_cache_payload(admitted));
-        let l3 = l3_manager
-            .zip(durable_payload)
-            .map(|(manager, payload)| {
-                l3_tier_for_manager(config, payload, manager, loaded_model_content.as_deref())
-            })
-            .transpose()?;
         let l2 = l3
             .as_ref()
-            .filter(|_| !admitted.resident && cache_config.l2_max_bytes > 0)
-            .and(durable_payload)
-            .map(|payload| {
+            .filter(|_| cache_config.l2_max_bytes > 0)
+            .map(|tier| {
                 super::l2_serving::StageL2::new(
                     cache_config.l2_max_bytes,
-                    numerical_model_identity_for_stage(config),
-                    bind_model_content(
-                        loaded_model_content.as_deref(),
-                        exact_state_identity_for_stage(config, l3_payload_kind(payload)),
-                    ),
+                    tier.model_identity().to_owned(),
+                    tier.state_identity().to_owned(),
                 )
             });
         // Complete exporters are admitted by the native graph and memory; state
@@ -301,6 +298,21 @@ impl KvStageIntegration {
                         worker_observer.as_ref(),
                         pending,
                         |pending| {
+                            if admitted.resident
+                                && let (Some(l2), Some(digest)) =
+                                    (worker_l2.as_ref(), pending.l2_promotion_digest.as_deref())
+                            {
+                                // The native resident prefix already owns L1.
+                                // Publish only the bounded host-RAM mirror.
+                                let _ = l2.promote(
+                                    &pending.namespace,
+                                    &pending.token_ids,
+                                    digest,
+                                    &pending.payload,
+                                    &pending.extra,
+                                );
+                                return Ok(());
+                            }
                             // The serving worker owns only L1/L2 publication.
                             // Durable I/O runs on its own bounded fail-open
                             // worker so an early page spill cannot head-of-line
@@ -514,14 +526,29 @@ fn l3_tier_for_manager(
     payload: StagePrefixCachePayload,
     manager: L3CacheManager,
     content: Option<&crate::runtime_state::model_content::VerifiedModelContent>,
-) -> Result<Arc<L3Tier>> {
-    let identity = bind_model_content(
-        content,
-        exact_state_identity_for_stage(config, l3_payload_kind(payload)),
-    );
+) -> Option<Arc<L3Tier>> {
+    let identity = match durable_identity::read(config, l3_payload_kind(payload)) {
+        Ok(identity) => identity,
+        Err(error) => {
+            let _ = skippy_events::diagnostics::emit(
+                skippy_events::diagnostics::ServingDiagnostic::Warning {
+                    message: "Skippy L3 disk cache disabled for this model stage".to_string(),
+                    context: Some(format!(
+                        "stage_id={} model_id={} reason={error:#}",
+                        config.stage_id, config.model_id,
+                    )),
+                },
+            );
+            return None;
+        }
+    };
     let model_identity = numerical_model_identity_for_stage(config);
     let root = manager.root().display().to_string();
-    let tier = manager.tier_for_model(model_identity, identity, L3_SEGMENT_BYTES);
+    let tier = manager.tier_for_model(
+        model_identity,
+        bind_model_content(content, identity),
+        L3_SEGMENT_BYTES,
+    );
     // Warm state must never be invisible: say what the tier can restore the
     // moment the stage comes up.
     match tier.status() {
@@ -549,7 +576,7 @@ fn l3_tier_for_manager(
             );
         }
     }
-    Ok(Arc::new(tier))
+    Some(Arc::new(tier))
 }
 
 fn bind_model_content(

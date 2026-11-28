@@ -51,6 +51,7 @@ pub(super) use std::{
 pub(super) use tokio::sync::Semaphore;
 
 mod cache_publication;
+mod cache_qualification;
 mod causal_decisions;
 mod chat_stream_deltas;
 mod draft_runtime;

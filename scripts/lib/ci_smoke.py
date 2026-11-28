@@ -16,10 +16,14 @@ from .ci_targets import require_host, validate_native_identity
 from .ci_vulkan import preflight as vulkan_preflight
 
 
-def verify_product(host, runtime, product_input, product):
+def unpack_product(host, runtime, product_input, product):
     require_host(host)
     artifacts.unpack(product_input, product, check_space=True)
     artifacts.verify(product, "product", host["target"], runtime["id"])
+
+
+def verify_product(host, runtime, product_input, product):
+    unpack_product(host, runtime, product_input, product)
     binary = artifacts.binary(product.resolve(), host["os"])
     env = environment()
     for key in ("LD_LIBRARY_PATH", "LD_PRELOAD", "DYLD_LIBRARY_PATH",
