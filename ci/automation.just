@@ -8,6 +8,7 @@ inference-contracts:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_logs.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_streaming.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_build.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_deadlines.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_probe.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/jy_read_recovery.py

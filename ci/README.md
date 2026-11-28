@@ -150,7 +150,14 @@ synchronization, reopening and readiness for review; no `qualify` label is neede
 Label changes do not restart or cancel qualification. Skipped admission or matrix
 jobs fail qualification and cannot satisfy `PR checks`.
 Qualification may queue behind another PR's atomic Spark pair; the PR
-budget waits for placement instead of failing fast. Branch PRs retain
+budget allows up to 90 minutes for placement and queueing instead of failing
+fast. Once either split member (or the standalone job) is observed running,
+the controller gives it 31 minutes to finish: the native 30-minute lease plus
+its 60-second grace. This execution clock starts once and never resets on
+later status polls or when the other split member starts. The Actions job
+allows 130 minutes in total, leaving nine minutes for setup, evidence and
+cleanup. Nightly/release total deadlines and native lease budgets are unchanged.
+Branch PRs retain
 same-repository/collaborator admission; forks use the approved
 controller above. Both retain a fresh-head check and all seven GPU smoke
 configurations. The credentialed controller runs only protected source.
