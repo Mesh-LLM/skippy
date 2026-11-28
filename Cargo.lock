@@ -5399,6 +5399,7 @@ dependencies = [
  "skippy-native-runtime",
  "sysinfo 0.38.4",
  "tempfile",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
