@@ -2,6 +2,10 @@
 ARG TOOLKIT_BASE=ubuntu:24.04
 FROM ${TOOLKIT_BASE} AS toolkit
 
+ARG BACKEND
+ARG TOOLKIT_VERSION
+COPY scripts/ci-preserve-cuda-license.sh /tmp/ci-preserve-cuda-license.sh
+
 # Drop vendor content CI never uses so consumers can pull the image onto
 # hosted runners with a 14 GB disk budget: profilers, docs, samples, the
 # compute sanitizer, and every static archive (builds link the shared
@@ -22,6 +26,9 @@ FROM ${TOOLKIT_BASE} AS toolkit
 # and hipcc link, and hipcc resolves them from the ROCm clang resource
 # directory, so deleting them breaks any device-host link.
 RUN set -eu \
+    && case "$BACKEND" in \
+         cuda12|cuda13) bash /tmp/ci-preserve-cuda-license.sh "$TOOLKIT_VERSION" ;; \
+       esac \
     && rm -rf \
       /usr/local/cuda/nsight-compute* \
       /usr/local/cuda/nsight-systems* \
@@ -37,32 +44,21 @@ RUN set -eu \
            find "$(readlink -f "$tree")" -name '*.a' ! -name 'libcudadevrt.a' ! -name 'libcudart_static.a' ! -name 'libclang_rt*' -type f -delete; \
          fi; \
        done \
-    && if [ -L /opt/rocm ]; then \
-         ln -sfn "$(readlink -f /opt/rocm)" /opt/rocm; \
-       fi
+    && for tree in /usr/local/cuda /usr/local/cuda-* /opt/rocm; do \
+         if [ -L "$tree" ]; then \
+           ln -sfn "$(readlink -f "$tree")" "$tree"; \
+         fi; \
+       done
 
-# ROCm resolves /opt/rocm through /etc/alternatives, which is not part of
-# the copied trees; the toolkit stage flattens that chain to a direct
-# symlink so the final image does not dangle. Copy the parent directories
-# so symlinks survive: the vendor trees use /usr/local/cuda ->
+# CUDA and ROCm resolve their toolkit aliases through /etc/alternatives,
+# which is not part of the copied trees; the toolkit stage flattens those
+# chains to direct symlinks so the final image does not dangle. Copy the
+# parent directories so symlinks survive: the vendor trees use /usr/local/cuda ->
 # /usr/local/cuda-<version> and the flattened /opt/rocm ->
 # /opt/rocm-<version>, and scripts call the versioned paths.
 FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8
-COPY --from=toolkit /usr/local/ /usr/local/
-COPY --from=toolkit /opt/ /opt/
 
-ARG BACKEND
-ARG TOOLKIT_VERSION
-ARG TARGETARCH
-ARG SKIPPY_CI_IMAGE_ID=local
-ARG SOURCE_REVISION=local
-
-LABEL org.opencontainers.image.source="https://github.com/general-inference/skippy" \
-      org.opencontainers.image.description="Skippy ${BACKEND} CI toolchain" \
-      org.opencontainers.image.revision="${SOURCE_REVISION}" \
-      org.opencontainers.image.version="${TOOLKIT_VERSION}" \
-      io.skippy.ci.backend="${BACKEND}"
-
+# All GPU backends use the same host build tools for a given architecture.
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential ca-certificates clang clang-format clang-tidy cmake curl \
@@ -70,6 +66,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libssl-dev libzstd-dev lld llvm-dev mold ninja-build patchelf pkg-config jq python3 \
       rustup xz-utils zlib1g-dev zstd \
     && rm -rf /var/lib/apt/lists/*
+
+# Copying the ROCm toolkit tree omits the host libraries its HSA runtime needs.
+ARG BACKEND
+RUN if [ "$BACKEND" = rocm ]; then \
+      apt-get update \
+      && apt-get install -y --no-install-recommends libdrm-amdgpu1 libdrm2 libelf1t64 libnuma1 \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# Copy the pruned vendor trees after installing the common host packages.
+COPY --from=toolkit /usr/local/ /usr/local/
+COPY --from=toolkit /opt/ /opt/
+
+ARG TOOLKIT_VERSION
+ARG TARGETARCH
+
+LABEL org.opencontainers.image.source="https://github.com/Mesh-LLM/skippy" \
+      org.opencontainers.image.description="Skippy ${BACKEND} CI toolchain" \
+      org.opencontainers.image.version="${TOOLKIT_VERSION}" \
+      io.skippy.ci.backend="${BACKEND}"
 
 ENV CARGO_HOME=/opt/rust/cargo \
     RUSTUP_HOME=/opt/rust/rustup \
@@ -140,11 +156,17 @@ RUN --network=none image_probe_dir="$(mktemp -d)" \
          && /usr/local/cuda-13.1/bin/nvcc -arch=sm_80 "$image_probe_dir/gpu.cu" -o "$image_probe_dir/gpu-probe"; \
        elif [ "$BACKEND" = rocm ]; then \
          printf '#include <hip/hip_runtime.h>\n__global__ void probe() {}\nint main() { return 0; }\n' > "$image_probe_dir/gpu.hip" \
-         && hipcc --offload-arch=gfx942 "$image_probe_dir/gpu.hip" -o "$image_probe_dir/gpu-probe"; \
+         && hipcc --offload-arch=gfx942 "$image_probe_dir/gpu.hip" -o "$image_probe_dir/gpu-probe" \
+         && dependencies="$(ldd "$ROCM_PATH/lib/libamdhip64.so")" \
+         && printf '%s\n' "$dependencies" \
+         && ! printf '%s\n' "$dependencies" | grep -F '=> not found'; \
        else echo "unsupported GPU backend: $BACKEND" >&2; exit 1; fi \
     && rm -rf "$image_probe_dir"
 
 USER root
+ARG SKIPPY_CI_IMAGE_ID=local
+ARG SOURCE_REVISION=local
+LABEL org.opencontainers.image.revision="${SOURCE_REVISION}"
 RUN test -n "$SKIPPY_CI_IMAGE_ID" \
     && printf '%s\n' "$SKIPPY_CI_IMAGE_ID" > /etc/skippy-ci-image-id
 USER runner

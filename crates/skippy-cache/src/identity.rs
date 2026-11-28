@@ -602,7 +602,7 @@ mod exact_state_identity_tests {
 
 #[cfg(test)]
 mod identity_completeness_tests {
-    use skippy_protocol::{LoadMode, StageDevice};
+    use skippy_protocol::{LoadMode, SampleThreads, StageDevice};
 
     use super::*;
 
@@ -665,7 +665,7 @@ mod identity_completeness_tests {
             kv_lazy_clear: None,
             kv_release_pages: None,
             kv_row_attention: None,
-            sample_threads: None,
+            sample_threads: SampleThreads::Auto,
             prefill_coalesce_max_ms: None,
             batch: Default::default(),
             cache_idle_slots: None,
@@ -973,7 +973,7 @@ mod identity_completeness_tests {
 
 #[cfg(test)]
 mod identity_stability_tests {
-    use skippy_protocol::LoadMode;
+    use skippy_protocol::{LoadMode, SampleThreads};
 
     use super::*;
 
@@ -1036,7 +1036,7 @@ mod identity_stability_tests {
             kv_lazy_clear: None,
             kv_release_pages: None,
             kv_row_attention: None,
-            sample_threads: None,
+            sample_threads: SampleThreads::Auto,
             prefill_coalesce_max_ms: None,
             batch: Default::default(),
             cache_idle_slots: None,

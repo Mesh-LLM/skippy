@@ -15,7 +15,6 @@ pub mod source_registry;
 
 pub mod materialization;
 pub mod materialized_cache;
-pub mod split_certification;
 pub mod split_execution;
 pub mod stage_admission;
 pub mod stage_load;
@@ -26,3 +25,5 @@ pub mod serving_profile;
 
 #[cfg(feature = "dynamic-native-runtime")]
 pub mod execution;
+
+pub mod tuning;

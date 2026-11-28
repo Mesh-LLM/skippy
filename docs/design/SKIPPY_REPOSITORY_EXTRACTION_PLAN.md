@@ -5,7 +5,7 @@ original extraction decisions and acceptance criteria; live runner, tag-release,
 and downstream Mesh cutover acceptance remain separate operational work.
 
 Prepared against source commit `937f236c3de65f496324af79739d4aed7b438733`.
-Destination: private `general-inference/skippy`.
+Original destination: a standalone private Skippy repository.
 
 ## Outcome and scope
 
@@ -251,8 +251,8 @@ command. Protect release tags from movement/deletion and restrict their creation
 Changing the current public URL to a private repository URL is insufficient:
 the runtime downloader currently performs unauthenticated HTTP requests.
 
-For the first release, use authenticated `gh release download --repo
-general-inference/skippy --pattern <bundle>` and install the complete bundle.
+For a private release, use authenticated `gh release download --repo
+Mesh-LLM/skippy --pattern <bundle>` and install the complete bundle.
 Adjacent `native-runtimes/` discovery then works offline without credentials in
 the serving process. Standalone commands should report a clear private-download
 instruction when no local runtime is present, rather than falling back to Mesh
@@ -333,7 +333,7 @@ and gates separately if those specific capabilities are to be advertised.
 Retain the broader supported-family roster and existing profile-specific tests
 when extracting the native engine. Passing Qwen3 alone must not preserve stale
 certification claims for other families after a pin change. Regenerate and
-validate `split-certified.json` against the exact candidate recipe, and require
+validate actual native stage admissions against the exact candidate recipe, and require
 the complete declared supported-family pass before promotion.
 
 Model preparation belongs to a separate verified cache population step; the
@@ -408,15 +408,15 @@ Primary source anchors in the current repository:
 - [Root workspace](../../Cargo.toml) and [Just build interface](../../Justfile).
 - [Automation dependencies](../../tools/xtask/Cargo.toml) and [Windows build owner](../../scripts/build-windows.ps1).
 - [Runtime catalog](../../crates/skippy-runtime-install/src/types.rs) and [remote model job](../../crates/skippy-model-package/src/scripts/split-model-job.sh).
-- [Family fixtures](../../ci/llama-canary/family-certified.json) and [upgrade orchestration](../../.github/workflows/llama-upgrade.yml).
+- [Family fixtures](../../ci/llama-canary/model-fixtures.json) and [upgrade orchestration](../../.github/workflows/llama-upgrade.yml).
 - [CLI packaging](../../scripts/package-cli-release.sh), [runtime packaging](../../scripts/package-native-runtime.sh), and [nested Rust workspace](../../skippy-api-rs/Cargo.toml).
 
 GitHub documents [reusable workflows](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows),
 [workflow triggering and token behavior](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow),
 and [authenticated release asset access](https://docs.github.com/en/rest/releases/assets).
 
-The planning-time `gh repo view general-inference/skippy` lookup did not resolve
-the repository. Publication therefore includes an explicit private-repository
+GitHub did not resolve the standalone repository at planning time.
+Publication therefore includes an explicit private-repository
 creation and settings audit rather than assuming prior state. Local standalone
 build, lint, Rust/native tests, history verification, workflow contracts, and
 deterministic llama patch replay are implementation gates. GPU/Windows runner

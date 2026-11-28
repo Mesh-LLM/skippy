@@ -11,7 +11,6 @@ use crate::{
     source::{
         planning::direct_gguf_planning_manifest_from_identity, synthetic_direct_gguf_package,
     },
-    split_certification::require_split_certification,
     stage_admission::{StagePlannerProfile, realize_direct_gguf_stage_admissions},
     stage_load::{
         AdmittedStageOptions, ResolvedStagePackage, admitted_activation_frontier,
@@ -57,12 +56,6 @@ impl SplitOptions {
         let options = &self.model.stage;
         let (manifest, paths) =
             direct_gguf_planning_manifest_from_identity(&options.model_id, identity)?;
-        let architecture = manifest
-            .model_metadata
-            .get("general.architecture")
-            .and_then(serde_json::Value::as_str)
-            .context("missing model architecture")?;
-        require_split_certification(identity, architecture, self.allow_uncertified)?;
         ensure!(
             identity.layer_count >= 2,
             "two stages require at least two layers"

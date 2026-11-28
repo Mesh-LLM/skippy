@@ -1,0 +1,26 @@
+From 70f880ad2802db28347e399698a0e3be0f173c6b Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Wed, 25 Nov 2026 07:18:03 +1100
+Subject: [PATCH] test: align fused operation diagnostics with upstream
+
+---
+ src/skippy/tests/graph_build_inputs.cpp | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/skippy/tests/graph_build_inputs.cpp b/src/skippy/tests/graph_build_inputs.cpp
+index e32e1e0de..628ef1174 100644
+--- a/src/skippy/tests/graph_build_inputs.cpp
++++ b/src/skippy/tests/graph_build_inputs.cpp
+@@ -574,7 +574,8 @@ static int check_sched_reserve_and_memory_update(const char * model_path) {
+ static const char * fused_op_name(llm_fused_op op) {
+     switch (op) {
+         case LLM_FUSED_OP_FLASH_ATTN:         return "flash attention";
+-        case LLM_FUSED_OP_LIGHTNING_INDEXER:  return "Lightning Indexer";
++        case LLM_FUSED_OP_FLASH_ATTN_KV_ROWS: return "row-list flash attention";
++        case LLM_FUSED_OP_TOP_K_MASK:         return "top-k mask";
+         case LLM_FUSED_OP_DSV4_HC_PRE:        return "DeepSeek V4 HC pre";
+         case LLM_FUSED_OP_DSV4_HC_COMB:       return "DeepSeek V4 HC comb";
+         case LLM_FUSED_OP_DSV4_HC_POST:       return "DeepSeek V4 HC post";
+-- 
+2.56.0
+

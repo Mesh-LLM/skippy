@@ -9,7 +9,7 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use skippy_protocol::{StageAdmissionDescriptor, StageConfig};
 
-use crate::{package::SkippyPackageIdentity, split_certification::SplitCertificationAdmission};
+use crate::package::SkippyPackageIdentity;
 
 mod direct;
 pub use direct::plan_direct_gguf;
@@ -42,7 +42,6 @@ pub struct SplitRequest {
     pub ctx_size: u32,
     pub lanes: u32,
     pub n_gpu_layers: i32,
-    pub allow_uncertified_split: bool,
 }
 
 pub struct AdmittedSplit {
@@ -50,7 +49,6 @@ pub struct AdmittedSplit {
     topology: skippy_topology::TopologyPlan,
     configs: Vec<StageConfig>,
     admissions: Vec<StageAdmissionDescriptor>,
-    certification: SplitCertificationAdmission,
 }
 
 impl AdmittedSplit {
@@ -66,10 +64,6 @@ impl AdmittedSplit {
     pub fn admissions(&self) -> &[StageAdmissionDescriptor] {
         &self.admissions
     }
-    pub fn certification(&self) -> &SplitCertificationAdmission {
-        &self.certification
-    }
-
     /// Validate the caller's current identity and workers before starting
     /// anything. Start downstream first; release every previously started
     /// stage on failure. Workers must verify the supplied package/admission

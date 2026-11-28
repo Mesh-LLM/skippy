@@ -163,7 +163,7 @@ fn layer_complete_card_preserves_license_fallback_metadata_artifacts_speculation
         "## Package Variant",
         "## What Is Included",
         "## Validation",
-        "https://github.com/general-inference/skippy",
+        "https://github.com/Mesh-LLM/skippy",
         "skippy serve --model \"fixture/package\"",
     ] {
         assert!(card.contains(expected), "missing {expected}");

@@ -1,4 +1,4 @@
-From 0d2efa59759effb19fed87c31683783afb230959 Mon Sep 17 00:00:00 2001
+From ef1ef32e13c94c27050b586ab40a9dd2180d5a82 Mon Sep 17 00:00:00 2001
 From: Skippy CI <ci@skippy.local>
 Date: Fri, 20 Nov 2026 08:08:56 +1100
 Subject: [PATCH] ggml-metal: classify empty command buffers as other work
@@ -50,5 +50,5 @@ index 365052e0e..dc9cacbcc 100644
          CHECK(std::strcmp(t.op_class, "other") == 0);
          CHECK(t.attention_nodes == 0 && t.matmul_nodes == 0 && t.recurrent_nodes == 0 && t.kv_write_nodes == 0);
 -- 
-2.56.0
+2.56.1
 

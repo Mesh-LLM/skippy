@@ -118,15 +118,28 @@ def link_target(path, value):
     return PurePosixPath(*parts)
 
 
-def unpack(directory, destination):
+def unpack(directory, destination, *, check_space=False):
     archives = list(directory.glob("*.tar.gz"))
     if len(archives) != 1:
         raise ValueError("expected exactly one producer archive")
     check_checksum(archives[0])
-    extract_archive(archives[0], destination)
+    extract_archive(archives[0], destination, check_space=check_space)
 
 
-def extract_archive(archive, destination, allow_symlinks=True):
+def require_unpack_space(destination, members):
+    # Count sparse files at full size because extraction writes ordinary files.
+    size = sum(member.size for member in members.values() if member.isfile())
+    free = shutil.disk_usage(destination).free
+    if free < size:
+        raise ValueError(f"unpacking {destination} needs {size} bytes, only {free} bytes free")
+    if hasattr(os, "statvfs"):
+        entries = {parent for path in members for parent in (path, *path.parents) if parent.parts}
+        stat = os.statvfs(destination)
+        if stat.f_files and stat.f_favail < len(entries):
+            raise ValueError(f"unpacking {destination} needs {len(entries)} inodes, only {stat.f_favail} free")
+
+
+def extract_archive(archive, destination, allow_symlinks=True, *, check_space=False):
     destination.mkdir(parents=True, exist_ok=True)
     if any(destination.iterdir()):
         raise ValueError("producer archive destination must be empty")
@@ -147,6 +160,9 @@ def extract_archive(archive, destination, allow_symlinks=True):
             for parent in path.parents:
                 if parent in members and not members[parent].isdir():
                     raise ValueError(f"archive entry nested under a file or link: {path}")
+
+        if check_space:
+            require_unpack_space(destination, members)
 
         for path, member in members.items():
             output = destination / path

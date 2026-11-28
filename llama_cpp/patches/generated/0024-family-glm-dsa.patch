@@ -9,7 +9,7 @@ separately and remain outside the primary decoder stage interval.
 
 ---
 diff --git a/src/models/glm-dsa.cpp b/src/models/glm-dsa.cpp
-index 18e20ca8db0431a7e68d4084eb5b8d3c696fe93e..8a3b51ef771eea8402de191b3d54798aff4bfaa8 100644
+index 4528e2adc51c10c8dd3551295423a04a55417ea6..19fba0c174942e6f7783d5ec01d487ad6455ab6e 100644
 --- a/src/models/glm-dsa.cpp
 +++ b/src/models/glm-dsa.cpp
 @@ -308,6 +308,8 @@ llama_model_glm_dsa::graph::graph(const llm_graph_params & params) :
@@ -21,7 +21,7 @@ index 18e20ca8db0431a7e68d4084eb5b8d3c696fe93e..8a3b51ef771eea8402de191b3d54798a
          ggml_tensor * inpSA = inpL;
  
          // norm
-@@ -562,6 +564,7 @@ llama_model_glm_dsa::graph::graph(const llm_graph_params & params) :
+@@ -521,6 +523,7 @@ llama_model_glm_dsa::graph::graph(const llm_graph_params & params) :
  
          // input for next layer
          inpL = cur;

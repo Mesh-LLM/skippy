@@ -313,10 +313,10 @@ pub fn ensure_catalog() -> Result<()> {
     }
 
     if is_catalog_stale() {
-        // If a recent refresh failed and we already have a (stale) catalog
-        // loaded, don't hammer the network on every request — serve the loaded
-        // catalog until the backoff window elapses.
-        if catalog_entries().is_some() && refresh_in_backoff() {
+        // If a recent refresh failed (in-process or in a recent CLI run) and we
+        // have a cached catalog on disk or in memory, serve the stale catalog
+        // without hammering the network until the backoff window elapses.
+        if refresh_in_backoff() && load_cached_catalog_if_unloaded() {
             return Ok(());
         }
 
@@ -326,7 +326,7 @@ pub fn ensure_catalog() -> Result<()> {
                 Ok(())
             }
             Err(refresh_err) => {
-                if catalog_entries().is_some() {
+                if load_cached_catalog_if_unloaded() {
                     set_refresh_backoff();
                     tracing::warn!(
                         "failed to refresh the configured model catalog; using already-loaded stale catalog \
@@ -348,22 +348,51 @@ pub fn ensure_catalog() -> Result<()> {
     }
 }
 
+fn load_cached_catalog_if_unloaded() -> bool {
+    if catalog_entries().is_none() {
+        let _ = load_catalog_from_disk();
+    }
+    catalog_entries().is_some()
+}
+
+fn refresh_failure_marker() -> PathBuf {
+    catalog_cache_dir().join(".last_refresh_failure")
+}
+
+fn disk_refresh_in_backoff() -> bool {
+    let Ok(metadata) = fs::metadata(refresh_failure_marker()) else {
+        return false;
+    };
+    let Ok(modified) = metadata.modified() else {
+        return false;
+    };
+    let Ok(elapsed) = SystemTime::now().duration_since(modified) else {
+        return false;
+    };
+    elapsed < CATALOG_REFRESH_BACKOFF
+}
+
 /// Returns true if a recent refresh failure means we should skip another
 /// refresh attempt for now.
 fn refresh_in_backoff() -> bool {
-    let guard = CATALOG_REFRESH_BACKOFF_UNTIL.lock();
-    match guard {
-        Ok(until) => until.map(|t| Instant::now() < t).unwrap_or(false),
+    let in_memory = match CATALOG_REFRESH_BACKOFF_UNTIL.lock() {
+        Ok(guard) => guard.map(|t| Instant::now() < t).unwrap_or(false),
         Err(_) => false,
-    }
+    };
+    in_memory || disk_refresh_in_backoff()
 }
 
 /// Records that a refresh just failed, suppressing retries for the backoff
-/// window.
+/// window both in-process and across short-lived CLI invocations.
 fn set_refresh_backoff() {
     if let Ok(mut guard) = CATALOG_REFRESH_BACKOFF_UNTIL.lock() {
         *guard = Some(Instant::now() + CATALOG_REFRESH_BACKOFF);
     }
+    let marker = refresh_failure_marker();
+    if let Some(parent) = marker.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::File::create(marker);
 }
 
 /// Clears any active refresh backoff after a successful refresh.
@@ -371,6 +400,7 @@ fn clear_refresh_backoff() {
     if let Ok(mut guard) = CATALOG_REFRESH_BACKOFF_UNTIL.lock() {
         *guard = None;
     }
+    let _ = fs::remove_file(refresh_failure_marker());
 }
 
 /// Searches the cached catalog for a layer-package matching `model_query`.
@@ -643,6 +673,13 @@ pub fn find_model_exact(query: &str) -> Option<RemoteCatalogModel> {
     if ensure_catalog().is_err() {
         return None;
     }
+    find_loaded_model_exact(query)
+}
+
+/// Looks up an exact catalog match from memory or the on-disk cache without
+/// triggering a network refresh.
+pub fn find_cached_model_exact(query: &str) -> Option<RemoteCatalogModel> {
+    let _ = load_cached_catalog_if_unloaded();
     find_loaded_model_exact(query)
 }
 

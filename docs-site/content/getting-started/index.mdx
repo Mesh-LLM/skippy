@@ -19,12 +19,12 @@ archive and checksum for your platform. Replace `VARIANT` with a bundle from
 the release, such as `darwin-aarch64-metal` or `linux-x86_64-cpu`.
 
 ```console
-gh release download --repo general-inference/skippy \
+gh release download --repo Mesh-LLM/skippy \
   --pattern 'skippy-*-VARIANT.tar.gz*'
 ```
 
 You can also download the matching archive and checksum from GitHub.
-[Latest Skippy release](https://github.com/general-inference/skippy/releases/latest)
+[Latest Skippy release](https://github.com/Mesh-LLM/skippy/releases/latest)
 
 Check the archive against its `.sha256` sidecar using `shasum -a 256 -c` on
 macOS or `sha256sum -c` on Linux.
@@ -72,7 +72,7 @@ identifier clients must send in inference requests.
 
 | Task | Command |
 | --- | --- |
-| Download the latest bundle and checksum | `gh release download --repo general-inference/skippy --pattern 'skippy-*-VARIANT.tar.gz*'` |
+| Download the latest bundle and checksum | `gh release download --repo Mesh-LLM/skippy --pattern 'skippy-*-VARIANT.tar.gz*'` |
 | Unpack the release | `tar -xzf ARCHIVE` |
 | Inspect the installation | `skippy doctor` |
 | List installed runtimes | `skippy runtime list` |
