@@ -82,7 +82,7 @@ class NightlyTests(unittest.TestCase):
                     with patch.dict(prepare_split.__globals__, command=command), patch.dict(os.environ, JIANYANG_PEERS=peers):
                         args = (Path("model.gguf"), "test-model", profile, 65536, Path(temporary), True)
                         if valid:
-                            self.assertEqual(len(prepare_split(*args)), 2)
+                            self.assertIn("--worker-only", prepare_split(*args))
                         else:
                             with self.assertRaisesRegex(ValueError, "native stage admissions"):
                                 prepare_split(*args)

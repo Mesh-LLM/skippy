@@ -173,9 +173,13 @@ async fn download_primary_model(
         enabled: progress,
         last_percent: Mutex::new(None),
     });
+    // The marker sits on the file transfer itself, so every caller that
+    // downloads a model (the CLI's model source as well as `acquisition`) is
+    // classified alike, and a metadata lookup is never counted as a download.
     let downloaded_paths = repository
         .download_artifact_files_with_progress(&artifact, Some(progress))
-        .await?;
+        .await
+        .context(skippy_model_hf::ModelDownloadError)?;
     ensure!(
         downloaded_paths.len() == artifact.files.len(),
         "downloaded artifact file count mismatch"

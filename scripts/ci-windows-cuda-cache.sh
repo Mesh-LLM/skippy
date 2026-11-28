@@ -9,7 +9,7 @@ arches="$(GITHUB_OUTPUT='' bash scripts/ci-plan.sh | jq -er \
     --arg runtime "$runtime_id" --arg toolkit "$toolkit" '
     .runtimes.include[]
     | select(.id == $runtime and .host == "windows-x86_64" and .backend == "cuda"
-             and .validation == "artifact" and .toolkit == $toolkit)
+             and .toolkit == $toolkit)
     | .gpu_architectures | select(test("^[0-9]+(;[0-9]+)*$"))
 ')"
 c_compiler="$(command -v "${CC:-cl.exe}")"
