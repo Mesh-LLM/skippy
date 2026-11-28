@@ -201,7 +201,7 @@ inference-execute profile model mode:
     @"{{ automation_python }}" scripts/inference-execute.py "$@"
 
 [positional-arguments]
-inference-paired model mode baseline:
+inference-paired model mode baseline experiment="paired":
     @"{{ automation_python }}" scripts/inference-paired.py "$@"
 
 [positional-arguments]

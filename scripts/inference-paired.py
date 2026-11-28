@@ -20,6 +20,7 @@ from lib.ci_process import DEADLINE, cancel_on_signal, capture, command, time_bu
 from lib.inference_pairs import PROTOCOL, REPETITIONS, ROUNDS, schedule, summarize
 from lib.inference_probe import validate_evidence
 from lib.inference_rendezvous import Coordinator, await_condition, exchange, worker_state
+from lib import inference_noise as noise
 
 ROOT = Path(__file__).resolve().parents[1]
 EXECUTE = run_path(str(ROOT / "scripts/inference-execute.py"))["execute"]
@@ -100,7 +101,11 @@ def run_arm(design, main, baseline, key, mode, output):
     source = main if design["source_sha"] == baseline else ROOT
     try:
         with revision(source, design["source_sha"], directory):
-            EXECUTE("pr", key, mode, REPETITIONS)
+            if design["experiment"] == "noise":
+                with noise.diagnostics(directory):
+                    EXECUTE("pr", key, mode, probe=noise.probe(design["round"]))
+            else:
+                EXECUTE("pr", key, mode, REPETITIONS)
     finally:
         # JY uploads top-level files only. Archive each arm, including partial
         # failures, so raw responses and logs survive native workspace cleanup.
@@ -129,7 +134,10 @@ def worker(origin, designs, main, baseline, key, output, identity):
         raise
 
 
-def execute(key, mode, baseline):
+def execute(key, mode, baseline, experiment="paired"):
+    diagnostic = experiment == "noise-pilot"
+    if diagnostic and (f"{key}-{mode}" != noise.registration()["configuration"] or baseline == "legacy"):
+        raise ValueError("noise pilot requires its registered configuration and main commit")
     # Old protected controllers can encounter a PR's provisional template before
     # this controller reaches main. Preserve their original smoke protocol.
     if baseline == "legacy":
@@ -146,7 +154,7 @@ def execute(key, mode, baseline):
     with baseline_tree(baseline) as main:
         identities = prepare(main, baseline, candidate, output)
         local = host(role, node)
-        designs = schedule(baseline, candidate)
+        designs = noise.schedule(baseline) if diagnostic else schedule(baseline, candidate)
         if role == "worker":
             leader = next(p["host"] for p in peers if p["role"] == "leader")
             origin = f"http://[{leader}]:9913" if ":" in leader else f"http://{leader}:9913"
@@ -164,6 +172,9 @@ def execute(key, mode, baseline):
             evidence = {"schema_version": 1, "protocol": PROTOCOL, "source_sha": candidate,
                         "baseline_sha": baseline, "configuration": f"{key}-{mode}", "rounds": ROUNDS,
                         "repetitions": REPETITIONS, "placements": placements, "builds": builds, "runs": []}
+            if diagnostic:
+                evidence.update(protocol=noise.registration()["protocol"], rounds=2,
+                                repetitions=12, diagnostic_only=True, registration=noise.registration())
             try:
                 for index, design in enumerate(designs):
                     if coordinator:
@@ -174,16 +185,20 @@ def execute(key, mode, baseline):
                     coordinate = read_json(ROOT / "ci/inference-artifacts.json")[key]
                     coordinate = f'{coordinate["repo"]}@{coordinate["revision"]}'
                     evidence["runs"].append({**design, "placements": placements, "quality": "passed",
-                                             "samples": samples(directory, coordinate)})
+                                             "samples": (read_json(directory / "noise-pilot.json") if diagnostic
+                                                         else samples(directory, coordinate))})
                     # Preserve the existing standalone nightly smoke receipts too.
                     if design["experiment"] == "ab" and design["arm"] == "b":
                         for name in ("qualification.json", "quality.json", "throughput-probe.json",
                                      "provenance.json", "split-admissions.json", "split-peer.json"):
                             if (directory / name).is_file():
                                 shutil.copyfile(directory / name, output / name)
-                evidence["summary"] = summarize(evidence, candidate, baseline, f"{key}-{mode}")
+                if not diagnostic:
+                    evidence["summary"] = summarize(evidence, candidate, baseline, f"{key}-{mode}")
+                else:
+                    evidence["status"] = "diagnostic-complete"
             finally:
-                write_json(output / "paired-probe.json", evidence)
+                write_json(output / ("noise-pilot.json" if diagnostic else "paired-probe.json"), evidence)
 
 
 if __name__ == "__main__":
@@ -191,9 +206,10 @@ if __name__ == "__main__":
     parser.add_argument("model")
     parser.add_argument("mode", choices=("standalone", "split"))
     parser.add_argument("baseline")
+    parser.add_argument("experiment", nargs="?", choices=("paired", "noise-pilot"), default="paired")
     args = parser.parse_args()
     try:
         with cancel_on_signal(), time_budget(14400):
-            execute(args.model, args.mode, args.baseline)
+            execute(args.model, args.mode, args.baseline, args.experiment)
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt) as error:
         sys.exit(str(error))

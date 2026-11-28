@@ -1,0 +1,21 @@
+{
+  "protocol": "DGX Spark noise pilot v1",
+  "purpose": "Diagnose split within-arm variability; no candidate performance verdict",
+  "hypothesis": "Cycling short/mid/long shapes causes more timing variance than blocked equal-shape requests",
+  "baseline_sha": "cc2a27435e798649a9cb938d600d39722e4a2263",
+  "configuration": "qwen3-coder-30b-a3b-split",
+  "arms": [["cycled", "blocked"], ["blocked", "cycled"]],
+  "repetitions_per_condition_shape": 12,
+  "warmup_tokens": 64,
+  "measured_tokens": 128,
+  "paragraphs": [8, 32, 64],
+  "concurrency": 1,
+  "temperature": 0,
+  "seed": 42,
+  "prefix_policy": "Unique fixed-width three-digit salt per condition position, repetition, shape and warm/measure; prompt token counts must match within each shape",
+  "gates": ["full output", "zero cached tokens", "constant per-shape prompt tokens", "quality and streaming", "native admission and GPU offload", "mutual formation/source/attempt proof"],
+  "diagnostics": "One-second GPU clocks/temperature/power/utilization and host CPU/load samples; default boost clocks; InferenceKit doctor before each arm",
+  "analysis": "Retain every request; compare within-arm CV and temporal clusters by condition/shape/phase; two server arms are diagnostic, not independent performance proof",
+  "final_claim_target": {"material_effect": 0.02, "maximum_ci95_half_width": 0.01, "round_count": "Register from pilot before fresh main/main and main/PR acquisition; never extend a final run after observing its verdict"},
+  "budget": {"approved": true, "max_usd": 0, "max_duration_s": 14400, "exclusive_machines": 2, "authorization": "Existing user-authorized exclusive lab qualification; no preemption or paid rental"}
+}

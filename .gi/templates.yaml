@@ -909,6 +909,22 @@
           "kind": "text",
           "required": true,
           "default": "legacy"
+        },
+        {
+          "key": "experiment",
+          "label": "Measurement protocol",
+          "kind": "choice",
+          "choices": [
+            {
+              "value": "paired",
+              "label": "paired"
+            },
+            {
+              "value": "noise-pilot",
+              "label": "noise-pilot"
+            }
+          ],
+          "default": "paired"
         }
       ],
       "budget": {
@@ -918,7 +934,7 @@
       },
       "retain": "never",
       "key": "inference-pr-split",
-      "command": "cd \"$JIANYANG_REPO_DIR\" && just inference-paired ${model_key} split ${baseline_sha}",
+      "command": "cd \"$JIANYANG_REPO_DIR\" && just inference-paired ${model_key} split ${baseline_sha} ${experiment}",
       "roles": [
         {
           "name": "leader",

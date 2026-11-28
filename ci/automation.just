@@ -17,6 +17,7 @@ inference-contracts:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_peer_evidence.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_probe.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_noise.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_pairs.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_paired_execution.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/jy_read_recovery.py

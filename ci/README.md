@@ -253,6 +253,29 @@ inconclusive performance is not a claimed win or loss. The PR table reports the
 interval and noise alongside each estimate. Historical runs never replace a
 missing paired comparison.
 
+The opt-in `noise-pilot` experiment is a separate diagnostic, registered in
+`ci/inference-noise-pilot.json`. It runs two fresh main-only split arms with
+cycled/blocked shape order reversed between arms, twelve repetitions per shape
+and condition, and unchanged warmup/output lengths. The pinned InferenceKit
+wrapper records environment capabilities before timing. One-second GPU and host
+telemetry, raw responses, quality checks and mutual peer identities are archived
+for both roles. Default boost clocks remain in effect. This instrumented pilot
+writes `noise-pilot.json`, never a paired qualification receipt or speed verdict.
+Its requests are nested observations for diagnosing noise, not independent rounds.
+For example, on an already admitted exclusive split allocation:
+
+```sh
+just inference-paired qwen3-coder-30b-a3b split cc2a27435e798649a9cb938d600d39722e4a2263 noise-pilot
+```
+
+The registered later performance target is a 2% material effect with at most
+1% pointwise 95% CI half-width. Choose and register the final round count from
+the pilot before fresh A/A and A/B collection; do not extend a final run until
+it becomes significant. Historical six-round inconclusive runs retain their
+original verdicts. The current v1 verdict implementation still needs an explicit
+within-tolerance decision and sufficient live precision before performance
+resolution can be claimed.
+
 Scheduled PR-profile smoke rows run the same design with main in both arms;
 their paired receipts retain the noise check in Actions artifacts. The twelve
 AgentX workloads and their saved historical baseline policy are separate.
