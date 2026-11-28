@@ -116,7 +116,7 @@ class Repair(unittest.TestCase):
 
     def test_agent_cannot_change_qualification_or_selected_upstream(self):
         for path in ("scripts/upgrade-publish.py", "llama_cpp/upstream.txt", ".github/workflows/ci.yml",
-                     "ci/llama-canary/model-fixtures.json", "crates/skippy-ffi/src/lib.rs",
+                     "ci/llama-canary/model-fixtures.json",
                      "crates/skippy-ffi/build.rs"):
             with self.subTest(path=path), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)

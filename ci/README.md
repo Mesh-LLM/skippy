@@ -141,7 +141,7 @@ concurrency coalescing. If prior coverage cannot be verified, require both
 device smokes and Graph Contracts. The gate rejects missing, skipped, failed
 or cancelled selected jobs. Exact promoted-release receipt reuse avoids
 repeating validated work. Scheduled, manual and reusable full validation
-require all thirteen packages and Graph Contracts. Main merges do not start the
+require all fifteen packages and Graph Contracts. Main merges do not start the
 separate Spark qualification ladder.
 
 The protected inference workflow has its own qualification paths, separate from
@@ -150,7 +150,13 @@ synchronization, reopening and readiness for review; no `qualify` label is neede
 Label changes do not restart or cancel qualification. Skipped admission or matrix
 jobs fail qualification and cannot satisfy `PR checks`.
 Qualification may queue behind another PR's atomic Spark pair; the PR
-budget waits for placement instead of failing fast.
+budget allows up to 90 minutes for placement and queueing instead of failing
+fast. Once either split member (or the standalone job) is observed running,
+the controller gives it 31 minutes to finish: the native 30-minute lease plus
+its 60-second grace. This execution clock starts once and never resets on
+later status polls or when the other split member starts. The Actions job
+allows 130 minutes in total, leaving nine minutes for setup, evidence and
+cleanup. Nightly/release total deadlines and native lease budgets are unchanged.
 Split readiness uses a control listener on each reserved machine, bound to the
 JY formation, source SHA, model, profile, role and native attempt ID. The leader
 waits for its own worker's ready response; an unrelated stage listener cannot
@@ -176,7 +182,15 @@ Branch PRs retain
 same-repository/collaborator admission; forks use the approved
 controller above. Both retain a fresh-head check and all seven GPU smoke
 configurations. The credentialed controller runs only protected source.
-Python admission verifies trust and source identity.
+Python admission verifies trust and source identity. A green native PR run therefore
+cannot validate changes to that controller. The candidate's `just ci-automation`
+runs a credential-free streaming rehearsal in `Automation checks`: synthetic API
+pages exercise the real controller and log forwarder through a buffered subprocess
+pipe. Standalone, leader and worker lines must arrive before the parent permits
+completion, and saved log contents must match. Look for `[stream-proof-` lines and
+`STREAMING PROOF PASSED` in the Actions output. This proves incremental candidate
+output reaches Actions before merge; it does not qualify the live lab API or
+artifact upload. Verify those on a real qualification run after merge.
 Release candidates are admitted only from scheduled or manually dispatched
 protected-main Release runs, with their exact source parent, candidate ref and
 run trailer verified. JY reads retry transient disconnects, timeouts and HTTP
@@ -189,6 +203,16 @@ The admitted profile distinguishes a scheduled Release call from the scheduled
 nightly ladder: only the nightly ladder adds smoke rows, collects public metrics
 and requires nightly report publication in its summary.
 The syntax/dependency classifier and offline replay command have been removed.
+Native attempt logs stream into the qualification Actions step, including both
+split members and retries. The evidence artifact retains per-attempt JSONL logs
+and capture-gap diagnostics. Log polling uses five-second per-attempt/worker-read
+budgets inside a thirty-second capture budget, including the final tail. Read
+socket timeouts and retry admission use the remaining budget; these are not
+hard process deadlines for authentication, slow response bodies or local output.
+Capture errors are isolated so other attempts can still be collected. Incomplete
+capture is reported without replacing the native qualification verdict; cancellation
+still propagates. Results comments direct readers to GitHub Actions logs and saved
+evidence, not an external lab console.
 The lab-results comment uses `scripts/inference-report.sh` with hosted-runner
 `gh` and `jq`; it needs no Rust setup or compilation. It checks receipt source,
 configuration and native-attempt identity, updates only its bot-owned comment,
@@ -245,7 +269,7 @@ for the Linux ARM64 CUDA 13 device job. Compiler-only CUDA builds always use the
 manifest architecture lists. The only source override is the immutable bundle
 produced by the protected-main llama upgrade workflow.
 
-`targets.json` defines four hosts and thirteen active runtimes. After the
+`targets.json` defines four hosts and fifteen active runtimes. After the
 automation checks and Quality canary, each CPU job builds and verifies its
 runtime and the shared CLI for that platform. Linux x64 builds its shared CLI
 on Ubuntu 24.04 for compatibility with the compiler images. Each backend
@@ -272,10 +296,54 @@ adds the SHA-256-pinned ROCm 7.2.4 BLAS libraries to a job-local prefix for
 compilation and packaged GPU inference smoke.
 Windows users need the Microsoft Visual C++ x64 Redistributable and, for CUDA,
 a compatible NVIDIA driver. Linux ROCm users need a matching ROCm runtime
-visible to the system loader. Inference qualification is pending for the four
-Windows variants.
+visible to the system loader. The three Windows CUDA/ROCm variants require real Windows inference in two native
+JY VM jobs: CUDA 12 and 13 share a guest, and ROCm runs independently after its
+archive builds. Full CI requires both results. Windows CPU and Vulkan retain archive-only
+verification. See [Windows GPU smoke](windows-gpu-smoke.md) for profiles and recovery.
 
-### Linux ROCm device smoke
+## Vulkan packages and device smoke
+
+Full CI, scheduled nightly CI, release validation and llama-upgrade full CI
+build Linux x64 and Windows x64 Vulkan packages with Vulkan SDK 1.4.328.1.
+Both reuse the existing platform CLI producer. SDK version, header hash and
+shader compiler identity travel inside the source-bound runtime receipt. The short PR/main profile stays
+at eight runtimes; the full roster has fifteen.
+
+The Linux archive is built on hosted Ubuntu 24.04, then the same bytes run
+on the existing x64 CUDA 13 NVIDIA pool and the x64 ROCm AMD pool. Both literal-pool device
+jobs must succeed in the full CI gate. NVIDIA smoke runs directly inside the
+pool's existing digest-pinned GPU runner image as its unprivileged runner account;
+that image has graphics-capable driver injection and no nested Docker socket.
+Its ephemeral setup installs `libegl1`, which NVIDIA loads even for headless
+Vulkan initialization.
+AMD smoke uses the digest-pinned Ubuntu 24.04 CUDA compiler container with
+`/dev/dri`, installing the Vulkan loader, inspection tools and Mesa's RADV driver.
+Neither job rebuilds the product or replaces host drivers. Hardware ICD selection
+excludes software rasterizers. AMD restores native workspace ownership through the
+existing container cleanup action; NVIDIA uses the runner container lifecycle.
+
+Smoke forces Vulkan runtime selection, admits only real GPUs from the assigned
+vendor, records Vulkan API and driver versions, and requires positive GPU layer
+offload, generated tokens and graceful shutdown. Missing devices and CPU fallback
+fail. Each vendor uploads a separate source- and archive-hash-bound receipt.
+Release verification requires both receipts. Windows retains archive-only
+validation and appears in release notes as awaiting inference qualification.
+Linux users need a Vulkan loader and compatible GPU driver; Windows uses the
+system Vulkan loader. The backend-neutral CLI still cannot import Vulkan.
+
+The Vulkan shader generator builds directly beneath the native build directory,
+rather than ExternalProject's deeply nested default. This keeps MSVC's compiler
+checks within Windows path limits for ordinary checkout locations. The Windows
+Vulkan package job deliberately uses a longer native build root to retain this
+regression coverage. Custom `SKIPPY_LLAMA_BUILD_ROOT` inputs are still honored.
+
+The separate DGX Spark inference benchmark ladder and its published performance
+baselines remain CUDA-only; package smoke makes no performance claim.
+
+See the [Vulkan rehearsal record](../docs/design/VULKAN_CI_REHEARSAL.md) for the
+tested source, archive hashes, both vendor results and runner fixes.
+
+## Linux ROCm device smoke
 
 The existing `package_linux_x86_64_rocm` job builds, packages and runs the
 pinned Qwen3 GPU smoke on `jy-rnr_gsxt2m73mgpcbbh`. The pool admits the two
@@ -286,11 +354,12 @@ Native runners carry `self-hosted`, `Linux`, `X64`, `skippy-ephemeral`, and
 
 The job remains full-only: nightly, manual full CI, release candidates and
 llama-upgrade full validation require it; routine PR and main-push checks do
-not run it. The short plan retains eight runtimes and full CI retains thirteen.
+not run it. The short plan retains eight runtimes and full CI retains fifteen.
 `full_only` selects scheduling independently of the manifest's `validation`
-evidence requirement. Linux ROCm requires inference evidence; the four Windows
-runtimes remain archive-only. No package or release smoke jobs are added, and
-the standalone rehearsal workflow has been removed.
+evidence requirement. Linux ROCm requires inference evidence within its package
+job. Windows CUDA/ROCm runtimes require detached inference evidence from the two
+full-only Windows VM jobs. Windows CPU and Vulkan remain archive-only. Neither
+backend retains a standalone rehearsal workflow.
 
 The existing plan resolves the ROCm compiler image to a digest. The ROCm job
 uses that image in an Actions job container with `/dev/kfd` and `/dev/dri`,
@@ -619,8 +688,9 @@ smoke commands use Python 3.9 or later. Release inventory uses Python
 3.11 or later for TOML parsing. With uv installed, Justfile recipes run Python
 on the interpreter `.python-version` names. Set `SKIPPY_PYTHON` to select
 another. The shell scripts read it too. Both profiles validate the full
-manifest. The short plan lists eight runtimes; the full plan adds the five
-`full_only` rows: Linux ROCm with GPU inference and four Windows archive checks.
+manifest. The short plan lists eight runtimes; the full plan adds seven
+`full_only` rows: Linux ROCm and Vulkan with GPU inference and five Windows packages.
+The three Windows CUDA/ROCm archives additionally require the two full-only Windows VM smoke jobs.
 When package checks are selected, short CI builds and runs device smoke for macOS ARM64 Metal and Linux
 ARM64 CUDA 13. The Linux x64 CUDA packages build in full CI and receive device
 smoke during release validation.
@@ -642,11 +712,12 @@ workflow and roster from the same protected revision.
    run inference, and upload `release-device-evidence-*`. Release verification
    checks each result against the SHA-256 of the corresponding product archive.
    Linux ROCm supplies inference evidence in its product artifact, without a
-   separate device job. The four Windows variants supply archive smoke evidence.
+   separate device job. Windows CUDA/ROCm jobs upload the same detached device evidence
+   for their exact archives in nightly, full CI, upgrades and releases. Windows
+   CPU and Vulkan supply archive smoke evidence.
 4. Release verification prepares the complete asset directory once. The publisher
    checks its roster, hashes, and catalog against the separately transferred
-   candidate receipt before promotion. Release notes identify the four Windows variants
-   awaiting inference qualification.
+   candidate receipt before promotion. Release notes identify Windows CPU and Vulkan as awaiting inference qualification.
 5. The hosted CI gate reads the dependency results and the validated plan
    without checkout or Rust setup. Required work must pass and unselected work
    must report a skip.
@@ -869,15 +940,49 @@ must follow upstream signature and C/C++ linkage changes for both static and
 dynamic runtimes. Agent changes to policy, workflows,
 fixtures, the selected pin, outer history or generated admission inputs fail.
 
+The ABI identity covers consumed upstream C declarations as well as Skippy's
+own API. Changes to structures (including by-value returns), callbacks and
+function signatures require a distinct ABI version even when everything
+compiles. Before the offline gates can freeze a candidate, the controller
+compares the protected base's generated Skippy/llama/mtmd declarations with
+the regenerated candidate. It conservatively requires an ABI bump for changed
+declarations or constants, ignoring documentation, comments, whitespace and
+the ABI version constants themselves. Private C++ changes still require
+agent review; this comparison is not a full binary ABI analyzer.
+
+Missing bumps fail verification with
+`target/llama-regeneration/abi-compatibility.json`, retained with preparation
+diagnostics and returned to the same repair session. The agent may update the
+`ABI_VERSION_PATCH` literal in `crates/skippy-ffi/src/lib.rs`, the authoritative
+native header through its ordered patch queue, and the FFI README. Other Rust
+code in `lib.rs` remains protected, including when a frozen bundle is restored.
+An existing bump is retained across repair turns. Bindings, API docs and recipe
+identity are regenerated by the controller, and the existing build/tests check
+native/Rust ABI agreement. A source-recipe hash alone does not protect callers
+loading a runtime library with an incompatible ABI.
+
 Run offline lifecycle regressions with `just ci-automation`. A live provider
 rehearsal is explicit: set `SKIPPY_UPGRADE_REPAIR_COMMAND` to the installed Goose
 argv and run `just upgrade-goose-rehearsal`. This checks two real agent turns,
 session resumption, failure feedback and checkpoint capture; it does not qualify
 a native upgrade or model.
 
-Only the publisher uses `SKIPPY_UPGRADE_APP_ID` and
-`SKIPPY_UPGRADE_APP_PRIVATE_KEY`. Its Contents and Pull requests write permissions
-are scoped to this repository. It verifies the immutable bundle's source and
+The protected-main resolver selects the immutable upstream revision before any
+native preparation. For a changed pin requiring validation, a separate hosted
+publisher preflight checks the `SKIPPY_UPGRADE_APP_ID` Actions variable and
+`SKIPPY_UPGRADE_APP_PRIVATE_KEY` Actions secret, then requests a repository-scoped
+App token with Contents and Pull requests write permissions. Missing settings,
+an invalid key, a missing repository installation or insufficient App permissions
+stop the run before Goose or native builds start. The preflight token is revoked
+on job completion and is never passed to a build job. No-op runs and explicit
+unchanged-pin force checks do not require publication credentials.
+
+Configure those settings with an App installed on this repository before running
+a changed-pin upgrade. Repository source cannot provision or recover its private
+key. These settings are separate from JY's installed Goose/provider configuration.
+The final publisher requests a fresh scoped App token after full CI. Only the
+preflight and publisher receive the private key; preparation, repair and CI do not.
+The publisher verifies the immutable bundle's source and
 requires its candidate SHA to match the one selected by the successful initial
 or repaired full CI job before pushing and opening the PR. No staging refs,
 upgrade-specific JY profiles or live-model receipts are needed.

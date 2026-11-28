@@ -58,6 +58,31 @@ class ReadRecoveryTests(unittest.TestCase):
         self.assertEqual(self.sleep.call_args_list, [call(1), call(2), call(4)])
         self.auth.assert_called_once()
 
+    def test_deadline_caps_request_timeout_and_prevents_retry_after_expiry(self):
+        with patch.object(jy_qualification.time, "monotonic", side_effect=[10, 10, 14]), \
+                patch.object(self.pilot.opener, "open", side_effect=TimeoutError()) as send:
+            with self.assertRaises(TimeoutError):
+                self.pilot.api("GET", self.path, status_deadline=15)
+        self.assertEqual(send.call_args.kwargs["timeout"], 5)
+        send.assert_called_once()
+        self.sleep.assert_not_called()
+
+    def test_expired_deadline_sends_no_request(self):
+        with patch.object(jy_qualification.time, "monotonic", return_value=15), \
+                patch.object(self.pilot.opener, "open") as send:
+            with self.assertRaisesRegex(TimeoutError, "deadline expired"):
+                self.pilot.api("GET", self.path, status_deadline=15)
+        send.assert_not_called()
+
+    def test_retry_request_uses_remaining_budget(self):
+        self.enterContext(patch.object(jy_qualification.random, "uniform", return_value=0))
+        with patch.object(jy_qualification.time, "monotonic", side_effect=[10, 10, 11, 12]), \
+                patch.object(self.pilot.opener, "open", side_effect=[TimeoutError(),
+                             io.BytesIO(b'{"status":"running"}')]) as send:
+            self.assertEqual(self.pilot.api("GET", self.path, status_deadline=15), {"status": "running"})
+        self.assertEqual([item.kwargs["timeout"] for item in send.call_args_list], [5, 3])
+        self.sleep.assert_called_once_with(1)
+
     def test_permanent_errors_fail_immediately(self):
         errors = [HTTPError("https://pilot.jianyang.cloud" + self.path, status, "Permanent", {},
                             io.BytesIO(b"permanent failure")) for status in (400, 401, 403, 404, 409)]
@@ -106,7 +131,7 @@ class ReadRecoveryTests(unittest.TestCase):
         sha = "a" * 40
         succeeded = {"status": "succeeded", "repo_rev": sha, "formation_id": "frm_test"}
         replies = [RemoteDisconnected("connection closed"), io.BytesIO(b'{"status":"running"}'),
-                   io.BytesIO(json.dumps(succeeded).encode()), io.BytesIO(b'{"status":"succeeded"}')]
+                   io.BytesIO(json.dumps(succeeded).encode()), io.BytesIO(b'{"status":"succeeded","members":[]}')]
         with TemporaryDirectory() as tmp, patch.object(self.pilot.opener, "open", side_effect=replies) as send:
             dispatch, mocks = self.dispatch()
             with patch.dict(dispatch.__globals__, mocks):
@@ -115,7 +140,7 @@ class ReadRecoveryTests(unittest.TestCase):
             mocks["cancel"].assert_not_called()
             self.assertTrue(all(item.args[0].method == "GET" for item in send.call_args_list))
             self.assertEqual(json.loads((Path(tmp) / "model-split-formation.json").read_text()),
-                             {"status": "succeeded"})
+                             {"status": "succeeded", "members": []})
 
     def test_status_survives_beyond_one_retry_burst_for_a_whole_formation(self):
         self.use_fake_clock()
@@ -125,9 +150,9 @@ class ReadRecoveryTests(unittest.TestCase):
         errors += [HTTPError("https://pilot.jianyang.cloud" + self.path, 500, "Unavailable",
                              {"CF-Ray": "test-ray"}, io.BytesIO(b"D1 unavailable"))]
         replies = [*errors, io.BytesIO(json.dumps(succeeded).encode()),
-                   io.BytesIO(b'{"status":"running"}'),
+                   io.BytesIO(b'{"status":"running","members":[]}'),
                    io.BytesIO(json.dumps(succeeded).encode()),
-                   io.BytesIO(b'{"status":"succeeded"}')]
+                   io.BytesIO(b'{"status":"succeeded","members":[]}')]
         with TemporaryDirectory() as tmp, patch.object(self.pilot.opener, "open", side_effect=replies) as send:
             dispatch, mocks = self.dispatch()
             with patch.dict(dispatch.__globals__, mocks):
