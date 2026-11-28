@@ -33,6 +33,9 @@ test('reports and workflow controllers need only offline automation', () => {
   for (const file of [
     'scripts/inference-render-report.py', 'scripts/lib/inference_markdown.py',
     'scripts/lib/inference_charts.py', 'scripts/lib/inference_png.py',
+    'scripts/lib/inference_labels.py', 'scripts/lib/inference_mermaid.py',
+    'scripts/lib/inference_health.py', 'scripts/lib/inference_health_charts.py',
+    'scripts/lib/inference_health_markdown.py',
     'scripts/inference-report.sh', 'scripts/lib/inference-report-baseline.sh',
     'scripts/tests/inference_nightly.py', '.github/scripts/pr-checks.cjs',
     '.github/workflows/ci.yml', '.github/workflows/inference.yml',
@@ -48,7 +51,7 @@ test('qualification inputs do not rebuild the runtime packages', () => {
     'scripts/inference-plan.py', 'scripts/inference-execute.py', 'scripts/inference-dispatch.py',
     'scripts/inference-publish-nightly.py', 'scripts/lib/inference_baselines.py',
     'scripts/lib/inference_checks.py', 'scripts/lib/inference_inputs.py',
-    'scripts/lib/jy_qualification.py', '.gi/templates.yaml', 'ci/inference-ladder.json',
+    'scripts/lib/jy_qualification.py', '.gi/templates.yaml', 'ci/inference.just', 'ci/inference-ladder.json',
     'ci/inference-artifacts.json', 'ci/inference-quality.json',
   ]) {
     assert.deepEqual(route([file]), { automation: true, code: false, packages: false, inference: true }, file);
@@ -71,7 +74,8 @@ test('runtime and packaging changes still select hardware, including mixed PRs',
     assert.equal(selected.packages, true, file);
     assert.deepEqual(route(['scripts/inference-render-report.py', file]), selected, file);
   }
-  for (const file of ['crates/skippy-cli/tests/smoke.rs', 'crates/skippy-cli/src/helper_tests.rs']) {
+  for (const file of ['crates/skippy-cli/tests/smoke.rs', 'crates/skippy-cli/src/helper_tests.rs',
+    'crates/skippy-runtime/src/test_support/libraries.rs']) {
     assert.deepEqual(route([file]), { automation: true, code: true, packages: false, inference: false }, file);
   }
   for (const file of ['README.md', 'crates/skippy-api/README.md', 'docs/design/proposal.md']) {
@@ -130,5 +134,75 @@ test('CI selects package jobs independently of qualification and preserves full 
   }
   for (const name of ['automation', 'code', 'packages', 'native']) {
     assert.equal(decide(name, 'push', {}, true), false, name);
+  }
+});
+
+
+test('audited PRs separate automation recipes and test support from native inputs', () => {
+  const audited = require('./fixtures/hardware-routing-prs.json');
+  const pr = number => audited.find(pr => pr.number === number).files;
+  const recipes = pr(252).map(file => file === 'Justfile' ? 'ci/inference.just' : file);
+  assert.deepEqual(route(pr(252)), { automation: true, code: true, packages: true, inference: true });
+  assert.deepEqual(route(recipes), { automation: true, code: false, packages: false, inference: true });
+  assert.deepEqual(route(pr(241)), { automation: true, code: true, packages: false, inference: false });
+  // Inline Rust tests and Windows edits inside shared files remain conservative.
+  for (const number of [240, 248, 192, 193]) {
+    assert.equal(route(pr(number)).packages, true, `PR #${number}`);
+    assert.equal(route(pr(number)).inference, true, `PR #${number}`);
+  }
+});
+
+test('protected fork routes and aggregate triggers agree for exclusions, mixed changes and renames', () => {
+  const files = [
+    'crates/skippy-runtime/src/test_support/libraries.rs',
+    'scripts/lib/inference_labels.py', 'scripts/lib/inference_health.py',
+    'ci/inference.just', 'crates/skippy-runtime/src/session.rs',
+  ];
+  for (const filename of files) {
+    assert.deepEqual(expectedWorkflows.routes([{ filename }]), route([filename]), filename);
+    assert.equal(expectedWorkflows([{ filename }]).has('.github/workflows/inference.yml'),
+      route([filename]).inference, filename);
+    const fork = expectedWorkflows([{ filename }], false);
+    assert.equal(fork.has('.github/workflows/fork-native.yml'), true, filename);
+  }
+  const report = 'scripts/lib/inference_labels.py';
+  const runtime = 'crates/skippy-runtime/src/session.rs';
+  assert.deepEqual(route([report, runtime]), route([runtime]));
+  // Moving code into an excluded directory must still validate the removed runtime path.
+  for (const change of [
+    { filename: files[0], previous_filename: runtime },
+    { filename: runtime, previous_filename: files[0] },
+  ]) {
+    assert.equal(expectedWorkflows.routes([change]).packages, true);
+    assert.equal(expectedWorkflows.routes([change]).inference, true);
+    assert.equal(expectedWorkflows([change]).has('.github/workflows/inference.yml'), true);
+  }
+});
+
+test('inference implementation changes always require qualification, including mixed PRs', () => {
+  const inference = [
+    'crates/skippy-inference-api/src/router.rs',
+    'crates/skippy-serving/src/split_dflash.rs',
+    'crates/skippy-scheduler/src/engine.rs',
+    'crates/skippy-runtime/src/native.rs',
+    'crates/skippy-ffi/src/static_bindings.rs',
+    'skippy_api/src/llama/staged.cpp',
+    'llama_cpp/patches/model_support/series',
+    'scripts/inference-execute.py',
+    'scripts/lib/inference_checks.py',
+    'scripts/lib/inference_admission.py',
+    'scripts/lib/inference_probe.py',
+    'scripts/lib/inference_new_execution_helper.py',
+    'ci/inference.just',
+  ];
+  for (const filename of inference) {
+    for (const files of [[filename], [filename, 'scripts/lib/inference_labels.py',
+      'crates/skippy-runtime/src/test_support/libraries.rs']]) {
+      const changed = files.map(filename => ({ filename }));
+      assert.equal(route(files).inference, true, filename);
+      assert.equal(expectedWorkflows.routes(changed).inference, true, filename);
+      assert.equal(expectedWorkflows(changed).has('.github/workflows/inference.yml'), true, filename);
+      assert.equal(expectedWorkflows(changed, false).has('.github/workflows/fork-native.yml'), true, filename);
+    }
   }
 });

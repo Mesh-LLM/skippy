@@ -31,6 +31,14 @@ class NativeCacheTests(unittest.TestCase):
         with patch.dict(native_inputs.__globals__, capture=lambda args: ""):
             self.assertNotEqual(old, native_inputs())
 
+    def test_moved_qualification_recipes_are_part_of_native_identity(self):
+        native_inputs = BUILD["native_inputs"]
+        def capture(args):
+            self.assertIn("ci/inference.just", args)
+            return "100644 blob recipe ci/inference.just\n"
+        with patch.dict(native_inputs.__globals__, capture=capture):
+            native_inputs()
+
     def test_build_hashes_native_identity_in_compiler_cache_and_retains_extra_files(self):
         build = BUILD["build"]
         calls = []

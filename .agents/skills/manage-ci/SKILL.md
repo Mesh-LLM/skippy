@@ -33,8 +33,13 @@ contract; no downstream product's workflow topology applies here.
   Independent declarative PR filters select hosted offline automation, source
   checks, and Linux ARM64 CUDA 13 plus macOS ARM64 Metal package/device smoke.
   Qualification scripts and reporting do not select PR package builds. Reporting
-  and offline check recipes belong in `ci/automation.just`; root `Justfile` edits
-  remain conservative build inputs. Main pushes retain conservative source
+  and offline check recipes belong in `ci/automation.just`; qualification controller
+  and execution recipes belong in `ci/inference.just` and select the Spark ladder
+  without package rebuilds. Include that file in qualification native cache identities.
+  Root `Justfile` edits remain conservative build inputs. Test-support directories
+  and named display modules avoid PR hardware; mixed production changes retain it.
+  Keep shared Windows/build inputs conservative until platform validation replaces
+  the coverage being removed. Main pushes retain conservative source
   checks. Inference, packaging and native main changes select both device
   smokes; native changes additionally select Graph Contracts. Compare main
   changes since a verified successful ancestor main-push CI run so coalesced
