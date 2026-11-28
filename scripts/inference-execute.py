@@ -106,8 +106,6 @@ def execute(profile, key, mode):
     model = admit(key, inputs)
     coordinate = f'{inputs["repo"]}@{inputs["revision"]}'
     context = 4096 if profile == "pr" else 65536
-    if not worker and profile != "pr":
-        numerical(model, coordinate, inputs, output)
     args = ["target/debug/skippy", "--debug", "serve", "--startup-timeout-secs", "300"]
     if not worker:
         args += ["--speculative-strategy", "disabled", "--generation-concurrency", "1"]
@@ -121,6 +119,10 @@ def execute(profile, key, mode):
     log = output / "server.log"
     peer_context = PeerControl.from_environment(sha, key, profile) if mode == "split" else nullcontext()
     with log.open("wb") as stream, peer_context as peer:
+        # Keep formation identity observable while the leader runs longer
+        # nightly/release numerical checks, before starting its serving child.
+        if not worker and profile != "pr":
+            numerical(model, coordinate, inputs, output)
         if peer is not None:
             peer.await_peer(None if worker else "ready")
             if worker:
@@ -131,7 +133,7 @@ def execute(profile, key, mode):
         server = start(args, stdin=subprocess.DEVNULL, stdout=stream, stderr=stream)
         try:
             if worker:
-                peer.worker_ready(server)
+                peer.worker_ready(server, log, read_json(output / "stage.json"))
                 peer.await_peer("complete", server, seconds=18000)
                 offload(log)
                 peer.acknowledge()
