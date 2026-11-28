@@ -1,5 +1,8 @@
 #!/bin/bash
 set -euo pipefail
+# Stays Bash 3.2 compatible: macOS's /bin/bash runs this script's tests. So no
+# mapfile, and arrays that may be empty expand as ${a[@]+"${a[@]}"}, because
+# Bash before 4.4 treats an empty array as unset under set -u.
 
 # This script runs inside an HF Job container.
 # It clones skippy, builds the splitter, splits the model, validates, and publishes.
@@ -184,14 +187,14 @@ fetch_ref_with_retry() {
 }
 
 echo "=== [3/9] Cloning skippy and building skippy-package-builder ==="
-: "${SKIPPY_GITHUB_TOKEN:?read access to general-inference/skippy is required}"
+: "${SKIPPY_GITHUB_TOKEN:?read access to Mesh-LLM/skippy is required}"
 # Keep credentials out of clone URLs, Git configuration files and command logs.
 export GIT_CONFIG_COUNT=2
 export GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0=
 export GIT_CONFIG_KEY_1=credential.https://github.com.helper
 export GIT_CONFIG_VALUE_1='!f() { printf "username=x-access-token\npassword=%s\n" "$SKIPPY_GITHUB_TOKEN"; }; f'
 export GIT_TERMINAL_PROMPT=0
-git clone --filter=blob:none https://github.com/general-inference/skippy.git "$BUILD_DIR"
+git clone --filter=blob:none https://github.com/Mesh-LLM/skippy.git "$BUILD_DIR"
 cd "$BUILD_DIR"
 if git ls-remote --exit-code --heads origin "$SKIPPY_REF" >/dev/null 2>&1 || \
    git ls-remote --exit-code --tags origin "$SKIPPY_REF" >/dev/null 2>&1; then
@@ -257,7 +260,8 @@ if [ "$REPUBLISH" = "true" ]; then
             --source-revision "$SOURCE_REVISION" \
             --token "$(date -u +%Y%m%d%H%M%S)-$$"
     )"
-    mapfile -t SNAPSHOT_STATE <<< "$SNAPSHOT_OUTPUT"
+    SNAPSHOT_STATE=()
+    while IFS= read -r snapshot_line; do SNAPSHOT_STATE+=("$snapshot_line"); done <<< "$SNAPSHOT_OUTPUT"
     TARGET_UPLOAD_REVISION="${SNAPSHOT_STATE[0]:?missing staging revision}"
     TARGET_MAIN_PARENT="${SNAPSHOT_STATE[1]:?missing target main parent}"
     echo "  Staging replacement on ${TARGET_UPLOAD_REVISION} from ${TARGET_MAIN_PARENT}"
@@ -345,7 +349,7 @@ for METADATA_NAME in config.json generation_config.json tokenizer_config.json ch
     fi
 done
 WRITE_PACKAGE_METADATA_ARGS=()
-for METADATA_PATH in "${PUBLISHER_METADATA_PATHS[@]}"; do
+for METADATA_PATH in ${PUBLISHER_METADATA_PATHS[@]+"${PUBLISHER_METADATA_PATHS[@]}"}; do
     echo "  Publisher metadata: $METADATA_PATH"
     WRITE_PACKAGE_METADATA_ARGS+=(--publisher-metadata "$METADATA_PATH")
 done
@@ -397,10 +401,10 @@ set +e
 time "$SLICER" write-package "$WRITE_PACKAGE_INPUT" \
     --out-dir "$PACKAGE_DIR" \
     --after-artifact-command "$ARTIFACT_UPLOAD_HOOK" \
-    "${WRITE_PACKAGE_PROJECTOR_ARGS[@]}" \
-    "${WRITE_PACKAGE_METADATA_ARGS[@]}" \
-    "${WRITE_PACKAGE_GENERATION_ARGS[@]}" \
-    "${WRITE_PACKAGE_IDENTITY_ARGS[@]}"
+    ${WRITE_PACKAGE_PROJECTOR_ARGS[@]+"${WRITE_PACKAGE_PROJECTOR_ARGS[@]}"} \
+    ${WRITE_PACKAGE_METADATA_ARGS[@]+"${WRITE_PACKAGE_METADATA_ARGS[@]}"} \
+    ${WRITE_PACKAGE_GENERATION_ARGS[@]+"${WRITE_PACKAGE_GENERATION_ARGS[@]}"} \
+    ${WRITE_PACKAGE_IDENTITY_ARGS[@]+"${WRITE_PACKAGE_IDENTITY_ARGS[@]}"}
 WRITE_PACKAGE_STATUS=$?
 set -e
 stop_heartbeat
@@ -420,8 +424,9 @@ LAYER_PROJECTION_OUTPUT="$("$LAYER_JOB" project --manifest "$PACKAGE_DIR/model-p
     --source-repo "$SOURCE_REPO" --source-revision "$SOURCE_REVISION" \
     --source-admission-file "$SOURCE_ADMISSION_DIR/source.json" \
     --target-repo "$TARGET_REPO" --pipeline-tag "${SOURCE_PIPELINE_TAG:-text-generation}" \
-    --output-directory "$LAYER_PROJECTION_DIR" "${LAYER_JOB_EXPERIMENTAL_ARGS[@]}")"
-mapfile -t LAYER_PROJECTION_SUMMARY <<< "$LAYER_PROJECTION_OUTPUT"
+    --output-directory "$LAYER_PROJECTION_DIR" ${LAYER_JOB_EXPERIMENTAL_ARGS[@]+"${LAYER_JOB_EXPERIMENTAL_ARGS[@]}"})"
+LAYER_PROJECTION_SUMMARY=()
+while IFS= read -r projection_line; do LAYER_PROJECTION_SUMMARY+=("$projection_line"); done <<< "$LAYER_PROJECTION_OUTPUT"
 if [ "${#LAYER_PROJECTION_SUMMARY[@]}" -ne 3 ]; then echo "ERROR: native projection summary refused" >&2; exit 1; fi
 SOURCE_IDENTITY="${LAYER_PROJECTION_SUMMARY[0]}"
 LAYER_COUNT="${LAYER_PROJECTION_SUMMARY[1]}"
@@ -469,7 +474,7 @@ if [ "${CATALOG_CREATE_PR:-false}" = "true" ]; then CATALOG_PR_ARGS+=(--create-p
 "$LAYER_JOB" update-catalog --confirm --manifest "$PACKAGE_DIR/model-package.json" \
     --source-repo "$SOURCE_REPO" --source-revision "$SOURCE_REVISION" --source-file "$SOURCE_FILE" \
     --target-repo "$TARGET_REPO" --credential-file "$CATALOG_CREDENTIAL" \
-    --output-directory "${LOCAL_WORK_DIR}/catalog-publication" "${CATALOG_PR_ARGS[@]}"
+    --output-directory "${LOCAL_WORK_DIR}/catalog-publication" ${CATALOG_PR_ARGS[@]+"${CATALOG_PR_ARGS[@]}"}
 rm -f "$CATALOG_CREDENTIAL"
 
 # ─── Model Card ────────────────────────────────────────────────────────────
@@ -483,7 +488,7 @@ if [ "${PACKAGE_EXPERIMENTAL:-false}" = "true" ]; then CARD_EXPERIMENTAL_ARGS+=(
     --source-repo "$SOURCE_REPO" --source-revision "$SOURCE_REVISION" --source-file "$SOURCE_FILE" \
     --target-repo "$TARGET_REPO" --credential-file "$CARD_CREDENTIAL" \
     --pipeline-tag "${SOURCE_PIPELINE_TAG:-text-generation}" --skippy-ref "${SKIPPY_REF:-main}" \
-    --output-directory "${LOCAL_WORK_DIR}/model-card" "${CARD_EXPERIMENTAL_ARGS[@]}"
+    --output-directory "${LOCAL_WORK_DIR}/model-card" ${CARD_EXPERIMENTAL_ARGS[@]+"${CARD_EXPERIMENTAL_ARGS[@]}"}
 rm -f "$CARD_CREDENTIAL"
 publish_layer_file "${LOCAL_WORK_DIR}/model-card/README.md" README.md main
 echo "  ✓ Model card publication verified"

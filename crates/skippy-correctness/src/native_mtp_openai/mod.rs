@@ -1,4 +1,5 @@
 mod metrics;
+mod mode;
 mod remote;
 mod reporting;
 mod stage_process;
@@ -17,23 +18,21 @@ use serde_json::{Value, json};
 use crate::{
     cli::{NativeMtpOpenAiAbArgs, StageLoadMode},
     report::{NativeMtpOpenAiAbReport, NativeMtpOpenAiCaseReport},
-    runner::{native_mtp::normalize_runtime_layer_end, stage_runtime_plans},
+    runner::{native_mtp::normalize_runtime_layer_end, source_model_sha256, stage_runtime_plans},
     support::generate_run_id,
 };
 
 use metrics::read_metrics;
+use mode::MtpCaseMode;
 use reporting::{emit_report, status};
 use stage_process::{
-    case_addr, spawn_stage, start_stage1, wait_openai_ready, wait_stage1_ready, write_stage_config,
+    case_addr, spawn_stage, start_stage1, wait_openai_ready, wait_stage1_ready,
+    write_model_stage_config, write_stage_config,
 };
-
-pub(super) const BATCHED_VERIFY_ENV: &str = "SKIPPY_NATIVE_MTP_BATCHED_VERIFY";
-pub(super) const NATIVE_MTP_ENABLED_ENV: &str = "SKIPPY_NATIVE_MTP_ENABLED";
 
 struct OpenAiCaseConfig {
     case: &'static str,
-    native_mtp_enabled: bool,
-    batched_verify_enabled: bool,
+    mode: MtpCaseMode,
     run_id: String,
     root: PathBuf,
     openai_bind_addr: SocketAddr,
@@ -44,6 +43,7 @@ struct OpenAiCaseConfig {
 }
 
 struct OpenAiStageConfig<'a> {
+    mode: MtpCaseMode,
     run_id: &'a str,
     model_id: &'a str,
     model_path: &'a Path,
@@ -91,14 +91,15 @@ pub fn native_mtp_openai_ab(args: NativeMtpOpenAiAbArgs) -> Result<()> {
         .build()
         .context("failed to build HTTP client")?;
 
+    let source_digest = source_model_sha256(&args.runtime.model)?;
     let baseline = run_openai_case(
         &args,
         &client,
         &model_id,
+        &source_digest,
         OpenAiCaseConfig {
             case: "baseline",
-            native_mtp_enabled: false,
-            batched_verify_enabled: false,
+            mode: MtpCaseMode::Disabled,
             run_id: format!("{}-baseline", generate_run_id()),
             root: root.join("baseline"),
             openai_bind_addr: case_addr(args.openai_bind_addr, args.batched_port_offset, 0)?,
@@ -120,10 +121,10 @@ pub fn native_mtp_openai_ab(args: NativeMtpOpenAiAbArgs) -> Result<()> {
         &args,
         &client,
         &model_id,
+        &source_digest,
         OpenAiCaseConfig {
             case: "n1",
-            native_mtp_enabled: true,
-            batched_verify_enabled: false,
+            mode: MtpCaseMode::SingleDraft,
             run_id: format!("{}-n1", generate_run_id()),
             root: root.join("n1"),
             openai_bind_addr: case_addr(args.openai_bind_addr, args.batched_port_offset, 1)?,
@@ -145,10 +146,10 @@ pub fn native_mtp_openai_ab(args: NativeMtpOpenAiAbArgs) -> Result<()> {
         &args,
         &client,
         &model_id,
+        &source_digest,
         OpenAiCaseConfig {
             case: "batched",
-            native_mtp_enabled: true,
-            batched_verify_enabled: true,
+            mode: MtpCaseMode::DefaultDraft,
             run_id: format!("{}-batched", generate_run_id()),
             root: root.join("batched"),
             openai_bind_addr: case_addr(args.openai_bind_addr, args.batched_port_offset, 2)?,
@@ -211,6 +212,7 @@ fn run_openai_case(
     args: &NativeMtpOpenAiAbArgs,
     client: &Client,
     model_id: &str,
+    source_digest: &str,
     case: OpenAiCaseConfig,
 ) -> Result<NativeMtpOpenAiCaseReport> {
     fs::create_dir_all(&case.root)
@@ -234,11 +236,12 @@ fn run_openai_case(
         1,
     )?;
 
-    write_stage_config(
+    write_model_stage_config(
         &stage0_config_path,
         &stage_config_json(
             args,
             OpenAiStageConfig {
+                mode: case.mode,
                 run_id: &case.run_id,
                 model_id,
                 model_path: stage0_model_path,
@@ -256,12 +259,15 @@ fn run_openai_case(
                 runtime_plan: &runtime_plans[0],
             },
         ),
+        &args.runtime.model,
+        source_digest,
     )?;
-    write_stage_config(
+    write_model_stage_config(
         &stage1_config_path,
         &stage_config_json(
             args,
             OpenAiStageConfig {
+                mode: case.mode,
                 run_id: &case.run_id,
                 model_id,
                 model_path: stage1_model_path,
@@ -279,6 +285,8 @@ fn run_openai_case(
                 runtime_plan: &runtime_plans[1],
             },
         ),
+        &args.runtime.model,
+        source_digest,
     )?;
     write_stage_config(
         &topology_path,
@@ -308,34 +316,34 @@ fn run_openai_case(
         }),
     )?;
 
-    let (stage1, stage1_launch) = start_stage1(
+    let (mut stage1, stage1_launch) = start_stage1(
         args,
         &case.run_id,
         &stage1_config_path,
         &topology_path,
         &stage1_log,
-        case.native_mtp_enabled,
-        case.batched_verify_enabled,
+        case.mode,
     )?;
     wait_stage1_ready(
-        &stage1,
+        &mut stage1,
         case.stage1_endpoint_addr,
         args.server.startup_timeout_secs,
     )
     .context("stage 1 binary server did not become ready")?;
-    let stage0 = spawn_stage(
+    let mut stage0 = spawn_stage(
         args,
         &stage0_config_path,
         Some(case.openai_bind_addr),
         &topology_path,
         &stage0_log,
-        case.native_mtp_enabled,
-        case.batched_verify_enabled,
+        case.mode,
     )?;
     wait_openai_ready(
         client,
         case.openai_bind_addr,
         args.server.startup_timeout_secs,
+        &mut stage0,
+        &stage0_log,
     )
     .context("stage 0 OpenAI server did not become ready")?;
 
@@ -374,8 +382,9 @@ fn run_openai_case(
     let metrics = read_metrics(&stage0_log, &stage1_log)?;
     Ok(NativeMtpOpenAiCaseReport {
         case: case.case,
-        native_mtp_enabled: case.native_mtp_enabled,
-        batched_verify_enabled: case.batched_verify_enabled,
+        native_mtp_enabled: case.mode.enabled(),
+        // Current MTP execution verifies drafts in batches, including a single draft.
+        batched_verify_enabled: case.mode.enabled(),
         http_status,
         content,
         completion_tokens,
@@ -412,6 +421,7 @@ fn stage_config_json(args: &NativeMtpOpenAiAbArgs, stage: OpenAiStageConfig<'_>)
         "n_batch": args.runtime.n_batch,
         "n_ubatch": args.runtime.n_ubatch,
         "n_gpu_layers": args.runtime.n_gpu_layers,
+        "native_mtp_enabled": stage.mode.enabled(),
         "cache_type_k": "f16",
         "cache_type_v": "f16",
         "flash_attn_type": protocol_flash_attn(args.runtime.flash_attn),

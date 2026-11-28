@@ -5,7 +5,7 @@ mod dynamic_library;
 // without compiling the crate to determine native-runtime compatibility.
 pub const ABI_VERSION_MAJOR: u32 = 0;
 pub const ABI_VERSION_MINOR: u32 = 1;
-pub const ABI_VERSION_PATCH: u32 = 88;
+pub const ABI_VERSION_PATCH: u32 = 90;
 
 // The facade constants are parsed without compiling; tie them to the generated
 // bindings' view of the native ABI version at compile time so a common.h bump
@@ -139,8 +139,8 @@ pub use state::{
     CACHEGEN_RECORD_EXACT, CACHEGEN_RECORD_F16, CACHEGEN_RECORD_F16_TRANSPOSED,
     CACHEGEN_RECORD_F32, CACHEGEN_RECORD_F32_TRANSPOSED, CACHEGEN_RECORD_Q4_0,
     CACHEGEN_RECORD_Q8_0, CACHEGEN_RECORD_V1_ABI_VERSION, CacheGenRecordV1,
-    KV_PAGE_CODEC_ISWA_COMPOSITE_V1, KV_PAGE_CODEC_SINGLE_V1, KV_PAGE_FLAG_HAS_K_IDX,
-    KV_PAGE_FLAG_V_TRANSPOSED, KvPageComponentDesc, KvPageDesc,
+    KV_PAGE_CODEC_ISWA_COMPOSITE_V1, KV_PAGE_CODEC_SINGLE_V1, KV_PAGE_FLAG_CANONICAL_POSITIONS,
+    KV_PAGE_FLAG_HAS_K_IDX, KV_PAGE_FLAG_V_TRANSPOSED, KvPageComponentDesc, KvPageDesc,
 };
 
 #[cfg(not(feature = "dynamic-runtime"))]

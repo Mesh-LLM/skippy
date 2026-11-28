@@ -6,7 +6,7 @@ import os
 from .ci_process import command
 from .upgrade_source import validate_sha
 
-REPO = "general-inference/skippy"
+REPO = "Mesh-LLM/skippy"
 
 
 def gh(*args, timeout=180):

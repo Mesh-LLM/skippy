@@ -3,7 +3,8 @@
   "enabled_hosts": [
     "darwin-aarch64",
     "linux-x86_64",
-    "linux-aarch64"
+    "linux-aarch64",
+    "windows-x86_64"
   ],
   "hosts": [
     {
@@ -39,12 +40,11 @@
     {
       "id": "windows-x86_64",
       "display_name": "Windows x86_64",
-      "enabled": false,
       "target": "x86_64-pc-windows-msvc",
       "os": "windows",
       "arch": "x86_64",
       "runner": [
-        "windows-2025"
+        "windows-2022"
       ]
     }
   ],
@@ -93,7 +93,7 @@
       "host": "linux-x86_64",
       "backend": "cuda",
       "toolkit": "12.9.2",
-      "gpu_architectures": "61;75;80;86;89;90",
+      "gpu_architectures": "61;75;80;86;89;90;120",
       "runner": [
         "self-hosted",
         "skippy-ephemeral",
@@ -120,6 +120,24 @@
         "cuda13"
       ],
       "runner_group": "jy-rnr_p0zx3thw895vrka"
+    },
+    {
+      "id": "linux-x86_64-rocm",
+      "display_name": "Linux x86_64, ROCm 7.2.4",
+      "host": "linux-x86_64",
+      "backend": "rocm",
+      "toolkit": "7.2.4",
+      "gpu_architectures": "gfx90a;gfx942;gfx1100;gfx1101;gfx1151;gfx1200;gfx1201",
+      "validation": "inference",
+      "runner": [
+        "self-hosted",
+        "skippy-ephemeral",
+        "Linux",
+        "X64",
+        "rocm"
+      ],
+      "full_only": true,
+      "runner_group": "jy-rnr_gsxt2m73mgpcbbh"
     },
     {
       "id": "linux-aarch64-cpu",
@@ -169,47 +187,84 @@
     {
       "id": "windows-x86_64-cpu",
       "display_name": "Windows x86_64, CPU",
-      "enabled": false,
       "host": "windows-x86_64",
       "backend": "cpu",
       "toolkit": "",
       "gpu_architectures": "",
+      "validation": "artifact",
       "runner": [
-        "windows-2025"
-      ]
+        "windows-2022"
+      ],
+      "full_only": true
     },
     {
       "id": "windows-x86_64-cuda12",
       "display_name": "Windows x86_64, CUDA 12.9.2",
-      "enabled": false,
       "host": "windows-x86_64",
       "backend": "cuda",
       "toolkit": "12.9.2",
-      "gpu_architectures": "61;75;80;86;89;90",
+      "gpu_architectures": "61;75;80;86;89;90;120",
+      "validation": "inference",
       "runner": [
-        "self-hosted",
-        "skippy-ephemeral",
-        "Windows",
-        "X64",
-        "runtime-image",
-        "cuda12"
-      ]
+        "windows-2022"
+      ],
+      "full_only": true
     },
     {
       "id": "windows-x86_64-cuda13",
       "display_name": "Windows x86_64, CUDA 13.1.2",
-      "enabled": false,
       "host": "windows-x86_64",
       "backend": "cuda",
       "toolkit": "13.1.2",
       "gpu_architectures": "75;80;86;89;90;100;103;120",
+      "validation": "inference",
+      "runner": [
+        "windows-2022"
+      ],
+      "full_only": true
+    },
+    {
+      "id": "windows-x86_64-rocm",
+      "display_name": "Windows x86_64, ROCm 7.2.0",
+      "host": "windows-x86_64",
+      "backend": "rocm",
+      "toolkit": "7.2.0",
+      "gpu_architectures": "gfx1100;gfx1101;gfx1102;gfx1151;gfx1200;gfx1201",
+      "validation": "inference",
+      "runner": [
+        "windows-2022"
+      ],
+      "full_only": true
+    },
+    {
+      "id": "linux-x86_64-vulkan",
+      "display_name": "Linux x86_64, Vulkan SDK 1.4.328.1",
+      "host": "linux-x86_64",
+      "backend": "vulkan",
+      "toolkit": "1.4.328.1",
+      "gpu_architectures": "",
+      "validation": "inference",
+      "full_only": true,
       "runner": [
         "self-hosted",
         "skippy-ephemeral",
-        "Windows",
+        "Linux",
         "X64",
-        "runtime-image",
-        "cuda13"
+        "rocm"
+      ],
+      "runner_group": "jy-rnr_gsxt2m73mgpcbbh"
+    },
+    {
+      "id": "windows-x86_64-vulkan",
+      "display_name": "Windows x86_64, Vulkan SDK 1.4.328.1",
+      "host": "windows-x86_64",
+      "backend": "vulkan",
+      "toolkit": "1.4.328.1",
+      "gpu_architectures": "",
+      "validation": "artifact",
+      "full_only": true,
+      "runner": [
+        "windows-2022"
       ]
     }
   ]

@@ -1,7 +1,7 @@
-From cac83ac7689cb1b62d8242b498ea7c0307ee2b19 Mon Sep 17 00:00:00 2001
+From 1764662164e7e9d9d2516a28950af4f7ff41dd3b Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Tue, 10 Nov 2026 21:00:00 +1100
-Subject: [PATCH 17/32] skippy: restore resident prefixes as shared cells plus
+Subject: [PATCH] skippy: restore resident prefixes as shared cells plus
  recurrent checkpoints
 
 The move to the new llama.cpp pin rebuilt the native queue from an older
@@ -186,7 +186,7 @@ index e8d0874a1..6d9028a18 100644
  LLAMA_API enum skippy_status skippy_session_memory_used_cells(
          struct skippy_session * session,
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 4f4fc1cd1..cfd896714 100644
+index bb9de46af..2e85dbfe1 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -89,6 +89,7 @@ add_library(llama
@@ -218,10 +218,10 @@ index 4f4fc1cd1..cfd896714 100644
                  COMMAND skippy-sampling-history
                      "${SKIPPY_MODEL_FIXTURE_DIR}/${family}-dense.gguf" ${mode} ${state})
 diff --git a/src/llama-context.cpp b/src/llama-context.cpp
-index cb68e7e53..e460d2250 100644
+index dabcf5553..4868e31d5 100644
 --- a/src/llama-context.cpp
 +++ b/src/llama-context.cpp
-@@ -3629,6 +3629,10 @@ private:
+@@ -3759,6 +3759,10 @@ private:
      std::vector<write_info> winfos;
  };
  
@@ -814,7 +814,7 @@ index 9d0ba6ee5..d5ac795e9 100644
          skippy_clear_chat_sampling(session);
          if (!session->borrowed_sequence) {
 diff --git a/src/skippy/state.cpp b/src/skippy/state.cpp
-index 45a53c4ba..075326333 100644
+index 44b924b0b..a36c31925 100644
 --- a/src/skippy/state.cpp
 +++ b/src/skippy/state.cpp
 @@ -18,6 +18,7 @@
@@ -947,7 +947,7 @@ index 45a53c4ba..075326333 100644
  static llama_kv_cache * skippy_get_kv_cache(
          skippy_session * session,
          skippy_error ** out_error) {
-@@ -889,331 +775,4 @@ enum skippy_status skippy_trim_session(
+@@ -894,331 +780,4 @@ enum skippy_status skippy_trim_session(
      return skippy_success(out_error);
  }
  
@@ -2225,5 +2225,5 @@ index 0c81c9d47..4c7c891e1 100644
      return 0;
  }
 -- 
-2.43.0
+2.56.1
 

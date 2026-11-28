@@ -133,7 +133,7 @@ pub async fn prepare_native_runtime(options: &NativeRuntimeOptions, automatic: b
         skippy_commands::console::status("🔎 Selecting a compatible native runtime")?;
         install_native_runtime(install).await.with_context(|| {
             format!(
-                "could not install a released runtime for this Skippy build (ABI {}); private releases require `gh release download --repo general-inference/skippy` with an authorized GitHub login, then extract a runtime and pass --runtime-bundle; run `just build` for a matching local runtime",
+                "could not install a released runtime for this Skippy build (ABI {}); private releases require `gh release download --repo Mesh-LLM/skippy` with an authorized GitHub login, then extract a runtime and pass --runtime-bundle; run `just build` for a matching local runtime",
                 skippy_runtime_install::current_skippy_abi_version()
             )
         })?;

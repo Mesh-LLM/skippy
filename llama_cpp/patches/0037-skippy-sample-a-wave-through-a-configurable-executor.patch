@@ -1,7 +1,7 @@
-From 15f509711adba0dc9db0af0d098fd05cf5ce3914 Mon Sep 17 00:00:00 2001
+From f15dfd3c6c64c66f6003bef564f2d94a705e39d1 Mon Sep 17 00:00:00 2001
 From: Jared Wyles <jared.wyles@gmail.com>
 Date: Thu, 12 Nov 2026 12:25:11 +1100
-Subject: [PATCH 34/35] skippy: sample a wave through a configurable executor
+Subject: [PATCH] skippy: sample a wave through a configurable executor
 
 Concurrent sampling started one thread per request for every decode step and
 joined them before returning: a thread create and join per token per request,
@@ -71,7 +71,7 @@ index 31ce347ea..58b157319 100644
      // config.
      /** @brief Whether the backend offloads host tensor operations to device (mirrors upstream `op_offload`). SKIPPY_TRISTATE_AUTO preserves llama.cpp's derived default (enabled); FALSE/TRUE force the value. */
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 7dad15759..3aa224023 100644
+index c6675d944..cd6340976 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -84,6 +84,8 @@ add_library(llama
@@ -397,7 +397,7 @@ index 000000000..e33523ea7
 +    std::vector<std::thread> threads; // grown by run() under `turn`
 +};
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 595a84a26..97e08f3ec 100644
+index 8ceab864c..687681d2a 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
 @@ -195,6 +195,8 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
@@ -587,5 +587,5 @@ index 000000000..e9b9284e0
 +    return failures == 0 ? 0 : 1;
 +}
 -- 
-2.43.0
+2.56.1
 

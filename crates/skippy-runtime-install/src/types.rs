@@ -74,7 +74,7 @@ pub fn publication_catalog(
 ) -> NativeRuntimeCatalog {
     NativeRuntimeCatalog {
         release_tags: [(runtime_release.to_string(), format!("v{product_release}"))].into(),
-        releases_url: "https://github.com/general-inference/skippy/releases".to_string(),
+        releases_url: "https://github.com/Mesh-LLM/skippy/releases".to_string(),
         rolling_release: None,
     }
 }
@@ -167,7 +167,7 @@ mod tests {
         let catalog = publication_catalog("1.2.3+gabcdef.dirty", "1.2.3", "0.9.0");
         assert_eq!(
             catalog.manifest_url("0.9.0"),
-            "https://github.com/general-inference/skippy/releases/download/v1.2.3/native-runtimes.json"
+            "https://github.com/Mesh-LLM/skippy/releases/download/v1.2.3/native-runtimes.json"
         );
         assert!(catalog.rolling_release.is_none());
     }

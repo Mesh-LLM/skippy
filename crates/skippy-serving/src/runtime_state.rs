@@ -280,6 +280,7 @@ impl RuntimeState {
 
     #[cfg(test)]
     pub(crate) fn new_modelless_with_capacity_for_test(lane_count: u32, ctx_size: u32) -> Self {
+        skippy_runtime::test_support::require_native_runtime();
         Self {
             model: StageModel::new_dummy(),
             runtime_lane_admission: lane_admission::RuntimeLaneAdmission::new(lane_count),
@@ -644,7 +645,7 @@ pub(crate) fn runtime_config_from_stage_config(
         kv_lazy_clear: config.kv_lazy_clear,
         kv_release_pages: config.kv_release_pages,
         kv_row_attention: config.kv_row_attention,
-        sample_threads: config.sample_threads,
+        sample_threads: config.sample_threads.limit(),
         projector_path: config.projector_path.clone(),
         projector_use_gpu: config.projector_use_gpu,
         media_marker: config.media_marker.clone(),
