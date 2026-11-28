@@ -82,10 +82,14 @@ def workload_args(workload, coordinate, tokenizer, corpus, seconds, directory):
 
 
 def measurements(directory):
-    exports = sorted(directory.rglob("profile_export_aiperf.json"))
-    if len(exports) != 1:
-        raise ValueError(f"{directory.name}: expected one AIPerf export, found {len(exports)}")
-    value = read_json(exports[0])
+    # the top-level export, where the load harness reads it; a synthetic run writes more below it
+    export = directory / "profile_export_aiperf.json"
+    if not export.is_file():
+        exports = sorted(directory.rglob("profile_export_aiperf.json"))
+        if len(exports) != 1:
+            raise ValueError(f"{directory.name}: expected one AIPerf export, found {len(exports)}")
+        export = exports[0]
+    value = read_json(export)
     count, errors = value["request_count"]["avg"], value["request_error_rate"]["avg"]
     if (not count or errors != 0 or value.get("error_summary") != []
             or value.get("is_complete") is not True):
