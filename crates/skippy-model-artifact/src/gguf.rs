@@ -972,6 +972,53 @@ pub fn scan_gguf_tensor_byte_profile(path: &Path) -> Option<GgufTensorByteProfil
     })
 }
 
+const TOKEN_EMBD_TENSOR: &str = "token_embd.weight";
+const OUTPUT_TENSOR: &str = "output.weight";
+
+/// Bytes of the token embeddings when the model has no separate output head
+/// (`output.weight`), so llama.cpp projects its output with
+/// `token_embd.weight` too. The weights buffer then holds the embeddings for
+/// the output projection, and the backend keeps another copy in a host buffer
+/// for the input lookup: on a device whose memory is the system RAM, that copy
+/// comes on top of the file's size. `Some(0)` for a model with its own output
+/// head or without token embeddings; `None` when the header cannot be read.
+/// Reads only the header and tensor-info tables.
+pub fn scan_gguf_tied_output_embedding_bytes(path: &Path) -> Option<u64> {
+    let GgufHeader {
+        file: mut f,
+        n_tensors,
+        n_kv,
+    } = open_gguf_header(path)?;
+    let file_len = f.get_ref().metadata().ok()?.len();
+    let mut alignment = 32u32;
+    for _ in 0..n_kv {
+        let key = read_gguf_string(&mut f).ok()?;
+        let vtype = GgufType::from_u32(read_u32(&mut f).ok()?)?;
+        if key == "general.alignment" {
+            if let Ok(Some(value)) = read_gguf_value_as_u32(&mut f, vtype) {
+                alignment = value.max(1);
+            }
+        } else {
+            skip_gguf_value(&mut f, vtype).ok()?;
+        }
+    }
+    let mut tensors = read_tensor_infos(&mut f, n_tensors).ok()?;
+    if tensors.iter().any(|tensor| tensor.name == OUTPUT_TENSOR) {
+        return Some(0);
+    }
+    let data_start = align_offset(f.stream_position().ok()?, alignment);
+    let data_len = file_len.checked_sub(data_start)?;
+    tensors.sort_by_key(|tensor| tensor.offset);
+    let Some(index) = tensors
+        .iter()
+        .position(|tensor| tensor.name == TOKEN_EMBD_TENSOR)
+    else {
+        return Some(0);
+    };
+    let next_offset = tensors.get(index + 1).map_or(data_len, |next| next.offset);
+    next_offset.checked_sub(tensors[index].offset)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1559,6 +1606,37 @@ mod tests {
             err.to_string()
                 .contains("negative Int32 where unsigned GGUF value was expected")
         );
+        let _ = std::fs::remove_file(path);
+    }
+
+    fn embedding_model(output_head: bool) -> PathBuf {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"GGUF");
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&(2 + i64::from(output_head)).to_le_bytes());
+        bytes.extend_from_slice(&1i64.to_le_bytes());
+        push_u32_kv(&mut bytes, "general.alignment", 32);
+        push_tensor_info(&mut bytes, "token_embd.weight", 0);
+        push_tensor_info(&mut bytes, "blk.0.attn_q.weight", 96);
+        if output_head {
+            push_tensor_info(&mut bytes, "output.weight", 128);
+        }
+        let data_start = align_offset(bytes.len() as u64, 32) as usize;
+        bytes.resize(data_start + 160, 0);
+        write_bytes("skippy-model-artifact-gguf-embeddings", &bytes)
+    }
+
+    #[test]
+    fn tied_embeddings_report_their_bytes() {
+        let path = embedding_model(false);
+        assert_eq!(scan_gguf_tied_output_embedding_bytes(&path), Some(96));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_separate_output_head_reports_no_tied_bytes() {
+        let path = embedding_model(true);
+        assert_eq!(scan_gguf_tied_output_embedding_bytes(&path), Some(0));
         let _ = std::fs::remove_file(path);
     }
 
