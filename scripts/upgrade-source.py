@@ -38,10 +38,11 @@ def resolve(upstream, force):
 def save_preparation_diagnostics(checkout, destination):
     """Keep patch failures inspectable after the disposable checkout is removed."""
     source = checkout / ".deps/llama.cpp"
-    coverage = checkout / "target/llama-regeneration/graph-coverage.json"
-    if coverage.is_file():
-        destination.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(coverage, destination / coverage.name)
+    for name in ("graph-coverage.json", "abi-compatibility.json"):
+        report = checkout / "target/llama-regeneration" / name
+        if report.is_file():
+            destination.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(report, destination / name)
     if not (source / ".git").is_dir():
         return
     destination.mkdir(parents=True, exist_ok=True)

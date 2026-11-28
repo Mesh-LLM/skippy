@@ -273,7 +273,11 @@ mod tests {
             .stderr(Stdio::null());
         let mut child = ChildGuard::spawn(command)?;
         let started = Instant::now();
-        let error = wait_openai_ready(&Client::new(), addr, 5, &mut child, &log).unwrap_err();
+        let client = Client::builder()
+            .tls_certs_only([])
+            .build()
+            .expect("build plain-HTTP test client");
+        let error = wait_openai_ready(&client, addr, 5, &mut child, &log).unwrap_err();
         assert!(started.elapsed() < Duration::from_secs(5));
         let message = error.to_string();
         assert!(

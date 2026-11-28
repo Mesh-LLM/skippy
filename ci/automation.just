@@ -12,6 +12,9 @@ inference-contracts:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_streaming.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_build.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_deadlines.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_peer.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_socket.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_peer_evidence.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_probe.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_pairs.py
@@ -39,6 +42,7 @@ automation-contracts: inference-contracts ci-vulkan-contracts
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_smoke_readiness.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/ci_product_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_contracts.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_abi.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_publisher_config.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_diagnostics.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/upgrade_verification.py

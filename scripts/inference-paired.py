@@ -120,7 +120,9 @@ def worker(origin, designs, main, baseline, key, output, identity):
                     raise RuntimeError("paired inference leader stopped")
                 return state["index"] == index
             await_condition(ready)
-            run_arm(design, main, baseline, key, "split", output)
+            directory = run_arm(design, main, baseline, key, "split", output)
+            if design["experiment"] == "ab" and design["arm"] == "b":
+                shutil.copyfile(directory / "split-peer.json", output / "split-peer.json")
             exchange(origin, "/done", {"index": index})
     except BaseException:
         exchange(origin, "/error", {"failed": True})
@@ -175,7 +177,7 @@ def execute(key, mode, baseline):
                     # Preserve the existing standalone nightly smoke receipts too.
                     if design["experiment"] == "ab" and design["arm"] == "b":
                         for name in ("qualification.json", "quality.json", "throughput-probe.json",
-                                     "provenance.json", "split-admissions.json"):
+                                     "provenance.json", "split-admissions.json", "split-peer.json"):
                             if (directory / name).is_file():
                                 shutil.copyfile(directory / name, output / name)
                 evidence["summary"] = summarize(evidence, candidate, baseline, f"{key}-{mode}")

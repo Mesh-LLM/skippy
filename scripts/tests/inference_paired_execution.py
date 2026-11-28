@@ -81,6 +81,22 @@ class ExecutionTests(unittest.TestCase):
             execute("qwen35-4b", "standalone", "legacy")
         native.assert_called_once_with("pr", "qwen35-4b", "standalone")
 
+    def test_worker_retains_candidate_peer_proof_for_the_controller(self):
+        worker = self.module["worker"]
+        design = {"experiment": "ab", "round": 5, "arm": "b", "source_sha": CANDIDATE}
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            arm = output / "ab-5-b"
+            arm.mkdir()
+            write_json(arm / "split-peer.json", {"completion_acknowledged": True})
+            exchange, run_arm = Mock(return_value=True), Mock(return_value=arm)
+            with patch.dict(worker.__globals__, worker_state=Mock(), await_condition=Mock(),
+                            exchange=exchange, run_arm=run_arm):
+                worker("http://leader", [design], output, BASELINE, "model", output, {})
+            self.assertEqual((output / "split-peer.json").read_bytes(),
+                             (arm / "split-peer.json").read_bytes())
+            exchange.assert_called_with("http://leader", "/done", {"index": 0})
+
     def test_controller_keeps_one_job_for_the_entire_design_and_requires_its_receipt(self):
         module = run_path(str(MODULE.with_name("inference-dispatch.py")))
         dispatch = module["dispatch"]
