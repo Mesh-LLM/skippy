@@ -1,0 +1,49 @@
+From e8cb99e030813e85ccd7f7a21e6f76f7cbe75565 Mon Sep 17 00:00:00 2001
+From: Skippy CI <ci@skippy.local>
+Date: Sat, 28 Nov 2026 18:37:46 +1100
+Subject: [PATCH] skippy: count decode work once after synchronization fences
+
+---
+ src/llama-context.cpp            | 6 ------
+ src/skippy/tests/async_state.cpp | 8 +++++++-
+ 2 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index 096124f7c..adfc3e0b7 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -2436,12 +2436,6 @@ int llama_context::decode(
+     output_swaps.clear();
+     embd_batch_idxs.clear();
+ 
+-    // Synchronizing the preceding decode must not account this batch's work.
+-    if (t_compute_start_us == 0) {
+-        t_compute_start_us = ggml_time_us();
+-    }
+-    n_queued_tokens += n_tokens_all;
+-
+     sched_reserve(graph_build_inputs);
+ 
+     if (t_compute_start_us == 0) {
+diff --git a/src/skippy/tests/async_state.cpp b/src/skippy/tests/async_state.cpp
+index ba1de093b..972a8b25b 100644
+--- a/src/skippy/tests/async_state.cpp
++++ b/src/skippy/tests/async_state.cpp
+@@ -222,7 +222,13 @@ void test_sampler_reservations(skippy_session * first, skippy_session * second)
+     const uint64_t reserved_before_detach = first->ctx->get_sched_reserve_count();
+     CHECK(llama_set_sampler(first->ctx, first->seq_id, nullptr));
+     first->ctx->sched_reserve();
+-    CHECK(first->ctx->get_sched_reserve_count() == reserved_before_detach);
++    // The pinned context invalidates the graph when an attached sampler is removed.
++    CHECK(first->ctx->get_sched_reserve_count() > reserved_before_detach);
++    const uint64_t reserved_after_detach = first->ctx->get_sched_reserve_count();
++    // Removing an already absent sampler is a no-op.
++    CHECK(llama_set_sampler(first->ctx, first->seq_id, nullptr));
++    first->ctx->sched_reserve();
++    CHECK(first->ctx->get_sched_reserve_count() == reserved_after_detach);
+     llama_sampler_free(replacement);
+     llama_sampler_free(shape_chain);
+ }
+-- 
+2.56.0
+
