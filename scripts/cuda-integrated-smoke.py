@@ -12,6 +12,9 @@ Each model is served once per arm:
                the host writes the next inputs
   on-trace     on, traced, to count the input uploads left
   off-trace    off, traced, for the same count
+  on-device    on, with LLAMA_IGPU_HOST_STATE_DISABLE=1, so inputs are read in place
+               but the KV cache and recurrent state stay in device memory
+  on-device-trace  on-device, traced
 
 A run sends its requests one at a time (a count, then two long prompts that take
 several ubatches each), then all together. Every answer is checked for sense: a count
@@ -19,7 +22,8 @@ must run on from 1 and a needle must be found. One-at-a-time answers are also co
 word for word with the first off run's, which only off runs need to match.
 
 Corruption in on that on-blocking does not show points to a race between host writes
-and running kernels; corruption in both points elsewhere. The script exits 0 whenever
+and running kernels; corruption in both points elsewhere. on against on-device splits a
+speed change between the in-place inputs and the host-resident state. The script exits 0 whenever
 the experiment ran, whatever it found: summary.json holds the verdicts.
 """
 
@@ -52,10 +56,15 @@ ARMS = {
     "on-blocking": ({"GGML_CUDA_INTEGRATED": "1", "CUDA_LAUNCH_BLOCKING": "1"}, False),
     "on-trace": ({"GGML_CUDA_INTEGRATED": "1"}, True),
     "off-trace": ({}, True),
+    "on-device": ({"GGML_CUDA_INTEGRATED": "1", "LLAMA_IGPU_HOST_STATE_DISABLE": "1"}, False),
+    "on-device-trace": ({"GGML_CUDA_INTEGRATED": "1", "LLAMA_IGPU_HOST_STATE_DISABLE": "1"}, True),
 }
-DEFAULT_ARMS = "off,on,on-blocking,on-trace,off-trace,off"
+ON_ARMS = ("on", "on-trace", "on-device", "on-device-trace")
+DEFAULT_ARMS = "off,on,on-device,on-trace,on-device-trace,off-trace,off,on,on-device"
 # ggml_cuda_init logs this once per device the flag turned on
 IN_PLACE_LINE = "reads host buffers in place"
+# llama.cpp logs each cache buffer it allocates, named for its buffer type (CUDA0, CUDA_Host)
+STATE_BUFFER = re.compile(r"(\S+ (?:KV|RS)) buffer size")
 DETAIL_DEVICE = re.compile(r"^[A-Z]+\d+#")
 DETAIL_INDEX = re.compile(r"#\d+$")
 
@@ -211,7 +220,9 @@ def run_arm(label, arm, skippy, model, stem):
             run["alive"] = False
         finally:
             stop(server)
-    run["in_place_logged"] = log.read_text(errors="replace").count(IN_PLACE_LINE)
+    text = log.read_text(errors="replace")
+    run["in_place_logged"] = text.count(IN_PLACE_LINE)
+    run["state_buffers"] = dict(collections.Counter(STATE_BUFFER.findall(text)))
     if trace:
         run["uploads"] = uploads(trace_file)
     return run
@@ -229,7 +240,7 @@ def first_difference(a, b):
 
 
 def upload_total(runs, arm):
-    totals = [sum(run["uploads"].values()) for run in runs if run["arm"] == arm and run.get("uploads")]
+    totals = [sum(run["uploads"].values()) for run in runs if run["arm"] == arm and run.get("uploads") is not None]
     return totals[0] if totals else None
 
 
@@ -243,7 +254,7 @@ def took_effect(runs, ons):
 
 def verdict(runs):
     offs = [run for run in runs if run["arm"] in ("off", "off-trace")]
-    ons = [run for run in runs if run["arm"] in ("on", "on-trace")]
+    ons = [run for run in runs if run["arm"] in ON_ARMS]
     blocking = [run for run in runs if run["arm"] == "on-blocking"]
     if not offs or not all(passed(run) for run in offs):
         return "the off arm failed its checks, so nothing can be concluded"
@@ -256,6 +267,18 @@ def verdict(runs):
     if blocking and any(not passed(run) for run in blocking):
         return "corrupts even with blocking launches: not a race with running kernels"
     return "mixed: read the runs"
+
+
+def seconds_by_arm(runs):
+    """Mean seconds per arm for the count alone and the counts run together, the checks long enough to time."""
+    timed = collections.defaultdict(lambda: {"alone": [], "together": []})
+    for run in runs:
+        if "error" in run:
+            continue
+        timed[run["arm"]]["alone"] += [r["seconds"] for job, r in run["alone"].items() if job.startswith("count")]
+        timed[run["arm"]]["together"] += [r["seconds"] for job, r in run["together"].items() if job.startswith("count")]
+    return {arm: {phase: round(sum(values) / len(values), 2) if values else None for phase, values in phases.items()}
+            for arm, phases in timed.items()}
 
 
 def report(name, runs):
@@ -283,6 +306,10 @@ def report(name, runs):
             top = sorted(run["uploads"].items(), key=lambda item: -item[1])[:6]
             print(f"  {run['label']} uploads {sum(run['uploads'].values())}: "
                   + ", ".join(f"{tensor} {count}" for tensor, count in top))
+    for run in runs:
+        print(f"  {run['label']} state buffers: {run.get('state_buffers') or 'not in the log'}")
+    for arm, phases in seconds_by_arm(runs).items():
+        print(f"  {arm:16} count alone {phases['alone']}s, counts together {phases['together']}s")
     print(f"  verdict: {verdict(runs)}", flush=True)
 
 
@@ -333,7 +360,7 @@ def main():
             runs.append(run_arm(label, arm, args.skippy, path, out / f"{name}-{arm}-{index}"))
             report_progress(args.progress, position * len(order) + index, total, f"{name} {arm} {index}")
         report(name, runs)
-        summary[name] = {"model": path, "verdict": verdict(runs), "runs": runs}
+        summary[name] = {"model": path, "verdict": verdict(runs), "seconds": seconds_by_arm(runs), "runs": runs}
         (out / "summary.json").write_text(json.dumps(summary, indent=2))
     print(f"summary: {out / 'summary.json'}")
     ran = all(any("alone" in run for run in entry["runs"]) for entry in summary.values())

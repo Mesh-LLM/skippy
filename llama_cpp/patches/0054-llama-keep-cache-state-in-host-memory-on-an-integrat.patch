@@ -1,4 +1,4 @@
-From a0f46bc064913a38b56560663d31c71a3b6423fe Mon Sep 17 00:00:00 2001
+From ab53e9084738e167103148b028e1dd7a0227d563 Mon Sep 17 00:00:00 2001
 From: Skippy contributors <ci@skippy.local>
 Date: Sat, 28 Nov 2026 11:42:55 +1100
 Subject: [PATCH 54/54] llama: keep cache state in host memory on an integrated
@@ -13,6 +13,9 @@ integrated device that supports its own host buffer type gets that, so the
 KV cache and recurrent memory sit in pinned host memory the GPU reads
 directly, as Metal's sit in shared memory. Other devices keep their device
 buffer type, so nothing changes without the switch.
+LLAMA_IGPU_HOST_STATE_DISABLE=1 keeps the state in device memory even on
+an integrated device, so the in-place inputs and the host-resident state
+can be measured apart.
 
 Pinned host buffers are not given back to the kernel: their pages stay
 locked for the device, so skippy_kv_buffer_pages_are_host now accepts a host
@@ -20,9 +23,9 @@ buffer only when its type belongs to the CPU.
 ---
  src/llama-kv-cache.cpp         |  8 +++++---
  src/llama-memory-recurrent.cpp |  2 +-
- src/llama-model.cpp            | 12 ++++++++++++
+ src/llama-model.cpp            | 21 +++++++++++++++++++++
  src/llama-model.h              |  1 +
- 4 files changed, 19 insertions(+), 4 deletions(-)
+ 4 files changed, 28 insertions(+), 4 deletions(-)
 
 diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
 index 4a8c4db44..481c978b5 100644
@@ -69,19 +72,28 @@ index 5807cdd65..1daee54e4 100644
              dev_name = ggml_backend_dev_name(dev);
          }
 diff --git a/src/llama-model.cpp b/src/llama-model.cpp
-index a0bf84344..5d5ec0e90 100644
+index a0bf84344..a3b412ade 100644
 --- a/src/llama-model.cpp
 +++ b/src/llama-model.cpp
-@@ -2896,6 +2896,18 @@ ggml_backend_dev_t llama_model::dev_layer(int il) const {
+@@ -2896,6 +2896,27 @@ ggml_backend_dev_t llama_model::dev_layer(int il) const {
      return pimpl->dev_layer.at(il).dev;
  }
  
 +// Where a layer's cache state lives: an integrated GPU that computes from its host buffer keeps
 +// it there, as Metal keeps it in shared memory, so saving and restoring it are host copies.
++// LLAMA_IGPU_HOST_STATE_DISABLE=1 keeps it in device memory, to measure the two apart.
 +ggml_backend_buffer_type_t llama_model::state_buft_layer(int il) const {
++    static const bool host_state_disabled = [] {
++        const char * LLAMA_IGPU_HOST_STATE_DISABLE = getenv("LLAMA_IGPU_HOST_STATE_DISABLE");
++        const bool disabled = LLAMA_IGPU_HOST_STATE_DISABLE && atoi(LLAMA_IGPU_HOST_STATE_DISABLE) != 0;
++        if (disabled) {
++            LLAMA_LOG_INFO("%s: LLAMA_IGPU_HOST_STATE_DISABLE set, keeping cache state in device memory\n", __func__);
++        }
++        return disabled;
++    }();
 +    ggml_backend_dev_t dev = dev_layer(il);
 +    ggml_backend_buffer_type_t host = ggml_backend_dev_host_buffer_type(dev);
-+    if (host != nullptr && ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_IGPU &&
++    if (!host_state_disabled && host != nullptr && ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_IGPU &&
 +            ggml_backend_dev_supports_buft(dev, host)) {
 +        return host;
 +    }
