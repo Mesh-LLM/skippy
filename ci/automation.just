@@ -13,6 +13,7 @@ inference-contracts:
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_build.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_deadlines.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_peer.py
+    @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_socket.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_peer_evidence.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_contracts.py
     @PYTHONPATH=scripts "{{ automation_python }}" scripts/tests/inference_probe.py

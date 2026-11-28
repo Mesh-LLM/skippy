@@ -160,9 +160,11 @@ cleanup. Nightly/release total deadlines and native lease budgets are unchanged.
 Split readiness uses a control listener on each reserved machine, bound to the
 JY formation, source SHA, model, profile, role and native attempt ID. The leader
 waits for its own worker's ready response; an unrelated stage listener cannot
-satisfy readiness. The worker requires its own child's post-bind log record
-for the exact stage and endpoint as well as a live child and reachable port;
-a port taken by another process during model loading cannot make it ready.
+satisfy readiness. The worker joins the serving child's Linux `/proc/PID/fd`
+socket inodes with its TCP LISTEN table to verify ownership of the exact stage
+endpoint, as well as requiring a live child and reachable port. A port taken
+by another process during model loading cannot make it ready. This uses the
+existing same-user process visibility; no tracing subscriber is required.
 Leader control is already served during the longer nightly/release numerical
 checks, so the worker can identify it without waiting for those checks to end.
 Existing data/control listeners cause failure rather than
