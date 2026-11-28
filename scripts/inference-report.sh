@@ -60,8 +60,8 @@ $description.
 
 $baseline_note
 
-| Configuration | Outcome | Prefill tok/s | Prefill vs main | Decode tok/s | Decode vs main | Actions | Lab record |
-| --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+| Configuration | Outcome | Prefill tok/s | Prefill vs main | Decode tok/s | Decode vs main | Actions logs |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
 EOF
 
 rate() {
@@ -92,14 +92,6 @@ while IFS= read -r row; do
     action="[Logs]($url/job/$action_id)"
   fi
   receipt="$directory/$row-job.json"
-  lab=Unavailable
-  if [[ -f $receipt ]]; then
-    lab_id=$(jq -er --arg sha "$SOURCE_SHA" '
-      if .repo_rev == $sha and (.id | type == "string" and test("^job_[A-Za-z0-9_]+$"))
-      then .id else error("Comment evidence source or job ID mismatch") end
-    ' "$receipt")
-    lab="[$lab_id](https://pilot.jianyang.cloud/jobs/$lab_id)"
-  fi
   prefill=Unavailable
   decode=Unavailable
   prefill_delta=Unavailable
@@ -118,7 +110,7 @@ while IFS= read -r row; do
       fi
     fi
   fi
-  printf "| \`%s\` | %s | %s | %s | %s | %s | %s | %s |\n" "$row" "$state" "$prefill" "$prefill_delta" "$decode" "$decode_delta" "$action" "$lab" >> "$temporary/body.md"
+  printf "| \`%s\` | %s | %s | %s | %s | %s | %s |\n" "$row" "$state" "$prefill" "$prefill_delta" "$decode" "$decode_delta" "$action" >> "$temporary/body.md"
 done < "$temporary/rows.txt"
 
 cat >> "$temporary/body.md" <<'EOF'
@@ -127,7 +119,7 @@ TPS comes from three separate warmed, uncached probes at concurrency 1, each gen
 
 Deltas use unrounded rates from matching PR-profile smoke receipts on the latest successful main run, including the nightly smoke evidence. Positive means faster. Changed workload inputs, different serving host classes, unequal phase token counts or missing evidence show Unavailable. Physical Spark placement and runtime conditions can differ; deltas are descriptive, not controlled speedup claims.
 
-Smoke checks cover GPU startup, deterministic endpoint repeats and bounded streaming. They do not establish an AgentX performance score. [Nightly history and saved performance baselines](https://huggingface.co/datasets/meshllm/skippy-inference-qualification) are published separately; a saved baseline can be older than the latest successful main run used here. The lab retains native results and logs. GitHub evidence copies expire after 30 days.
+Smoke checks cover GPU startup, deterministic endpoint repeats and bounded streaming. They do not establish an AgentX performance score. [Nightly history and saved performance baselines](https://huggingface.co/datasets/meshllm/skippy-inference-qualification) are published separately; a saved baseline can be older than the latest successful main run used here. Native build and qualification output streams into each configuration’s Actions log, with per-attempt copies in Saved evidence. Any capture gaps are reported in the log and saved diagnostics. GitHub evidence copies expire after 30 days.
 EOF
 if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then cat "$temporary/body.md" >> "$GITHUB_STEP_SUMMARY"; fi
 

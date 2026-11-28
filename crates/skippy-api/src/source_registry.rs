@@ -173,45 +173,18 @@ fn file_identity(_path: &Path, metadata: &std::fs::Metadata) -> Option<FileIdent
     })
 }
 
-/// std exposes no device, inode or change time on Windows, so read them from
-/// an open handle: the volume serial number and 128-bit file ID (`FileIdInfo`,
-/// which also covers ReFS) identify the file, and `ChangeTime` advances on any
-/// content or metadata change. Unlike Unix ctime, a process with
-/// write-attributes access can set `ChangeTime`; like the rest of this check it
-/// gates reuse of a verified hash and is not a defence against a local writer.
+/// The strong identity `skippy-serving` reads from an open handle, absent on
+/// a filesystem that keeps no change time (FAT, exFAT), which rehashes.
 #[cfg(windows)]
 fn file_identity(path: &Path, _metadata: &std::fs::Metadata) -> Option<FileIdentity> {
-    use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Storage::FileSystem::{
-        FILE_BASIC_INFO, FILE_ID_INFO, FileBasicInfo, FileIdInfo, GetFileInformationByHandleEx,
-    };
-
     let file = std::fs::File::open(path).ok()?;
-    let handle = file.as_raw_handle();
-    let mut id = FILE_ID_INFO::default();
-    let mut basic = FILE_BASIC_INFO::default();
-    // SAFETY: `handle` stays open for both calls because `file` outlives them,
-    // and each buffer is the structure its information class documents,
-    // passed with that structure's exact size.
-    let queried = unsafe {
-        GetFileInformationByHandleEx(
-            handle,
-            FileIdInfo,
-            (&raw mut id).cast(),
-            size_of::<FILE_ID_INFO>() as u32,
-        ) != 0
-            && GetFileInformationByHandleEx(
-                handle,
-                FileBasicInfo,
-                (&raw mut basic).cast(),
-                size_of::<FILE_BASIC_INFO>() as u32,
-            ) != 0
-    };
-    queried.then(|| FileIdentity {
-        device: id.VolumeSerialNumber,
-        inode: u128::from_le_bytes(id.FileId.Identifier),
+    let (device, inode, change_time) =
+        skippy_serving::file_identity::windows_strong_identity(&file)?;
+    Some(FileIdentity {
+        device,
+        inode,
         // 100 ns ticks since 1601, only ever compared for equality.
-        ctime_nanos: i128::from(basic.ChangeTime) * 100,
+        ctime_nanos: i128::from(change_time) * 100,
     })
 }
 

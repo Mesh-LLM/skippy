@@ -75,7 +75,8 @@ test('main runs device smokes for inference and packaging changes, Graph Contrac
 });
 
 test('PR hardware selection and full nightly/release profile selection stay unchanged', () => {
-  const pr = event_name => ({ event_name, event: { pull_request: {} } });
+  const pr = event_name => ({ event_name,
+    event: { repository: { id: 42 }, pull_request: { head: { repo: { id: 42 } } } } });
   assert.deepEqual(selection(pr('pull_request_target'), ['crates/skippy-cli/src/main.rs']),
     { automation: true, code: true, packages: true, native: false });
   assert.deepEqual(selection(pr('pull_request'), ['crates/skippy-cli/src/main.rs']),
