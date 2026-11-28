@@ -104,7 +104,8 @@ def run_arm(design, main, baseline, key, mode, output):
             if design["experiment"] == "noise":
                 kind = design.get("diagnostic", "pilot")
                 with noise.diagnostics(directory, kind):
-                    EXECUTE("pr", key, mode, probe=noise.probe(design["round"], kind))
+                    EXECUTE("pr", key, mode, probe=noise.probe(design["round"], kind),
+                            phase_profile=kind == "profile")
             else:
                 EXECUTE("pr", key, mode, REPETITIONS)
     finally:

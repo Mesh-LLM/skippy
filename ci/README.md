@@ -268,6 +268,11 @@ enables existing native OTLP phase spans on both roles. It retains
 `noise-profile.json` and per-arm `phases.jsonl` for correlating chunk counts,
 runtime locks, compute, writes and downstream waits. Instrumentation changes
 timing; this experiment likewise cannot produce performance qualification.
+The v2 diagnostic explicitly sets `--telemetry-level debug`; a file sink alone
+preserves the server's summary level. Every leader request must have one matching
+prefill span with its phase breakdown and response timing. Worker traces must
+contain binary decode and message timing spans. Missing detailed spans fail the
+diagnostic even when the trace file is nonempty.
 For example, on an already admitted exclusive split allocation:
 
 ```sh

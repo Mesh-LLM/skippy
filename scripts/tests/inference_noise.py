@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 from lib import inference_noise as noise
+from lib.inference_noise_phases import verify_phases
 
 MODEL = "fixture@" + "a" * 40
 
@@ -133,6 +134,48 @@ class NoiseTests(unittest.TestCase):
             self.assertEqual(os.environ[trace], "original")
             self.assertEqual((output / "doctor.log").read_text(), "doctor")
             stop.assert_called_once_with(gpu)
+
+    def test_both_native_roles_explicitly_enable_debug_only_for_phase_diagnostics(self):
+        command = run_path(str(noise.ROOT / "scripts/inference-execute.py"))["server_command"]
+        for worker in (True, False):
+            self.assertNotIn("--telemetry-level", command(worker))
+            args = command(worker, phase_profile=True)
+            self.assertEqual(args[args.index("--telemetry-level") + 1], "debug")
+
+    def test_nonempty_summary_trace_cannot_pass_phase_diagnostics(self):
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            (output / "phases.jsonl").write_text(json.dumps({"resourceSpans": [{"scopeSpans": [
+                {"spans": [{"name": "stage.openai_request_summary"}]}]}]}) + "\n")
+            (output / "noise-profile.json").write_text(json.dumps({"samples": [{"warmup": {
+                "started_at": "2026-11-28T00:00:00+00:00", "completed_at": "2026-11-28T00:00:01+00:00"}}]}))
+            for role in ("leader", "worker"):
+                with self.subTest(role=role), self.assertRaisesRegex(ValueError, "lacks"):
+                    verify_phases(output, role)
+            self.assertFalse((output / "phase-proof.json").exists())
+
+    def test_each_request_needs_a_matching_prefill_breakdown(self):
+        def request(start, end):
+            return {"started_at": f"1970-01-01T00:00:0{start}+00:00",
+                    "completed_at": f"1970-01-01T00:00:0{end}+00:00",
+                    "response": {"timings": {"prompt_ms": 100}}}
+        attrs = [{"key": "llama_stage." + name, "value": {"doubleValue": value}}
+                 for name, value in (("stage0_compute_ms", 60), ("runtime_lock_wait_ms", 0),
+                                     ("forward_write_ms", 1), ("downstream_wait_ms", 39), ("elapsed_ms", 100))]
+        spans = [{"name": "stage.openai_prefill", "startTimeUnixNano": str(start), "attributes": attrs}
+                 for start in (100000000, 2100000000)]
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            (output / "noise-profile.json").write_text(json.dumps({"samples": [
+                {"warmup": request(0, 1), "measured": request(2, 3)}]}))
+            def trace(records):
+                (output / "phases.jsonl").write_text(json.dumps({"resourceSpans": [
+                    {"scopeSpans": [{"spans": records}]}]}) + "\n")
+            trace(spans)
+            self.assertEqual(verify_phases(output, "leader")["requests_with_prefill_breakdown"], 2)
+            trace(spans[:1])
+            with self.assertRaisesRegex(ValueError, "unique prefill"):
+                verify_phases(output, "leader")
 
 
 if __name__ == "__main__":

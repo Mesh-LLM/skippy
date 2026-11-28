@@ -89,7 +89,16 @@ def wait_for(server, url, seconds, poll, check):
     raise RuntimeError("inference server or split leader timed out")
 
 
-def execute(profile, key, mode, repetitions=1, probe=None):
+def server_command(worker, phase_profile=False):
+    args = ["target/debug/skippy", "--debug", "serve", "--startup-timeout-secs", "300"]
+    if phase_profile:
+        args += ["--telemetry-level", "debug"]
+    if not worker:
+        args += ["--speculative-strategy", "disabled", "--generation-concurrency", "1"]
+    return args
+
+
+def execute(profile, key, mode, repetitions=1, probe=None, phase_profile=False):
     sha, gpu = authority()
     result = plan(profile, sha)
     if not any(row["id"] == f"{key}-{mode}" for row in result["rows"]):
@@ -106,9 +115,7 @@ def execute(profile, key, mode, repetitions=1, probe=None):
     model = admit(key, inputs)
     coordinate = f'{inputs["repo"]}@{inputs["revision"]}'
     context = 4096 if profile == "pr" else 65536
-    args = ["target/debug/skippy", "--debug", "serve", "--startup-timeout-secs", "300"]
-    if not worker:
-        args += ["--speculative-strategy", "disabled", "--generation-concurrency", "1"]
+    args = server_command(worker, phase_profile)
     if mode == "split":
         args += prepare_split(model, coordinate, profile, context, output, worker)
     else:

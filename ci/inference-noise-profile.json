@@ -1,5 +1,5 @@
 {
-  "protocol": "DGX Spark noise phase profile v1",
+  "protocol": "DGX Spark noise phase profile v2",
   "purpose": "Locate short-prefill latency clusters inside native compute, runtime locks, activation writes or downstream waits; no speed claim",
   "hypothesis": "The recurring ~20ms short-prefill latency step can be localized in existing per-request phase spans",
   "baseline_sha": "cc2a27435e798649a9cb938d600d39722e4a2263",
@@ -34,7 +34,7 @@
     "native admission and GPU offload",
     "mutual formation/source/attempt proof"
   ],
-  "diagnostics": "Pinned InferenceKit doctor, one-second UTC GPU and host samples, and existing SKIPPY_TELEMETRY_OTLP_FILE debug phase spans on both roles. Instrumented timings cannot qualify performance.",
+  "diagnostics": "Explicit --telemetry-level debug with SKIPPY_TELEMETRY_OTLP_FILE on both roles; one-second UTC GPU/host samples and pinned InferenceKit doctor. Require per-request prefill breakdown on leader and binary decode/message phase spans on worker. Instrumented timings cannot qualify performance.",
   "analysis": "Retain every request and trace span; correlate prefill chunk counts, stage0 compute, runtime-lock waits, forward writes and downstream waits with each request latency; do not infer GPU kernel time from CPU spans or hide dropped trace records",
   "final_claim_target": {
     "material_effect": 0.02,

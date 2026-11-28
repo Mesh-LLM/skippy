@@ -12,6 +12,7 @@ from pathlib import Path
 from .ci_artifacts import digest, read_json, write_json
 from .ci_process import command, start, stop
 from .inference_probe import PARAGRAPHS, payload, send, validate_response
+from .inference_noise_phases import verify_phases
 
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRATIONS = {kind: ROOT / f"ci/inference-noise-{kind}.json" for kind in ("pilot", "profile")}
@@ -111,8 +112,8 @@ def diagnostics(output, kind="pilot"):
             yield
             if gpu.poll() is not None:
                 raise RuntimeError("noise pilot GPU telemetry stopped; inspect gpu.csv")
-            if kind == "profile" and not (output / "phases.jsonl").stat().st_size:
-                raise RuntimeError("noise phase profile is empty")
+            if kind == "profile":
+                verify_phases(output, os.environ.get("JIANYANG_ROLE", "leader"))
         finally:
             if previous_trace is None:
                 os.environ.pop(trace, None)
